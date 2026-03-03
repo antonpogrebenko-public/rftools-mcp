@@ -1,0 +1,52 @@
+{
+  "name": "rftools-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for rftools.io — 197 RF & electronics calculators accessible to AI agents via the Model Context Protocol",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "rf",
+    "rf-engineering",
+    "electronics",
+    "calculator",
+    "impedance",
+    "pcb",
+    "pcb-design",
+    "antenna",
+    "signal-processing",
+    "power-electronics",
+    "emc",
+    "engineering",
+    "claude",
+    "claude-desktop",
+    "ai-tools",
+    "microstrip",
+    "smith-chart",
+    "vswr",
+    "link-budget"
+  ],
+  "author": "rftools.io",
+  "license": "MIT",
+  "homepage": "https://rftools.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/antonpogrebenko-public/rftools-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/antonpogrebenko-public/rftools-mcp/issues"
+  },
+  "bin": {
+    "rftools-mcp": "dist/mcp-server.cjs"
+  },
+  "files": [
+    "dist/mcp-server.cjs"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
