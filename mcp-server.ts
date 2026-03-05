@@ -383,7 +383,7 @@ server.registerTool(
           type: 'text' as const,
           text: 'RFTOOLS_API_KEY is not set. Add it to your MCP config:\n' +
                 '  "env": { "RFTOOLS_API_KEY": "rfc_..." }\n' +
-                'Get a key at https://rftools.io/account/api-keys',
+                'Get a key at https://rftools.io/dashboard',
         }],
         isError: true,
       };
@@ -412,7 +412,7 @@ server.registerTool(
         return {
           content: [{
             type: 'text' as const,
-            text: `API key error: ${msg}\nCheck your quota at https://rftools.io/account/api-keys`,
+            text: `API key error: ${msg}\nCheck your quota at https://rftools.io/dashboard`,
           }],
           isError: true,
         };
