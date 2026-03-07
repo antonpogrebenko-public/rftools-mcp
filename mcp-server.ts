@@ -94,14 +94,14 @@ const SIMULATION_TOOLS = [
     params: 'planesX (m), planesY (m), planesSeparation (m), vrmR (Ω), vrmL (H), vrmC (F), targetImpedance (Ω), freqPoints (int), population (int), generations (int), capBudget (int)',
   },
   {
-    slug: 'satellite-link-budget',
+    slug: 'sat-link-budget',
     jobType: 'sat_link_budget',
     title: 'Satellite Link Budget (ITU-R)',
     description: 'Satellite/terrestrial link budget with ITU-R P.618 rain, P.676 gaseous, P.840 cloud models and Monte Carlo confidence intervals.',
     params: 'eirp (dBW), frequency (Hz), distance (m), gt (dB/K), bandwidth (Hz), elevation (deg), latitude (deg), availability (%), mcTrials (int)',
   },
   {
-    slug: 'rf-cascade-budget',
+    slug: 'rf-cascade',
     jobType: 'rf_cascade',
     title: 'RF Cascade Budget with Monte Carlo',
     description: 'Friis noise figure, cascaded IIP3, P1dB, SFDR, and Monte Carlo yield for multi-stage RF chains.',
@@ -150,7 +150,7 @@ function pollInterval(elapsedMs: number): number {
 
 const server = new McpServer({
   name: 'rftools',
-  version: '1.0.0',
+  version: '1.2.0',
 });
 
 // --- list_calculators ---
