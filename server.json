@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.antonpogrebenko-public/rftools",
-  "description": "203 RF & electronics calculators + 13 simulation tools for AI agents.",
+  "description": "203 RF & electronics calculators + 14 simulation tools for AI agents. Full parity across TypeScript, Python API, and MCP — includes IMD/IP3, mixer spurs, vibration phase noise, return loss error, and more.",
   "repository": {
     "url": "https://github.com/antonpogrebenko-public/rftools-mcp",
     "source": "github"
   },
-  "version": "1.3.1",
+  "version": "1.3.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "rftools-mcp",
-      "version": "1.3.1",
+      "version": "1.3.2",
       "transport": {
         "type": "stdio"
       }
