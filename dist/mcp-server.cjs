@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-#\!/usr/bin/env node
+#!/usr/bin/env node
 "use strict";
 
 // ../rftools-mcp/mcp-server.ts
@@ -7425,7 +7425,7 @@ function calculateCapacitorEnergy(inputs) {
   const energy = 0.5 * C_F * voltage * voltage * 1e3;
   const charge = C_F * voltage * 1e3;
   const avgChargeCurrent = charge / (chargeTime * 1e-3);
-  const chargePower = energy / chargeTime;
+  const chargePower = energy / chargeTime * 1e3;
   return {
     values: {
       energy,
@@ -14314,7 +14314,7 @@ function calculateMosfetOperatingPoint(inputs) {
   }
   id = Math.max(0, id);
   const powerDissipation = id * vds;
-  const gm = region === 2 ? kn * vgsEff : kn * vds;
+  const gm = region === 2 ? kn * vgsEff : region === 1 ? kn * vds : 0;
   return {
     values: {
       id,
