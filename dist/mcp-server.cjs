@@ -2280,7 +2280,7 @@ function calculateTraceResistance(inputs) {
   return {
     values: {
       resistance: Math.round(resistance * 1e6) / 1e6,
-      resistanceMOhm: Math.round(resistance * 1e9) / 1e3,
+      resistanceMOhm: Math.round(resistance * 1e6) / 1e3,
       sheetResistance: Math.round(sheetResistance * 100) / 100
     }
   };
@@ -4828,7 +4828,7 @@ function calculatePatchAntenna(inputs) {
       errors: ["Computed patch length is non-positive \u2014 check substrate height and dielectric constant"]
     };
   }
-  const Rin_raw = 90 * (er * er) / (er - 1) * Math.pow(lambda / patchWidth_m, 2);
+  const Rin_raw = 90 * (er * er) / (er - 1) * Math.pow(patchLength_m / patchWidth_m, 2);
   const edgeFeedImpedance_ohm = Math.min(Math.max(Rin_raw, 50), 500);
   const insetFeedPosition_mm = feedOffset > 0 ? feedOffset : patchLength_mm / Math.PI * Math.acos(Math.sqrt(50 / edgeFeedImpedance_ohm));
   const gainDbi = 7;
@@ -4998,9 +4998,9 @@ var patchAntenna = {
   verificationData: [
     {
       inputs: { frequency: 2.45, dielectricConstant: 4.4, substrateHeight: 1.6, feedOffset: 0 },
-      expectedOutputs: { patchLength_mm: 28.7 },
+      expectedOutputs: { patchLength_mm: 28.8, edgeFeedImpedance_ohm: 306.8 },
       tolerance: 0.05,
-      source: "\u03BB=122.4mm; W=37.3mm; \u03B5r_eff\u22484.09; \u0394L\u22480.8mm; L\u224828.7mm (Balanis Ch.14 example)"
+      source: "\u03BB=122.4mm; W=37.2mm; L=28.8mm; Rin=90\xB7\u03B5r\xB2/(\u03B5r-1)\xB7(L/W)\xB2=306.8\u03A9 (Balanis Ch.14, Derneryd 1978)"
     }
   ]
 };
@@ -8803,33 +8803,33 @@ function calculateControlledImpedance(inputs) {
   } = inputs;
   const warnings = [];
   const t_mm = copperThickness / 1e3;
-  let Z0 = 0;
-  let erEff = 0;
-  if (traceType === 0) {
-    const u = traceWidth / substrateHeight;
-    const f = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
-    erEff = (dielectricConst + 1) / 2 + (dielectricConst - 1) / 2 * Math.pow(1 + 12 / u, -0.5);
-    Z0 = 60 / Math.sqrt(erEff) * Math.log(f / u + Math.sqrt(1 + 4 / (u * u)));
-  } else if (traceType === 1) {
-    const erEff_mod = dielectricConst * (1 - Math.exp(-1.55 * coverHeight / substrateHeight));
-    const u = traceWidth / substrateHeight;
-    const Z0_air = 60 * Math.log(5.98 * substrateHeight / (0.8 * traceWidth + t_mm));
-    Z0 = Z0_air / Math.sqrt(erEff_mod);
-    erEff = erEff_mod;
-  } else {
-    const b = 2 * substrateHeight;
-    Z0 = 60 / Math.sqrt(dielectricConst) * Math.log(
-      4 * b / (0.67 * Math.PI * (0.8 * traceWidth + t_mm))
-    );
-    erEff = dielectricConst;
+  function computeZ0(W) {
+    if (traceType === 0) {
+      const u = W / substrateHeight;
+      const f = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
+      const er = (dielectricConst + 1) / 2 + (dielectricConst - 1) / 2 * Math.pow(1 + 12 / u, -0.5);
+      const z2 = 60 / Math.sqrt(er) * Math.log(f / u + Math.sqrt(1 + 4 / (u * u)));
+      return { Z0: z2, erEff: er };
+    } else if (traceType === 1) {
+      const er = dielectricConst * (1 - Math.exp(-1.55 * coverHeight / substrateHeight));
+      const arg = 5.98 * substrateHeight / (0.8 * W + t_mm);
+      if (arg <= 1) return { Z0: 0, erEff: er };
+      const Z0_air = 60 * Math.log(arg);
+      return { Z0: Z0_air / Math.sqrt(er), erEff: er };
+    } else {
+      const b = 2 * substrateHeight;
+      const arg = 4 * b / (0.67 * Math.PI * (0.8 * W + t_mm));
+      if (arg <= 1) return { Z0: 0, erEff: dielectricConst };
+      const z2 = 60 / Math.sqrt(dielectricConst) * Math.log(arg);
+      return { Z0: z2, erEff: dielectricConst };
+    }
   }
-  const impedance = Z0;
-  const effectiveDielectric = erEff;
-  const propagationDelay = Math.sqrt(erEff) / 0.3;
-  let lo = 0.05, hi = 20;
+  const { Z0: impedance, erEff: effectiveDielectric } = computeZ0(traceWidth);
+  const propagationDelay = Math.sqrt(effectiveDielectric) / 0.3;
+  let lo = 0.01, hi = 20;
   for (let i = 0; i < 50; i++) {
     const mid = (lo + hi) / 2;
-    const z_mid = 87 / Math.sqrt(dielectricConst + 1.41) * Math.log(5.98 * substrateHeight / (0.8 * mid + t_mm));
+    const { Z0: z_mid } = computeZ0(mid);
     if (z_mid > 50) lo = mid;
     else hi = mid;
   }
@@ -10327,7 +10327,7 @@ function calculateAdcSnr(inputs) {
   );
   const snrWithJitter = combinedSnr;
   const enob = (combinedSnr - 1.76) / 6.02;
-  const sfdr = 9 / 2 * 6.02 * bits;
+  const sfdr = 3 / 2 * (6.02 * bits + 1.76);
   const noisePower = -combinedSnr;
   const enobClamped = Math.max(0, Math.min(bits, enob));
   return {
@@ -10982,7 +10982,7 @@ function calculateOversamplingSnr(inputs) {
   if (L <= 0) {
     oversampledSnr = baseSnr + 10 * Math.log10(OSR);
   } else {
-    const shapingGain = 10 * Math.log10(Math.pow(Math.PI, 2 * L) / (2 * L + 1)) + (2 * L + 1) * 10 * Math.log10(OSR);
+    const shapingGain = -10 * Math.log10(Math.pow(Math.PI, 2 * L) / (2 * L + 1)) + (2 * L + 1) * 10 * Math.log10(OSR);
     oversampledSnr = baseSnr + shapingGain;
   }
   const snrImprovement = oversampledSnr - baseSnr;
@@ -12805,7 +12805,7 @@ function calculateBatteryChargeTime(inputs) {
   const ccTime = socDelta / 100 * safeCapacity / Math.max(chargeCurrent, 1e-3);
   const cvTime = targetSoc > 80 ? 0.25 * ccTime : 0;
   const chargeTime = ccTime + cvTime;
-  const energyIn = chargeCurrent * chargeTime * chargingVoltage / 1e3;
+  const energyIn = chargeCurrent * chargeTime * chargingVoltage;
   const energyOut = safeCapacity * (socDelta / 100) * battVoltage;
   const chargingEfficiency = Math.min(100, energyOut / Math.max(energyIn, 1e-3) * 100);
   return {
@@ -19499,12 +19499,12 @@ function calculateBerSnr(inputs) {
     case 3:
       {
         const sinPi8 = Math.sin(Math.PI / 8);
-        ber = 2 / 3 * erfc(Math.sqrt(ebN0 * 3 * sinPi8 * sinPi8));
+        ber = 1 / 3 * erfc(Math.sqrt(ebN0 * 3 * sinPi8 * sinPi8));
         bitsPerSymbol = 3;
       }
       break;
     case 4:
-      ber = 0.75 * erfc(Math.sqrt(ebN0 * 2 / 5));
+      ber = 0.375 * erfc(Math.sqrt(ebN0 * 2 / 5));
       bitsPerSymbol = 4;
       break;
     default:
@@ -22250,7 +22250,7 @@ function calculatePowerPlaneImpedance(inputs) {
   const areaM2 = length * 1e-3 * (width * 1e-3);
   const dM = dielectric * 1e-3;
   const capacitance = er * 8854e-15 * areaM2 / dM * 1e9;
-  const inductance = 0.3 * (dielectric / 1e3) * (length / width) * 1e9;
+  const inductance = 0.3 * dielectric * (length / width);
   const omega_res_sq = 1 / (inductance * 1e-9 * capacitance * 1e-9);
   const resonantFrequency = Math.sqrt(omega_res_sq) / (2 * Math.PI) / 1e6;
   const omega = 2 * Math.PI * frequency * 1e6;
