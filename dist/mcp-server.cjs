@@ -15358,7 +15358,7 @@ var bldcMotor = {
       thresholds: {
         good: { min: 80 },
         warning: { min: 60 },
-        danger: { max: 60 }
+        danger: { min: 60 }
       }
     },
     {
