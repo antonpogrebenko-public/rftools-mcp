@@ -7240,8 +7240,8 @@ var shieldingEffectiveness = {
       precision: 1,
       thresholds: {
         good: { min: 20 },
-        warning: { min: 6 },
-        danger: { min: 6 }
+        warning: { min: 6, max: 20 },
+        danger: { max: 6 }
       }
     },
     {
@@ -7259,8 +7259,8 @@ var shieldingEffectiveness = {
       precision: 1,
       thresholds: {
         good: { min: 40 },
-        warning: { min: 20 },
-        danger: { min: 20 }
+        warning: { min: 20, max: 40 },
+        danger: { max: 20 }
       }
     },
     {
@@ -23039,8 +23039,9 @@ var decouplingCapacitorEmc = {
     const capF = capacitance * 1e-9;
     const freqHz = frequency * 1e3;
     const xc = 1 / (2 * Math.PI * freqHz * capF);
-    const impedance = Math.sqrt(xc ** 2 + esr ** 2);
     const packageInductanceH = packageInductance / 1e9;
+    const xl = 2 * Math.PI * freqHz * packageInductanceH;
+    const impedance = Math.sqrt((xl - xc) ** 2 + esr ** 2);
     const srf = 1 / (2 * Math.PI * Math.sqrt(capF * packageInductanceH)) / 1e6;
     return { values: { xc, impedance, srf } };
   },
@@ -23123,7 +23124,7 @@ var radiatedEmissionEstimate = {
     const currentA = current / 1e3;
     const areaM2 = loopArea * 1e-4;
     const freqMhz = frequency;
-    const eField = 263 * freqMhz ** 2 * areaM2 * currentA / distance;
+    const eField = 0.01316 * freqMhz ** 2 * areaM2 * currentA / distance;
     const eFieldDbuvM = eField > 0 ? 20 * Math.log10(eField * 1e6) : -200;
     const cispr22Limit = 40;
     const margin = cispr22Limit - eFieldDbuvM;
@@ -23134,7 +23135,7 @@ var radiatedEmissionEstimate = {
     return { values: { eFieldDbuvM, margin }, ...warnings.length > 0 && { warnings } };
   },
   formula: {
-    primary: "E \u2248 263 \xD7 f\xB2 \xD7 A \xD7 I / r  [V/m, f in MHz, A in m\xB2]",
+    primary: "E = 1.316\xD710\u207B\xB2 \xD7 f\xB2 \xD7 A \xD7 I / r  [V/m, f in MHz, A in m\xB2]",
     variables: [
       { symbol: "f", description: "Frequency", unit: "MHz" },
       { symbol: "A", description: "Loop area", unit: "m\xB2" },
