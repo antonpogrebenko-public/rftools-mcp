@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-#!/usr/bin/env node
+#\!/usr/bin/env node
 "use strict";
 
 // ../rftools-mcp/mcp-server.ts
@@ -6245,7 +6245,7 @@ var uartBaudRate = {
       thresholds: {
         good: { max: 0.5 },
         warning: { max: 2 },
-        danger: { max: 2 }
+        danger: { min: 2 }
       }
     }
   ],
@@ -6563,7 +6563,7 @@ var clockJitter = {
       unit: "ps",
       precision: 1,
       primary: true,
-      thresholds: { good: { min: 100 }, warning: { min: 0, max: 100 }, danger: { min: 0 } }
+      thresholds: { good: { min: 100 }, warning: { min: 0, max: 100 }, danger: { max: 0 } }
     },
     { key: "totalJitter_ps", label: "Total Jitter", unit: "ps", precision: 1 },
     {
@@ -12063,9 +12063,9 @@ function calculateUsbTermination(inputs) {
   const differentialImpedance = usbVersion === 0 ? 90 : 90;
   const propagationDelay = cableLength / 2e8 * 1e9;
   const signalRiseTime = usbVersion === 0 ? 500 : 125;
-  const bitPeriod_ps = usbVersion === 0 ? 2083 : 400;
-  const delay_ps = propagationDelay * 1e3;
-  const eyeOpening = Math.max(0, 100 - 2 * delay_ps / bitPeriod_ps * 100);
+  const attenPerMeter_dB = usbVersion === 0 ? 0.4 : 1.5;
+  const totalAtten_dB = cableLength * attenPerMeter_dB;
+  const eyeOpening = Math.max(0, 100 - totalAtten_dB * 10);
   return {
     values: {
       terminationResistor,
@@ -12192,10 +12192,13 @@ var usbTermination = {
 function calculateRs485Termination(inputs) {
   const { baudRate, cableLength, numNodes, supplyVoltage } = inputs;
   const terminationResistor = 120;
-  const biasResistor = Math.round((supplyVoltage - 0.2) / 0.054);
-  const maxBaudRate = Math.min(1e4, 1e8 / Math.max(cableLength, 0.1));
+  const R_LOAD = 60;
+  const V_DIFF_MIN = 0.2;
+  const maxBias = (supplyVoltage * R_LOAD / V_DIFF_MIN - R_LOAD) / 2;
+  const biasResistor = Math.round(maxBias * 0.75);
+  const maxBaudRate = Math.min(1e4, 1e5 / Math.max(cableLength, 0.1));
   const propagationDelay = cableLength / 2e8 * 1e9;
-  const loadCurrent = supplyVoltage / Math.max(biasResistor, 1) * 2 * 1e3;
+  const loadCurrent = supplyVoltage / (2 * Math.max(biasResistor, 1) + 60) * 1e3;
   return {
     values: {
       terminationResistor,
@@ -12320,7 +12323,7 @@ var rs485Termination = {
   ],
   calculate: calculateRs485Termination,
   formula: {
-    primary: "R_term = 120 \u03A9;  R_bias = (Vcc \u2212 0.2) / 0.054",
+    primary: "R_term = 120\\,\\Omega;\\quad R_{bias} \\leq \\frac{V_{cc} \\cdot R_{load} / V_{diff} - R_{load}}{2}",
     variables: [
       { symbol: "R_term", description: "Termination resistor (match to Z\u2080)", unit: "\u03A9" },
       { symbol: "R_bias", description: "Bias/failsafe resistor", unit: "\u03A9" },
