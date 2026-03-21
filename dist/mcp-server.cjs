@@ -6604,7 +6604,7 @@ function calculateHeatsink(inputs) {
   const junctionTemp = ambientTemp + powerDissipation * (thetaJC + thetaCS + Math.max(0, thetaSA_required));
   const tempRise = junctionTemp - ambientTemp;
   if (thetaSA_required < 0) {
-    warnings.push("No standard heatsink required (natural convection sufficient)");
+    warnings.push("Thermal design infeasible \u2014 even with an ideal heatsink (\u03B8_SA = 0), junction temperature exceeds T_Jmax. Reduce power dissipation or improve \u03B8_JC/\u03B8_CS.");
   } else if (thetaSA_required < 1) {
     warnings.push("Very low \u03B8_SA \u2014 consider forced air cooling");
   }
@@ -6741,8 +6741,8 @@ function calculatePcbTraceTemp(inputs) {
   }
   const thickness = copperWeight * 0.035;
   const crossSection = traceWidth * thickness;
-  const resistance_per_mm = 0.01724 / crossSection;
-  const traceResistance2 = resistance_per_mm * traceLength * 1e3;
+  const resistance_per_m = 0.01724 / crossSection;
+  const traceResistance2 = resistance_per_m * traceLength;
   const powerDissipated = current * current * (traceResistance2 / 1e3) * 1e3;
   const crossSection_mils2 = crossSection * 1550;
   const tempRise = Math.pow(current / (0.048 * Math.pow(crossSection_mils2, 0.725)), 1 / 0.44);
@@ -6871,7 +6871,7 @@ var pcbTraceTemp = {
       { symbol: "b", description: "IPC-2221 exponent (0.44)", unit: "" },
       { symbol: "c", description: "IPC-2221 cross-section exponent (0.725)", unit: "" }
     ],
-    reference: "IPC-2152 Table 5-1 (external layers)"
+    reference: "IPC-2221B Appendix B (external layers)"
   },
   visualization: { type: "none" },
   relatedCalculators: ["heatsink-calculator", "trace-width-current", "trace-resistance"]
