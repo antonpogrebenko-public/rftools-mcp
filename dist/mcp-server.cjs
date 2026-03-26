@@ -23,9 +23,9 @@ function calculateMicrostrip(inputs) {
   const tpd = 1 / c * Math.sqrt(erEff) * 1e3;
   return {
     values: {
-      impedance: Math.round(z0 * 100) / 100,
-      effectiveDielectric: Math.round(erEff * 1e3) / 1e3,
-      propagationDelay: Math.round(tpd * 100) / 100
+      impedance: z0,
+      effectiveDielectric: erEff,
+      propagationDelay: tpd
     }
   };
 }
@@ -199,12 +199,12 @@ function calculateLinkBudget(inputs) {
   const maxRangeKm = maxRangeM / 1e3;
   return {
     values: {
-      fspl: Math.round(fspl * 100) / 100,
-      eirp: Math.round(eirp * 100) / 100,
-      rxPower: Math.round(rxPower * 100) / 100,
-      linkMargin: Math.round(linkMargin2 * 100) / 100,
-      maxRangeKm: Math.round(maxRangeKm * 100) / 100,
-      totalAdditionalLoss: Math.round(totalAdditionalLoss * 100) / 100
+      fspl,
+      eirp,
+      rxPower,
+      linkMargin: linkMargin2,
+      maxRangeKm,
+      totalAdditionalLoss
     }
   };
 }
@@ -213,7 +213,8 @@ var rfLinkBudget = {
   title: "RF Link Budget Calculator",
   shortTitle: "Link Budget",
   category: "rf",
-  description: "Calculate RF link budget: transmit power, free space path loss, antenna gains, and received signal level. Determine link margin and maximum range.",
+  description: "Free RF link budget calculator: enter Tx power, antenna gains, frequency, and distance to get received signal level, link margin, and max range. Covers satellite, terrestrial, and IoT links.",
+  metaTitle: "RF Link Budget Calculator \u2014 Free: EIRP, FSPL, Link Margin & Max Range",
   keywords: ["rf link budget calculator", "free space path loss", "fspl calculator", "link margin", "received signal level", "friis equation"],
   inputs: [
     { key: "txPower", label: "TX Power", symbol: "P\u209C\u2093", unit: "dBm", defaultValue: 30, min: -30, max: 100, group: "Transmitter", tooltip: "Transmitter output power" },
@@ -323,11 +324,11 @@ function calculateVSWR(inputs) {
   const transmittedPct = (1 - gamma * gamma) * 100;
   return {
     values: {
-      gamma: Math.round(gamma * 1e4) / 1e4,
-      returnLoss: Math.round(returnLoss * 100) / 100,
-      mismatchLoss: Math.round(mismatchLoss * 1e3) / 1e3,
-      reflectedPct: Math.round(reflectedPct * 100) / 100,
-      transmittedPct: Math.round(transmittedPct * 100) / 100
+      gamma,
+      returnLoss,
+      mismatchLoss,
+      reflectedPct,
+      transmittedPct
     }
   };
 }
@@ -431,8 +432,8 @@ var vswrReturnLoss = {
     },
     {
       inputs: { vswr: 2 },
-      expectedOutputs: { returnLoss: 9.54, gamma: 0.3333, reflectedPct: 11.11 },
-      tolerance: 0.01,
+      expectedOutputs: { returnLoss: 9.5424, gamma: 0.33333, reflectedPct: 11.111 },
+      tolerance: 1e-3,
       source: "Pozar Table 2.3"
     },
     {
@@ -456,13 +457,13 @@ function calculateDB(inputs) {
   const dbuv = 20 * Math.log10(vrms * 1e6);
   return {
     values: {
-      dbw: Math.round(dbw * 1e3) / 1e3,
+      dbw,
       watts,
-      mwatts: Math.round(mwatts * 1e4) / 1e4,
-      uwatts: Math.round(uwatts * 100) / 100,
-      vrms: Math.round(vrms * 1e5) / 1e5,
-      mvrms: Math.round(mvrms * 100) / 100,
-      dbuv: Math.round(dbuv * 100) / 100
+      mwatts,
+      uwatts,
+      vrms,
+      mvrms,
+      dbuv
     }
   };
 }
@@ -599,13 +600,13 @@ function calculateNoiseFigureCascade(inputs) {
   const cascadedOIP3 = cascadedIIP3 + totalGain;
   return {
     values: {
-      cascadedNF: Math.round(cascadedNF * 1e4) / 1e4,
-      cascadedF: Math.round(F_total * 1e4) / 1e4,
-      stage1Contribution: Math.round(contrib1 * 1e4) / 1e4,
-      stage2Contribution: Math.round(contrib2 * 1e4) / 1e4,
-      stage3Contribution: Math.round(contrib3 * 1e4) / 1e4,
-      cascadedIIP3: Math.round(cascadedIIP3 * 100) / 100,
-      cascadedOIP3: Math.round(cascadedOIP3 * 100) / 100
+      cascadedNF,
+      cascadedF: F_total,
+      stage1Contribution: contrib1,
+      stage2Contribution: contrib2,
+      stage3Contribution: contrib3,
+      cascadedIIP3,
+      cascadedOIP3
     }
   };
 }
@@ -915,9 +916,9 @@ function calculateSkinDepth(inputs) {
   const surfaceResistanceMOhm = surfaceResistanceOhm * 1e3;
   return {
     values: {
-      skinDepthUm: Math.round(skinDepthUm * 1e4) / 1e4,
-      skinDepthNm: Math.round(skinDepthNm * 10) / 10,
-      surfaceResistance: Math.round(surfaceResistanceMOhm * 1e4) / 1e4
+      skinDepthUm,
+      skinDepthNm,
+      surfaceResistance: surfaceResistanceMOhm
     }
   };
 }
@@ -1065,11 +1066,11 @@ function calculateWavelengthFrequency(inputs) {
   const wavenumber = 2 * Math.PI / (actualWavelengthMm * 1e-3);
   return {
     values: {
-      wavelengthMm: Math.round(wavelengthMm * 1e4) / 1e4,
-      actualWavelengthMm: Math.round(actualWavelengthMm * 1e4) / 1e4,
-      halfWaveMm: Math.round(halfWaveMm * 1e4) / 1e4,
-      quarterWaveMm: Math.round(quarterWaveMm * 1e4) / 1e4,
-      wavenumber: Math.round(wavenumber * 100) / 100
+      wavelengthMm,
+      actualWavelengthMm,
+      halfWaveMm,
+      quarterWaveMm,
+      wavenumber
     }
   };
 }
@@ -1230,11 +1231,11 @@ function calculateCoaxImpedance(inputs) {
   const cutoffFreqGHz = c / (Math.PI * D_m * Math.sqrt(er)) * 1e-9;
   return {
     values: {
-      impedance: Math.round(impedance * 100) / 100,
-      capacitancePFm: Math.round(capacitancePFm * 100) / 100,
-      inductanceNHm: Math.round(inductanceNHm * 100) / 100,
-      velocityFactor: Math.round(velocityFactor * 1e4) / 1e4,
-      cutoffFreqGHz: Math.round(cutoffFreqGHz * 100) / 100
+      impedance,
+      capacitancePFm,
+      inductanceNHm,
+      velocityFactor,
+      cutoffFreqGHz
     }
   };
 }
@@ -1659,12 +1660,12 @@ function calculateAttenuatorDesigner(inputs) {
   const tR2 = Z0 * 2 * K / (K * K - 1);
   return {
     values: {
-      piR1: Math.round(piR1 * 100) / 100,
-      piR2: Math.round(piR2 * 100) / 100,
+      piR1,
+      piR2,
       piR1Nearest: nearestE24(piR1),
       piR2Nearest: nearestE24(piR2),
-      tR1: Math.round(tR1 * 100) / 100,
-      tR2: Math.round(tR2 * 100) / 100,
+      tR1,
+      tR2,
       tR1Nearest: nearestE24(tR1),
       tR2Nearest: nearestE24(tR2)
     }
@@ -1890,7 +1891,8 @@ var smithChart = {
   title: "Smith Chart Calculator",
   shortTitle: "Smith Chart",
   category: "rf",
-  description: "Interactive Smith Chart for impedance matching and RF network analysis. Enter load impedance to visualize reflection coefficient, VSWR circle, and normalized impedance.",
+  description: "Enter your load impedance (R + jX) to instantly see reflection coefficient, VSWR, return loss, and where it falls on the Smith Chart. Includes real-world presets \u2014 antenna, cable, and reactive loads.",
+  metaTitle: "Online Smith Chart Calculator \u2014 Interactive Impedance Matching Tool",
   keywords: [
     "smith chart",
     "impedance matching",
@@ -2116,11 +2118,11 @@ function calculateTraceWidth(inputs) {
   const powerDiss = current * current * resistance;
   return {
     values: {
-      width2221mm: Math.round(width2221mm * 1e3) / 1e3,
-      width2152mm: Math.round(width2152mm * 1e3) / 1e3,
-      resistance: Math.round(resistance * 1e6) / 1e6,
-      voltageDrop: Math.round(voltageDrop * 1e4) / 1e4,
-      powerDiss: Math.round(powerDiss * 1e4) / 1e4
+      width2221mm,
+      width2152mm,
+      resistance,
+      voltageDrop,
+      powerDiss
     }
   };
 }
@@ -2279,9 +2281,9 @@ function calculateTraceResistance(inputs) {
   const sheetResistance = rho / thicknessM * 1e3;
   return {
     values: {
-      resistance: Math.round(resistance * 1e6) / 1e6,
-      resistanceMOhm: Math.round(resistance * 1e6) / 1e3,
-      sheetResistance: Math.round(sheetResistance * 100) / 100
+      resistance,
+      resistanceMOhm: resistance * 1e3,
+      sheetResistance
     }
   };
 }
@@ -2407,11 +2409,11 @@ function calculateDifferentialPair(inputs) {
   const zcom = zeven / 2;
   return {
     values: {
-      zdiff: Math.round(zdiff * 100) / 100,
-      zcom: Math.round(zcom * 100) / 100,
-      z0single: Math.round(z0Single * 100) / 100,
-      zodd: Math.round(zodd * 100) / 100,
-      zeven: Math.round(zeven * 100) / 100
+      zdiff,
+      zcom,
+      z0single: z0Single,
+      zodd,
+      zeven
     }
   };
 }
@@ -2625,11 +2627,11 @@ function calculateVia(inputs) {
   }
   return {
     values: {
-      impedance: Math.round(impedance * 100) / 100,
-      capacitancePF: Math.round(capacitancePF * 1e3) / 1e3,
-      inductanceNH: Math.round(inductanceNH * 1e3) / 1e3,
-      aspectRatio: Math.round(aspectRatio * 100) / 100,
-      currentCapacityA: Math.round(currentCapacityA * 100) / 100
+      impedance,
+      capacitancePF,
+      inductanceNH,
+      aspectRatio,
+      currentCapacityA
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -2865,11 +2867,11 @@ function calculateStackup(inputs) {
   }
   return {
     values: {
-      traceWidthL1mm: Math.round(traceWidthL1mm * 1e3) / 1e3,
-      traceWidthL3mm: Math.round(traceWidthL3mm * 1e3) / 1e3,
-      achievedImpedanceL1: Math.round(achievedImpedanceL1 * 100) / 100,
-      achievedImpedanceL3: Math.round(achievedImpedanceL3 * 100) / 100,
-      totalThicknessMm: Math.round(totalThicknessMm * 1e3) / 1e3
+      traceWidthL1mm,
+      traceWidthL3mm,
+      achievedImpedanceL1,
+      achievedImpedanceL3,
+      totalThicknessMm
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -3082,12 +3084,12 @@ function calculateVoltageDivider(inputs) {
   const ratio = r2 / (r1 + r2);
   return {
     values: {
-      vout: Math.round(vout * 1e4) / 1e4,
-      current: Math.round(current * 1e6) / 1e6,
-      rThev: Math.round(rThev * 100) / 100,
-      powerR1: Math.round(powerR1 * 1e6) / 1e6,
-      powerR2: Math.round(powerR2 * 1e6) / 1e6,
-      ratio: Math.round(ratio * 1e4) / 1e4
+      vout,
+      current,
+      rThev,
+      powerR1,
+      powerR2,
+      ratio
     }
   };
 }
@@ -3249,11 +3251,11 @@ function calculateLEDResistor(inputs) {
   const pNearest = vDrop * (iActual / 1e3);
   return {
     values: {
-      rExact: Math.round(rExact * 100) / 100,
+      rExact,
       rNearest: nearest,
-      iActual: Math.round(iActual * 100) / 100,
-      power: Math.round(power * 1e4) / 1e4,
-      pNearest: Math.round(pNearest * 1e4) / 1e4
+      iActual,
+      power,
+      pNearest
     }
   };
 }
@@ -3723,10 +3725,10 @@ function calculateBatteryLife(inputs) {
   const usableCapacityMAh = usableCapacity;
   return {
     values: {
-      runtimeHours: Math.round(runtimeHours * 10) / 10,
-      runtimeDays: Math.round(runtimeDays * 100) / 100,
-      effectiveCurrent: Math.round(effectiveCurrent * 100) / 100,
-      usableCapacityMAh: Math.round(usableCapacityMAh)
+      runtimeHours,
+      runtimeDays,
+      effectiveCurrent,
+      usableCapacityMAh
     }
   };
 }
@@ -4427,7 +4429,7 @@ function calculateSamplingNyquist(inputs) {
   const nyquistRate_Hz = 2 * signalFreq;
   const oversamplingRatio = samplingRate / nyquistRate_Hz;
   const aliasFreq_Hz = oversamplingRatio < 1 ? Math.abs(samplingRate - signalFreq) : 0;
-  const dynamicRangeDB = 6.02 * adcBits + 1.76;
+  const dynamicRangeDB = 20 * Math.log10(2) * adcBits + 10 * Math.log10(1.5);
   const snr_dB = dynamicRangeDB;
   const dataRateMbps = samplingRate * adcBits * channels / 1e6;
   const antiAliasingFC_Hz = samplingRate / 2;
@@ -4639,12 +4641,12 @@ function calculateDipoleAntenna(inputs) {
   const feedpointVswr_50 = (1 + gamma) / (1 - gamma);
   return {
     values: {
-      halfWaveLength_mm: Math.round(halfWaveLength_mm * 10) / 10,
-      quarterWaveLength_mm: Math.round(quarterWaveLength_mm * 10) / 10,
-      gainDbi: Math.round(gainDbi * 100) / 100,
-      inputImpedance_ohm: Math.round(inputImpedance_ohm * 10) / 10,
-      feedpointVswr_50: Math.round(feedpointVswr_50 * 100) / 100,
-      lambda_m: Math.round(lambda_m * 1e4) / 1e4
+      halfWaveLength_mm,
+      quarterWaveLength_mm,
+      gainDbi,
+      inputImpedance_ohm,
+      feedpointVswr_50,
+      lambda_m
     },
     intermediateValues: {
       radiationResistance_ohm,
@@ -4657,15 +4659,18 @@ var dipoleAntenna = {
   title: "Half-Wave Dipole Antenna Calculator",
   shortTitle: "Dipole Antenna",
   category: "antenna",
-  description: "Calculate the physical length, wavelength, gain, radiation resistance, and 50\u03A9 VSWR for a half-wave dipole antenna at any frequency. Supports velocity factor for insulated wire.",
+  description: "Calculate dipole antenna length for any frequency \u2014 enter MHz, get half-wave and quarter-wave dimensions in mm. Includes gain (2.15 dBi), radiation resistance (73 \u03A9), and 50 \u03A9 VSWR. Supports velocity factor for insulated wire.",
+  metaTitle: "Dipole Antenna Calculator \u2014 Length, Gain & VSWR for Any Frequency",
   keywords: [
     "dipole antenna calculator",
+    "antenna calculator",
     "half wave dipole",
     "antenna length calculator",
     "dipole length frequency",
     "antenna design",
     "radiation resistance",
-    "dipole gain dbi"
+    "dipole gain dbi",
+    "antenna calculation"
   ],
   inputs: [
     {
@@ -4834,16 +4839,16 @@ function calculatePatchAntenna(inputs) {
   const gainDbi = 7;
   return {
     values: {
-      patchWidth_mm: Math.round(patchWidth_mm * 100) / 100,
-      patchLength_mm: Math.round(patchLength_mm * 100) / 100,
-      effectiveDielectric: Math.round(erEff * 1e4) / 1e4,
-      edgeFeedImpedance_ohm: Math.round(edgeFeedImpedance_ohm * 10) / 10,
-      gainDbi: Math.round(gainDbi * 10) / 10
+      patchWidth_mm,
+      patchLength_mm,
+      effectiveDielectric: erEff,
+      edgeFeedImpedance_ohm,
+      gainDbi
     },
     intermediateValues: {
-      lambda_mm: Math.round(lambda * 1e5) / 100,
-      deltaL_mm: Math.round(deltaL * 1e6) / 1e3,
-      insetFeedPosition_mm: Math.round(insetFeedPosition_mm * 100) / 100
+      lambda_mm: lambda * 1e3,
+      deltaL_mm: deltaL * 1e3,
+      insetFeedPosition_mm
     }
   };
 }
@@ -5024,11 +5029,11 @@ function calculateEirp(inputs) {
   }
   return {
     values: {
-      eirp_dbm: Math.round(eirp_dbm * 100) / 100,
-      erp_dbm: Math.round(erp_dbm * 100) / 100,
-      eirp_w: Math.round(eirp_w * 1e3) / 1e3,
-      margin_db: Math.round(margin_db * 100) / 100,
-      maxPermittedGain_dbi: Math.round(maxPermittedGain_dbi * 100) / 100
+      eirp_dbm,
+      erp_dbm,
+      eirp_w,
+      margin_db,
+      maxPermittedGain_dbi
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -7440,8 +7445,9 @@ var capacitorEnergy = {
   title: "Capacitor Energy & Charge Calculator",
   shortTitle: "Capacitor Energy",
   category: "general",
-  description: "Calculate energy stored, charge, and current in capacitors for power supply design",
-  keywords: ["capacitor energy", "capacitor charge", "E = 1/2 CV^2", "capacitor calculator", "capacitor current", "energy storage"],
+  description: "Calculate capacitor energy (E = 1/2\xB7CV\xB2), stored charge (Q = CV), and average charging current. Enter capacitance in \u03BCF and voltage \u2014 get energy in mJ, charge in mC, and power instantly.",
+  metaTitle: "Capacitor Energy & Charge Calculator \u2014 E = 1/2\xB7CV\xB2 with Charge Current",
+  keywords: ["capacitor energy calculator", "capacitor charge calculator", "E = 1/2 CV^2", "capacitor calculator", "capacitor current", "energy storage", "capacitor joules"],
   inputs: [
     {
       key: "capacitance",
@@ -7500,7 +7506,7 @@ var capacitorEnergy = {
   ],
   calculate: calculateCapacitorEnergy,
   formula: {
-    primary: "E = \xBDCV\xB2, Q = CV, I_avg = Q/t",
+    primary: "E = 1/2\xB7CV\xB2, Q = CV, I_avg = Q/t",
     variables: [
       { symbol: "E", description: "Stored energy", unit: "J" },
       { symbol: "C", description: "Capacitance", unit: "F" },
@@ -8226,7 +8232,7 @@ var inductorEnergy = {
   ],
   calculate: calculateInductorEnergy,
   formula: {
-    primary: "E = \xBDLI\xB2, \u03C4 = L/R, i(t) = I_final \xD7 (1 - e^(-t/\u03C4))",
+    primary: "E = 1/2\xB7LI\xB2, \u03C4 = L/R, i(t) = I_final \xD7 (1 - e^(-t/\u03C4))",
     variables: [
       { symbol: "E", description: "Stored energy", unit: "J" },
       { symbol: "L", description: "Inductance", unit: "H" },
@@ -8531,7 +8537,7 @@ var threePhasePower = {
 // src/lib/calculators/antenna/antenna-beamwidth.ts
 function calculateAntennaBeamwidth(inputs) {
   const { gain, frequency, apertureDiameter, apertureEfficiency } = inputs;
-  const lambda = 3e8 / (frequency * 1e9);
+  const lambda = 299792458 / (frequency * 1e9);
   const G_linear = Math.pow(10, gain / 10);
   const beamwidthHPBW = 70 * lambda / apertureDiameter;
   const beamwidthNulls = 140 * lambda / apertureDiameter;
@@ -8661,7 +8667,7 @@ var antennaBeamwidth = {
 // src/lib/calculators/signal/snr-calculator.ts
 function calculateSNR(inputs) {
   const { bandwidth, noiseFigure, signalPower, temperature } = inputs;
-  const k = 138e-25;
+  const k = 1380649e-29;
   const bw_Hz = bandwidth * 1e6;
   const thermalNoise = 10 * Math.log10(k * temperature * bw_Hz) + 30;
   const noiseFloor = thermalNoise + noiseFigure;
@@ -10156,10 +10162,10 @@ function calculateReturnLossError(inputs) {
   const dirError = Math.abs(dutReturnLoss - rlDirOnly);
   return {
     values: {
-      rlMax: Math.round(rlMax * 10) / 10,
-      rlMin: Math.round(rlMin * 10) / 10,
-      uncertaintyDb: Math.round(uncertaintyDb * 10) / 10,
-      dirError: Math.round(dirError * 100) / 100
+      rlMax,
+      rlMin,
+      uncertaintyDb,
+      dirError
     }
   };
 }
@@ -10318,7 +10324,7 @@ var returnLossError = {
 // src/lib/calculators/signal/adc-snr.ts
 function calculateAdcSnr(inputs) {
   const { bits, inputFreq, samplingFreq, jitter } = inputs;
-  const theoreticalSnr = 6.02 * bits + 1.76;
+  const theoreticalSnr = 20 * Math.log10(2) * bits + 10 * Math.log10(1.5);
   const t_jitter_s = jitter * 1e-12;
   const f_in_Hz = inputFreq * 1e6;
   const snrJitter = -20 * Math.log10(2 * Math.PI * f_in_Hz * Math.max(t_jitter_s, 1e-20));
@@ -10326,8 +10332,8 @@ function calculateAdcSnr(inputs) {
     Math.pow(10, -theoreticalSnr / 10) + Math.pow(10, -snrJitter / 10)
   );
   const snrWithJitter = combinedSnr;
-  const enob = (combinedSnr - 1.76) / 6.02;
-  const sfdr = 3 / 2 * (6.02 * bits + 1.76);
+  const enob = (combinedSnr - 10 * Math.log10(1.5)) / (20 * Math.log10(2));
+  const sfdr = 3 / 2 * (20 * Math.log10(2) * bits + 10 * Math.log10(1.5));
   const noisePower = -combinedSnr;
   const enobClamped = Math.max(0, Math.min(bits, enob));
   return {
@@ -10602,7 +10608,7 @@ var fftBinResolution = {
 // src/lib/calculators/signal/johnson-noise.ts
 function calculateJohnsonNoise(inputs) {
   const { resistance, temperature, bandwidth } = inputs;
-  const k = 138064852e-31;
+  const k = 1380649e-29;
   const T_K = temperature + 273.15;
   const R = resistance;
   const BW = bandwidth * 1e6;
@@ -10746,7 +10752,8 @@ var amModulationIndex = {
   title: "AM Modulation Index Calculator",
   shortTitle: "AM Modulation Index",
   category: "signal",
-  description: "Calculate amplitude modulation index, sidebands, bandwidth, and power efficiency for AM radio signals",
+  description: "Calculate AM modulation index: m = (Amax \u2212 Amin) / (Amax + Amin). Computes sideband amplitudes, bandwidth (2 \xD7 fm), power efficiency, and flags overmodulation (m > 1).",
+  metaTitle: "AM Modulation Index Calculator \u2014 Formula, Bandwidth & Sidebands",
   keywords: [
     "AM modulation",
     "amplitude modulation index",
@@ -10977,7 +10984,7 @@ function calculateOversamplingSnr(inputs) {
   const { bits, oversamplingRatio, noiseShapingOrder } = inputs;
   const OSR = Math.max(oversamplingRatio, 1);
   const L = Math.round(noiseShapingOrder);
-  const baseSnr = 6.02 * bits + 1.76;
+  const baseSnr = 20 * Math.log10(2) * bits + 10 * Math.log10(1.5);
   let oversampledSnr;
   if (L <= 0) {
     oversampledSnr = baseSnr + 10 * Math.log10(OSR);
@@ -11233,9 +11240,10 @@ var digitalFilterOrder = {
 // src/lib/calculators/antenna/yagi-antenna.ts
 function calculateYagiAntenna(inputs) {
   const { frequency, numElements, boomLength } = inputs;
+  const c = 299792458;
   const f_MHz = Math.max(frequency, 1e-3);
   const N = Math.round(Math.min(Math.max(numElements, 2), 20));
-  const lambda_m = 300 / f_MHz;
+  const lambda_m = c / (f_MHz * 1e6);
   const lambda_mm = lambda_m * 1e3;
   const driverLength = 0.47 * lambda_mm;
   const reflectorLength = 0.5 * lambda_mm;
@@ -11371,7 +11379,7 @@ var yagiAntenna = {
 function calculateHornAntenna(inputs) {
   const { frequency, apertureWidth, apertureHeight } = inputs;
   const f_Hz = frequency * 1e9;
-  const c = 3e8;
+  const c = 299792458;
   const lambda_m = c / f_Hz;
   const lambda_mm = lambda_m * 1e3;
   const W_m = apertureWidth * 1e-3;
@@ -11502,7 +11510,7 @@ var hornAntenna = {
 // src/lib/calculators/antenna/parabolic-dish-antenna.ts
 function calculateParabolicDishAntenna(inputs) {
   const { frequency, diameter, efficiency } = inputs;
-  const lambda_m = 0.3 / Math.max(frequency, 1e-6);
+  const lambda_m = 299792458 / (Math.max(frequency, 1e-6) * 1e9);
   const eta = efficiency / 100;
   const radius = diameter / 2;
   const A_physical = Math.PI * radius * radius;
@@ -11623,16 +11631,17 @@ var parabolicDishAntenna = {
 // src/lib/calculators/antenna/loop-antenna.ts
 function calculateLoopAntenna(inputs) {
   const { frequency, diameter, conductorDiam } = inputs;
+  const c0 = 299792458;
   const f_Hz = frequency * 1e6;
-  const lambda_m = 300 / Math.max(frequency, 1e-9);
-  const c = Math.PI * diameter;
+  const lambda_m = c0 / (Math.max(frequency, 1e-9) * 1e6);
+  const circumference = Math.PI * diameter;
   const A_m2 = Math.PI * Math.pow(diameter / 2, 2);
-  const Rrad = 31171 * Math.pow(A_m2 / Math.max(lambda_m * lambda_m, 1e-30), 2);
+  const Rrad = 320 * Math.pow(Math.PI, 4) * Math.pow(A_m2 / Math.max(lambda_m * lambda_m, 1e-30), 2);
   const sigma = 58e6;
   const mu0 = 4 * Math.PI * 1e-7;
   const Rs = Math.sqrt(Math.PI * f_Hz * mu0 / sigma);
   const conductorRadius_m = conductorDiam * 1e-3 / 2;
-  const lossResistance = c / (2 * Math.PI * conductorRadius_m) * Rs;
+  const lossResistance = circumference / (2 * Math.PI * conductorRadius_m) * Rs;
   const gain = 1.76;
   const omega = 2 * Math.PI * f_Hz;
   const r_loop = diameter / 2;
@@ -11643,7 +11652,7 @@ function calculateLoopAntenna(inputs) {
   const bandwidth = frequency * 1e3 / Math.max(Q, 1e-3);
   return {
     values: {
-      circumference: c,
+      circumference,
       radiation_resistance: Rrad,
       loss_resistance: lossResistance,
       gain,
@@ -13946,10 +13955,10 @@ var pcbTraceInductance = {
   ],
   calculate: calculatePcbTraceInductance,
   formula: {
-    primary: "L = (\u03BC\u2080l / 2\u03C0) \xD7 [ln(2l/(w+t)) + 0.5 + (w+t)/(3l)]",
+    primary: "L = (mu_0l / 2\u03C0) \xD7 [ln(2l/(w+t)) + 0.5 + (w+t)/(3l)]",
     variables: [
       { symbol: "L", description: "Inductance", unit: "H" },
-      { symbol: "\u03BC\u2080", description: "Permeability of free space", unit: "H/m" },
+      { symbol: "mu_0", description: "Permeability of free space", unit: "H/m" },
       { symbol: "l", description: "Trace length", unit: "m" },
       { symbol: "w", description: "Trace width", unit: "m" },
       { symbol: "t", description: "Copper thickness", unit: "m" }
@@ -15256,7 +15265,8 @@ var bldcMotor = {
   title: "BLDC Motor Performance Calculator",
   shortTitle: "BLDC Motor",
   category: "motor",
-  description: "Calculate brushless DC motor no-load RPM, stall torque, maximum efficiency, input power, and propeller thrust from Kv rating and electrical parameters",
+  description: "BLDC motor calculator: enter Kv rating and voltage to get no-load RPM, stall torque, max efficiency point, and propeller thrust. Supports drone, RC, and industrial winding calculations.",
+  metaTitle: "BLDC Motor Calculator \u2014 Kv, RPM, Stall Torque & Propeller Thrust",
   keywords: [
     "BLDC motor",
     "brushless motor",
@@ -16221,15 +16231,17 @@ var rtdTemperature = {
   title: "RTD Temperature Calculator (PT100/PT1000)",
   shortTitle: "RTD Temperature",
   category: "sensor",
-  description: "Calculate temperature from PT100 or PT1000 RTD (Resistance Temperature Detector) measured resistance using the linear Callendar-Van Dusen approximation.",
+  description: "Calculate temperature from PT100 or PT1000 resistance \u2014 enter measured ohms, get \xB0C instantly. Uses the Callendar-Van Dusen linear approximation. Includes presets for common PT100 values (119.4 \u03A9 = 50 \xB0C, 138.5 \u03A9 = 100 \xB0C).",
+  metaTitle: "PT100 RTD Calculator \u2014 Convert Resistance to Temperature (\xB0C)",
   keywords: [
-    "RTD temperature",
     "PT100 calculator",
+    "RTD temperature calculator",
     "PT1000 calculator",
     "resistance temperature detector",
     "Callendar-Van Dusen",
-    "temperature from resistance",
-    "RTD sensor"
+    "pt100 resistance to temperature",
+    "RTD sensor",
+    "pt100 calculation"
   ],
   inputs: [
     {
@@ -16466,7 +16478,8 @@ var hallEffectSensor = {
   title: "Hall Effect Sensor Calculator",
   shortTitle: "Hall Effect Sensor",
   category: "sensor",
-  description: "Calculate Hall voltage, Hall coefficient, and sensitivity for Hall effect sensors. Useful for magnetic field measurement, current sensing, and position detection.",
+  description: "Calculate Hall voltage V_H = R_H\xB7I\xB7B/t, carrier density, and sensitivity for Hall effect sensors. Covers magnetic field measurement, current sensing, and position detection applications.",
+  metaTitle: "Hall Effect Sensor Calculator \u2014 Hall Voltage, Sensitivity & Carrier Density",
   keywords: [
     "Hall effect",
     "Hall voltage",
@@ -17598,7 +17611,8 @@ var frequencyWavelength = {
   title: "Frequency to Wavelength Converter",
   shortTitle: "Frequency \u2194 Wavelength",
   category: "unit-conversion",
-  description: "Convert frequency to wavelength in any medium. Calculates full, half, and quarter wavelengths for antenna design, transmission line, and RF system planning.",
+  description: "Convert frequency to wavelength instantly: 150 MHz = 2.0 m, 2.4 GHz = 12.5 cm, 5.8 GHz = 5.2 cm. Calculates full, half, and quarter wavelengths for any medium \u2014 antenna design, coax, and RF planning.",
+  metaTitle: "Wavelength Calculator \u2014 Convert MHz & GHz to Meters, \u03BB/2 & \u03BB/4",
   keywords: [
     "frequency wavelength",
     "wavelength calculator",
@@ -17726,7 +17740,8 @@ var dbmWatts = {
   title: "dBm to Watts Power Converter",
   shortTitle: "dBm \u2194 Watts",
   category: "unit-conversion",
-  description: "Convert RF power between dBm, Watts, milliwatts, dBW, dB\u03BCV, and RMS volts into 50\u03A9. Essential for link budgets, amplifier analysis, and RF system design.",
+  description: "Instant dBm \u2194 watts conversion: 0 dBm = 1 mW, 10 dBm = 10 mW, 20 dBm = 100 mW, 30 dBm = 1 W. Also converts dBW, dB\u03BCV, and RMS volts for 50 \u03A9 RF systems.",
+  metaTitle: "dBm to Watts Converter \u2014 0 dBm = 1 mW, 10 dBm = 10 mW, 30 dBm = 1 W",
   keywords: [
     "dBm to watts",
     "power converter",
@@ -18199,7 +18214,7 @@ var inductanceUnits = {
   ],
   calculate: calculateInductanceUnits,
   formula: {
-    primary: "1 H = 10\xB3 mH = 10\u2076 \u03BCH = 10\u2079 nH = 10\xB9\xB2 pH",
+    primary: "1 H = 10\xB3 mH = 10\u2076 mu H = 10\u2079 nH = 10\xB9\xB2 pH",
     variables: []
   },
   visualization: { type: "none" },
@@ -18252,7 +18267,7 @@ var capacitanceUnits = {
   ],
   calculate: calculateCapacitanceUnits,
   formula: {
-    primary: "1 F = 10\xB3 mF = 10\u2076 \u03BCF = 10\u2079 nF = 10\xB9\xB2 pF",
+    primary: "1 F = 10\xB3 mF = 10\u2076 mu F = 10\u2079 nF = 10\xB9\xB2 pF",
     variables: []
   },
   visualization: { type: "none" },
@@ -18357,7 +18372,7 @@ var currentUnits = {
   ],
   calculate: calculateCurrentUnits,
   formula: {
-    primary: "1 A = 10\xB3 mA = 10\u2076 \u03BCA = 10\u2079 nA = 10\xB9\xB2 pA",
+    primary: "1 A = 10\xB3 mA = 10\u2076 mu A = 10\u2079 nA = 10\xB9\xB2 pA",
     variables: []
   },
   visualization: { type: "none" },
@@ -18409,7 +18424,7 @@ var voltageUnits = {
   ],
   calculate: calculateVoltageUnits,
   formula: {
-    primary: "1 V = 10\xB3 mV = 10\u2076 \u03BCV",
+    primary: "1 V = 10\xB3 mV = 10\u2076 mu V",
     variables: []
   },
   visualization: { type: "none" },
@@ -18464,7 +18479,7 @@ var timeUnits = {
   ],
   calculate: calculateTimeUnits,
   formula: {
-    primary: "1 s = 10\xB3 ms = 10\u2076 \u03BCs = 10\u2079 ns = 10\xB9\xB2 ps = 10\xB9\u2075 fs",
+    primary: "1 s = 10\xB3 ms = 10\u2076 mu s = 10\u2079 ns = 10\xB9\xB2 ps = 10\xB9\u2075 fs",
     variables: []
   },
   visualization: { type: "none" },
@@ -18515,7 +18530,7 @@ var magneticFluxUnits = {
   ],
   calculate: calculateMagneticFluxUnits,
   formula: {
-    primary: "1 T = 10\u2074 G = 10\xB3 mT = 10\u2076 \u03BCT",
+    primary: "1 T = 10\u2074 G = 10\xB3 mT = 10\u2076 mu T",
     variables: []
   },
   visualization: { type: "none" },
@@ -18541,8 +18556,9 @@ var dataRateUnits = {
   title: "Data Rate Unit Converter",
   shortTitle: "Data Rate Converter",
   category: "unit-conversion",
-  description: "Convert data rates between bits per second (bps), kbps, Mbps, Gbps, and bytes per second.",
-  keywords: ["data rate converter", "bps to Mbps", "Mbps to MBps", "bandwidth converter", "bits per second", "data throughput"],
+  description: "Convert data rates instantly: bps \u2194 kbps \u2194 Mbps \u2194 Gbps and bytes/sec. Includes presets for UART (9600 bps), CAN (1 Mbps), Ethernet (100 Mbps), and GbE. Also converts baud rate to kbps.",
+  metaTitle: "Data Rate Converter \u2014 bps, kbps, Mbps, Gbps & Baud Rate Calculator",
+  keywords: ["data rate converter", "baud rate calculator", "bps to Mbps", "baud rate converter", "Mbps to MBps", "bandwidth converter", "bits per second", "data throughput", "baud rate to kbps"],
   inputs: [
     {
       key: "bps",
@@ -19480,9 +19496,26 @@ var pllLoopFilter = {
 // src/lib/calculators/signal/ber-snr.ts
 function erfc(x) {
   if (x < 0) return 2 - erfc(-x);
-  const t = 1 / (1 + 0.3275911 * x);
-  const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
-  return poly * Math.exp(-x * x);
+  if (x === 0) return 1;
+  if (x > 27) return 0;
+  if (x < 0.5) {
+    const x2 = x * x;
+    let term = 1;
+    let sum = 1;
+    for (let n = 1; n <= 50; n++) {
+      term *= -x2 / n;
+      sum += term / (2 * n + 1);
+      if (Math.abs(term / (2 * n + 1)) < 1e-17) break;
+    }
+    return 1 - 2 / Math.sqrt(Math.PI) * x * sum;
+  }
+  const N = 200;
+  let f = 0;
+  for (let n = N; n >= 2; n--) {
+    f = (n - 1) / 2 / (x + f);
+  }
+  f = 1 / (x + f);
+  return Math.exp(-x * x) / Math.sqrt(Math.PI) * f;
 }
 function calculateBerSnr(inputs) {
   const { ebN0dB, modulation } = inputs;
@@ -19529,7 +19562,8 @@ var berSnr = {
   title: "Bit Error Rate (BER) Calculator",
   shortTitle: "BER vs Eb/N0",
   category: "signal",
-  description: "Calculate bit error rate (BER) from Eb/N0 for BPSK, QPSK, 8PSK, and 16QAM digital modulations. Essential for digital communications system design.",
+  description: "Free online BER calculator \u2014 enter Eb/N0 (dB) to instantly get bit error rate for BPSK, QPSK, 8PSK, and 16QAM. Plots BER curves and compares to the Shannon limit.",
+  metaTitle: "BER Calculator \u2014 Bit Error Rate vs Eb/N0 for BPSK, QPSK, QAM",
   keywords: [
     "bit error rate",
     "BER calculator",
@@ -19611,7 +19645,7 @@ var berSnr = {
   ],
   calculate: calculateBerSnr,
   formula: {
-    primary: "BER = \xBD \xB7 erfc(\u221A(Eb/N0))  [BPSK/QPSK]",
+    primary: "BER = 1/2 \xB7 erfc(\u221A(Eb/N0))  [BPSK/QPSK]",
     latex: "BER = \\frac{1}{2} \\text{erfc}\\left(\\sqrt{E_b/N_0}\\right)",
     variables: [
       { symbol: "BER", description: "Bit error rate", unit: "" },
@@ -19634,7 +19668,7 @@ function calculateQuantizationNoise(inputs) {
   }
   const lsb_V = vref / Math.pow(2, bits);
   const lsb = lsb_V * 1e3;
-  const sqnr = 6.02 * bits + 1.76;
+  const sqnr = 20 * Math.log10(2) * bits + 10 * Math.log10(1.5);
   const enob = bits;
   const dynamicRange = 20 * Math.log10(Math.pow(2, bits));
   const qNoise_V = lsb_V / Math.sqrt(12);
@@ -19930,7 +19964,8 @@ var powerDensity = {
   title: "RF Power Density Calculator",
   shortTitle: "RF Power Density",
   category: "rf",
-  description: "Calculate RF power density (W/m\xB2), electric field strength (V/m), and magnetic field strength (A/m) from EIRP and distance. Useful for EMF exposure and safety analysis.",
+  description: "Calculate power density in W/m\xB2 from EIRP and distance using S = EIRP/(4\u03C0d\xB2). Get electric field E in V/m, magnetic field H in A/m, and check FCC & ICNIRP EMF safety exposure limits instantly.",
+  metaTitle: "Power Density Calculator \u2014 W/m\xB2, E-Field (V/m) & EMF Safety Limits",
   keywords: [
     "power density",
     "electric field strength",
@@ -23210,7 +23245,7 @@ var groundPlaneImpedance = {
   ],
   calculate: calculateGroundPlaneImpedance,
   formula: {
-    primary: "\u03B4 = 1/\u221A(\u03C0f\u03BC\u03C3),  R_AC = R_DC \xD7 t/(2\u03B4)",
+    primary: "\u03B4 = 1/\u221A(pi fmusigma),  R_AC = R_DC \xD7 t/(2\u03B4)",
     variables: [
       { symbol: "\u03B4", description: "Skin depth", unit: "m" },
       { symbol: "\u03C3", description: "Conductivity", unit: "S/m" }
@@ -23546,8 +23581,9 @@ var audioPowerAmplifier = {
   title: "Audio Power Amplifier Calculator",
   shortTitle: "Audio Amplifier",
   category: "audio",
-  description: "Calculate audio amplifier output power, efficiency, THD class estimate, SNR, and input sensitivity for Class A, AB, and D amplifiers.",
-  keywords: ["audio amplifier power calculator", "class d amplifier", "speaker power output", "amplifier efficiency", "audio snr calculator"],
+  description: "Calculate amplifier output power from supply voltage and speaker impedance. Get max power, RMS power, THD estimate by class (A/AB/D), SNR, and input sensitivity for speaker matching.",
+  metaTitle: "Audio Amplifier Power Calculator \u2014 Output Watts, THD & Speaker Matching",
+  keywords: ["amplifier calculator", "audio amplifier power calculator", "amp speaker calculator", "class d amplifier", "speaker power output", "amplifier efficiency", "audio snr calculator", "amp to speaker calculator"],
   inputs: [
     {
       key: "vcc",
@@ -23845,7 +23881,8 @@ var roomModes = {
   title: "Room Acoustic Modes",
   shortTitle: "Room Modes",
   category: "audio",
-  description: "Calculate room axial resonant frequencies and Schroeder frequency for acoustic treatment and speaker placement.",
+  description: "Calculate room axial modes using f = n\xB7c/(2L). Find all standing wave frequencies, Schroeder frequency, and mode spacing for acoustic treatment and speaker placement.",
+  metaTitle: "Room Modes Calculator \u2014 Axial Frequencies f = n\xB7c/(2L) & Schroeder Frequency",
   keywords: ["room modes", "room acoustics", "standing waves", "axial modes", "Schroeder frequency", "room resonance"],
   inputs: [
     { key: "length", label: "Room Length", symbol: "L", unit: "m", defaultValue: 5, min: 0.5, step: 0.1 },
@@ -23986,7 +24023,8 @@ var audioSnr = {
   title: "Audio SNR & Dynamic Range",
   shortTitle: "Audio SNR",
   category: "audio",
-  description: "Calculate audio signal-to-noise ratio, dynamic range, and equivalent noise bits from signal and noise floor levels.",
+  description: "Calculate audio SNR and dynamic range. 16-bit audio = 98 dB, 24-bit = 146 dB theoretical SNR. Formula: SNR = 6.02\xB7N + 1.76 dB. Enter bit depth or signal/noise levels in dBV.",
+  metaTitle: "Audio SNR Calculator \u2014 16-bit = 98 dB, 24-bit = 146 dB Dynamic Range",
   keywords: ["audio SNR", "signal to noise ratio audio", "dynamic range audio", "noise floor audio", "audio quality", "ENOB audio"],
   inputs: [
     { key: "signalLevel", label: "Signal Level", symbol: "V_sig", unit: "dBV", defaultValue: 0, min: -80, max: 30 },
@@ -24173,8 +24211,9 @@ var subwooferBox = {
   title: "Subwoofer Enclosure Volume",
   shortTitle: "Subwoofer Box",
   category: "audio",
-  description: "Calculate optimal subwoofer box (sealed and ported) volume and port tuning frequency from Thiele-Small parameters (Vas, Qts, Fs).",
-  keywords: ["subwoofer box calculator", "speaker enclosure", "Thiele-Small", "ported box", "sealed box subwoofer", "Vas Qts Fs"],
+  description: "Calculate subwoofer box volume for sealed and ported enclosures from Thiele-Small parameters (Vas, Qts, Fs). Get optimal internal volume, port tuning frequency, and \u22123 dB cutoff instantly.",
+  metaTitle: "Subwoofer Box Calculator \u2014 Sealed & Ported Volume from Thiele-Small Parameters",
+  keywords: ["subwoofer box calculator", "bass box calculator", "speaker enclosure calculator", "Thiele-Small", "ported box", "sealed box subwoofer", "Vas Qts Fs"],
   inputs: [
     { key: "vas", label: "Vas (Equivalent Volume)", symbol: "Vas", unit: "L", defaultValue: 50, min: 0.1, tooltip: "From driver datasheet" },
     { key: "qts", label: "Qts (Total Q)", symbol: "Qts", unit: "", defaultValue: 0.35, min: 0.01, max: 2, step: 0.01, tooltip: "Qts < 0.35 \u2192 vented, 0.35\u20130.7 \u2192 sealed" },
@@ -24483,8 +24522,9 @@ var audioDelayTime = {
   title: "Audio Delay & Echo Time Calculator",
   shortTitle: "Delay Time",
   category: "audio",
-  description: "Calculate musically-synced delay times from BPM and note value, plus acoustic propagation delay from speaker distance.",
-  keywords: ["audio delay time", "BPM delay calculator", "delay tempo sync", "echo time", "reverb time", "delay milliseconds BPM"],
+  description: "Calculate audio delay time in milliseconds from BPM and note value \u2014 quarter, eighth, dotted, triplet. Also computes acoustic propagation delay from speaker distance for live sound alignment.",
+  metaTitle: "Audio Delay Calculator \u2014 BPM to Milliseconds, Tempo Sync & Echo Time",
+  keywords: ["audio delay calculator", "BPM to ms", "delay time calculator", "BPM delay calculator", "delay tempo sync", "echo time", "reverb time", "delay milliseconds BPM"],
   inputs: [
     { key: "bpm", label: "Tempo (BPM)", symbol: "BPM", unit: "bpm", defaultValue: 120, min: 20, max: 300 },
     {
@@ -24541,8 +24581,9 @@ var powerAmplifierGain = {
   title: "Power Amplifier Gain Calculator",
   shortTitle: "Amplifier Gain",
   category: "audio",
-  description: "Calculate power amplifier voltage gain (V/V and dB) and power gain from input/output voltage and power measurements.",
-  keywords: ["amplifier gain", "power amplifier dB", "voltage gain amplifier", "gain dB", "amplifier sensitivity", "audio gain"],
+  description: "Calculate amplifier gain in dB from input and output voltage or power. Get voltage gain (V/V and dB) and power gain (W/W and dB) \u2014 useful for setting amp gain, matching levels, and system design.",
+  metaTitle: "Amplifier Gain Calculator \u2014 Convert dB to V/V, Voltage & Power Gain",
+  keywords: ["amplifier gain calculator", "amplifier calculator", "dB to gain", "power amplifier dB", "voltage gain amplifier", "gain dB calculator", "amplifier sensitivity", "audio gain", "amp gain setting calculator"],
   inputs: [
     { key: "inputVoltage", label: "Input Voltage (RMS)", symbol: "V_in", unit: "V", defaultValue: 1, min: 1e-3 },
     { key: "outputVoltage", label: "Output Voltage (RMS)", symbol: "V_out", unit: "V", defaultValue: 28, min: 1e-3 },
