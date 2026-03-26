@@ -4557,7 +4557,7 @@ var samplingNyquist = {
       symbol: "DR",
       unit: "dB",
       precision: 2,
-      tooltip: "Theoretical dynamic range of the ADC: DR = 6.02\xD7N + 1.76 dB"
+      tooltip: "Theoretical dynamic range of the ADC: DR = 20\xB7log\u2081\u2080(2)\xB7N + 10\xB7log\u2081\u2080(1.5) dB"
     },
     {
       key: "snr_dB",
@@ -4587,7 +4587,7 @@ var samplingNyquist = {
   ],
   calculate: calculateSamplingNyquist,
   formula: {
-    primary: "f_N = 2 f_{sig},\\quad OSR = \\frac{f_s}{f_N},\\quad SNR = 6.02N + 1.76\\text{ dB}",
+    primary: "f_N = 2 f_{sig},\\quad OSR = \\frac{f_s}{f_N},\\quad SNR = 20\\log_{10}(2)\\cdot N + 10\\log_{10}(3/2)\\text{ dB}",
     variables: [
       { symbol: "f_N", description: "Nyquist rate (minimum sampling rate)", unit: "Hz" },
       { symbol: "f_sig", description: "Signal maximum frequency / bandwidth", unit: "Hz" },
@@ -4600,7 +4600,7 @@ var samplingNyquist = {
       "Nyquist theorem: f_s \u2265 2 \xD7 f_max to avoid aliasing",
       "Oversampling ratio OSR = f_s / (2 \xD7 f_sig)",
       "When OSR < 1, alias frequency = |f_s \u2212 f_sig|",
-      "Ideal ADC SNR (SQNR) = 6.02 \xD7 N + 1.76 dB",
+      "Ideal ADC SNR (SQNR) = 20\xB7log\u2081\u2080(2)\xB7N + 10\xB7log\u2081\u2080(3/2) dB",
       "Raw data rate = f_s \xD7 N \xD7 channels (bits/sec)",
       "Anti-aliasing filter must have cutoff \u2264 f_s / 2"
     ],
@@ -5227,10 +5227,10 @@ function calculateOhmsLaw(inputs) {
   }
   return {
     values: {
-      voltage: Math.round(V * 1e4) / 1e4,
-      current: Math.round(I * 1e4) / 1e4,
-      resistance: Math.round(R * 1e4) / 1e4,
-      power: Math.round(P * 1e4) / 1e4
+      voltage: V,
+      current: I,
+      resistance: R,
+      power: P
     }
   };
 }
@@ -5319,8 +5319,8 @@ function calculateColorCode(inputs) {
     values: {
       resistance,
       tolerance: tol,
-      minResistance: Math.round(minR * 1e3) / 1e3,
-      maxResistance: Math.round(maxR * 1e3) / 1e3
+      minResistance: minR,
+      maxResistance: maxR
     }
   };
 }
@@ -5436,10 +5436,10 @@ function calculateRC(inputs) {
   const f3db = 1 / (2 * Math.PI * tau);
   return {
     values: {
-      tauUs: Math.round(tauUs * 1e3) / 1e3,
-      t63us: Math.round(t63 * 1e6 * 1e3) / 1e3,
-      t99us: Math.round(t99 * 1e6 * 100) / 100,
-      f3db: Math.round(f3db * 100) / 100
+      tauUs,
+      t63us: t63 * 1e6,
+      t99us: t99 * 1e6,
+      f3db
     }
   };
 }
@@ -10451,7 +10451,7 @@ var adcSnr = {
   ],
   calculate: calculateAdcSnr,
   formula: {
-    primary: "SNR_ideal = 6.02\xB7N + 1.76 dB;  SNR_jitter = \u221220\xB7log\u2081\u2080(2\u03C0\xB7f_in\xB7t_j)",
+    primary: "SNR_ideal = 20\xB7log\u2081\u2080(2)\xB7N + 10\xB7log\u2081\u2080(3/2) dB;  SNR_jitter = \u221220\xB7log\u2081\u2080(2\u03C0\xB7f_in\xB7t_j)",
     variables: [
       { symbol: "N", description: "ADC resolution in bits", unit: "bits" },
       { symbol: "SNR", description: "Signal-to-noise ratio", unit: "dB" },
@@ -10993,7 +10993,7 @@ function calculateOversamplingSnr(inputs) {
     oversampledSnr = baseSnr + shapingGain;
   }
   const snrImprovement = oversampledSnr - baseSnr;
-  const effectiveBits = (oversampledSnr - 1.76) / 6.02;
+  const effectiveBits = (oversampledSnr - 10 * Math.log10(1.5)) / (20 * Math.log10(2));
   return {
     values: {
       baseSnr,
@@ -11359,7 +11359,7 @@ var yagiAntenna = {
   ],
   calculate: calculateYagiAntenna,
   formula: {
-    primary: "\u03BB = 300/f;  G \u2248 10\xB7log\u2081\u2080(0.8\xB7N) + 2.15 dBi",
+    primary: "\u03BB = c/f;  G \u2248 10\xB7log\u2081\u2080(0.8\xB7N) + 2.15 dBi  (c = 299 792 458 m/s)",
     variables: [
       { symbol: "\u03BB", description: "Wavelength", unit: "m" },
       { symbol: "f", description: "Frequency", unit: "MHz" },
@@ -11750,11 +11750,11 @@ var loopAntenna = {
   ],
   calculate: calculateLoopAntenna,
   formula: {
-    primary: "R_rad = 31171\xB7(A/\u03BB\xB2)\xB2",
+    primary: "R_rad = 320\u03C0\u2074\xB7(A/\u03BB\xB2)\xB2",
     variables: [
       { symbol: "R_rad", description: "Radiation resistance", unit: "\u03A9" },
       { symbol: "A", description: "Loop area (\u03C0\xB7(D/2)\xB2)", unit: "m\xB2" },
-      { symbol: "\u03BB", description: "Wavelength (300/f)", unit: "m" },
+      { symbol: "\u03BB", description: "Wavelength (c/f, c = 299 792 458 m/s)", unit: "m" },
       { symbol: "Q", description: "Quality factor", unit: "" },
       { symbol: "BW", description: "Bandwidth (f/Q)", unit: "Hz" }
     ]
@@ -14605,15 +14605,15 @@ function calculate555Timer(inputs) {
   let highTime;
   let lowTime;
   if (mode >= 1) {
-    pulseWidth = 1.1 * ra_Ohm * c_F * 1e3;
+    pulseWidth = Math.log(3) * ra_Ohm * c_F * 1e3;
     highTime = pulseWidth;
     lowTime = 0;
     period = 0;
     frequency = 0;
     dutyCycle = 0;
   } else {
-    highTime = 0.693 * (ra_Ohm + rb_Ohm) * c_F * 1e3;
-    lowTime = 0.693 * rb_Ohm * c_F * 1e3;
+    highTime = Math.LN2 * (ra_Ohm + rb_Ohm) * c_F * 1e3;
+    lowTime = Math.LN2 * rb_Ohm * c_F * 1e3;
     period = highTime + lowTime;
     frequency = period > 0 ? 1e3 / period : 0;
     dutyCycle = period > 0 ? highTime / period * 100 : 0;
@@ -19774,7 +19774,7 @@ var quantizationNoise = {
       symbol: "SQNR",
       unit: "dB",
       precision: 2,
-      tooltip: "Signal-to-quantization-noise ratio: 6.02N + 1.76 dB"
+      tooltip: "Signal-to-quantization-noise ratio: 20\xB7log\u2081\u2080(2)\xB7N + 10\xB7log\u2081\u2080(1.5) dB"
     },
     {
       key: "enob",
@@ -19803,8 +19803,8 @@ var quantizationNoise = {
   ],
   calculate: calculateQuantizationNoise,
   formula: {
-    primary: "SQNR = 6.02\xB7N + 1.76 dB,  LSB = Vref / 2^N",
-    latex: "SQNR = 6.02N + 1.76 \\text{ dB}, \\quad LSB = \\frac{V_{ref}}{2^N}",
+    primary: "SQNR = 20\xB7log\u2081\u2080(2)\xB7N + 10\xB7log\u2081\u2080(3/2) dB,  LSB = Vref / 2^N",
+    latex: "SQNR = 20\\log_{10}(2)\\cdot N + 10\\log_{10}\\!\\left(\\tfrac{3}{2}\\right) \\text{ dB}, \\quad LSB = \\frac{V_{ref}}{2^N}",
     variables: [
       { symbol: "N", description: "ADC resolution", unit: "bits" },
       { symbol: "SQNR", description: "Signal-to-quantization-noise ratio", unit: "dB" },
