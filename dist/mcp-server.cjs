@@ -33,8 +33,9 @@ var microstripImpedance = {
   slug: "microstrip-impedance",
   title: "Microstrip Impedance Calculator",
   shortTitle: "Microstrip Impedance",
+  metaTitle: "Microstrip Impedance Calculator \u2014 PCB Trace Z0 Tool",
   category: "rf",
-  description: "Calculate microstrip transmission line impedance using Hammerstad-Jensen equations. Get Z\u2080, effective dielectric constant, and propagation delay for PCB trace design.",
+  description: "Calculate microstrip impedance using Hammerstad-Jensen equations. Get Z0, effective dielectric constant, and propagation delay for PCB trace design. Free, instant results.",
   keywords: ["microstrip impedance calculator", "pcb trace impedance", "microstrip Z0", "transmission line impedance", "pcb impedance", "characteristic impedance"],
   inputs: [
     {
@@ -336,8 +337,9 @@ var vswrReturnLoss = {
   slug: "vswr-return-loss",
   title: "VSWR & Return Loss Calculator",
   shortTitle: "VSWR / Return Loss",
+  metaTitle: "VSWR to Return Loss Calculator \u2014 Free RF Converter",
   category: "rf",
-  description: "Convert between VSWR, return loss, reflection coefficient, mismatch loss, and reflected/transmitted power percentage for RF impedance matching.",
+  description: "Convert between VSWR, return loss, reflection coefficient, and mismatch loss instantly. Get reflected and transmitted power percentages. Free, instant results.",
   keywords: ["vswr calculator", "return loss calculator", "reflection coefficient", "mismatch loss", "vswr to return loss", "rf impedance matching"],
   inputs: [
     {
@@ -471,8 +473,9 @@ var dbConverter = {
   slug: "db-converter",
   title: "dBm Power Converter",
   shortTitle: "dBm Converter",
+  metaTitle: "dBm to Watts Converter \u2014 Free RF Power Calculator",
   category: "rf",
-  description: "Convert dBm to watts, milliwatts, dBW, dB\u03BCV, and volts RMS. Essential RF power unit conversion tool for signal levels and link budgets.",
+  description: "Convert dBm to watts, milliwatts, dBW, dBuV, and Vrms instantly. Enter power level and impedance for all RF power unit conversions. Free, instant results.",
   keywords: ["dbm to watts", "dbm converter", "power unit converter", "dbm to mw", "rf power converter", "dbm dBW"],
   inputs: [
     {
@@ -614,8 +617,9 @@ var noiseFigureCascade = {
   slug: "noise-figure-cascade",
   title: "Cascaded Noise Figure Calculator",
   shortTitle: "Cascaded NF",
+  metaTitle: "Cascaded Noise Figure Calculator \u2014 Friis Formula Tool",
   category: "rf",
-  description: "Calculate cascaded noise figure for a chain of RF stages using the Friis formula. Essential for LNA and receiver chain design.",
+  description: "Calculate cascaded noise figure and IP3 for multi-stage RF receiver chains using the Friis formula. Optimize LNA and filter ordering. Free, instant results.",
   keywords: ["noise figure calculator", "cascaded noise figure", "friis formula", "NF cascade", "receiver noise figure", "LNA design"],
   inputs: [
     {
@@ -926,8 +930,9 @@ var skinDepth = {
   slug: "skin-depth",
   title: "Skin Depth Calculator",
   shortTitle: "Skin Depth",
+  metaTitle: "Skin Depth Calculator \u2014 RF Penetration Depth Online",
   category: "rf",
-  description: "Calculate the skin depth (penetration depth) of electromagnetic fields in conductors as a function of frequency and material properties.",
+  description: "Calculate skin depth and surface resistance for copper, aluminum, and other conductors at any frequency. Essential for RF shielding and PCB design. Free, instant results.",
   keywords: ["skin depth calculator", "penetration depth", "skin effect", "conductor loss", "rf skin depth", "electromagnetic skin depth"],
   inputs: [
     {
@@ -1078,8 +1083,9 @@ var wavelengthFrequency = {
   slug: "wavelength-frequency",
   title: "Wavelength & Frequency Calculator",
   shortTitle: "Wavelength / Frequency",
+  metaTitle: "Wavelength to Frequency Calculator \u2014 Free RF Tool",
   category: "rf",
-  description: "Convert between frequency, wavelength, and wave number in free space or medium. Calculate half-wave and quarter-wave lengths for antenna and transmission line design.",
+  description: "Convert between frequency, wavelength, and wavenumber in free space or any dielectric. Calculate half-wave and quarter-wave lengths for antenna design. Free, instant results.",
   keywords: ["wavelength calculator", "frequency wavelength calculator", "rf wavelength", "antenna wavelength", "half wavelength", "quarter wave"],
   inputs: [
     {
@@ -1243,8 +1249,9 @@ var coaxImpedance = {
   slug: "coax-impedance",
   title: "Coaxial Cable Impedance Calculator",
   shortTitle: "Coax Impedance",
+  metaTitle: "Coax Impedance Calculator \u2014 Z0, C, L & Cutoff",
   category: "rf",
-  description: "Calculate coaxial cable characteristic impedance, capacitance, inductance per unit length, and cutoff frequency from inner/outer conductor dimensions and dielectric.",
+  description: "Calculate coaxial cable characteristic impedance (Z0), capacitance, inductance per meter, and TE11 cutoff frequency from conductor dimensions. Free, instant results.",
   keywords: ["coax impedance calculator", "coaxial cable impedance", "coax characteristic impedance", "rg-58", "transmission line calculator"],
   inputs: [
     {
@@ -1432,8 +1439,9 @@ var coaxLoss = {
   slug: "coax-loss",
   title: "Coaxial Cable Loss Calculator",
   shortTitle: "Coax Loss",
+  metaTitle: "Coaxial Cable Loss Calculator \u2014 Free RF Attenuation Tool",
   category: "rf",
-  description: "Calculate RF attenuation for common coaxial cables (LMR-400, RG-58, RG-213, and more). Enter cable type, frequency, and run length to get insertion loss in dB.",
+  description: "Calculate RF cable attenuation for LMR-400, RG-58, RG-213, and more. Enter cable type, frequency, and length to get insertion loss in dB. Free, instant results.",
   keywords: ["coax", "cable", "attenuation", "loss", "LMR-400", "RG-58", "insertion loss", "RF cable"],
   inputs: [
     {
@@ -1550,8 +1558,9 @@ var ismCoexistence = {
   slug: "ism-coexistence",
   title: "ISM Band Wireless Coexistence Calculator",
   shortTitle: "ISM Coexistence",
+  metaTitle: "ISM Band Coexistence Calculator \u2014 WiFi, BLE, LoRa",
   category: "rf",
-  description: "Estimate collision probability and throughput impact when WiFi, Bluetooth, Zigbee, LoRa, or other protocols share the same ISM band. Enter duty cycles, channel counts, and power offset.",
+  description: "Analyze collision probability and throughput impact when WiFi, Bluetooth, Zigbee, or LoRa share ISM bands. Enter duty cycles and channels. Free, instant results.",
   keywords: ["ISM band", "coexistence", "WiFi", "Bluetooth", "Zigbee", "LoRa", "2.4 GHz", "interference", "collision"],
   inputs: [
     {
@@ -1675,8 +1684,9 @@ var attenuatorDesigner = {
   slug: "attenuator-designer",
   title: "RF Attenuator Designer",
   shortTitle: "Attenuator Designer",
+  metaTitle: "RF Attenuator Calculator \u2014 Pi & T Pad Design Tool",
   category: "rf",
-  description: "Design Pi (\u03C0) and T attenuator pads for any attenuation value and impedance. Returns standard resistor values for both topologies with nearest E24 values.",
+  description: "Design Pi and T attenuator pads with exact resistor values and nearest E24 matches. Enter attenuation and impedance for both topologies. Free, instant results.",
   keywords: ["attenuator calculator", "rf attenuator design", "pi attenuator", "t attenuator", "pad calculator", "resistive attenuator"],
   inputs: [
     {
@@ -2130,8 +2140,9 @@ var traceWidthCurrent = {
   slug: "trace-width-current",
   title: "PCB Trace Width Calculator (IPC-2221 / IPC-2152)",
   shortTitle: "Trace Width",
+  metaTitle: "PCB Trace Width Calculator \u2014 Free IPC-2221 Tool",
   category: "pcb",
-  description: "Calculate minimum PCB trace width for a given current, copper weight, and temperature rise per IPC-2221 and IPC-2152 standards. Includes resistance and voltage drop.",
+  description: "Calculate minimum PCB trace width for current capacity per IPC-2221 and IPC-2152. Get resistance, voltage drop, and power dissipation. Free, instant results.",
   keywords: ["trace width calculator", "pcb trace current", "ipc-2221 calculator", "ipc-2152", "pcb current capacity", "trace ampacity"],
   inputs: [
     {
@@ -2291,8 +2302,9 @@ var traceResistance = {
   slug: "trace-resistance",
   title: "PCB Trace Resistance Calculator",
   shortTitle: "Trace Resistance",
+  metaTitle: "PCB Trace Resistance Calculator \u2014 Free Online Tool",
   category: "pcb",
-  description: "Calculate PCB copper trace DC resistance from width, length, thickness, and temperature. Includes sheet resistance and temperature coefficient.",
+  description: "Calculate PCB copper trace DC resistance from width, length, thickness, and temperature. Get sheet resistance and temp coefficient. Free, instant results.",
   keywords: ["pcb trace resistance", "copper trace resistance", "trace impedance dc", "pcb resistance calculator"],
   inputs: [
     {
@@ -2421,8 +2433,9 @@ var differentialPair = {
   slug: "differential-pair",
   title: "Differential Pair Impedance Calculator",
   shortTitle: "Differential Pair",
+  metaTitle: "Differential Pair Impedance Calculator \u2014 Free Online",
   category: "pcb",
-  description: "Calculate differential (Zdiff) and common-mode (Zcom) impedance for edge-coupled microstrip differential pairs used in USB, HDMI, Ethernet, and high-speed serial interfaces.",
+  description: "Calculate Zdiff and Zcommon for edge-coupled microstrip pairs. Design USB, HDMI, and Ethernet differential pairs with odd/even mode impedance. Free, instant results.",
   keywords: [
     "differential pair calculator",
     "zdiff calculator",
@@ -2640,8 +2653,9 @@ var viaCalculator = {
   slug: "via-calculator",
   title: "PCB Via Calculator",
   shortTitle: "Via Calculator",
+  metaTitle: "PCB Via Calculator \u2014 Free Impedance & Current Tool",
   category: "pcb",
-  description: "Calculate PCB via impedance, capacitance, inductance, current capacity, aspect ratio, and DFM warnings. Covers through-hole and blind/buried vias.",
+  description: "Calculate PCB via impedance, capacitance, inductance, and current capacity. Get aspect ratio and DFM warnings for through-hole and blind vias. Free, instant results.",
   keywords: [
     "pcb via calculator",
     "via impedance",
@@ -2880,8 +2894,9 @@ var stackupBuilder = {
   slug: "stackup-builder",
   title: "PCB Stackup Impedance Calculator",
   shortTitle: "Stackup Builder",
+  metaTitle: "PCB Stackup Impedance Calculator \u2014 Free Online Tool",
   category: "pcb",
-  description: "Calculate characteristic impedance for common PCB stackup configurations. Select layer count, dielectric thickness, and copper weight to get target trace width for 50\u03A9 or custom impedance.",
+  description: "Calculate trace width for target impedance across PCB stackup configurations. Select layer count, dielectric, and copper weight for 50 ohm or custom Z0. Free, instant results.",
   keywords: [
     "pcb stackup calculator",
     "pcb layer stack",
@@ -3097,6 +3112,7 @@ var voltageDivider = {
   slug: "voltage-divider",
   title: "Voltage Divider Calculator",
   shortTitle: "Voltage Divider",
+  metaTitle: "Voltage Divider Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate voltage divider output voltage, current, Th\xE9venin impedance, and power dissipation from Vin, R1, and R2. Ideal for bias networks and level shifting.",
   keywords: ["voltage divider calculator", "resistor divider", "voltage divider formula", "thevenin impedance", "vout calculator"],
@@ -3263,6 +3279,7 @@ var ledResistor = {
   slug: "led-resistor",
   title: "LED Current Limiting Resistor Calculator",
   shortTitle: "LED Resistor",
+  metaTitle: "LED Resistor Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate the correct current limiting resistor for an LED. Shows exact value, nearest E24 standard, actual current, and power dissipation.",
   keywords: ["led resistor calculator", "led current limiting resistor", "led series resistor", "led circuit calculator"],
@@ -3383,6 +3400,7 @@ var buckConverter = {
   slug: "buck-converter",
   title: "Buck Converter Design Calculator",
   shortTitle: "Buck Converter",
+  metaTitle: "Buck Converter Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Design a synchronous buck (step-down) converter: calculate duty cycle, inductor value, output capacitor, and input capacitor.",
   keywords: ["buck converter calculator", "step down converter", "dc dc converter design", "inductor value buck", "duty cycle calculator", "switching regulator design"],
@@ -3551,6 +3569,7 @@ var ldoThermal = {
   slug: "ldo-thermal",
   title: "LDO Thermal Calculator",
   shortTitle: "LDO Thermal",
+  metaTitle: "LDO Thermal Dissipation Calculator \u2014 Free Tool",
   category: "power",
   description: "Calculate LDO regulator power dissipation, junction temperature, thermal margin, and minimum dropout voltage for thermal design validation.",
   keywords: ["ldo thermal calculator", "linear regulator thermal", "junction temperature", "power dissipation ldo", "thermal resistance", "dropout voltage"],
@@ -3736,6 +3755,7 @@ var batteryLife = {
   slug: "battery-life",
   title: "Battery Life Calculator",
   shortTitle: "Battery Life",
+  metaTitle: "Battery Life Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Estimate battery runtime for IoT and portable devices given average current draw, duty cycle, self-discharge rate, and depth-of-discharge cutoff. Suitable for LiPo, alkaline, NiMH, and coin-cell batteries.",
   keywords: ["battery life calculator", "battery runtime", "iot battery life", "duty cycle battery", "mah runtime calculator", "self-discharge battery", "battery capacity hours"],
@@ -4050,8 +4070,9 @@ var filterDesigner = {
   slug: "filter-designer",
   title: "Passive RC/LC Filter Designer",
   shortTitle: "Filter Designer",
+  metaTitle: "LC Filter Designer Calculator \u2014 Free Online Tool",
   category: "signal",
-  description: "Design passive Butterworth and Chebyshev Type I (0.5 dB ripple) low-pass, high-pass, and band-pass filters up to order 10. Calculates all LC ladder element values, time constant, and stopband attenuation.",
+  description: "Design passive Butterworth and Chebyshev LC ladder filters up to order 10. Calculate component values for low-pass, high-pass, and band-pass topologies. Free, instant results.",
   keywords: ["filter designer", "rc filter calculator", "lc filter", "butterworth filter", "chebyshev filter", "low pass filter design", "high pass filter", "band pass filter", "passive filter components", "lc ladder", "filter order"],
   inputs: [
     {
@@ -4454,8 +4475,9 @@ var samplingNyquist = {
   slug: "sampling-nyquist",
   title: "Nyquist Sampling Theorem Calculator",
   shortTitle: "Nyquist Sampling",
+  metaTitle: "Nyquist Sampling Rate Calculator \u2014 Free Online",
   category: "signal",
-  description: "Calculate Nyquist sampling rate, oversampling ratio, aliasing frequency, ADC dynamic range, SNR, and data rate. Verify that your sampling rate satisfies the Nyquist criterion and avoid aliasing in your system.",
+  description: "Calculate Nyquist sampling rate, oversampling ratio, and aliasing frequency. Verify your ADC sampling meets the Nyquist criterion and determine data rate. Free, instant results.",
   keywords: ["nyquist theorem calculator", "sampling rate calculator", "aliasing calculator", "adc dynamic range", "oversampling ratio", "nyquist frequency", "snr calculator", "data rate calculator"],
   inputs: [
     {
@@ -4856,6 +4878,7 @@ var patchAntenna = {
   slug: "patch-antenna",
   title: "Microstrip Patch Antenna Calculator",
   shortTitle: "Patch Antenna",
+  metaTitle: "Microstrip Patch Antenna Calculator \u2014 Free PCB Antenna Tool",
   category: "antenna",
   description: "Calculate rectangular microstrip patch antenna dimensions (width, length) using the Transmission Line Model. Outputs effective dielectric constant, edge-feed impedance, and nominal gain for common substrates like FR4 and Rogers.",
   keywords: [
@@ -5042,8 +5065,9 @@ var eirpCalculator = {
   slug: "eirp-calculator",
   title: "EIRP / ERP Regulatory Calculator",
   shortTitle: "EIRP / ERP",
+  metaTitle: "EIRP Calculator \u2014 Free ERP & Compliance Tool",
   category: "antenna",
-  description: "Calculate Effective Isotropic Radiated Power (EIRP) and ERP from transmit power, cable loss, and antenna gain. Check compliance against FCC, ETSI, and ISM-band regulatory limits.",
+  description: "Calculate EIRP and ERP from transmit power, cable loss, and antenna gain. Check FCC Part 15 and ETSI regulatory compliance margins. Free, instant results.",
   keywords: [
     "eirp calculator",
     "effective isotropic radiated power",
@@ -5238,6 +5262,7 @@ var ohmsLaw = {
   slug: "ohms-law",
   title: "Ohm's Law Calculator",
   shortTitle: "Ohm's Law",
+  metaTitle: "Ohm's Law Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate voltage, current, resistance, and power using Ohm's Law. Enter any two values to solve for the remaining two quantities.",
   keywords: ["ohm's law calculator", "voltage current resistance", "ohms law formula", "V=IR calculator", "power dissipation calculator"],
@@ -5328,6 +5353,7 @@ var resistorColorCode = {
   slug: "resistor-color-code",
   title: "Resistor Color Code Calculator",
   shortTitle: "Color Code",
+  metaTitle: "Resistor Color Code Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Decode resistor color bands to resistance value and tolerance. Supports 4-band, 5-band, and 6-band resistors. Instant color band to ohms conversion.",
   keywords: ["resistor color code", "resistor color calculator", "color band resistor", "resistor bands decoder", "4 band resistor", "5 band resistor"],
@@ -5447,6 +5473,7 @@ var rcTimeConstant = {
   slug: "rc-time-constant",
   title: "RC Time Constant Calculator",
   shortTitle: "RC Time Constant",
+  metaTitle: "RC Time Constant Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate RC circuit time constant \u03C4, charge time to 63.2% and 99%, and \u22123dB cutoff frequency. Essential for filter and timing circuit design.",
   keywords: ["rc time constant calculator", "rc circuit", "time constant tau", "rc filter cutoff frequency", "capacitor charge time"],
@@ -5541,6 +5568,7 @@ var seriesParallelResistor = {
   slug: "series-parallel-resistor",
   title: "Series / Parallel Resistor, Capacitor & Inductor Calculator",
   shortTitle: "Series/Parallel R\xB7C\xB7L",
+  metaTitle: "Series / Parallel Resistor, Capacitor & Inductor Calculator \u2014...",
   category: "general",
   description: "Calculate the equivalent series and parallel combination of up to four resistors, capacitors, or inductors. Also computes the voltage divider ratio for two-resistor networks.",
   keywords: [
@@ -5697,6 +5725,7 @@ var lcResonance = {
   slug: "lc-resonance",
   title: "LC Resonance Calculator",
   shortTitle: "LC Resonance",
+  metaTitle: "LC Resonance Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate the resonant frequency, characteristic impedance, Q factor, and bandwidth of a series or parallel LC tank circuit. Enter inductance, capacitance, and optional series resistance.",
   keywords: [
@@ -5910,6 +5939,7 @@ var opampGain = {
   slug: "opamp-gain",
   title: "Op-Amp Gain & Bandwidth Calculator",
   shortTitle: "Op-Amp Gain",
+  metaTitle: "Op-Amp Gain & Bandwidth Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate op-amp voltage gain, gain in dB, \u22123 dB bandwidth, and input impedance for inverting, non-inverting, and differential amplifier configurations.",
   keywords: [
@@ -6077,13 +6107,13 @@ function calculateUartBaudRate(inputs) {
   return {
     values: {
       frameBits: Math.round(frameBits),
-      bitPeriod_us: Math.round(bitPeriod_us * 1e3) / 1e3,
-      framePeriod_us: Math.round(framePeriod_us * 1e3) / 1e3,
-      framesPerSecond: Math.round(framesPerSecond * 10) / 10,
-      throughputKbps: Math.round(throughputKbps * 1e3) / 1e3,
-      brrDivisor: Math.round(brrDivisor * 10) / 10,
-      actualBaudRate: Math.round(actualBaudRate * 10) / 10,
-      baudRateError_pct: Math.round(baudRateError_pct * 1e3) / 1e3
+      bitPeriod_us,
+      framePeriod_us,
+      framesPerSecond,
+      throughputKbps,
+      brrDivisor,
+      actualBaudRate,
+      baudRateError_pct
     },
     warnings: warnings.length > 0 ? warnings : void 0,
     intermediateValues: {
@@ -6095,6 +6125,7 @@ var uartBaudRate = {
   slug: "uart-baud-rate",
   title: "UART Baud Rate & Frame Timing Calculator",
   shortTitle: "UART Baud Rate",
+  metaTitle: "UART Baud Rate & Frame Timing Calculator \u2014 Free Protocol Tool",
   category: "protocol",
   description: "Calculate UART frame timing, throughput, and USART BRR register divisor from baud rate, data format, and MCU clock frequency. Identify baud rate error for reliable serial communication.",
   keywords: [
@@ -6336,8 +6367,8 @@ function calculateI2cPullup(inputs) {
       R_max_ohm: Math.round(R_max),
       R_min_ohm: Math.round(R_min),
       R_recommended_ohm: Math.round(R_recommended),
-      current_ma: Math.round(current_ma * 100) / 100,
-      powerPerLine_mw: Math.round(powerPerLine_mw * 10) / 10,
+      current_ma,
+      powerPerLine_mw,
       riseTimeTarget_ns: Math.round(riseTimeTarget_ns)
     },
     warnings: warnings.length > 0 ? warnings : void 0,
@@ -6350,6 +6381,7 @@ var i2cPullup = {
   slug: "i2c-pullup",
   title: "I2C Pull-Up Resistor Calculator",
   shortTitle: "I2C Pull-Up",
+  metaTitle: "I2C Pull-Up Resistor Calculator \u2014 Free Protocol Design Tool",
   category: "protocol",
   description: "Calculate I2C pull-up resistor values for Standard (100 kHz), Fast (400 kHz), and Fast-Plus (1 MHz) modes. Derives minimum, maximum, and recommended resistance from supply voltage and bus capacitance per NXP UM10204.",
   keywords: [
@@ -6548,6 +6580,7 @@ var clockJitter = {
   slug: "clock-jitter",
   title: "Clock Tree Jitter Budget Calculator",
   shortTitle: "Clock Jitter",
+  metaTitle: "Clock Tree Jitter Budget Calculator \u2014 Free Protocol Design Tool",
   category: "protocol",
   description: "Calculate clock tree timing budget for FPGA and SoC designs. Enter reference oscillator jitter, PLL noise floor, buffer stages, and target clock frequency to compute setup margin.",
   keywords: ["clock jitter", "timing budget", "setup time", "hold time", "PLL jitter", "clock tree", "FPGA timing", "phase noise"],
@@ -6627,6 +6660,7 @@ var heatsinkCalculator = {
   slug: "heatsink-calculator",
   title: "Heatsink Calculator",
   shortTitle: "Heatsink",
+  metaTitle: "Heatsink Calculator \u2014 Free Thermal Design Tool",
   category: "thermal",
   description: "Calculate required heatsink thermal resistance and junction temperature for power devices",
   keywords: ["heatsink", "thermal resistance", "junction temperature", "\u03B8JA", "\u03B8JC", "\u03B8CS", "thermal management", "power dissipation"],
@@ -6767,6 +6801,7 @@ var pcbTraceTemp = {
   slug: "pcb-trace-temp",
   title: "PCB Trace Temperature Rise",
   shortTitle: "Trace Temp",
+  metaTitle: "PCB Trace Temperature Rise \u2014 Free Thermal Design Tool",
   category: "thermal",
   description: "Calculate PCB copper trace temperature rise under load current using IPC-2152",
   keywords: ["PCB trace temperature", "IPC-2152", "trace heating", "copper trace", "current capacity", "thermal"],
@@ -6916,6 +6951,7 @@ var dcMotorSpeed = {
   slug: "dc-motor-speed",
   title: "DC Motor Speed Calculator",
   shortTitle: "DC Motor",
+  metaTitle: "DC Motor Speed Calculator \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate DC motor speed, torque, power, and efficiency from electrical parameters",
   keywords: ["DC motor", "motor speed", "RPM", "motor torque", "back EMF", "motor efficiency", "BLDC"],
@@ -7068,6 +7104,7 @@ var stepperMotor = {
   slug: "stepper-motor",
   title: "Stepper Motor Calculator",
   shortTitle: "Stepper Motor",
+  metaTitle: "Stepper Motor Calculator \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate stepper motor speed, step frequency, and travel per revolution",
   keywords: ["stepper motor", "steps per revolution", "step frequency", "motor speed", "microstepping", "CNC", "3D printer"],
@@ -7192,8 +7229,9 @@ var shieldingEffectiveness = {
   slug: "shielding-effectiveness",
   title: "Shielding Effectiveness Calculator",
   shortTitle: "RF Shielding",
+  metaTitle: "Shielding Effectiveness Calculator - Free Online",
   category: "emc",
-  description: "Calculate electromagnetic shielding effectiveness of conductive enclosures",
+  description: "Calculate electromagnetic shielding effectiveness, absorption loss, reflection loss, and skin depth. Evaluate enclosure materials per MIL-STD-285.",
   keywords: ["shielding effectiveness", "EMC", "EMI shielding", "RF enclosure", "skin depth", "absorption loss", "reflection loss"],
   inputs: [
     {
@@ -7323,6 +7361,7 @@ var wireGauge = {
   slug: "wire-gauge",
   title: "Wire Gauge Calculator (AWG)",
   shortTitle: "Wire Gauge",
+  metaTitle: "Wire Gauge Calculator (AWG) \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Convert between AWG and mm\xB2, calculate wire current capacity, resistance, and voltage drop",
   keywords: ["AWG", "wire gauge", "wire current capacity", "wire resistance", "American Wire Gauge", "mm2 to AWG", "cable sizing"],
@@ -7550,6 +7589,7 @@ var powerFactor = {
   slug: "power-factor",
   title: "Power Factor Calculator",
   shortTitle: "Power Factor",
+  metaTitle: "Power Factor Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate power factor, reactive power, and correction capacitor for AC circuits",
   keywords: ["power factor", "reactive power", "apparent power", "VAR", "power factor correction", "capacitor bank", "AC power"],
@@ -7684,8 +7724,9 @@ var qFactor = {
   slug: "q-factor",
   title: "Q Factor Calculator for Inductors & Capacitors",
   shortTitle: "Q Factor",
+  metaTitle: "Q Factor Calculator \u2014 Inductor & Capacitor Quality",
   category: "rf",
-  description: "Calculate quality factor (Q) for inductors and capacitors, resonant circuit bandwidth, and equivalent series resistance",
+  description: "Calculate quality factor (Q) for inductors and capacitors from ESR and frequency. Determine resonant bandwidth and half-power frequencies. Free, instant results.",
   keywords: [
     "Q factor",
     "quality factor",
@@ -7839,8 +7880,9 @@ var waveguideCutoff = {
   slug: "waveguide-cutoff",
   title: "Rectangular Waveguide Cutoff Frequency Calculator",
   shortTitle: "Waveguide",
+  metaTitle: "Waveguide Cutoff Frequency Calculator \u2014 Free Online",
   category: "rf",
-  description: "Calculate cutoff frequencies for rectangular waveguide TE and TM modes, guide wavelength, and phase velocity",
+  description: "Calculate rectangular waveguide cutoff frequencies for TE and TM modes, guide wavelength, and phase/group velocity. Enter dimensions and mode numbers. Free, instant results.",
   keywords: [
     "waveguide",
     "cutoff frequency",
@@ -8001,6 +8043,7 @@ var zenerDiode = {
   slug: "zener-diode",
   title: "Zener Diode Voltage Regulator Calculator",
   shortTitle: "Zener Diode",
+  metaTitle: "Zener Diode Voltage Regulator Calculator \u2014 Free Electronics Tool",
   category: "general",
   description: "Calculate series resistor, power dissipation, and load current for zener diode voltage regulators",
   keywords: [
@@ -8145,6 +8188,7 @@ var inductorEnergy = {
   slug: "inductor-energy",
   title: "Inductor Energy & Time Constant Calculator",
   shortTitle: "Inductor Energy",
+  metaTitle: "Inductor Energy & Time Constant Calculator \u2014 Free Electronics...",
   category: "general",
   description: "Calculate energy stored in an inductor, L/R time constant, and current rise time",
   keywords: [
@@ -8281,6 +8325,7 @@ var boostConverter = {
   slug: "boost-converter",
   title: "Boost Converter Design Calculator",
   shortTitle: "Boost Converter",
+  metaTitle: "Boost Converter Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate duty cycle, inductor value, and output capacitor for boost (step-up) DC-DC converter design",
   keywords: [
@@ -8426,6 +8471,7 @@ var threePhasePower = {
   slug: "three-phase-power",
   title: "Three-Phase Power Calculator",
   shortTitle: "3-Phase Power",
+  metaTitle: "Three-Phase Power Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate three-phase real power, reactive power, apparent power, current, and power factor from line or phase values",
   keywords: [
@@ -8560,8 +8606,9 @@ var antennaBeamwidth = {
   slug: "antenna-beamwidth",
   title: "Antenna Beamwidth & Gain Calculator",
   shortTitle: "Beamwidth",
+  metaTitle: "Antenna Beamwidth Calculator \u2014 Free Online Tool",
   category: "antenna",
-  description: "Calculate antenna 3dB beamwidth from gain, aperture efficiency, and frequency for aperture antennas",
+  description: "Calculate antenna 3 dB beamwidth, gain from aperture, and effective area. Determine HPBW for dish, horn, and aperture antennas. Free, instant results.",
   keywords: [
     "antenna beamwidth",
     "3dB beamwidth",
@@ -8693,8 +8740,9 @@ var snrCalculator = {
   slug: "snr-calculator",
   title: "Signal-to-Noise Ratio (SNR) Calculator",
   shortTitle: "SNR",
+  metaTitle: "SNR Calculator \u2014 Signal-to-Noise Ratio Online",
   category: "signal",
-  description: "Calculate SNR, noise floor, sensitivity, and dynamic range for RF receivers and signal chains",
+  description: "Calculate signal-to-noise ratio, noise floor, receiver sensitivity, and dynamic range for RF systems. Analyze your signal chain performance. Free, instant results.",
   keywords: [
     "SNR",
     "signal to noise ratio",
@@ -8857,8 +8905,9 @@ var controlledImpedance = {
   slug: "controlled-impedance",
   title: "PCB Controlled Impedance Calculator",
   shortTitle: "Controlled Z",
+  metaTitle: "PCB Impedance Calculator \u2014 Free Microstrip & Stripline Tool",
   category: "pcb",
-  description: "Calculate characteristic impedance for surface microstrip, embedded microstrip, and stripline PCB traces",
+  description: "Calculate characteristic impedance for surface microstrip, embedded microstrip, and stripline PCB traces. Get Z0, effective Er, and target trace width. Free, instant results.",
   keywords: [
     "controlled impedance",
     "microstrip impedance",
@@ -9009,8 +9058,9 @@ var ferriteBead = {
   slug: "ferrite-bead",
   title: "Ferrite Bead Filter Calculator",
   shortTitle: "Ferrite Bead",
+  metaTitle: "Ferrite Bead Filter Calculator - Free Online Tool",
   category: "emc",
-  description: "Calculate ferrite bead filter effectiveness, impedance at frequency, and insertion loss for EMI suppression",
+  description: "Calculate ferrite bead impedance, insertion loss, and DC voltage drop at any frequency. Select EMI filter beads for power supply decoupling.",
   keywords: [
     "ferrite bead",
     "EMI filter",
@@ -9125,8 +9175,9 @@ var freeSpacePathLoss = {
   slug: "free-space-path-loss",
   title: "Free-Space Path Loss Calculator",
   shortTitle: "Free-Space Path Loss",
+  metaTitle: "Free Space Path Loss Calculator \u2014 FSPL in dB Online",
   category: "rf",
-  description: "Calculate free-space path loss (FSPL) using the Friis transmission equation for wireless link budget analysis",
+  description: "Calculate free-space path loss (FSPL) in dB using the Friis equation. Enter frequency and distance for wireless link budget analysis. Free, instant results.",
   keywords: [
     "free space path loss",
     "Friis",
@@ -9238,8 +9289,9 @@ var radarRangeEquation = {
   slug: "radar-range-equation",
   title: "Radar Range Equation Calculator",
   shortTitle: "Radar Range",
+  metaTitle: "Radar Range Equation Calculator \u2014 Free Online Tool",
   category: "rf",
-  description: "Calculate maximum radar detection range using the radar range equation, including RCS, antenna gain, noise figure, and bandwidth parameters",
+  description: "Calculate maximum radar detection range from peak power, antenna gain, RCS, noise figure, and bandwidth using the radar equation. Free, instant results.",
   keywords: [
     "radar range equation",
     "radar cross section",
@@ -9376,8 +9428,9 @@ var powerAmplifierEfficiency = {
   slug: "power-amplifier-efficiency",
   title: "Power Amplifier Efficiency Calculator (PAE & Drain Efficiency)",
   shortTitle: "PA Efficiency",
+  metaTitle: "Power Amplifier Efficiency Calculator \u2014 PAE & Drain",
   category: "rf",
-  description: "Calculate RF power amplifier efficiency including power-added efficiency (PAE), drain efficiency, DC power consumption, and heat dissipation",
+  description: "Calculate RF power amplifier PAE, drain efficiency, gain, and heat dissipation from Pout, Pin, and DC bias. Essential for PA design. Free, instant results.",
   keywords: [
     "power amplifier efficiency",
     "PAE",
@@ -9529,8 +9582,9 @@ var intermodulationDistortion = {
   slug: "intermodulation-distortion",
   title: "Intermodulation Distortion & IP3 Calculator",
   shortTitle: "IMD / IP3",
+  metaTitle: "IP3 & Intermodulation Distortion Calculator \u2014 Free Tool",
   category: "rf",
-  description: "Calculate third-order intercept point (IP3), intermodulation distortion products, and spurious-free dynamic range for RF amplifiers and mixers",
+  description: "Calculate IIP3, OIP3, IM3/IM2 products, and spurious-free dynamic range for RF amplifiers and mixers. Analyze two-tone spur frequencies. Free, instant results.",
   keywords: [
     "intermodulation distortion",
     "IP3",
@@ -9789,8 +9843,9 @@ var phaseNoiseToJitter = {
   slug: "phase-noise-to-jitter",
   title: "Phase Noise to Jitter Converter",
   shortTitle: "Phase Noise to Jitter",
+  metaTitle: "Phase Noise to Jitter Calculator \u2014 dBc/Hz to ps",
   category: "rf",
-  description: "Convert oscillator phase noise (dBc/Hz) to RMS jitter and cycle-to-cycle jitter by integrating over a specified offset frequency range",
+  description: "Convert oscillator phase noise (dBc/Hz) to RMS jitter in ps and ADC SNR limit. Integrate over offset frequency range for clock design. Free, instant results.",
   keywords: [
     "phase noise",
     "jitter",
@@ -10004,8 +10059,9 @@ var vibrationPhaseNoise = {
   slug: "vibration-phase-noise",
   title: "Phase Noise Under Vibrations Calculator",
   shortTitle: "Vibration Phase Noise",
+  metaTitle: "Vibration Phase Noise Calculator \u2014 Oscillator Tool",
   category: "rf",
-  description: "Calculate vibration-induced phase noise degradation for oscillators on defense, aerospace, and mobile platforms using acceleration sensitivity (Gamma) and vibration profiles",
+  description: "Calculate vibration-induced phase noise for oscillators using acceleration sensitivity (Gamma). Analyze sinusoidal and random vibration profiles. Free, instant results.",
   keywords: [
     "vibration phase noise",
     "acceleration sensitivity",
@@ -10173,8 +10229,9 @@ var returnLossError = {
   slug: "return-loss-error",
   title: "Return Loss Measurement Error Calculator",
   shortTitle: "RL Meas. Error",
+  metaTitle: "Return Loss Measurement Error Calculator \u2014 Free Tool",
   category: "rf",
-  description: "Calculate measurement uncertainty for return loss measurements using directional couplers or bridges. Accounts for coupler directivity and source match errors critical for VNA and test engineering.",
+  description: "Calculate return loss measurement uncertainty from coupler directivity and source match. Determine worst-case error bounds for VNA testing. Free, instant results.",
   keywords: [
     "return loss error",
     "measurement uncertainty",
@@ -10350,8 +10407,9 @@ var adcSnr = {
   slug: "adc-snr",
   title: "ADC SNR and ENOB Calculator",
   shortTitle: "ADC SNR & ENOB",
+  metaTitle: "ADC SNR & ENOB Calculator \u2014 Free Online Tool",
   category: "signal",
-  description: "Calculate analog-to-digital converter signal-to-noise ratio, effective number of bits (ENOB), and SFDR including aperture jitter effects",
+  description: "Calculate ADC signal-to-noise ratio, ENOB, and SFDR with aperture jitter effects. Analyze converter performance for data acquisition design. Free, instant results.",
   keywords: [
     "ADC SNR",
     "ENOB",
@@ -10489,8 +10547,9 @@ var fftBinResolution = {
   slug: "fft-bin-resolution",
   title: "FFT Bin Resolution & Spectral Analysis Calculator",
   shortTitle: "FFT Resolution",
+  metaTitle: "FFT Bin Resolution Calculator \u2014 Free Online Tool",
   category: "signal",
-  description: "Calculate FFT frequency bin resolution, Nyquist range, time record length, noise floor processing gain, and window scalloping loss",
+  description: "Calculate FFT frequency bin resolution, Nyquist range, time record length, and scalloping loss. Design spectral analysis parameters for DSP systems. Free, instant results.",
   keywords: [
     "FFT resolution",
     "bin width",
@@ -10632,8 +10691,9 @@ var johnsonNoise = {
   slug: "johnson-noise",
   title: "Johnson-Nyquist Thermal Noise Calculator",
   shortTitle: "Johnson-Nyquist Noise",
+  metaTitle: "Johnson Noise Calculator \u2014 Thermal Noise Online",
   category: "signal",
-  description: "Calculate thermal noise voltage, noise power, and noise spectral density for resistors using the Johnson-Nyquist noise formula",
+  description: "Calculate thermal noise voltage, power, and spectral density for any resistor. Determine Johnson-Nyquist noise floor for low-noise circuit design. Free, instant results.",
   keywords: [
     "Johnson noise",
     "thermal noise",
@@ -10889,8 +10949,9 @@ var fmModulationIndex = {
   slug: "fm-modulation-index",
   title: "FM Modulation Index & Bandwidth Calculator",
   shortTitle: "FM Modulation Index",
+  metaTitle: "FM Modulation Index Calculator \u2014 Free Online Tool",
   category: "signal",
-  description: "Calculate FM modulation index, bandwidth using Carson's rule, Bessel bandwidth, and SNR improvement over AM",
+  description: "Calculate FM modulation index, Carson's rule bandwidth, and SNR improvement over AM. Determine Bessel bandwidth for FM transmitter design. Free, instant results.",
   keywords: [
     "FM modulation index",
     "frequency deviation",
@@ -11007,8 +11068,9 @@ var oversamplingSnr = {
   slug: "oversampling-snr",
   title: "Oversampling & Noise Shaping SNR Calculator",
   shortTitle: "Oversampling & Noise Shaping",
+  metaTitle: "Oversampling SNR Calculator \u2014 Free Online Tool",
   category: "signal",
-  description: "Calculate SNR improvement from oversampling and noise shaping for sigma-delta ADCs, including effective bits gained from higher OSR",
+  description: "Calculate SNR improvement from oversampling and noise shaping for sigma-delta ADCs. Determine effective bits gained from higher OSR. Free, instant results.",
   keywords: [
     "oversampling",
     "noise shaping",
@@ -11142,8 +11204,9 @@ var digitalFilterOrder = {
   slug: "digital-filter-order",
   title: "Digital Filter Order Calculator",
   shortTitle: "Filter Order Calculator",
+  metaTitle: "Digital Filter Order Calculator \u2014 Free Online Tool",
   category: "signal",
-  description: "Calculate minimum filter order for Butterworth, Chebyshev, and elliptic (Cauer) low-pass filters given passband ripple and stopband attenuation requirements",
+  description: "Calculate minimum filter order for Butterworth, Chebyshev, and elliptic designs. Determine order from passband ripple and stopband attenuation specs. Free, instant results.",
   keywords: [
     "filter order",
     "Butterworth filter",
@@ -11266,8 +11329,9 @@ var yagiAntenna = {
   slug: "yagi-antenna",
   title: "Yagi-Uda Antenna Design Calculator",
   shortTitle: "Yagi-Uda Antenna",
+  metaTitle: "Yagi Antenna Calculator \u2014 Free Online Design Tool",
   category: "antenna",
-  description: "Calculate Yagi-Uda antenna element dimensions, gain, and impedance for a given frequency and number of elements",
+  description: "Calculate Yagi-Uda antenna element lengths, gain, spacing, and impedance. Design directional Yagi antennas for any frequency. Free, instant results.",
   keywords: [
     "Yagi antenna",
     "Yagi-Uda",
@@ -11406,8 +11470,9 @@ var hornAntenna = {
   slug: "horn-antenna",
   title: "Horn Antenna Gain & Beamwidth Calculator",
   shortTitle: "Horn Antenna",
+  metaTitle: "Horn Antenna Gain Calculator \u2014 Free Online Tool",
   category: "antenna",
-  description: "Calculate pyramidal horn antenna gain, E-plane and H-plane half-power beamwidths, and effective aperture area for microwave applications",
+  description: "Calculate pyramidal horn antenna gain, E/H-plane beamwidths, and effective aperture area. Design horn antennas for microwave systems. Free, instant results.",
   keywords: [
     "horn antenna",
     "aperture antenna",
@@ -11533,8 +11598,9 @@ var parabolicDishAntenna = {
   slug: "parabolic-dish-antenna",
   title: "Parabolic Dish Antenna Calculator",
   shortTitle: "Parabolic Dish",
+  metaTitle: "Parabolic Dish Antenna Calculator \u2014 Free Online",
   category: "antenna",
-  description: "Calculate parabolic dish antenna gain, half-power beamwidth (HPBW), effective aperture area, and noise temperature for satellite and microwave links",
+  description: "Calculate parabolic dish gain, HPBW, effective aperture, and noise temperature. Design satellite and microwave dish antennas. Free, instant results.",
   keywords: [
     "parabolic dish",
     "satellite antenna",
@@ -11664,8 +11730,9 @@ var loopAntenna = {
   slug: "loop-antenna",
   title: "Loop Antenna Calculator",
   shortTitle: "Loop Antenna",
+  metaTitle: "Loop Antenna Calculator \u2014 Free Online Design Tool",
   category: "antenna",
-  description: "Calculate small loop antenna radiation resistance, loss resistance, gain, Q factor, and operating bandwidth for HF and VHF applications",
+  description: "Calculate loop antenna radiation resistance, Q factor, bandwidth, and gain. Design magnetic loop antennas for HF and VHF bands. Free, instant results.",
   keywords: [
     "loop antenna",
     "magnetic loop",
@@ -11793,6 +11860,7 @@ var spiTiming = {
   slug: "spi-timing",
   title: "SPI Timing & Signal Integrity Calculator",
   shortTitle: "SPI Timing",
+  metaTitle: "SPI Timing & Signal Integrity Calculator \u2014 Free Protocol Tool",
   category: "protocol",
   description: "Calculate SPI bus timing parameters including bit period, frame time, maximum clock frequency limited by trace capacitance, and signal slew rate",
   keywords: [
@@ -11944,6 +12012,7 @@ var canBusTiming = {
   slug: "can-bus-timing",
   title: "CAN Bus Bit Timing Calculator",
   shortTitle: "CAN Bus Timing",
+  metaTitle: "CAN Bus Bit Timing Calculator \u2014 Free Protocol Design Tool",
   category: "protocol",
   description: "Calculate CAN bus bit timing parameters including prescaler, time quanta, sync segment, propagation segment, and phase buffer segments for a given baud rate and sample point",
   keywords: [
@@ -12089,6 +12158,7 @@ var usbTermination = {
   slug: "usb-termination",
   title: "USB Termination & Signal Integrity Calculator",
   shortTitle: "USB Termination",
+  metaTitle: "USB Termination & Signal Integrity Calculator \u2014 Free Protocol...",
   category: "protocol",
   description: "Calculate USB bus termination resistor values, differential impedance, cable propagation delay, signal rise time, and eye opening for USB 2.0 and USB 3.0",
   keywords: [
@@ -12222,6 +12292,7 @@ var rs485Termination = {
   slug: "rs485-termination",
   title: "RS-485 Termination & Bias Resistor Calculator",
   shortTitle: "RS-485 Termination",
+  metaTitle: "RS-485 Termination & Bias Resistor Calculator \u2014 Free Protocol...",
   category: "protocol",
   description: "Calculate RS-485 bus termination resistors, bias resistors, maximum baud rate for cable length, propagation delay, and bias current consumption",
   keywords: [
@@ -12375,6 +12446,7 @@ var pwmDutyCycle = {
   slug: "pwm-duty-cycle",
   title: "PWM Duty Cycle Calculator",
   shortTitle: "PWM Duty Cycle",
+  metaTitle: "PWM Duty Cycle Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate PWM duty cycle, frequency, average voltage, off-time, and RMS voltage from on-time and period parameters",
   keywords: [
@@ -12500,6 +12572,7 @@ var mosfetPowerDissipation = {
   slug: "mosfet-power-dissipation",
   title: "MOSFET Power Dissipation Calculator",
   shortTitle: "MOSFET Power Loss",
+  metaTitle: "MOSFET Power Dissipation Calculator \u2014 Free Tool",
   category: "power",
   description: "Calculate MOSFET conduction loss, switching loss, total power dissipation, junction temperature, and efficiency for power electronics design",
   keywords: [
@@ -12686,6 +12759,7 @@ var solarPanelSizing = {
   slug: "solar-panel-sizing",
   title: "Solar Panel Sizing Calculator",
   shortTitle: "Solar Panel Sizing",
+  metaTitle: "Solar Panel Sizing Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate solar panel wattage, battery capacity, and charge controller current for off-grid photovoltaic systems based on load and sun hours",
   keywords: [
@@ -12834,6 +12908,7 @@ var batteryChargeTime = {
   slug: "battery-charge-time",
   title: "Battery Charge Time Calculator",
   shortTitle: "Battery Charge Time",
+  metaTitle: "Battery Charge Time Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate Li-ion battery charge time using CC/CV method, including CC phase duration, total charge time, energy input, and charging efficiency",
   keywords: [
@@ -12991,6 +13066,7 @@ var inrushCurrentLimiter = {
   slug: "inrush-current-limiter",
   title: "Inrush Current Limiter (NTC) Calculator",
   shortTitle: "Inrush Current Limiter",
+  metaTitle: "Inrush Current Limiter Calculator \u2014 Free Tool",
   category: "power",
   description: "Calculate NTC thermistor requirements for inrush current limiting, including cold resistance, peak inrush current, time constant, and energy absorbed",
   keywords: [
@@ -13127,6 +13203,7 @@ var chargePumpVoltage = {
   slug: "charge-pump-voltage",
   title: "Charge Pump Voltage Multiplier Calculator",
   shortTitle: "Charge Pump",
+  metaTitle: "Charge Pump Voltage Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate Dickson charge pump output voltage, loaded voltage, output ripple, and efficiency for switched-capacitor voltage multiplier circuits",
   keywords: [
@@ -13273,6 +13350,7 @@ var switchingRegulatorRipple = {
   slug: "switching-regulator-ripple",
   title: "Switching Regulator Output Ripple Calculator",
   shortTitle: "Switching Regulator Ripple",
+  metaTitle: "Switching Regulator Ripple Calculator \u2014 Free Tool",
   category: "power",
   description: "Calculate buck converter output voltage ripple, inductor current ripple, and ESR contribution for switching regulator design",
   keywords: [
@@ -13416,6 +13494,7 @@ var linearRegulatorDropout = {
   slug: "linear-regulator-dropout",
   title: "LDO Linear Regulator Dropout Calculator",
   shortTitle: "LDO Dropout",
+  metaTitle: "LDO Dropout Voltage Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate LDO regulator power dissipation, junction temperature rise, minimum input voltage, efficiency, and headroom for linear regulator design",
   keywords: [
@@ -13581,8 +13660,9 @@ var pcbCrosstalk = {
   slug: "pcb-crosstalk",
   title: "PCB Crosstalk Calculator",
   shortTitle: "PCB Crosstalk",
+  metaTitle: "PCB Crosstalk Calculator \u2014 Free NEXT & FEXT Tool",
   category: "pcb",
-  description: "Estimate PCB trace crosstalk coupling coefficient, NEXT, FEXT, and critical coupling length for signal integrity analysis on PCB layouts",
+  description: "Calculate PCB trace crosstalk NEXT, FEXT, and coupling coefficient for signal integrity analysis. Determine critical length and guard trace spacing. Free, instant results.",
   keywords: [
     "PCB crosstalk",
     "NEXT",
@@ -13723,8 +13803,9 @@ var decouplingCapacitor = {
   slug: "decoupling-capacitor",
   title: "Decoupling Capacitor Selection Calculator",
   shortTitle: "Decoupling Capacitor",
+  metaTitle: "Decoupling Capacitor Calculator \u2014 Free Online PCB Tool",
   category: "pcb",
-  description: "Calculate decoupling capacitor self-resonant frequency, impedance at target frequency, effective bypass range, and number of capacitors needed for power integrity",
+  description: "Calculate decoupling capacitor SRF, impedance at target frequency, and number of caps needed for power integrity. Includes ESR/ESL modeling. Free, instant results.",
   keywords: [
     "decoupling capacitor",
     "bypass capacitor",
@@ -13881,8 +13962,9 @@ var pcbTraceInductance = {
   slug: "pcb-trace-inductance",
   title: "PCB Trace Inductance Calculator",
   shortTitle: "PCB Trace Inductance",
+  metaTitle: "PCB Trace Inductance Calculator \u2014 Free Online Tool",
   category: "pcb",
-  description: "Calculate PCB trace parasitic inductance using the Ruehli formula, including inductance per unit length and inductive impedance at key frequencies",
+  description: "Calculate PCB trace parasitic inductance using the Ruehli formula. Get inductance per unit length and impedance at 100 MHz and 1 GHz. Free, instant results.",
   keywords: [
     "PCB trace inductance",
     "trace parasitic",
@@ -14003,8 +14085,9 @@ var viaThermalResistance = {
   slug: "via-thermal-resistance",
   title: "Via Thermal Resistance Calculator",
   shortTitle: "Via Thermal Resistance",
+  metaTitle: "Thermal Via Calculator \u2014 Free PCB Via Resistance Tool",
   category: "pcb",
-  description: "Calculate PCB via thermal resistance, array thermal resistance, thermal conductance, and current-carrying capacity for thermal via design",
+  description: "Calculate thermal via resistance, array conductance, and current capacity for PCB thermal management. Design filled and plated via arrays. Free, instant results.",
   keywords: [
     "via thermal resistance",
     "thermal via",
@@ -14157,6 +14240,7 @@ var bjtBiasPoint = {
   slug: "bjt-bias-point",
   title: "BJT Transistor Bias Point Calculator",
   shortTitle: "BJT Bias Point",
+  metaTitle: "BJT Transistor Bias Point Calculator \u2014 Free Electronics Tool",
   category: "general",
   description: "Calculate BJT voltage divider bias Q-point including collector current, base voltage, VCE, power dissipation, and operating region",
   keywords: [
@@ -14341,6 +14425,7 @@ var mosfetOperatingPoint = {
   slug: "mosfet-operating-point",
   title: "MOSFET Operating Point Calculator",
   shortTitle: "MOSFET Operating Point",
+  metaTitle: "MOSFET Operating Point Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate MOSFET drain current, saturation voltage, transconductance, and operating region (cutoff, triode, saturation) for NMOS transistors",
   keywords: [
@@ -14481,6 +14566,7 @@ var comparatorHysteresis = {
   slug: "comparator-hysteresis",
   title: "Comparator Hysteresis (Schmitt Trigger) Calculator",
   shortTitle: "Comparator Hysteresis",
+  metaTitle: "Comparator Hysteresis (Schmitt Trigger) Calculator \u2014 Free...",
   category: "general",
   description: "Calculate comparator hysteresis trip points for Schmitt trigger circuits, upper and lower threshold voltages, and design resistor values for a desired hysteresis percentage",
   keywords: [
@@ -14634,6 +14720,7 @@ var timer555 = {
   slug: "555-timer",
   title: "555 Timer Calculator (Astable & Monostable)",
   shortTitle: "555 Timer",
+  metaTitle: "555 Timer Calculator (Astable & Monostable) \u2014 Free...",
   category: "general",
   description: "Calculate 555 timer frequency, period, duty cycle, and pulse width for both astable oscillator and monostable one-shot configurations",
   keywords: [
@@ -14786,6 +14873,7 @@ var transistorSwitch = {
   slug: "transistor-switch",
   title: "BJT Transistor Switch Calculator",
   shortTitle: "Transistor Switch",
+  metaTitle: "BJT Transistor Switch Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate BJT transistor switch parameters including load current, required base current, base resistor value, saturation check, and power dissipation",
   keywords: [
@@ -14957,6 +15045,7 @@ var currentMirror = {
   slug: "current-mirror",
   title: "Current Mirror Calculator",
   shortTitle: "Current Mirror",
+  metaTitle: "Current Mirror Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate current mirror output current, beta error, reference resistor, power consumption, and Widlar mirror resistor for analog IC and bias circuit design",
   keywords: [
@@ -15100,6 +15189,7 @@ var thermalResistanceNetwork = {
   slug: "thermal-resistance-network",
   title: "Thermal Resistance Network Calculator",
   shortTitle: "Thermal Resistance Network",
+  metaTitle: "Thermal Resistance Network Calculator \u2014 Free Thermal Design Tool",
   category: "thermal",
   description: "Calculate junction, case, and heatsink temperatures through a series thermal resistance network (\u03B8JC + \u03B8CS + \u03B8SA) for component thermal management",
   keywords: [
@@ -15422,6 +15512,7 @@ var servoMotor = {
   slug: "servo-motor",
   title: "Servo Motor Torque & Speed",
   shortTitle: "Servo Motor",
+  metaTitle: "Servo Motor Torque & Speed \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate servo motor torque, speed, efficiency, and back-EMF from electrical and load parameters.",
   keywords: ["servo motor", "torque speed", "back EMF", "servo efficiency", "RC servo", "servo power"],
@@ -15465,6 +15556,7 @@ var gearRatio = {
   slug: "gear-ratio",
   title: "Gear Ratio Calculator",
   shortTitle: "Gear Ratio",
+  metaTitle: "Gear Ratio Calculator \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate gear ratio, output speed, torque multiplication, and power transmission efficiency for gear trains.",
   keywords: ["gear ratio", "gear train", "torque multiplication", "speed reduction", "gear efficiency", "planetary gear"],
@@ -15509,6 +15601,7 @@ var pwmDutyCycleMotor = {
   slug: "pwm-duty-cycle-motor",
   title: "PWM Duty Cycle to Motor Voltage",
   shortTitle: "PWM Motor Speed",
+  metaTitle: "PWM Duty Cycle to Motor Voltage \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Convert PWM duty cycle to effective motor voltage, calculate no-load speed and stall current for DC motor PWM control.",
   keywords: ["PWM duty cycle", "motor voltage", "PWM motor control", "effective voltage", "motor speed control", "H-bridge PWM"],
@@ -15540,11 +15633,11 @@ var pwmDutyCycleMotor = {
 // src/lib/calculators/motor/torque-unit-converter.ts
 function calculateTorqueUnitConverter(inputs) {
   const { nm } = inputs;
-  const lbFt = nm * 0.737562;
-  const lbIn = nm * 8.85075;
-  const ozIn = nm * 141.612;
-  const kgCm = nm * 10.1972;
-  const kgM = nm * 0.101972;
+  const lbFt = nm * 0.7375621493;
+  const lbIn = nm * 8.8507457916;
+  const ozIn = nm * 141.61193267;
+  const kgCm = nm * 10.19716213;
+  const kgM = nm * 0.1019716213;
   const dyneCm = nm * 1e7;
   return { values: { lbFt, lbIn, ozIn, kgCm, kgM, dyneCm } };
 }
@@ -15552,6 +15645,7 @@ var torqueUnitConverter = {
   slug: "torque-unit-converter",
   title: "Torque Unit Converter",
   shortTitle: "Torque Converter",
+  metaTitle: "Torque Unit Converter \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Convert torque between Newton-metres, pound-feet, pound-inches, oz\xB7in, kg\xB7cm and dyne\xB7cm \u2014 covers all motor datasheet units.",
   keywords: ["torque converter", "N\xB7m to lb\xB7ft", "oz-in to N-m", "kg-cm torque", "torque unit conversion", "motor torque units"],
@@ -15605,6 +15699,7 @@ var motorEfficiency = {
   slug: "motor-efficiency",
   title: "Motor Input/Output Efficiency",
   shortTitle: "Motor Efficiency",
+  metaTitle: "Motor Input/Output Efficiency \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate motor efficiency, power losses, and heat dissipation from electrical input and mechanical output measurements.",
   keywords: ["motor efficiency", "motor losses", "motor heat", "efficiency percentage", "motor power", "motor thermal"],
@@ -15650,6 +15745,7 @@ var inductionMotorSlip = {
   slug: "induction-motor-slip",
   title: "Induction Motor Slip",
   shortTitle: "Motor Slip",
+  metaTitle: "Induction Motor Slip \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate induction motor slip, synchronous speed, slip frequency, and rotor speed for AC induction motors.",
   keywords: ["induction motor", "motor slip", "synchronous speed", "slip frequency", "AC motor", "slip RPM"],
@@ -15705,6 +15801,7 @@ var motorInrushCurrent = {
   slug: "motor-inrush-current",
   title: "Motor Inrush Current",
   shortTitle: "Motor Inrush",
+  metaTitle: "Motor Inrush Current \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate motor inrush current, voltage drop during startup, and I\xB2t value for fuse/breaker selection.",
   keywords: ["motor inrush current", "startup current", "locked rotor current", "I2t fuse", "motor protection", "motor soft start"],
@@ -15747,6 +15844,7 @@ var motorHeatDissipation = {
   slug: "motor-heat-dissipation",
   title: "Motor Heat Dissipation",
   shortTitle: "Motor Heat",
+  metaTitle: "Motor Heat Dissipation \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate motor heat dissipation, temperature rise, and operating temperature from input power and efficiency.",
   keywords: ["motor heat", "motor temperature", "motor cooling", "motor losses", "thermal resistance motor", "motor temperature rise"],
@@ -15787,6 +15885,7 @@ var encoderResolution = {
   slug: "encoder-resolution",
   title: "Encoder Resolution Calculator",
   shortTitle: "Encoder Resolution",
+  metaTitle: "Encoder Resolution Calculator \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate encoder counts per revolution, angular resolution, and maximum frequency for quadrature and single-channel encoders.",
   keywords: ["encoder resolution", "quadrature encoder", "PPR encoder", "CPR encoder", "encoder counts", "optical encoder"],
@@ -15840,6 +15939,7 @@ var motorStartingTorque = {
   slug: "motor-starting-torque",
   title: "Motor Starting Torque",
   shortTitle: "Starting Torque",
+  metaTitle: "Motor Starting Torque \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate DC motor starting (stall) torque, stall current, no-load speed, and peak power at startup.",
   keywords: ["motor starting torque", "stall torque", "locked rotor torque", "motor startup", "stall current", "DC motor stall"],
@@ -15881,6 +15981,7 @@ var batteryRuntimeMotor = {
   slug: "battery-runtime-motor",
   title: "Battery Runtime (Motor Load)",
   shortTitle: "Motor Battery Life",
+  metaTitle: "Battery Runtime (Motor Load) \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate battery runtime for motor-driven systems accounting for motor current draw, efficiency, and depth of discharge.",
   keywords: ["battery runtime motor", "motor battery life", "robot battery", "motor run time", "mAh motor", "battery capacity motor"],
@@ -15927,6 +16028,7 @@ var motorWindingResistance = {
   slug: "motor-winding-resistance",
   title: "Winding Resistance vs Temperature",
   shortTitle: "Winding Resistance",
+  metaTitle: "Winding Resistance vs Temperature \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate motor winding resistance at operating temperature using the copper temperature coefficient of resistance.",
   keywords: ["winding resistance", "motor resistance temperature", "copper TCR", "motor temperature coefficient", "winding temperature", "motor derating"],
@@ -15966,6 +16068,7 @@ var hBridgeSelection = {
   slug: "h-bridge-selection",
   title: "H-Bridge MOSFET Selection",
   shortTitle: "H-Bridge",
+  metaTitle: "H-Bridge MOSFET Selection \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate H-bridge MOSFET requirements including peak current, conduction losses, and minimum current rating for DC motor drivers.",
   keywords: ["H-bridge", "motor driver", "MOSFET selection", "H-bridge design", "motor driver IC", "RDS(on) motor"],
@@ -16020,6 +16123,7 @@ var motorDriverPower = {
   slug: "motor-driver-power",
   title: "Motor Driver Power Dissipation",
   shortTitle: "Driver Power",
+  metaTitle: "Motor Driver Power Dissipation \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate motor driver IC or discrete MOSFET power dissipation including conduction loss and switching loss at a given PWM frequency.",
   keywords: ["motor driver power", "motor driver loss", "MOSFET switching loss", "motor driver efficiency", "PWM loss", "motor driver heat"],
@@ -16066,6 +16170,7 @@ var pidTuning = {
   slug: "pid-tuning",
   title: "PID Controller Tuning (Ziegler-Nichols)",
   shortTitle: "PID Tuning",
+  metaTitle: "PID Controller Tuning (Ziegler-Nichols) \u2014 Free Motor Design Tool",
   category: "motor",
   description: "Calculate PID controller gains using the Ziegler-Nichols open-loop (reaction curve) method from process gain, dead time, and time constant.",
   keywords: ["PID tuning", "Ziegler-Nichols", "PID gains", "PID controller", "motor PID", "Kp Ki Kd"],
@@ -16117,8 +16222,9 @@ var ntcThermistor = {
   slug: "ntc-thermistor",
   title: "NTC Thermistor Temperature Calculator",
   shortTitle: "NTC Thermistor",
+  metaTitle: "NTC Thermistor Calculator \u2014 Free Online Tool",
   category: "sensor",
-  description: "Calculate temperature from NTC thermistor resistance using the Steinhart-Hart beta equation. Useful for PT100/PT1000 and generic NTC thermistors.",
+  description: "Calculate temperature from NTC thermistor resistance using the Steinhart-Hart beta equation. Get Kelvin and Celsius outputs for sensor circuit design.",
   keywords: [
     "NTC thermistor",
     "thermistor temperature",
@@ -16343,8 +16449,9 @@ var wheatstoneBridge = {
   slug: "wheatstone-bridge",
   title: "Wheatstone Bridge Calculator",
   shortTitle: "Wheatstone Bridge",
+  metaTitle: "Wheatstone Bridge Calculator \u2014 Free Online Tool",
   category: "sensor",
-  description: "Calculate Wheatstone bridge output voltage, balance condition, and sensitivity. Used for strain gauges, RTDs, and precision resistance measurements.",
+  description: "Calculate Wheatstone bridge output voltage, balance condition, and mV/V sensitivity. Design circuits for strain gauges, RTDs, and load cells.",
   keywords: [
     "Wheatstone bridge",
     "bridge circuit",
@@ -16453,7 +16560,7 @@ var wheatstoneBridge = {
 // src/lib/calculators/sensor/hall-effect-sensor.ts
 function calculateHallEffectSensor(inputs) {
   const { current, Bfield, thickness, carrierDensity } = inputs;
-  const e = 1602e-22;
+  const e = 1602176634e-28;
   const n = carrierDensity * 1e23;
   if (n <= 0 || thickness <= 0 || Bfield <= 0) {
     return { values: { hallVoltage: 0, hallCoefficient: 0, sensitivity: 0 }, errors: ["Carrier density, thickness, and magnetic field must be positive"] };
@@ -16479,7 +16586,7 @@ var hallEffectSensor = {
   shortTitle: "Hall Effect Sensor",
   category: "sensor",
   description: "Calculate Hall voltage V_H = R_H\xB7I\xB7B/t, carrier density, and sensitivity for Hall effect sensors. Covers magnetic field measurement, current sensing, and position detection applications.",
-  metaTitle: "Hall Effect Sensor Calculator \u2014 Hall Voltage, Sensitivity & Carrier Density",
+  metaTitle: "Hall Effect Sensor Calculator \u2014 Voltage & Sensitivity",
   keywords: [
     "Hall effect",
     "Hall voltage",
@@ -16604,8 +16711,9 @@ var strainGaugeBridge = {
   slug: "strain-gauge-bridge",
   title: "Strain Gauge Bridge Calculator",
   shortTitle: "Strain Gauge Bridge",
+  metaTitle: "Strain Gauge Bridge Calculator \u2014 Free Online Tool",
   category: "sensor",
-  description: "Calculate Wheatstone bridge output voltage for strain gauges. Supports quarter, half, and full bridge configurations for structural monitoring and load cell design.",
+  description: "Calculate bridge output voltage for strain gauges in quarter, half, and full bridge configs. Determine mV output and resistance change for load cells.",
   keywords: [
     "strain gauge",
     "Wheatstone bridge",
@@ -16716,7 +16824,7 @@ function calculatePt100Resistance(inputs) {
   const { temperature, r0 } = inputs;
   const A = 39083e-7;
   const B = -5775e-10;
-  const C = -4183e-15;
+  const C = -42735e-16;
   let resistance;
   if (temperature >= 0) {
     resistance = r0 * (1 + A * temperature + B * temperature ** 2);
@@ -16730,8 +16838,9 @@ var pt100Resistance = {
   slug: "pt100-resistance",
   title: "PT100/PT1000 Resistance vs Temperature",
   shortTitle: "PT100 Resistance",
+  metaTitle: "PT100 Resistance Calculator \u2014 IEC 60751 Online Tool",
   category: "sensor",
-  description: "Calculate PT100 or PT1000 RTD resistance at any temperature using the ITS-90 Callendar-Van Dusen equation.",
+  description: "Calculate PT100 or PT1000 RTD resistance at any temperature using the Callendar-Van Dusen equation. Get resistance and sensitivity per IEC 60751.",
   keywords: ["PT100", "PT1000", "RTD resistance", "Callendar Van Dusen", "temperature sensor resistance", "RTD temperature"],
   inputs: [
     {
@@ -16803,8 +16912,9 @@ var thermocoupleVoltage = {
   slug: "thermocouple-voltage",
   title: "Thermocouple Voltage & Temperature",
   shortTitle: "Thermocouple",
+  metaTitle: "Thermocouple Voltage Calculator \u2014 Type K/J/T/E Online",
   category: "sensor",
-  description: "Calculate thermocouple EMF voltage from hot junction temperature and cold junction compensation for Type K, J, T, and E thermocouples.",
+  description: "Calculate thermocouple EMF voltage from temperature with cold junction compensation. Determine Seebeck output for Type K, J, T, and E sensors.",
   keywords: ["thermocouple voltage", "Type K thermocouple", "cold junction compensation", "thermocouple EMF", "Seebeck coefficient", "thermocouple mV"],
   inputs: [
     {
@@ -16872,8 +16982,9 @@ var loadCellAmplifier = {
   slug: "load-cell-amplifier",
   title: "Load Cell Amplifier Gain",
   shortTitle: "Load Cell Amp",
+  metaTitle: "Load Cell Amplifier Gain Calculator \u2014 Free Online",
   category: "sensor",
-  description: "Calculate load cell output voltage, required amplifier gain, and sensitivity for Wheatstone bridge load cells.",
+  description: "Calculate load cell output voltage, required amplifier gain, and mV/V sensitivity for Wheatstone bridge weigh scale and force sensor designs.",
   keywords: ["load cell amplifier", "load cell gain", "load cell mV/V", "INA125 gain", "strain gauge amplifier", "weigh scale amplifier"],
   inputs: [
     {
@@ -16934,8 +17045,9 @@ var photodiodeTransimpedance = {
   slug: "photodiode-transimpedance",
   title: "Photodiode Transimpedance Amplifier",
   shortTitle: "TIA Design",
+  metaTitle: "Transimpedance Amplifier Calculator \u2014 TIA Design Tool",
   category: "sensor",
-  description: "Calculate transimpedance amplifier (TIA) output voltage, bandwidth, and noise for photodiode signal conditioning.",
+  description: "Calculate TIA output voltage, bandwidth, and noise for photodiode circuits. Design transimpedance amplifier gain and feedback components.",
   keywords: ["transimpedance amplifier", "TIA photodiode", "photodiode amplifier", "op-amp TIA", "current to voltage converter", "TIA bandwidth"],
   inputs: [
     {
@@ -16976,7 +17088,7 @@ var photodiodeTransimpedance = {
     const cfF = feedbackCapacitance * 1e-12;
     const outputVoltageV = photocurrent * 1e-6 * rfOhm * 1e3;
     const bandwidth = cfF > 0 ? 1 / (2 * Math.PI * rfOhm * cfF) / 1e3 : 0;
-    const noiseVoltage = Math.sqrt(4 * 138e-25 * 293 * rfOhm) * 1e9;
+    const noiseVoltage = Math.sqrt(4 * 1380649e-29 * 293 * rfOhm) * 1e9;
     return { values: { outputVoltageV, bandwidth, noiseVoltage } };
   },
   formula: {
@@ -16996,7 +17108,7 @@ function calculateCapacitiveProximity(inputs) {
   if (gapDistance <= 0) {
     return { values: { capacitancePf: 0, sensitivity: 0 }, errors: ["Gap distance must be positive"] };
   }
-  const eps0 = 8854e-15;
+  const eps0 = 88541878128e-22;
   const areaSqM = plateArea * 1e-4;
   const gapM = gapDistance * 1e-3;
   const capacitancePf = eps0 * permittivity * areaSqM / gapM * 1e12;
@@ -17007,8 +17119,9 @@ var capacitiveProximity = {
   slug: "capacitive-proximity",
   title: "Capacitive Proximity Sensor",
   shortTitle: "Capacitive Sensor",
+  metaTitle: "Capacitive Proximity Sensor Calculator \u2014 Free Online",
   category: "sensor",
-  description: "Calculate capacitance between sensor plate and target, and sensitivity (pF/mm) for capacitive proximity sensor design.",
+  description: "Calculate capacitance and sensitivity (pF/mm) between sensor plate and target. Design capacitive proximity and touch sensor detection circuits.",
   keywords: ["capacitive proximity sensor", "capacitive sensor", "proximity sensor design", "capacitance gap", "touch sensor", "capacitive transducer"],
   inputs: [
     {
@@ -17045,7 +17158,7 @@ var capacitiveProximity = {
   formula: {
     primary: "C = \u03B5\u2080\u03B5\u1D63A/d",
     variables: [
-      { symbol: "\u03B5\u2080", description: "8.854 \xD7 10\u207B\xB9\xB2 F/m", unit: "F/m" },
+      { symbol: "\u03B5\u2080", description: "8.8542 \xD7 10\u207B\xB9\xB2 F/m", unit: "F/m" },
       { symbol: "\u03B5\u1D63", description: "Relative permittivity", unit: "" }
     ]
   },
@@ -17058,8 +17171,9 @@ var currentShunt = {
   slug: "current-shunt",
   title: "Current Shunt Resistor",
   shortTitle: "Current Shunt",
+  metaTitle: "Current Shunt Resistor Calculator \u2014 Free Online Tool",
   category: "sensor",
-  description: "Calculate shunt resistor voltage drop, amplifier output, power dissipation, and ADC resolution for current sensing.",
+  description: "Calculate shunt resistor voltage drop, power dissipation, amplifier output, and ADC resolution for current sensing circuits. Free, instant results.",
   keywords: ["current shunt", "shunt resistor", "current sensing", "INA219", "current monitor", "shunt amplifier"],
   inputs: [
     {
@@ -17137,8 +17251,9 @@ var accelerometerSensitivity = {
   slug: "accelerometer-sensitivity",
   title: "Accelerometer Range & Sensitivity",
   shortTitle: "Accelerometer",
+  metaTitle: "Accelerometer Sensitivity Calculator \u2014 mg/LSB Online",
   category: "sensor",
-  description: "Calculate accelerometer output voltage, ADC resolution, and mg per LSB from sensitivity and full-scale range specifications.",
+  description: "Calculate accelerometer output voltage, ADC resolution in mg per LSB, and full-scale range. Design MEMS vibration and motion sensor interfaces.",
   keywords: ["accelerometer sensitivity", "accelerometer range", "MEMS accelerometer", "mg/LSB", "accelerometer ADC", "vibration sensor"],
   inputs: [
     {
@@ -17204,8 +17319,9 @@ var pressureBridgeOutput = {
   slug: "pressure-bridge-output",
   title: "Pressure Sensor Bridge Output",
   shortTitle: "Pressure Bridge",
+  metaTitle: "Pressure Sensor Bridge Output Calculator \u2014 Free Tool",
   category: "sensor",
-  description: "Calculate Wheatstone bridge output voltage for piezoresistive pressure sensors from excitation, sensitivity, and applied pressure.",
+  description: "Calculate bridge output voltage for piezoresistive pressure sensors. Determine mV output from excitation voltage, sensitivity, and applied pressure.",
   keywords: ["pressure sensor bridge", "piezoresistive sensor", "bridge output voltage", "pressure transducer mV/V", "pressure sensor output", "bridge pressure"],
   inputs: [
     {
@@ -17282,8 +17398,9 @@ var sensorAccuracyBudget = {
   slug: "sensor-accuracy-budget",
   title: "Sensor Accuracy Budget",
   shortTitle: "Sensor Accuracy",
+  metaTitle: "Sensor Accuracy Budget Calculator \u2014 RSS & Worst-Case",
   category: "sensor",
-  description: "Calculate total sensor system accuracy using RSS and worst-case methods from offset, gain, nonlinearity, resolution, and temperature drift errors.",
+  description: "Calculate total sensor error using RSS and worst-case methods. Analyze offset, gain, nonlinearity, resolution, and temperature drift contributions.",
   keywords: ["sensor accuracy budget", "error budget", "sensor accuracy", "RSS error", "sensor system accuracy", "measurement accuracy"],
   inputs: [
     {
@@ -17367,8 +17484,9 @@ var opticalSensorRange = {
   slug: "optical-sensor-range",
   title: "Optical Proximity Sensor Range",
   shortTitle: "Optical Range",
+  metaTitle: "Optical Proximity Sensor Range Calculator \u2014 Free Tool",
   category: "sensor",
-  description: "Compare optical proximity sensor configurations using a relative detection factor derived from emitter power, detector responsivity, and target reflectivity. The output is dimensionless \u2014 use it to rank or compare configurations, not as an absolute distance.",
+  description: "Compare optical proximity sensor configurations by detection factor. Analyze emitter power, detector responsivity, and reflectivity tradeoffs.",
   keywords: ["optical proximity sensor", "IR sensor range", "photointerrupter", "reflective optical sensor", "sensor range", "optical encoder range"],
   inputs: [
     {
@@ -17445,8 +17563,9 @@ var lvdtSensitivity = {
   slug: "lvdt-sensitivity",
   title: "LVDT Sensitivity & Range",
   shortTitle: "LVDT",
+  metaTitle: "LVDT Sensitivity Calculator \u2014 mV/mm & Range Online",
   category: "sensor",
-  description: "Calculate LVDT (Linear Variable Differential Transformer) output voltage, sensitivity in mV/mm, and linear range from excitation and stroke.",
+  description: "Calculate LVDT output voltage, sensitivity in mV/mm, and linear range from excitation voltage and stroke. Design displacement sensor signal chains.",
   keywords: ["LVDT", "linear variable differential transformer", "LVDT sensitivity", "LVDT range", "displacement sensor", "position sensor LVDT"],
   inputs: [
     {
@@ -17514,8 +17633,9 @@ var loopTransmitter420ma = {
   slug: "4-20ma-transmitter",
   title: "4\u201320 mA Loop Transmitter",
   shortTitle: "4-20mA Loop",
+  metaTitle: "4-20mA Loop Calculator \u2014 Voltage Budget & Max Load",
   category: "sensor",
-  description: "Calculate 4\u201320 mA current loop voltage budget, sensor value from current, and maximum loop resistance for industrial sensor transmitters.",
+  description: "Calculate 4-20 mA current loop voltage budget, sensor value from loop current, and maximum loop resistance for industrial transmitter design.",
   keywords: ["4-20mA loop", "current loop", "4-20mA transmitter", "industrial sensor", "loop resistance", "HART current loop"],
   inputs: [
     {
@@ -17589,7 +17709,7 @@ function calculateFrequencyWavelength(inputs) {
   if (frequency <= 0 || velocityFactor <= 0) {
     return { values: { wavelength: 0, wavelengthCm: 0, wavelengthMm: 0, halfWave: 0, quarterWave: 0 }, errors: ["Frequency and velocity factor must be positive"] };
   }
-  const c = 3e8;
+  const c = 299792458;
   const f_Hz = frequency * 1e6;
   const wavelength = c * velocityFactor / f_Hz;
   const wavelengthCm = wavelength * 100;
@@ -17853,6 +17973,7 @@ var temperatureConverter = {
   slug: "temperature-converter",
   title: "Temperature Unit Converter",
   shortTitle: "Temperature Converter",
+  metaTitle: "Temperature Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert temperature between Celsius, Fahrenheit, Kelvin, Rankine, and R\xE9aumur scales. Useful for thermal analysis, datasheet comparison, and engineering calculations.",
   keywords: [
@@ -17958,6 +18079,7 @@ var awgWire = {
   slug: "awg-wire",
   title: "AWG Wire Gauge Calculator",
   shortTitle: "AWG Wire Gauge",
+  metaTitle: "AWG Wire Gauge Calculator \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert AWG wire gauge to diameter (mm/inches), cross-sectional area (mm\xB2), resistance per meter, and approximate current carrying capacity.",
   keywords: [
@@ -18085,6 +18207,7 @@ var capacitorCode = {
   slug: "capacitor-code",
   title: "Capacitor Code Decoder",
   shortTitle: "Capacitor Code",
+  metaTitle: "Capacitor Code Decoder \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Decode 3-digit capacitor code (e.g., 104 = 100nF) to capacitance in pF, nF, and \u03BCF. Works with ceramic, film, and tantalum capacitor markings.",
   keywords: [
@@ -18184,6 +18307,7 @@ var inductanceUnits = {
   slug: "inductance-units",
   title: "Inductance Unit Converter",
   shortTitle: "Inductance Converter",
+  metaTitle: "Inductance Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert inductance between henries, millihenries, microhenries, nanohenries, and picohenries.",
   keywords: ["inductance converter", "henry to microhenry", "mH to \u03BCH", "nH to \u03BCH", "inductance unit conversion", "inductor value converter"],
@@ -18237,6 +18361,7 @@ var capacitanceUnits = {
   slug: "capacitance-units",
   title: "Capacitance Unit Converter",
   shortTitle: "Capacitance Converter",
+  metaTitle: "Capacitance Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert capacitance between farads, millifarads, microfarads, nanofarads, and picofarads.",
   keywords: ["capacitance converter", "\u03BCF to nF", "pF to nF", "capacitor value converter", "capacitance unit conversion", "farad converter"],
@@ -18290,6 +18415,7 @@ var resistanceUnits = {
   slug: "resistance-units",
   title: "Resistance Unit Converter",
   shortTitle: "Resistance Converter",
+  metaTitle: "Resistance Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert resistance between milliohms, ohms, kilohms, megaohms, and gigaohms.",
   keywords: ["resistance converter", "ohm to kilohm", "M\u03A9 to k\u03A9", "resistance unit conversion", "resistor value converter", "m\u03A9 to \u03A9"],
@@ -18342,6 +18468,7 @@ var currentUnits = {
   slug: "current-units",
   title: "Current Unit Converter",
   shortTitle: "Current Converter",
+  metaTitle: "Current Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert electric current between amperes, milliamperes, microamperes, nanoamperes, and picoamperes.",
   keywords: ["current converter", "mA to \u03BCA", "nA to mA", "current unit conversion", "ampere converter", "\u03BCA to A"],
@@ -18395,6 +18522,7 @@ var voltageUnits = {
   slug: "voltage-units",
   title: "Voltage Unit Converter",
   shortTitle: "Voltage Converter",
+  metaTitle: "Voltage Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert voltage between microvolts, millivolts, volts, kilovolts, and megavolts.",
   keywords: ["voltage converter", "mV to V", "kV to V", "voltage unit conversion", "volt converter", "\u03BCV to mV"],
@@ -18448,6 +18576,7 @@ var timeUnits = {
   slug: "time-units",
   title: "Time Unit Converter",
   shortTitle: "Time Converter",
+  metaTitle: "Time Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert time between seconds, milliseconds, microseconds, nanoseconds, picoseconds, and femtoseconds for digital and RF applications.",
   keywords: ["time unit converter", "ns to \u03BCs", "ms to \u03BCs", "picosecond converter", "nanosecond converter", "time conversion electronics"],
@@ -18502,6 +18631,7 @@ var magneticFluxUnits = {
   slug: "magnetic-flux-units",
   title: "Magnetic Flux Density Converter",
   shortTitle: "Magnetic Units",
+  metaTitle: "Magnetic Flux Density Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert magnetic flux density between Tesla, milliTesla, microTesla, Gauss, and nanoTesla for sensor and motor applications.",
   keywords: ["tesla converter", "gauss to tesla", "magnetic flux density", "magnetic field units", "nT to \u03BCT", "magnetics unit conversion"],
@@ -18607,6 +18737,7 @@ var angleUnits = {
   slug: "angle-units",
   title: "Angle Unit Converter",
   shortTitle: "Angle Converter",
+  metaTitle: "Angle Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert angles between degrees, radians, gradians, arcminutes, arcseconds, and turns for motor, antenna, and RF applications.",
   keywords: ["angle converter", "degrees to radians", "radians to degrees", "gradian", "arcminute arcsecond", "angle unit conversion"],
@@ -18650,7 +18781,8 @@ function calculateEnergyUnits(inputs) {
     values: {
       millijoule: joule * 1e3,
       microjoule: joule * 1e6,
-      electronvolt: joule / 1602e-22,
+      electronvolt: joule / 1602176634e-28,
+      // 2019 SI exact
       kwh: joule / 36e5,
       calorie: joule / 4.184,
       btu: joule / 1055.06
@@ -18661,6 +18793,7 @@ var energyUnits = {
   slug: "energy-units",
   title: "Energy Unit Converter",
   shortTitle: "Energy Converter",
+  metaTitle: "Energy Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert energy between joules, millijoules, electron-volts, kilowatt-hours, calories, and BTU.",
   keywords: ["energy converter", "joule to kWh", "eV to joule", "energy unit conversion", "BTU to joule", "calorie converter"],
@@ -18715,6 +18848,7 @@ var torqueUnitsConv = {
   slug: "torque-units",
   title: "Torque Unit Converter (N\xB7m/lb\xB7ft/oz\xB7in)",
   shortTitle: "Torque Converter",
+  metaTitle: "Torque Unit Converter (N\xB7m/lb\xB7ft/oz\xB7in) \u2014 Free Conversion Tool",
   category: "unit-conversion",
   description: "Convert torque between Newton-metres, pound-feet, pound-inches, oz\xB7in, kg\xB7cm, kg\xB7m, and dyne\xB7cm.",
   keywords: ["torque unit converter", "N-m to lb-ft", "oz-in to N-m", "torque conversion", "kg-cm to N-m", "torque units"],
@@ -18758,7 +18892,8 @@ function calculateIlluminanceUnits(inputs) {
   const { lux } = inputs;
   return {
     values: {
-      footcandle: lux / 10.7639,
+      footcandle: lux * 0.3048 * 0.3048,
+      // 1 fc = 1 lm/ft², 1 ft = 0.3048 m (exact)
       millilux: lux * 1e3,
       kilolux: lux / 1e3,
       phot: lux / 1e4
@@ -18769,6 +18904,7 @@ var illuminanceUnits = {
   slug: "illuminance-units",
   title: "Illuminance Unit Converter",
   shortTitle: "Illuminance Converter",
+  metaTitle: "Illuminance Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
   description: "Convert illuminance between lux, foot-candles, millilux, kilolux, and phot for ambient light sensor and LED design.",
   keywords: ["lux converter", "lux to foot-candle", "illuminance converter", "foot-candle to lux", "light level converter", "ambient light units"],
@@ -18829,6 +18965,7 @@ var junctionTemperature = {
   slug: "junction-temperature",
   title: "Junction Temperature Calculator",
   shortTitle: "Junction Temperature",
+  metaTitle: "Junction Temperature Calculator \u2014 Free Thermal Design Tool",
   category: "thermal",
   description: "Calculate semiconductor junction temperature from power dissipation and thermal resistance chain (\u03B8JC + \u03B8CS + \u03B8SA). Essential for transistor, MOSFET, and IC thermal design.",
   keywords: [
@@ -18999,6 +19136,7 @@ var heatsinkSelection = {
   slug: "heatsink-selection",
   title: "Heatsink Selection Calculator",
   shortTitle: "Heatsink Selection",
+  metaTitle: "Heatsink Selection Calculator \u2014 Free Thermal Design Tool",
   category: "thermal",
   description: "Calculate the required heatsink thermal resistance (\u03B8SA) to keep a device junction below its maximum temperature. Use this to select an appropriate heatsink.",
   keywords: [
@@ -19148,6 +19286,7 @@ var thermalViaArray = {
   slug: "thermal-via-array",
   title: "Thermal Via Array Calculator",
   shortTitle: "Thermal Via Array",
+  metaTitle: "Thermal Via Array Calculator \u2014 Free Thermal Design Tool",
   category: "thermal",
   description: "Calculate thermal resistance of a PCB thermal via array for heat spreading from SMD packages to inner copper planes or heatsinks.",
   keywords: [
@@ -19334,6 +19473,7 @@ var pllLoopFilter = {
   slug: "pll-loop-filter",
   title: "PLL Loop Filter Designer",
   shortTitle: "PLL Loop Filter",
+  metaTitle: "PLL Loop Filter Designer \u2014 Free Online Calculator",
   category: "signal",
   description: "Design a type-2 second-order PLL passive loop filter. Calculates time constants, capacitor and resistor values for target loop bandwidth and phase margin.",
   keywords: [
@@ -19688,8 +19828,9 @@ var quantizationNoise = {
   slug: "quantization-noise",
   title: "ADC Quantization Noise Calculator",
   shortTitle: "Quantization Noise",
+  metaTitle: "ADC Quantization Noise Calculator \u2014 Free Online",
   category: "signal",
-  description: "Calculate ADC quantization noise, theoretical SQNR, ENOB, dynamic range, and noise spectral density for analog-to-digital converter design.",
+  description: "Calculate ADC quantization noise, SQNR, ENOB, and noise spectral density. Analyze dynamic range for analog-to-digital converter design. Free, instant results.",
   keywords: [
     "quantization noise",
     "ADC SNR",
@@ -19843,8 +19984,9 @@ var fresnelZone = {
   slug: "fresnel-zone",
   title: "Fresnel Zone Calculator",
   shortTitle: "Fresnel Zone",
+  metaTitle: "Fresnel Zone Calculator \u2014 Clearance & Radius Online",
   category: "rf",
-  description: "Calculate Fresnel zone radius at the midpoint of an RF line-of-sight link. Determine required clearance above obstructions for reliable microwave and WiFi links.",
+  description: "Calculate Fresnel zone radius and required clearance for RF line-of-sight links. Determine obstruction margins for microwave and WiFi paths. Free, instant results.",
   keywords: [
     "Fresnel zone",
     "line of sight",
@@ -20094,8 +20236,9 @@ var balunTransformer = {
   slug: "balun-transformer",
   title: "Balun & RF Transformer Calculator",
   shortTitle: "Balun Transformer",
+  metaTitle: "Balun & RF Transformer Calculator \u2014 Free Online Tool",
   category: "rf",
-  description: "Calculate balun and RF transformer turns ratio, impedance transformation ratio, and insertion loss for balanced/unbalanced feed line matching.",
+  description: "Calculate balun turns ratio, impedance transformation, and insertion loss for balanced-to-unbalanced feed line matching. Free, instant results.",
   keywords: [
     "balun",
     "RF transformer",
@@ -20233,8 +20376,9 @@ var linkMargin = {
   slug: "link-margin",
   title: "RF Link Margin Calculator",
   shortTitle: "Link Margin",
+  metaTitle: "RF Link Margin Calculator \u2014 Free Fade Margin Tool",
   category: "rf",
-  description: "Calculate RF link margin from TX power, antenna gains, free-space path loss, and receiver sensitivity. Determines maximum range and fade margin for wireless links.",
+  description: "Calculate RF link margin from TX power, antenna gains, path loss, and receiver sensitivity. Determine max range and fade margin for wireless links. Free, instant results.",
   keywords: [
     "link margin",
     "RF link budget",
@@ -20438,8 +20582,9 @@ var mixerSpurCalculator = {
   slug: "mixer-spur-calculator",
   title: "Mixer Spur Calculator",
   shortTitle: "Mixer Spurs",
+  metaTitle: "Mixer Spur Calculator \u2014 Free RF Frequency Planning",
   category: "rf",
-  description: "Calculate mixer spurious products (m\xD7fLO \xB1 n\xD7fRF) for superheterodyne receiver design. Identify problematic spurs near the IF passband and optimize LO/IF frequency planning.",
+  description: "Calculate mixer spurious products (m*fLO +/- n*fRF) for receiver design. Identify spurs near the IF passband and optimize LO/IF planning. Free, instant results.",
   keywords: [
     "mixer spur",
     "spurious products",
@@ -20596,6 +20741,7 @@ var schmittTrigger = {
   slug: "schmitt-trigger",
   title: "Schmitt Trigger Calculator",
   shortTitle: "Schmitt Trigger",
+  metaTitle: "Schmitt Trigger Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate non-inverting Schmitt trigger threshold voltages and hysteresis band for comparator circuits with positive feedback.",
   keywords: ["schmitt trigger calculator", "hysteresis comparator", "threshold voltage", "positive feedback comparator", "noise immunity trigger"],
@@ -20725,6 +20871,7 @@ var crystalLoadCapacitance = {
   slug: "crystal-load-capacitance",
   title: "Crystal Load Capacitance Calculator",
   shortTitle: "Crystal Load Cap",
+  metaTitle: "Crystal Load Capacitance Calculator \u2014 Free Electronics Tool",
   category: "general",
   description: "Calculate actual load capacitance seen by a crystal oscillator, estimate frequency error from spec, and find recommended external capacitor values.",
   keywords: ["crystal load capacitance", "crystal oscillator design", "frequency accuracy ppm", "xtal capacitor", "oscillator stray capacitance"],
@@ -20849,6 +20996,7 @@ var opampBandwidth = {
   slug: "opamp-bandwidth",
   title: "Op-Amp Closed-Loop Bandwidth Calculator",
   shortTitle: "Op-Amp Bandwidth",
+  metaTitle: "Op-Amp Closed-Loop Bandwidth Calculator \u2014 Free Electronics Tool",
   category: "general",
   description: "Calculate op-amp closed-loop -3dB bandwidth from the gain-bandwidth product (GBW), determine rise time, and verify phase margin.",
   keywords: ["op amp bandwidth calculator", "gain bandwidth product", "closed loop bandwidth", "opamp rise time", "unity gain bandwidth"],
@@ -20963,6 +21111,7 @@ var lm317Resistors = {
   slug: "lm317-resistors",
   title: "LM317 Resistor Calculator",
   shortTitle: "LM317 Resistors",
+  metaTitle: "LM317 Resistor Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate R2 resistor value for LM317/LM338 adjustable voltage regulator output voltage, with actual Vout and resistor power dissipation.",
   keywords: ["lm317 resistor calculator", "lm317 output voltage", "adjustable voltage regulator", "lm338 design", "linear regulator resistors"],
@@ -21092,6 +21241,7 @@ var voltageRegulatorDropout = {
   slug: "voltage-regulator-dropout",
   title: "LDO Dropout Voltage Calculator",
   shortTitle: "LDO Dropout",
+  metaTitle: "LDO Dropout Voltage Calculator \u2014 Free Online Electronics Tool",
   category: "general",
   description: "Calculate LDO minimum input voltage from dropout specification, determine power dissipation, and estimate efficiency at a given supply voltage.",
   keywords: ["ldo dropout voltage", "minimum input voltage ldo", "linear regulator efficiency", "voltage regulator power dissipation", "ldo headroom"],
@@ -21230,6 +21380,7 @@ var transformerTurnsRatio = {
   slug: "transformer-turns-ratio",
   title: "Transformer Turns Ratio Calculator",
   shortTitle: "Transformer Turns Ratio",
+  metaTitle: "Transformer Turns Ratio Calculator \u2014 Free Tool",
   category: "power",
   description: "Calculate transformer turns ratio, secondary current, apparent power, and real power delivered. Accounts for transformer efficiency.",
   keywords: ["transformer turns ratio", "transformer design calculator", "step down transformer", "secondary current transformer", "transformer efficiency"],
@@ -21367,6 +21518,7 @@ var flybackConverter = {
   slug: "flyback-converter",
   title: "Flyback Converter Calculator",
   shortTitle: "Flyback Converter",
+  metaTitle: "Flyback Converter Calculator \u2014 Free Online Tool",
   category: "power",
   description: "Calculate flyback converter turns ratio, peak primary and secondary currents, and power levels for isolated DC-DC converter design.",
   keywords: ["flyback converter design", "flyback turns ratio", "isolated dc dc converter", "flyback peak current", "switching power supply"],
@@ -21524,6 +21676,7 @@ var supercapacitorBackup = {
   slug: "supercapacitor-backup",
   title: "Supercapacitor Backup Time Calculator",
   shortTitle: "Supercap Backup",
+  metaTitle: "Supercapacitor Backup Time Calculator \u2014 Free Tool",
   category: "power",
   description: "Calculate supercapacitor backup time, stored energy, and charge time for power backup applications using ultracapacitors.",
   keywords: ["supercapacitor backup time", "ultracapacitor sizing", "supercap energy storage", "edlc backup calculator", "capacitor backup power"],
@@ -21658,6 +21811,7 @@ var batteryInternalResistance = {
   slug: "battery-internal-resistance",
   title: "Battery Internal Resistance Calculator",
   shortTitle: "Battery Internal Resistance",
+  metaTitle: "Battery Internal Resistance Calculator \u2014 Free Tool",
   category: "power",
   description: "Calculate battery internal resistance from open-circuit and loaded voltage measurements, determine power loss and maximum short-circuit current.",
   keywords: ["battery internal resistance", "battery impedance", "voltage sag under load", "battery health calculator", "discharge resistance"],
@@ -21785,6 +21939,7 @@ var i2sTiming = {
   slug: "i2s-timing",
   title: "I2S Audio Interface Timing Calculator",
   shortTitle: "I2S Timing",
+  metaTitle: "I2S Audio Interface Timing Calculator \u2014 Free Protocol Design Tool",
   category: "protocol",
   description: "Calculate I2S bit clock (BCLK), word clock (LRCLK/WCLK), and data rate for audio interfaces at any sample rate, bit depth, and channel count.",
   keywords: ["i2s timing calculator", "i2s bclk frequency", "i2s word clock", "audio interface bit clock", "i2s data rate"],
@@ -21910,6 +22065,7 @@ var linBusTiming = {
   slug: "lin-bus-timing",
   title: "LIN Bus Timing Calculator",
   shortTitle: "LIN Bus Timing",
+  metaTitle: "LIN Bus Timing Calculator \u2014 Free Protocol Design Tool",
   category: "protocol",
   description: "Calculate LIN bus bit time, break field length, frame time, and maximum frame rate for automotive LIN network design.",
   keywords: ["lin bus timing", "lin frame time", "lin baud rate calculator", "automotive lin bus", "lin bus frame structure"],
@@ -22025,6 +22181,7 @@ var modbusFrameTiming = {
   slug: "modbus-frame-timing",
   title: "Modbus RTU Frame Timing Calculator",
   shortTitle: "Modbus Timing",
+  metaTitle: "Modbus RTU Frame Timing Calculator \u2014 Free Protocol Design Tool",
   category: "protocol",
   description: "Calculate Modbus RTU character time, 3.5-character inter-frame gap, total frame duration, and maximum frame rate.",
   keywords: ["modbus rtu timing", "modbus frame time", "modbus inter frame gap", "t35 modbus", "modbus baud rate calculator"],
@@ -22174,6 +22331,7 @@ var ethernetCable = {
   slug: "ethernet-cable",
   title: "Ethernet Cable Length & Attenuation Calculator",
   shortTitle: "Ethernet Cable",
+  metaTitle: "Ethernet Cable Length & Attenuation Calculator \u2014 Free...",
   category: "protocol",
   description: "Calculate Ethernet cable attenuation, maximum cable length, and pass/fail for Cat5e, Cat6, Cat6a, and Cat8 at 100Mbps, 1Gbps, and 10Gbps.",
   keywords: ["ethernet cable length", "cat6 maximum length", "ethernet attenuation", "cat5e 10 gigabit", "cable run calculator"],
@@ -22306,8 +22464,9 @@ var powerPlaneImpedance = {
   slug: "power-plane-impedance",
   title: "PCB Power Plane Impedance Calculator",
   shortTitle: "Power Plane Impedance",
+  metaTitle: "Power Plane Impedance Calculator \u2014 Free PDN Tool",
   category: "pcb",
-  description: "Calculate PCB power plane spreading impedance, plane capacitance, inductance, and self-resonant frequency for PDN (power delivery network) design.",
+  description: "Calculate PCB power plane impedance, capacitance, inductance, and resonant frequency for PDN design. Optimize your power delivery network. Free, instant results.",
   keywords: ["pcb power plane impedance", "pdn impedance", "power plane capacitance", "pcb plane resonance", "power distribution network"],
   inputs: [
     {
@@ -22451,8 +22610,9 @@ var viaStubResonance = {
   slug: "via-stub-resonance",
   title: "PCB Via Stub Resonance Calculator",
   shortTitle: "Via Stub Resonance",
+  metaTitle: "Via Stub Resonance Calculator \u2014 Free Backdrill Tool",
   category: "pcb",
-  description: "Calculate PCB via stub length, stub resonant frequency that causes signal notch, and frequency improvement from back-drilling.",
+  description: "Calculate via stub resonant frequency, signal notch depth, and backdrill benefit for high-speed PCB design. Optimize stub length. Free, instant results.",
   keywords: ["via stub resonance", "pcb via backdrill", "via stub notch frequency", "high speed pcb via", "stub resonance signal integrity"],
   inputs: [
     {
@@ -22585,8 +22745,9 @@ var solderPasteVolume = {
   slug: "solder-paste-volume",
   title: "Solder Paste Volume Calculator",
   shortTitle: "Solder Paste Volume",
+  metaTitle: "Solder Paste Volume Calculator \u2014 Free Stencil Tool",
   category: "pcb",
-  description: "Calculate SMD solder paste volume, stencil aperture area, and IPC-7525A area ratio for stencil printing and reflow soldering process.",
+  description: "Calculate solder paste volume, stencil aperture area, and IPC-7525A area ratio. Design SMD stencils for reliable reflow soldering. Free, instant results.",
   keywords: ["solder paste volume", "stencil aperture design", "solder paste calculator", "ipc-7525 area ratio", "smt stencil thickness"],
   inputs: [
     {
@@ -22720,8 +22881,9 @@ var emiFilterLc = {
   slug: "emi-filter-lc",
   title: "LC EMI Filter Design Calculator",
   shortTitle: "LC EMI Filter",
+  metaTitle: "LC EMI Filter Design Calculator - Free Online Tool",
   category: "emc",
-  description: "Design an LC low-pass EMI filter for conducted emissions suppression \u2014 calculate inductance, capacitance, filter order, and attenuation at the stop band.",
+  description: "Design an LC low-pass EMI filter for conducted emissions. Calculate inductance, capacitance, filter order, and stop-band attenuation for CISPR compliance.",
   keywords: ["emi filter design", "lc filter emc", "conducted emissions filter", "cispr 22 filter", "emc low pass filter calculator"],
   inputs: [
     {
@@ -22898,8 +23060,9 @@ var esdTvsDiode = {
   slug: "esd-tvs-diode",
   title: "ESD TVS Diode Selection Calculator",
   shortTitle: "ESD TVS Diode",
+  metaTitle: "TVS Diode Selection Calculator - Free ESD Tool",
   category: "emc",
-  description: "Calculate TVS diode clamping voltage, breakdown voltage, peak pulse current, and power rating for ESD protection circuit design.",
+  description: "Calculate TVS diode clamping voltage, breakdown voltage, and peak pulse power. Select ESD protection for IEC 61000-4-2 circuit design.",
   keywords: ["tvs diode selection", "esd protection calculator", "transient voltage suppressor", "esd tvs diode rating", "iec 61000-4-2 esd"],
   inputs: [
     {
@@ -23011,8 +23174,9 @@ var commonModeChoke = {
   slug: "common-mode-choke",
   title: "Common Mode Choke Impedance",
   shortTitle: "CMC Impedance",
+  metaTitle: "Common Mode Choke Impedance Calculator - Free Tool",
   category: "emc",
-  description: "Calculate common mode choke impedance, insertion loss, and Q factor at a given frequency for EMC filter design.",
+  description: "Calculate common mode choke impedance, insertion loss, and Q factor at any frequency. Design EMC filters for CISPR 25 conducted emissions compliance.",
   keywords: ["common mode choke", "CMC impedance", "common mode filter", "EMC choke", "differential mode", "choke impedance"],
   inputs: [
     { key: "inductance", label: "Inductance", symbol: "L", unit: "\u03BCH", defaultValue: 1e3, min: 0.1 },
@@ -23041,8 +23205,9 @@ var decouplingCapacitorEmc = {
   slug: "decoupling-capacitor-emc",
   title: "Decoupling Capacitor EMC Selection",
   shortTitle: "Decoupling Cap EMC",
+  metaTitle: "Decoupling Capacitor EMC Calculator - Free Online",
   category: "emc",
-  description: "Calculate decoupling capacitor impedance at frequency and self-resonant frequency for EMC power supply decoupling.",
+  description: "Calculate decoupling capacitor impedance, reactance, and self-resonant frequency. Select bypass caps by package for EMC power integrity.",
   keywords: ["decoupling capacitor EMC", "bypass capacitor", "capacitor self resonant frequency", "ESR capacitor", "power supply decoupling EMC", "SRF capacitor"],
   inputs: [
     { key: "capacitance", label: "Capacitance", symbol: "C", unit: "nF", defaultValue: 100, min: 1e-3 },
@@ -23110,8 +23275,9 @@ var esdClampSelection = {
   slug: "esd-clamp-selection",
   title: "ESD Clamp Diode Selection",
   shortTitle: "ESD Clamp",
+  metaTitle: "ESD Clamp Diode Selection Calculator - Free Online",
   category: "emc",
-  description: "Calculate ESD clamp diode peak current, power dissipation, and clamping ratio to verify protection for IEC 61000-4-2 compliance.",
+  description: "Calculate ESD clamp diode peak current, power dissipation, and clamping ratio. Verify TVS protection for IEC 61000-4-2 compliance.",
   keywords: ["ESD clamp", "TVS diode ESD", "ESD protection", "IEC 61000-4-2", "ESD clamp selection", "surge protection"],
   inputs: [
     { key: "esdVoltage", label: "ESD Strike Voltage", symbol: "V_ESD", unit: "V", defaultValue: 4e3, min: 100, tooltip: "IEC 61000-4-2 Level 4: \xB18 kV contact" },
@@ -23141,8 +23307,9 @@ var radiatedEmissionEstimate = {
   slug: "radiated-emission-estimate",
   title: "Radiated Emission Estimate",
   shortTitle: "Radiated Emissions",
+  metaTitle: "Radiated Emission Estimate Calculator - Free Tool",
   category: "emc",
-  description: "Estimate far-field radiated emissions from a PCB current loop using the small-loop antenna model. Compare against CISPR 22/FCC Class B limits.",
+  description: "Estimate radiated emissions from PCB current loops using the small-loop model. Compare E-field against CISPR 22/FCC Class B limits instantly.",
   keywords: ["radiated emissions", "EMC radiated", "CISPR 22", "FCC radiated emissions", "PCB emissions estimate", "loop antenna emissions"],
   inputs: [
     { key: "current", label: "Loop Current (peak)", symbol: "I", unit: "mA", defaultValue: 10, min: 1e-3 },
@@ -23215,8 +23382,9 @@ var groundPlaneImpedance = {
   slug: "ground-plane-impedance",
   title: "Ground Plane Impedance vs Frequency",
   shortTitle: "Ground Impedance",
+  metaTitle: "Ground Plane Impedance Calculator - Free Online",
   category: "emc",
-  description: "Calculate PCB ground plane AC impedance, skin depth, and inductive reactance at high frequencies for EMC analysis.",
+  description: "Calculate PCB ground plane AC impedance, skin depth, and inductive reactance vs frequency. Analyze ground return paths for EMC compliance.",
   keywords: ["ground plane impedance", "ground plane EMC", "skin depth PCB", "ground inductance", "AC ground resistance", "PCB ground return"],
   inputs: [
     { key: "length", label: "Plane Length", symbol: "L", unit: "mm", defaultValue: 100, min: 1 },
@@ -23276,8 +23444,9 @@ var pcbCrosstalkEmc = {
   slug: "pcb-crosstalk-emc",
   title: "PCB Trace Crosstalk (EMC)",
   shortTitle: "PCB Crosstalk EMC",
+  metaTitle: "PCB Trace Crosstalk Calculator - Free EMC Tool",
   category: "emc",
-  description: "Estimate PCB trace crosstalk (capacitive and inductive coupling) for EMC pre-compliance analysis.",
+  description: "Analyze PCB trace crosstalk from capacitive and inductive coupling. Calculate coupling voltage and dB isolation for EMC pre-compliance.",
   keywords: ["PCB crosstalk EMC", "trace coupling", "capacitive coupling PCB", "inductive coupling PCB", "EMC crosstalk", "PCB EMC"],
   inputs: [
     { key: "aggressorVoltage", label: "Aggressor Voltage", symbol: "V_A", unit: "V", defaultValue: 3.3, min: 1e-3 },
@@ -23306,8 +23475,9 @@ var powerSupplyRippleFilter = {
   slug: "power-supply-ripple-filter",
   title: "Power Supply Ripple Filter",
   shortTitle: "Ripple Filter",
+  metaTitle: "Power Supply Ripple Filter Calculator - Free Tool",
   category: "emc",
-  description: "Calculate LC filter attenuation and output ripple voltage for power supply EMC filtering. Find the resonant frequency and ripple rejection.",
+  description: "Calculate LC filter attenuation, resonant frequency, and output ripple voltage. Design power supply EMC filters for ripple rejection.",
   keywords: ["power supply ripple filter", "LC filter ripple", "ripple rejection", "power supply EMC", "LC EMI filter", "ripple voltage filter"],
   inputs: [
     { key: "inputRipple", label: "Input Ripple Voltage", symbol: "V_ripple", unit: "mV", defaultValue: 100, min: 1e-3 },
@@ -23344,8 +23514,9 @@ var cableShieldEffectiveness = {
   slug: "cable-shield-effectiveness",
   title: "Cable Shield Effectiveness",
   shortTitle: "Cable Shield",
+  metaTitle: "Cable Shield Effectiveness Calculator - Free Online",
   category: "emc",
-  description: "Calculate coaxial cable or shielded cable shield effectiveness (shielding factor) vs frequency using the transfer impedance model.",
+  description: "Calculate cable shielding effectiveness and transfer impedance vs frequency. Evaluate coaxial and shielded cable EMI performance for EMC compliance.",
   keywords: ["cable shield", "shielding effectiveness cable", "transfer impedance", "coaxial shield", "EMC cable shielding", "cable shield dB"],
   inputs: [
     { key: "shieldResistance", label: "Shield DC Resistance", symbol: "R_sh", unit: "m\u03A9/m", defaultValue: 10, min: 1e-3, tooltip: "Per metre, from cable datasheet" },
@@ -23377,8 +23548,9 @@ var chassisResonance = {
   slug: "chassis-resonance",
   title: "Chassis Resonant Frequency",
   shortTitle: "Chassis Resonance",
+  metaTitle: "Chassis Resonant Frequency Calculator - Free Online",
   category: "emc",
-  description: "Calculate the lowest resonant frequency of a metallic enclosure (cavity resonator) to identify potential EMC problems.",
+  description: "Calculate the lowest resonant frequency and TE modes of a metallic enclosure. Identify cavity resonance problems for EMC shielding design.",
   keywords: ["chassis resonance", "enclosure resonance", "cavity resonator", "EMC chassis", "metal box resonance", "shielding resonance"],
   inputs: [
     { key: "length", label: "Length", symbol: "a", unit: "cm", defaultValue: 30, min: 0.1 },
@@ -23423,8 +23595,9 @@ var emiMarginBudget = {
   slug: "emi-margin-budget",
   title: "EMI Margin Budget",
   shortTitle: "EMI Margin",
+  metaTitle: "EMI Compliance Margin Budget Calculator - Free Tool",
   category: "emc",
-  description: "Calculate EMI compliance margin accounting for measurement uncertainty and safety margin to predict pre-compliance test pass/fail.",
+  description: "Calculate EMI compliance margin with measurement uncertainty and safety margin. Predict CISPR/FCC pre-compliance test pass or fail instantly.",
   keywords: ["EMI margin", "EMC compliance margin", "pre-compliance testing", "EMI budget", "CISPR margin", "EMC safety margin"],
   inputs: [
     { key: "measuredLevel", label: "Measured Emission Level", symbol: "E_meas", unit: "dB\u03BCV/m", defaultValue: 30, min: -100 },
@@ -23467,8 +23640,9 @@ var conductedEmissionsFilter = {
   slug: "conducted-emissions-filter",
   title: "Conducted Emissions LC Filter",
   shortTitle: "Conducted EMI Filter",
+  metaTitle: "Conducted Emissions Filter Calculator - Free Online",
   category: "emc",
-  description: "Design an LC filter to meet CISPR 22/FCC conducted emissions limits by calculating required L and C values for a target attenuation.",
+  description: "Design an LC filter for CISPR 22/FCC conducted emissions compliance. Calculate required inductor and capacitor values for target attenuation.",
   keywords: ["conducted emissions filter", "EMI filter design", "CISPR conducted", "LC EMI filter", "line filter EMC", "conducted emissions SMPS"],
   inputs: [
     { key: "emissionLevel", label: "Measured Emission", symbol: "V_emi", unit: "dB\u03BCV", defaultValue: 80, min: 0, tooltip: "CISPR 22 Class B limit: 66 dB\u03BCV at 150 kHz" },
@@ -23517,8 +23691,9 @@ var differentialModeFilter = {
   slug: "differential-mode-filter",
   title: "Differential Mode EMI Filter",
   shortTitle: "DM EMI Filter",
+  metaTitle: "Differential Mode EMI Filter Calculator - Free Tool",
   category: "emc",
-  description: "Design a differential mode LC EMI filter: calculate corner frequency, attenuation, and characteristic impedance for SMPS output filtering.",
+  description: "Design a differential mode LC EMI filter. Calculate corner frequency, attenuation, and impedance for SMPS output noise suppression.",
   keywords: ["differential mode filter", "DM EMI filter", "differential mode noise", "SMPS EMI filter", "EMI filter differential", "power line filter"],
   inputs: [
     { key: "inductance", label: "Differential Mode Inductance", symbol: "L_DM", unit: "\u03BCH", defaultValue: 47, min: 1e-3 },
@@ -23582,7 +23757,7 @@ var audioPowerAmplifier = {
   shortTitle: "Audio Amplifier",
   category: "audio",
   description: "Calculate amplifier output power from supply voltage and speaker impedance. Get max power, RMS power, THD estimate by class (A/AB/D), SNR, and input sensitivity for speaker matching.",
-  metaTitle: "Audio Amplifier Power Calculator \u2014 Output Watts, THD & Speaker Matching",
+  metaTitle: "Audio Amplifier Power Calculator \u2014 Output Watts & SPL",
   keywords: ["amplifier calculator", "audio amplifier power calculator", "amp speaker calculator", "class d amplifier", "speaker power output", "amplifier efficiency", "audio snr calculator", "amp to speaker calculator"],
   inputs: [
     {
@@ -23739,6 +23914,7 @@ var speakerCrossover = {
   slug: "speaker-crossover",
   title: "Passive Speaker Crossover Calculator",
   shortTitle: "Speaker Crossover",
+  metaTitle: "Passive Speaker Crossover Calculator \u2014 Free Audio Electronics...",
   category: "audio",
   description: "Calculate passive 2-way speaker crossover component values for 1st order (6dB/oct) and 2nd order Butterworth (12dB/oct) networks.",
   keywords: ["speaker crossover calculator", "passive crossover design", "2 way crossover components", "butterworth crossover", "woofer tweeter crossover"],
@@ -23882,7 +24058,7 @@ var roomModes = {
   shortTitle: "Room Modes",
   category: "audio",
   description: "Calculate room axial modes using f = n\xB7c/(2L). Find all standing wave frequencies, Schroeder frequency, and mode spacing for acoustic treatment and speaker placement.",
-  metaTitle: "Room Modes Calculator \u2014 Axial Frequencies f = n\xB7c/(2L) & Schroeder Frequency",
+  metaTitle: "Room Modes Calculator \u2014 Axial Frequencies & Schroeder",
   keywords: ["room modes", "room acoustics", "standing waves", "axial modes", "Schroeder frequency", "room resonance"],
   inputs: [
     { key: "length", label: "Room Length", symbol: "L", unit: "m", defaultValue: 5, min: 0.5, step: 0.1 },
@@ -23928,6 +24104,7 @@ var speakerSensitivity = {
   slug: "speaker-sensitivity",
   title: "Speaker Sensitivity & SPL",
   shortTitle: "Speaker SPL",
+  metaTitle: "Speaker Sensitivity & SPL \u2014 Free Audio Electronics Tool",
   category: "audio",
   description: "Calculate speaker SPL at any power and distance from the rated sensitivity (dB/W/m) specification.",
   keywords: ["speaker sensitivity", "SPL calculator", "speaker dB", "speaker loudness", "dB/W/m", "speaker power"],
@@ -23969,6 +24146,7 @@ var headphonePower = {
   slug: "headphone-power",
   title: "Headphone Amplifier Power",
   shortTitle: "Headphone Power",
+  metaTitle: "Headphone Amplifier Power \u2014 Free Audio Electronics Tool",
   category: "audio",
   description: "Calculate the amplifier output power, voltage, and current required to drive headphones to a target SPL.",
   keywords: ["headphone amplifier", "headphone power", "headphone impedance", "headphone SPL", "amp output power", "headphone sensitivity"],
@@ -24015,7 +24193,7 @@ function calculateAudioSnr(inputs) {
   const maxLevel = 0;
   const dynamicRange = maxLevel - noiseFloor;
   const snrLinear = Math.pow(10, snr / 20);
-  const noiseBits = snr / 6.02;
+  const noiseBits = snr / (20 * Math.log10(2));
   return { values: { snr, dynamicRange, snrLinear, noiseBits } };
 }
 var audioSnr = {
@@ -24062,6 +24240,7 @@ var opAmpSlewRate = {
   slug: "op-amp-slew-rate",
   title: "Op-Amp Slew Rate & Full-Power Bandwidth",
   shortTitle: "Op-Amp Slew Rate",
+  metaTitle: "Op-Amp Slew Rate & Full-Power Bandwidth \u2014 Free Audio...",
   category: "audio",
   description: "Calculate op-amp full-power bandwidth from slew rate and signal amplitude, and verify the op-amp can handle your signal without slew-rate distortion.",
   keywords: ["op-amp slew rate", "full power bandwidth", "slew rate distortion", "op amp bandwidth", "audio op amp", "slewing"],
@@ -24103,6 +24282,7 @@ var audioTransformer = {
   slug: "audio-transformer",
   title: "Audio Transformer Turns Ratio",
   shortTitle: "Audio Transformer",
+  metaTitle: "Audio Transformer Turns Ratio \u2014 Free Audio Electronics Tool",
   category: "audio",
   description: "Calculate audio transformer turns ratio for impedance matching between source and load, plus secondary voltage and current.",
   keywords: ["audio transformer", "transformer turns ratio", "impedance matching transformer", "balun transformer audio", "DI box transformer", "600 ohm matching"],
@@ -24146,6 +24326,7 @@ var cableCapacitanceRolloff = {
   slug: "cable-capacitance-rolloff",
   title: "Cable Capacitance High-Frequency Rolloff",
   shortTitle: "Cable Rolloff",
+  metaTitle: "Cable Capacitance High-Frequency Rolloff \u2014 Free Audio...",
   category: "audio",
   description: "Calculate the high-frequency rolloff (-3 dB point) caused by cable capacitance interacting with source impedance.",
   keywords: ["cable capacitance", "high frequency rolloff", "guitar cable", "audio cable rolloff", "capacitance rolloff", "cable treble loss"],
@@ -24212,7 +24393,7 @@ var subwooferBox = {
   shortTitle: "Subwoofer Box",
   category: "audio",
   description: "Calculate subwoofer box volume for sealed and ported enclosures from Thiele-Small parameters (Vas, Qts, Fs). Get optimal internal volume, port tuning frequency, and \u22123 dB cutoff instantly.",
-  metaTitle: "Subwoofer Box Calculator \u2014 Sealed & Ported Volume from Thiele-Small Parameters",
+  metaTitle: "Subwoofer Box Calculator \u2014 Sealed & Ported Volume",
   keywords: ["subwoofer box calculator", "bass box calculator", "speaker enclosure calculator", "Thiele-Small", "ported box", "sealed box subwoofer", "Vas Qts Fs"],
   inputs: [
     { key: "vas", label: "Vas (Equivalent Volume)", symbol: "Vas", unit: "L", defaultValue: 50, min: 0.1, tooltip: "From driver datasheet" },
@@ -24253,6 +24434,7 @@ var tweeterCapacitor = {
   slug: "tweeter-capacitor",
   title: "Tweeter Protection Capacitor",
   shortTitle: "Tweeter Capacitor",
+  metaTitle: "Tweeter Protection Capacitor \u2014 Free Audio Electronics Tool",
   category: "audio",
   description: "Calculate the capacitor value for a first-order tweeter high-pass filter to protect tweeters from low-frequency damage.",
   keywords: ["tweeter capacitor", "tweeter protection", "crossover capacitor", "high-pass filter speaker", "tweeter crossover", "speaker protection cap"],
@@ -24314,6 +24496,7 @@ var classDEfficiency = {
   slug: "class-d-efficiency",
   title: "Class D Amplifier Efficiency",
   shortTitle: "Class-D Efficiency",
+  metaTitle: "Class D Amplifier Efficiency \u2014 Free Audio Electronics Tool",
   category: "audio",
   description: "Estimate Class D amplifier efficiency from MOSFET conduction losses and quiescent current at a given output power.",
   keywords: ["class D amplifier", "class D efficiency", "switching amplifier", "class D audio", "PWM amplifier efficiency", "class D vs class AB"],
@@ -24352,7 +24535,7 @@ function calculateAudioAdcSnr(inputs) {
   if (bitDepth < 1 || oversamplingRatio < 1) {
     return { values: {}, errors: ["Bit depth must be \u2265 1 and oversampling ratio \u2265 1"] };
   }
-  const theoreticalSnr = 6.02 * bitDepth + 1.76;
+  const theoreticalSnr = 20 * Math.log10(2) * bitDepth + 10 * Math.log10(1.5);
   const oversamplingGain = 10 * Math.log10(oversamplingRatio);
   const totalSnr = theoreticalSnr + oversamplingGain;
   const dynamicRange = theoreticalSnr;
@@ -24362,6 +24545,7 @@ var audioAdcSnr = {
   slug: "audio-adc-snr",
   title: "ADC Bit Depth to Dynamic Range",
   shortTitle: "ADC Dynamic Range",
+  metaTitle: "ADC Bit Depth to Dynamic Range \u2014 Free Audio Electronics Tool",
   category: "audio",
   description: "Calculate the theoretical SNR and dynamic range of an audio ADC from its bit depth, and the improvement from oversampling.",
   keywords: ["ADC SNR", "bit depth dynamic range", "audio ADC", "24 bit audio", "oversampling SNR", "ENOB audio ADC"],
@@ -24429,6 +24613,7 @@ var equalizerQFactor = {
   slug: "equalizer-q-factor",
   title: "Equalizer Filter Q & Bandwidth",
   shortTitle: "EQ Q Factor",
+  metaTitle: "Equalizer Filter Q & Bandwidth \u2014 Free Audio Electronics Tool",
   category: "audio",
   description: "Calculate equalizer Q factor from center frequency and bandwidth, or convert between Q, octaves, and frequency limits.",
   keywords: ["equalizer Q factor", "EQ bandwidth", "parametric EQ", "Q factor audio", "octave bandwidth", "EQ filter"],
@@ -24470,6 +24655,7 @@ var amplifierClipping = {
   slug: "amplifier-clipping",
   title: "Amplifier Clipping Level",
   shortTitle: "Amp Clipping",
+  metaTitle: "Amplifier Clipping Level \u2014 Free Audio Electronics Tool",
   category: "audio",
   description: "Calculate amplifier clipping voltage, power, and dBV level from supply voltage and load impedance.",
   keywords: ["amplifier clipping", "clip level", "amplifier output voltage", "amp clipping power", "headroom amplifier", "clipping distortion"],
