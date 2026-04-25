@@ -19,8 +19,8 @@ function calculateMicrostrip(inputs) {
   const erEff = (er + 1) / 2 + (er - 1) / 2 * Math.pow(1 + 10 / u, -a * b);
   const F = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
   const z0 = 60 / Math.sqrt(erEff) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
-  const c = 299.792458;
-  const tpd = 1 / c * Math.sqrt(erEff) * 1e3;
+  const c2 = 299.792458;
+  const tpd = 1 / c2 * Math.sqrt(erEff) * 1e3;
   return {
     values: {
       impedance: z0,
@@ -188,8 +188,8 @@ function calculateLinkBudget(inputs) {
     rxCableLoss,
     rxSensitivity
   } = inputs;
-  const c = 3e8;
-  const lambda = c / (frequency * 1e6);
+  const c2 = 3e8;
+  const lambda = c2 / (frequency * 1e6);
   const distM = distance * 1e3;
   const fspl = 20 * Math.log10(4 * Math.PI * distM / lambda);
   const totalAdditionalLoss = rainFade + atmosphericLoss + pointingLoss;
@@ -1062,8 +1062,8 @@ function calculateWavelengthFrequency(inputs) {
   if (medium < 1) {
     return { values: {}, errors: ["Relative permittivity must be \u2265 1"] };
   }
-  const c = 299792458;
-  const wavelengthM = c / f_Hz;
+  const c2 = 299792458;
+  const wavelengthM = c2 / f_Hz;
   const wavelengthMm = wavelengthM * 1e3;
   const actualWavelengthMm = wavelengthMm / Math.sqrt(medium);
   const halfWaveMm = actualWavelengthMm / 2;
@@ -1232,9 +1232,9 @@ function calculateCoaxImpedance(inputs) {
   const mu0 = 4 * Math.PI * 1e-7;
   const inductanceNHm = mu0 / (2 * Math.PI) * lnRatio * 1e9;
   const velocityFactor = 1 / Math.sqrt(er);
-  const c = 299792458;
+  const c2 = 299792458;
   const D_m = D * 1e-3;
-  const cutoffFreqGHz = c / (Math.PI * D_m * Math.sqrt(er)) * 1e-9;
+  const cutoffFreqGHz = c2 / (Math.PI * D_m * Math.sqrt(er)) * 1e-9;
   return {
     values: {
       impedance,
@@ -1453,7 +1453,7 @@ var coaxLoss = {
       max: CABLES.length - 1,
       step: 1,
       tooltip: `0=${CABLES[0].name}, 1=${CABLES[1].name}, ... ${CABLES.length - 1}=${CABLES[CABLES.length - 1].name}`,
-      presets: CABLES.map((c, i) => ({ label: c.name, values: { cableIndex: i } }))
+      presets: CABLES.map((c2, i) => ({ label: c2.name, values: { cableIndex: i } }))
     },
     {
       key: "frequencyMHz",
@@ -2118,8 +2118,8 @@ function calculateTraceWidth(inputs) {
   const copperMil = copperWeight * 1.37;
   const k = isExternal > 0.5 ? 0.048 : 0.024;
   const b = isExternal > 0.5 ? 0.44 : 0.44;
-  const c = isExternal > 0.5 ? 0.725 : 0.725;
-  const area2221 = Math.pow(current / (k * Math.pow(tempRise, b)), 1 / c);
+  const c2 = isExternal > 0.5 ? 0.725 : 0.725;
+  const area2221 = Math.pow(current / (k * Math.pow(tempRise, b)), 1 / c2);
   const width2221Mil = area2221 / copperMil;
   const width2221mm = width2221Mil * 0.0254;
   const factor2152 = isExternal > 0.5 ? 0.75 : 0.85;
@@ -4846,11 +4846,11 @@ function calculatePatchAntenna(inputs) {
   if (substrateHeight <= 0) {
     return { values: {}, errors: ["Substrate height must be greater than 0"] };
   }
-  const c = 299792458;
+  const c2 = 299792458;
   const f_Hz = frequency * 1e9;
   const er = dielectricConstant;
   const h = substrateHeight * 1e-3;
-  const lambda = c / f_Hz;
+  const lambda = c2 / f_Hz;
   const patchWidth_m = lambda / 2 * Math.sqrt(2 / (er + 1));
   const uRatio = patchWidth_m / h;
   const erEff = (er + 1) / 2 + (er - 1) / 2 * Math.pow(1 + 12 / uRatio, -0.5);
@@ -7853,10 +7853,10 @@ function calculateWaveguideCutoff(inputs) {
       errors: ["TEM00 mode invalid for rectangular waveguide"]
     };
   }
-  const c = 3e8;
+  const c2 = 3e8;
   const a = width * 1e-3;
   const b = height * 1e-3;
-  const cutoffFreq_Hz = c / 2 * Math.sqrt(Math.pow(modeM / a, 2) + Math.pow(modeN / b, 2));
+  const cutoffFreq_Hz = c2 / 2 * Math.sqrt(Math.pow(modeM / a, 2) + Math.pow(modeN / b, 2));
   const cutoffFreq = cutoffFreq_Hz / 1e9;
   const f_Hz = frequency * 1e9;
   const warnings = [];
@@ -7870,7 +7870,7 @@ function calculateWaveguideCutoff(inputs) {
   } else {
     betaPropagates = 1;
     const ratio = cutoffFreq_Hz / f_Hz;
-    guideWavelength = c / (f_Hz * Math.sqrt(1 - ratio * ratio)) * 1e3;
+    guideWavelength = c2 / (f_Hz * Math.sqrt(1 - ratio * ratio)) * 1e3;
     phaseVelocity = 1 / Math.sqrt(1 - ratio * ratio);
     groupVelocity = Math.sqrt(1 - ratio * ratio);
   }
@@ -9170,9 +9170,9 @@ function calculateFreeSpacePathLoss(inputs) {
   const { frequency, distance } = inputs;
   const f_Hz = frequency * 1e6;
   const d_m = distance * 1e3;
-  const c = 3e8;
-  const fspl_linear = Math.pow(4 * Math.PI * d_m * f_Hz / c, 2);
-  const fspl_dB = 20 * Math.log10(4 * Math.PI * Math.max(d_m, 1e-3) * Math.max(f_Hz, 1) / c);
+  const c2 = 3e8;
+  const fspl_linear = Math.pow(4 * Math.PI * d_m * f_Hz / c2, 2);
+  const fspl_dB = 20 * Math.log10(4 * Math.PI * Math.max(d_m, 1e-3) * Math.max(f_Hz, 1) / c2);
   return {
     values: {
       fspl_dB,
@@ -9270,8 +9270,8 @@ function calculateRadarRangeEquation(inputs) {
   const Pt = peakPower * 1e3;
   const G_linear = Math.pow(10, gain / 10);
   const f_Hz = frequency * 1e9;
-  const c = 3e8;
-  const lambda = c / f_Hz;
+  const c2 = 3e8;
+  const lambda = c2 / f_Hz;
   const sigma = rcs;
   const F_linear = Math.pow(10, noiseFigure / 10);
   const B_Hz = bandwidth * 1e6;
@@ -11313,10 +11313,10 @@ var digitalFilterOrder = {
 // src/lib/calculators/antenna/yagi-antenna.ts
 function calculateYagiAntenna(inputs) {
   const { frequency, numElements, boomLength } = inputs;
-  const c = 299792458;
+  const c2 = 299792458;
   const f_MHz = Math.max(frequency, 1e-3);
   const N = Math.round(Math.min(Math.max(numElements, 2), 20));
-  const lambda_m = c / (f_MHz * 1e6);
+  const lambda_m = c2 / (f_MHz * 1e6);
   const lambda_mm = lambda_m * 1e3;
   const driverLength = 0.47 * lambda_mm;
   const reflectorLength = 0.5 * lambda_mm;
@@ -11453,8 +11453,8 @@ var yagiAntenna = {
 function calculateHornAntenna(inputs) {
   const { frequency, apertureWidth, apertureHeight } = inputs;
   const f_Hz = frequency * 1e9;
-  const c = 299792458;
-  const lambda_m = c / f_Hz;
+  const c2 = 299792458;
+  const lambda_m = c2 / f_Hz;
   const lambda_mm = lambda_m * 1e3;
   const W_m = apertureWidth * 1e-3;
   const H_m = apertureHeight * 1e-3;
@@ -14690,10 +14690,10 @@ var comparatorHysteresis = {
 
 // src/lib/calculators/general/555-timer.ts
 function calculate555Timer(inputs) {
-  const { mode, ra, rb, c, vcc } = inputs;
+  const { mode, ra, rb, c: c2, vcc } = inputs;
   const ra_Ohm = Math.max(ra, 1e-3) * 1e3;
   const rb_Ohm = Math.max(rb, 1e-3) * 1e3;
-  const c_F = Math.max(c, 1e-4) * 1e-6;
+  const c_F = Math.max(c2, 1e-4) * 1e-6;
   let frequency;
   let period;
   let pulseWidth;
@@ -18231,9 +18231,9 @@ function calculateFrequencyWavelength(inputs) {
   if (frequency <= 0 || velocityFactor <= 0) {
     return { values: { wavelength: 0, wavelengthCm: 0, wavelengthMm: 0, halfWave: 0, quarterWave: 0 }, errors: ["Frequency and velocity factor must be positive"] };
   }
-  const c = 299792458;
+  const c2 = 299792458;
   const f_Hz = frequency * 1e6;
-  const wavelength = c * velocityFactor / f_Hz;
+  const wavelength = c2 * velocityFactor / f_Hz;
   const wavelengthCm = wavelength * 100;
   const wavelengthMm = wavelength * 1e3;
   const halfWave = wavelength / 2;
@@ -20490,10 +20490,10 @@ function calculateFresnelZone(inputs) {
   if (frequency <= 0 || distance <= 0 || n < 1) {
     return { values: { radiusM: 0, clearanceM: 0, wavelengthM: 0 }, errors: ["Frequency, distance, and zone number must be positive"] };
   }
-  const c = 3e8;
+  const c2 = 3e8;
   const f_Hz = frequency * 1e9;
   const d_m = distance * 1e3;
-  const wavelengthM = c / f_Hz;
+  const wavelengthM = c2 / f_Hz;
   const d1 = d_m / 2;
   const d2 = d_m / 2;
   const radiusM = Math.sqrt(n * wavelengthM * d1 * d2 / (d1 + d2));
@@ -20883,10 +20883,10 @@ function calculateLinkMargin(inputs) {
   if (distance <= 0 || frequency <= 0) {
     return { values: { fspl: 0, receivedPower: 0, linkMargin: 0, maxRange: 0 }, errors: ["Distance and frequency must be positive"] };
   }
-  const c = 3e8;
+  const c2 = 3e8;
   const d_m = distance * 1e3;
   const f_Hz = frequency * 1e9;
-  const fspl = 20 * Math.log10(d_m) + 20 * Math.log10(f_Hz) + 20 * Math.log10(4 * Math.PI / c);
+  const fspl = 20 * Math.log10(d_m) + 20 * Math.log10(f_Hz) + 20 * Math.log10(4 * Math.PI / c2);
   const receivedPower = txPower + txGain + rxGain - fspl - cableLoss;
   const linkMargin2 = receivedPower - sensitivity;
   const maxRange = distance * Math.pow(10, linkMargin2 / 20);
@@ -24092,11 +24092,11 @@ var chassisResonance = {
   ],
   calculate: (inputs) => {
     const { length, width, height } = inputs;
-    const c = 3e10;
-    const f101 = c / 2 * Math.sqrt((1 / length) ** 2 + (1 / height) ** 2);
-    const f110 = c / 2 * Math.sqrt((1 / length) ** 2 + (1 / width) ** 2);
+    const c2 = 3e10;
+    const f101 = c2 / 2 * Math.sqrt((1 / length) ** 2 + (1 / height) ** 2);
+    const f110 = c2 / 2 * Math.sqrt((1 / length) ** 2 + (1 / width) ** 2);
     const fLowest = Math.min(f101, f110) / 1e6;
-    const wavelengthAtResonance = c / (fLowest * 1e6);
+    const wavelengthAtResonance = c2 / (fLowest * 1e6);
     return { values: { fLowest, f101MHz: f101 / 1e6, f110MHz: f110 / 1e6, wavelengthAtResonance } };
   },
   formula: {
@@ -24192,12 +24192,12 @@ var conductedEmissionsFilter = {
   relatedCalculators: ["emi-filter-lc", "power-supply-ripple-filter", "common-mode-choke"],
   exportComponents: (_inputs, outputs) => {
     const l = outputs?.lValue ?? 0;
-    const c = outputs?.cValue ?? 0;
+    const c2 = outputs?.cValue ?? 0;
     const fmtL = (uh) => uh >= 1e3 ? `${+(uh / 1e3).toPrecision(3)} mH` : `${+uh.toPrecision(3)} \u03BCH`;
     const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} \u03BCF` : `${+(uf * 1e3).toPrecision(3)} nF`;
     return [
       { qty: 1, description: "L (series filter)", value: fmtL(l), package: "0402", componentType: "L", placement: "series" },
-      { qty: 1, description: "C (shunt filter)", value: fmtC(c), package: "0402", componentType: "C", placement: "shunt" }
+      { qty: 1, description: "C (shunt filter)", value: fmtC(c2), package: "0402", componentType: "C", placement: "shunt" }
     ];
   }
 };
@@ -25321,6 +25321,786 @@ var powerAmplifierGain = {
   relatedCalculators: ["audio-power-amplifier", "amplifier-clipping", "audio-snr"]
 };
 
+// src/lib/calculators/rf/reactance-calculator.ts
+function calculateReactance(inputs) {
+  const { frequency, inductance, capacitance } = inputs;
+  if (frequency <= 0) {
+    return { values: {}, errors: ["Frequency must be greater than 0"] };
+  }
+  if (inductance <= 0) {
+    return { values: {}, errors: ["Inductance must be greater than 0"] };
+  }
+  if (capacitance <= 0) {
+    return { values: {}, errors: ["Capacitance must be greater than 0"] };
+  }
+  const f_Hz = frequency;
+  const L_H = inductance * 1e-6;
+  const C_F = capacitance * 1e-12;
+  const XL = 2 * Math.PI * f_Hz * L_H;
+  const XC = 1 / (2 * Math.PI * f_Hz * C_F);
+  const f_res = 1 / (2 * Math.PI * Math.sqrt(L_H * C_F));
+  const f_res_MHz = f_res / 1e6;
+  return {
+    values: {
+      XL,
+      XC,
+      f_res_MHz
+    }
+  };
+}
+var reactanceCalculator = {
+  slug: "reactance-calculator",
+  title: "Reactance Calculator \u2014 XL and XC",
+  shortTitle: "Reactance Calculator",
+  metaTitle: "Reactance Calculator \u2014 Inductive XL & Capacitive XC Online Tool",
+  category: "rf",
+  description: "Calculate inductive reactance (XL = 2\u03C0fL) and capacitive reactance (XC = 1/2\u03C0fC) for any frequency. Also computes the LC resonant frequency where XL = XC. Essential for filter and impedance matching design.",
+  keywords: [
+    "reactance calculator",
+    "inductive reactance",
+    "capacitive reactance",
+    "XL calculator",
+    "XC calculator",
+    "XL XC calculator",
+    "reactance formula",
+    "impedance calculator",
+    "LC resonance",
+    "filter design",
+    "coil reactance",
+    "capacitor impedance",
+    "RF reactance",
+    "inductor impedance",
+    "circuit reactance"
+  ],
+  inputs: [
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "Hz",
+      defaultValue: 1e6,
+      min: 1,
+      max: 1e11,
+      step: 1e3,
+      unitOptions: [
+        { label: "Hz", factor: 1 },
+        { label: "kHz", factor: 1e3 },
+        { label: "MHz", factor: 1e6 },
+        { label: "GHz", factor: 1e9 }
+      ],
+      presets: [
+        { label: "1 kHz", values: { frequency: 1e3 } },
+        { label: "100 kHz", values: { frequency: 1e5 } },
+        { label: "1 MHz", values: { frequency: 1e6 } },
+        { label: "2.4 GHz", values: { frequency: 24e8 } }
+      ]
+    },
+    {
+      key: "inductance",
+      label: "Inductance",
+      symbol: "L",
+      unit: "\xB5H",
+      defaultValue: 10,
+      min: 1e-3,
+      max: 1e9,
+      step: 0.1,
+      presets: [
+        { label: "100 nH (0.1 \xB5H)", values: { inductance: 0.1 } },
+        { label: "10 \xB5H", values: { inductance: 10 } },
+        { label: "100 \xB5H", values: { inductance: 100 } },
+        { label: "1 mH (1000 \xB5H)", values: { inductance: 1e3 } }
+      ]
+    },
+    {
+      key: "capacitance",
+      label: "Capacitance",
+      symbol: "C",
+      unit: "pF",
+      defaultValue: 100,
+      min: 1e-3,
+      max: 1e12,
+      step: 1,
+      presets: [
+        { label: "10 pF", values: { capacitance: 10 } },
+        { label: "100 pF", values: { capacitance: 100 } },
+        { label: "1 nF (1000 pF)", values: { capacitance: 1e3 } },
+        { label: "10 nF (10000 pF)", values: { capacitance: 1e4 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "XL",
+      label: "Inductive Reactance",
+      symbol: "X_L",
+      unit: "\u03A9",
+      precision: 4,
+      format: "engineering",
+      primary: true
+    },
+    {
+      key: "XC",
+      label: "Capacitive Reactance",
+      symbol: "X_C",
+      unit: "\u03A9",
+      precision: 4,
+      format: "engineering"
+    },
+    {
+      key: "f_res_MHz",
+      label: "Resonant Frequency (XL = XC)",
+      symbol: "f_res",
+      unit: "MHz",
+      precision: 4,
+      tooltip: "Frequency at which XL equals XC: f_res = 1/(2\u03C0\u221ALC)"
+    }
+  ],
+  calculate: calculateReactance,
+  formula: {
+    primary: "X_L = 2\\pi f L, \\quad X_C = \\frac{1}{2\\pi f C}, \\quad f_{res} = \\frac{1}{2\\pi\\sqrt{LC}}",
+    latex: "X_L = 2\\pi f L, \\quad X_C = \\frac{1}{2\\pi f C}, \\quad f_{res} = \\frac{1}{2\\pi\\sqrt{LC}}",
+    variables: [
+      { symbol: "X_L", description: "Inductive reactance", unit: "\u03A9" },
+      { symbol: "X_C", description: "Capacitive reactance", unit: "\u03A9" },
+      { symbol: "f", description: "Frequency", unit: "Hz" },
+      { symbol: "L", description: "Inductance", unit: "H" },
+      { symbol: "C", description: "Capacitance", unit: "F" },
+      { symbol: "f_res", description: "Resonant frequency where XL = XC", unit: "Hz" }
+    ],
+    derivation: [
+      "Inductive reactance opposes AC current: XL = \u03C9L = 2\u03C0fL",
+      "Capacitive reactance decreases with frequency: XC = 1/(\u03C9C) = 1/(2\u03C0fC)",
+      "At resonance XL = XC: 2\u03C0f_res\xB7L = 1/(2\u03C0f_res\xB7C) \u2192 f_res = 1/(2\u03C0\u221ALC)"
+    ],
+    reference: "Pozar, Microwave Engineering, 4th ed."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["lc-resonance", "filter-designer", "coax-impedance", "series-parallel-resistor", "q-factor"],
+  verificationData: [
+    {
+      inputs: { frequency: 1e6, inductance: 10, capacitance: 100 },
+      expectedOutputs: {
+        XL: 2 * Math.PI * 1e6 * 1e-5,
+        XC: 1 / (2 * Math.PI * 1e6 * 1e-10)
+      },
+      tolerance: 1e-3,
+      source: "XL = 2\u03C0\xD71MHz\xD710\xB5H = 62.832 \u03A9; XC = 1/(2\u03C0\xD71MHz\xD7100pF) = 1591.55 \u03A9"
+    }
+  ]
+};
+
+// src/lib/calculators/general/current-divider.ts
+function calculateCurrentDivider(inputs) {
+  const { totalCurrent, r1, r2 } = inputs;
+  if (r1 <= 0 || r2 <= 0) {
+    return { values: {}, errors: ["R1 and R2 must be greater than 0"] };
+  }
+  if (totalCurrent < 0) {
+    return { values: {}, errors: ["Total current must be non-negative"] };
+  }
+  const rTotal = r1 + r2;
+  const i1 = totalCurrent * r2 / rTotal;
+  const i2 = totalCurrent * r1 / rTotal;
+  const rParallel = r1 * r2 / rTotal;
+  const voltage = totalCurrent * rParallel;
+  const powerR1 = i1 * i1 * r1;
+  const powerR2 = i2 * i2 * r2;
+  return {
+    values: {
+      i1,
+      i2,
+      rParallel,
+      voltage,
+      powerR1,
+      powerR2
+    }
+  };
+}
+var currentDivider = {
+  slug: "current-divider",
+  title: "Current Divider Calculator",
+  shortTitle: "Current Divider",
+  metaTitle: "Current Divider Calculator \u2014 I1, I2, Power & Parallel Resistance",
+  category: "general",
+  description: "Calculate current division between two parallel resistors using the current divider rule. Computes branch currents I1 and I2, parallel resistance, voltage, and power dissipation in each resistor.",
+  keywords: [
+    "current divider calculator",
+    "current division",
+    "parallel resistor current",
+    "current divider rule",
+    "current divider formula",
+    "branch current calculator",
+    "I1 I2 parallel resistors",
+    "current divider circuit",
+    "parallel circuit current",
+    "current split calculator",
+    "resistor current sharing",
+    "kirchhoff current law",
+    "KCL calculator",
+    "parallel branch current",
+    "circuit analysis calculator"
+  ],
+  inputs: [
+    {
+      key: "totalCurrent",
+      label: "Total Current",
+      symbol: "I_total",
+      unit: "A",
+      defaultValue: 1,
+      min: 0,
+      max: 1e3,
+      step: 1e-3,
+      unitOptions: [
+        { label: "A", factor: 1 },
+        { label: "mA", factor: 1e-3 },
+        { label: "\xB5A", factor: 1e-6 }
+      ],
+      presets: [
+        { label: "1 A", values: { totalCurrent: 1 } },
+        { label: "100 mA", values: { totalCurrent: 0.1 } },
+        { label: "10 mA", values: { totalCurrent: 0.01 } }
+      ]
+    },
+    {
+      key: "r1",
+      label: "R1",
+      symbol: "R\u2081",
+      unit: "\u03A9",
+      defaultValue: 1e3,
+      min: 1e-3,
+      max: 1e9,
+      step: 100,
+      unitOptions: [
+        { label: "\u03A9", factor: 1 },
+        { label: "k\u03A9", factor: 1e3 },
+        { label: "M\u03A9", factor: 1e6 }
+      ]
+    },
+    {
+      key: "r2",
+      label: "R2",
+      symbol: "R\u2082",
+      unit: "\u03A9",
+      defaultValue: 2e3,
+      min: 1e-3,
+      max: 1e9,
+      step: 100,
+      unitOptions: [
+        { label: "\u03A9", factor: 1 },
+        { label: "k\u03A9", factor: 1e3 },
+        { label: "M\u03A9", factor: 1e6 }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "i1",
+      label: "Current through R1",
+      symbol: "I\u2081",
+      unit: "A",
+      precision: 4,
+      format: "engineering",
+      primary: true
+    },
+    {
+      key: "i2",
+      label: "Current through R2",
+      symbol: "I\u2082",
+      unit: "A",
+      precision: 4,
+      format: "engineering"
+    },
+    {
+      key: "voltage",
+      label: "Voltage across parallel combination",
+      symbol: "V",
+      unit: "V",
+      precision: 4,
+      format: "engineering"
+    },
+    {
+      key: "rParallel",
+      label: "Parallel Resistance",
+      symbol: "R_parallel",
+      unit: "\u03A9",
+      precision: 4,
+      format: "engineering"
+    },
+    {
+      key: "powerR1",
+      label: "Power in R1",
+      symbol: "P\u2081",
+      unit: "W",
+      precision: 4,
+      format: "engineering"
+    },
+    {
+      key: "powerR2",
+      label: "Power in R2",
+      symbol: "P\u2082",
+      unit: "W",
+      precision: 4,
+      format: "engineering"
+    }
+  ],
+  calculate: calculateCurrentDivider,
+  formula: {
+    primary: "I_1 = I_{total} \\cdot \\frac{R_2}{R_1 + R_2}, \\quad I_2 = I_{total} \\cdot \\frac{R_1}{R_1 + R_2}",
+    latex: "I_1 = I_{total} \\cdot \\frac{R_2}{R_1 + R_2}, \\quad I_2 = I_{total} \\cdot \\frac{R_1}{R_1 + R_2}",
+    variables: [
+      { symbol: "I_total", description: "Total input current", unit: "A" },
+      { symbol: "I_1", description: "Current through R1", unit: "A" },
+      { symbol: "I_2", description: "Current through R2", unit: "A" },
+      { symbol: "R_1", description: "First resistor", unit: "\u03A9" },
+      { symbol: "R_2", description: "Second resistor", unit: "\u03A9" }
+    ],
+    derivation: [
+      "In a parallel network both resistors share the same voltage: V = I_total \xD7 R_parallel",
+      "R_parallel = R1\xB7R2/(R1+R2)",
+      "Applying Ohm's law: I1 = V/R1 = I_total \xD7 R2/(R1+R2)",
+      "Similarly: I2 = V/R2 = I_total \xD7 R1/(R1+R2)",
+      "Verification: I1 + I2 = I_total (KCL satisfied)"
+    ],
+    reference: "Hayt & Kemmerly, Engineering Circuit Analysis, 8th ed."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["ohms-law", "voltage-divider", "series-parallel-resistor", "delta-wye-conversion"],
+  verificationData: [
+    {
+      inputs: { totalCurrent: 1, r1: 1e3, r2: 2e3 },
+      expectedOutputs: { i1: 2 / 3, i2: 1 / 3 },
+      tolerance: 1e-3,
+      source: "I1 = 1A \xD7 2000/(1000+2000) = 0.667A; I2 = 1A \xD7 1000/3000 = 0.333A"
+    },
+    {
+      inputs: { totalCurrent: 6e-3, r1: 1e3, r2: 1e3 },
+      expectedOutputs: { i1: 3e-3, i2: 3e-3 },
+      tolerance: 1e-3,
+      source: "Equal resistors split current equally: each gets 3 mA"
+    }
+  ]
+};
+
+// src/lib/calculators/general/delta-wye-conversion.ts
+function calculateDeltaWye(inputs) {
+  const { ra, rb, rc, conversionDir } = inputs;
+  if (ra <= 0 || rb <= 0 || rc <= 0) {
+    return { values: {}, errors: ["All resistor values must be greater than 0"] };
+  }
+  let r1, r2, r3;
+  let rdA, rdB, rdC;
+  if (conversionDir === 0) {
+    const rSum = ra + rb + rc;
+    r1 = ra * rb / rSum;
+    r2 = rb * rc / rSum;
+    r3 = ra * rc / rSum;
+    rdA = ra;
+    rdB = rb;
+    rdC = rc;
+  } else {
+    const r1w = ra;
+    const r2w = rb;
+    const r3w = rc;
+    const numerator = r1w * r2w + r2w * r3w + r3w * r1w;
+    rdA = numerator / r3w;
+    rdB = numerator / r1w;
+    rdC = numerator / r2w;
+    r1 = r1w;
+    r2 = r2w;
+    r3 = r3w;
+  }
+  return {
+    values: {
+      r1,
+      r2,
+      r3,
+      rdA,
+      rdB,
+      rdC
+    }
+  };
+}
+var deltaWyeConversion = {
+  slug: "delta-wye-conversion",
+  title: "Delta\u2013Wye (Star\u2013Delta) Conversion Calculator",
+  shortTitle: "Delta\u2013Wye Conversion",
+  metaTitle: "Delta to Wye Conversion Calculator \u2014 Star Delta Resistor Network",
+  category: "general",
+  description: "Convert resistor networks between delta (\u0394) and wye (Y / star) configurations. Supports bidirectional Delta\u2192Wye and Wye\u2192Delta conversion with exact formulas. Essential for three-phase power analysis and bridge circuit simplification.",
+  keywords: [
+    "delta wye calculator",
+    "star delta conversion",
+    "delta to wye calculator",
+    "wye to delta conversion",
+    "delta star conversion",
+    "Y-\u0394 transformation",
+    "resistor network conversion",
+    "three phase circuit",
+    "pi to T conversion",
+    "T to pi conversion",
+    "star delta transformer",
+    "delta wye formula",
+    "network theorem",
+    "bridge circuit simplification",
+    "Kennelly theorem"
+  ],
+  inputs: [
+    {
+      key: "conversionDir",
+      label: "Conversion Direction",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      tooltip: "0 = Delta \u2192 Wye, 1 = Wye \u2192 Delta"
+    },
+    {
+      key: "ra",
+      label: "Ra (\u0394) or R1 (Y)",
+      symbol: "R\u2090 / R\u2081",
+      unit: "\u03A9",
+      defaultValue: 10,
+      min: 1e-3,
+      max: 1e9,
+      unitOptions: [
+        { label: "\u03A9", factor: 1 },
+        { label: "k\u03A9", factor: 1e3 },
+        { label: "M\u03A9", factor: 1e6 }
+      ],
+      presets: [
+        { label: "10 \u03A9 (balanced)", values: { ra: 10, rb: 10, rc: 10 } },
+        { label: "1 k\u03A9 / 2 k\u03A9 / 3 k\u03A9", values: { ra: 1e3, rb: 2e3, rc: 3e3 } }
+      ]
+    },
+    {
+      key: "rb",
+      label: "Rb (\u0394) or R2 (Y)",
+      symbol: "R_b / R\u2082",
+      unit: "\u03A9",
+      defaultValue: 20,
+      min: 1e-3,
+      max: 1e9,
+      unitOptions: [
+        { label: "\u03A9", factor: 1 },
+        { label: "k\u03A9", factor: 1e3 },
+        { label: "M\u03A9", factor: 1e6 }
+      ]
+    },
+    {
+      key: "rc",
+      label: "Rc (\u0394) or R3 (Y)",
+      symbol: "R_c / R\u2083",
+      unit: "\u03A9",
+      defaultValue: 30,
+      min: 1e-3,
+      max: 1e9,
+      unitOptions: [
+        { label: "\u03A9", factor: 1 },
+        { label: "k\u03A9", factor: 1e3 },
+        { label: "M\u03A9", factor: 1e6 }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "r1",
+      label: "R1 (Wye)",
+      symbol: "R\u2081",
+      unit: "\u03A9",
+      precision: 4,
+      format: "engineering",
+      primary: true,
+      tooltip: "Delta\u2192Wye: R1 = Ra\xB7Rb/(Ra+Rb+Rc)"
+    },
+    {
+      key: "r2",
+      label: "R2 (Wye)",
+      symbol: "R\u2082",
+      unit: "\u03A9",
+      precision: 4,
+      format: "engineering",
+      tooltip: "Delta\u2192Wye: R2 = Rb\xB7Rc/(Ra+Rb+Rc)"
+    },
+    {
+      key: "r3",
+      label: "R3 (Wye)",
+      symbol: "R\u2083",
+      unit: "\u03A9",
+      precision: 4,
+      format: "engineering",
+      tooltip: "Delta\u2192Wye: R3 = Ra\xB7Rc/(Ra+Rb+Rc)"
+    },
+    {
+      key: "rdA",
+      label: "Ra (Delta)",
+      symbol: "R\u2090",
+      unit: "\u03A9",
+      precision: 4,
+      format: "engineering",
+      tooltip: "Wye\u2192Delta: Ra = (R1R2+R2R3+R3R1)/R3"
+    },
+    {
+      key: "rdB",
+      label: "Rb (Delta)",
+      symbol: "R_b",
+      unit: "\u03A9",
+      precision: 4,
+      format: "engineering",
+      tooltip: "Wye\u2192Delta: Rb = (R1R2+R2R3+R3R1)/R1"
+    },
+    {
+      key: "rdC",
+      label: "Rc (Delta)",
+      symbol: "R_c",
+      unit: "\u03A9",
+      precision: 4,
+      format: "engineering",
+      tooltip: "Wye\u2192Delta: Rc = (R1R2+R2R3+R3R1)/R2"
+    }
+  ],
+  calculate: calculateDeltaWye,
+  formula: {
+    primary: "R_1 = \\frac{R_a R_b}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_3}",
+    latex: "R_1 = \\frac{R_a R_b}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_3}",
+    variables: [
+      { symbol: "Ra, Rb, Rc", description: "Delta (\u0394) resistors", unit: "\u03A9" },
+      { symbol: "R1, R2, R3", description: "Wye (Y) resistors", unit: "\u03A9" }
+    ],
+    derivation: [
+      "Delta\u2192Wye (Kennelly): R1 = Ra\xB7Rb / (Ra+Rb+Rc)",
+      "R2 = Rb\xB7Rc / (Ra+Rb+Rc)",
+      "R3 = Ra\xB7Rc / (Ra+Rb+Rc)",
+      "Wye\u2192Delta: Ra = (R1R2+R2R3+R3R1)/R3",
+      "Rb = (R1R2+R2R3+R3R1)/R1",
+      "Rc = (R1R2+R2R3+R3R1)/R2",
+      "For balanced networks (Ra=Rb=Rc=R): R_wye = R/3"
+    ],
+    reference: "Hayt & Kemmerly, Engineering Circuit Analysis, 8th ed."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["series-parallel-resistor", "ohms-law", "three-phase-power", "current-divider"],
+  verificationData: [
+    {
+      inputs: { ra: 10, rb: 10, rc: 10, conversionDir: 0 },
+      expectedOutputs: { r1: 10 / 3, r2: 10 / 3, r3: 10 / 3 },
+      tolerance: 0.01,
+      source: "Balanced \u0394\u2192Y: R_wye = 10/(3) = 3.333 \u03A9 (balanced)"
+    },
+    {
+      inputs: { ra: 10, rb: 20, rc: 30, conversionDir: 0 },
+      expectedOutputs: {
+        r1: 10 * 20 / 60,
+        r2: 20 * 30 / 60,
+        r3: 10 * 30 / 60
+      },
+      tolerance: 1e-3,
+      source: "\u0394\u2192Y: R1=10\xD720/60=3.333, R2=20\xD730/60=10, R3=10\xD730/60=5"
+    },
+    {
+      inputs: { ra: 10 / 3, rb: 10 / 3, rc: 10 / 3, conversionDir: 1 },
+      expectedOutputs: { rdA: 10, rdB: 10, rdC: 10 },
+      tolerance: 0.01,
+      source: "Balanced Y\u2192\u0394: R_delta = R_wye \xD7 3 = 10 \u03A9"
+    }
+  ]
+};
+
+// src/lib/calculators/rf/doppler-shift.ts
+var c = 299792458;
+function calculateDopplerShift(inputs) {
+  const { frequency, velocity, angle, velocityUnit } = inputs;
+  if (frequency <= 0) {
+    return { values: {}, errors: ["Frequency must be greater than 0"] };
+  }
+  const f_Hz = frequency * 1e9;
+  const v_ms = velocityUnit === 1 ? velocity / 3.6 : velocity;
+  const theta_rad = angle * Math.PI / 180;
+  const cosTheta = Math.cos(theta_rad);
+  const f_d_Hz = 2 * v_ms * f_Hz * cosTheta / c;
+  const f_d_kHz = f_d_Hz / 1e3;
+  const velocityPerHz = c / (2 * f_Hz * cosTheta);
+  const velocityPerHz_kmh = velocityPerHz * 3.6;
+  const radialVelocity = v_ms * cosTheta;
+  return {
+    values: {
+      f_d_Hz,
+      f_d_kHz,
+      radialVelocity,
+      velocityPerHz,
+      velocityPerHz_kmh
+    }
+  };
+}
+var dopplerShift = {
+  slug: "doppler-shift",
+  title: "Doppler Shift Calculator",
+  shortTitle: "Doppler Shift",
+  metaTitle: "Doppler Shift Calculator \u2014 Radar Doppler Frequency & Velocity",
+  category: "rf",
+  description: "Calculate Doppler frequency shift for radar and RF applications. Computes the Doppler shift (f_d = 2vf\xB7cos \u03B8/c) given transmit frequency, target velocity, and aspect angle. Also derives velocity from measured shift.",
+  keywords: [
+    "doppler calculator",
+    "doppler shift calculator",
+    "radar doppler",
+    "doppler effect calculator",
+    "doppler frequency calculator",
+    "doppler shift formula",
+    "radar velocity calculator",
+    "target velocity radar",
+    "doppler frequency shift",
+    "doppler radar equation",
+    "radial velocity calculator",
+    "radar target speed",
+    "doppler shift RF",
+    "police radar doppler",
+    "weather radar doppler"
+  ],
+  inputs: [
+    {
+      key: "frequency",
+      label: "Transmit Frequency",
+      symbol: "f_tx",
+      unit: "GHz",
+      defaultValue: 10,
+      min: 1e-3,
+      max: 300,
+      step: 0.1,
+      presets: [
+        { label: "X-band 10 GHz", values: { frequency: 10 } },
+        { label: "K-band 24 GHz", values: { frequency: 24 } },
+        { label: "W-band 77 GHz", values: { frequency: 77 } },
+        { label: "S-band 3 GHz", values: { frequency: 3 } }
+      ]
+    },
+    {
+      key: "velocity",
+      label: "Target Velocity",
+      symbol: "v",
+      unit: "m/s",
+      defaultValue: 30,
+      min: 0,
+      max: 1e6,
+      step: 1,
+      presets: [
+        { label: "30 m/s (108 km/h)", values: { velocity: 30 } },
+        { label: "100 m/s (360 km/h)", values: { velocity: 100 } },
+        { label: "340 m/s (Mach 1)", values: { velocity: 340 } },
+        { label: "7900 m/s (LEO orbit)", values: { velocity: 7900 } }
+      ]
+    },
+    {
+      key: "velocityUnit",
+      label: "Velocity Unit",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      tooltip: "0 = m/s, 1 = km/h"
+    },
+    {
+      key: "angle",
+      label: "Aspect Angle (0\xB0 = head-on)",
+      symbol: "\u03B8",
+      unit: "\xB0",
+      defaultValue: 0,
+      min: 0,
+      max: 90,
+      step: 1,
+      tooltip: "Angle between target velocity vector and radar line-of-sight. 0\xB0 = head-on (maximum shift), 90\xB0 = broadside (no shift)"
+    }
+  ],
+  outputs: [
+    {
+      key: "f_d_Hz",
+      label: "Doppler Shift",
+      symbol: "f_d",
+      unit: "Hz",
+      precision: 4,
+      format: "engineering",
+      primary: true
+    },
+    {
+      key: "f_d_kHz",
+      label: "Doppler Shift",
+      symbol: "f_d",
+      unit: "kHz",
+      precision: 4
+    },
+    {
+      key: "radialVelocity",
+      label: "Radial Velocity",
+      symbol: "v_r",
+      unit: "m/s",
+      precision: 3,
+      tooltip: "Component of target velocity along the radar line-of-sight: v\xB7cos(\u03B8)"
+    },
+    {
+      key: "velocityPerHz",
+      label: "Velocity per Hz of Shift",
+      symbol: "\u0394v/\u0394f",
+      unit: "m/s/Hz",
+      precision: 6,
+      tooltip: "Radar velocity resolution: how much target speed corresponds to 1 Hz of Doppler shift"
+    },
+    {
+      key: "velocityPerHz_kmh",
+      label: "Velocity per Hz (km/h/Hz)",
+      symbol: "\u0394v/\u0394f",
+      unit: "km/h/Hz",
+      precision: 6
+    }
+  ],
+  calculate: calculateDopplerShift,
+  formula: {
+    primary: "f_d = \\frac{2 v f \\cos\\theta}{c}",
+    latex: "f_d = \\frac{2 v f \\cos\\theta}{c}",
+    variables: [
+      { symbol: "f_d", description: "Doppler frequency shift", unit: "Hz" },
+      { symbol: "v", description: "Target radial velocity", unit: "m/s" },
+      { symbol: "f", description: "Transmit frequency", unit: "Hz" },
+      { symbol: "\u03B8", description: "Aspect angle (0\xB0 = head-on)", unit: "\xB0" },
+      { symbol: "c", description: "Speed of light (299,792,458 m/s)", unit: "m/s" }
+    ],
+    derivation: [
+      "The factor of 2 accounts for the round-trip (transmit + receive) in monostatic radar",
+      "When \u03B8 = 0\xB0 (head-on): f_d = 2vf/c \u2014 maximum Doppler shift",
+      "When \u03B8 = 90\xB0 (broadside): f_d = 0 \u2014 target moving perpendicular, no range rate",
+      "Velocity from shift: v = f_d\xB7c/(2f\xB7cos\u03B8)",
+      "At 10 GHz, 1 m/s velocity produces 66.7 Hz of Doppler shift"
+    ],
+    reference: "Skolnik, Introduction to Radar Systems, 3rd ed., Ch.3"
+  },
+  visualization: { type: "none" },
+  liveWidgets: [
+    { type: "space-weather", position: "below-outputs" }
+  ],
+  relatedCalculators: ["radar-range-equation", "free-space-path-loss", "rf-link-budget", "wavelength-frequency"],
+  verificationData: [
+    {
+      inputs: { frequency: 10, velocity: 30, angle: 0, velocityUnit: 0 },
+      // f_d = 2 × 30 × 10e9 × cos(0) / c = 2000 Hz
+      expectedOutputs: {
+        f_d_Hz: 2 * 30 * 1e10 * 1 / c,
+        f_d_kHz: 2 * 30 * 1e10 * 1 / c / 1e3,
+        radialVelocity: 30
+      },
+      tolerance: 1e-3,
+      source: "Skolnik Ch.3: f_d = 2vf/c = 2\xD730\xD710GHz/c \u2248 2000 Hz at 10 GHz, 30 m/s"
+    },
+    {
+      inputs: { frequency: 10, velocity: 30, angle: 60, velocityUnit: 0 },
+      expectedOutputs: {
+        f_d_Hz: 2 * 30 * 1e10 * 0.5 / c,
+        radialVelocity: 15
+      },
+      tolerance: 1e-3,
+      source: "At 60\xB0 aspect: cos(60\xB0) = 0.5, f_d = 1000 Hz"
+    }
+  ]
+};
+
 // src/lib/calculators/registry.ts
 var ALL_CALCULATORS = [
   microstripImpedance,
@@ -25537,16 +26317,21 @@ var ALL_CALCULATORS = [
   equalizerQFactor,
   amplifierClipping,
   audioDelayTime,
-  powerAmplifierGain
+  powerAmplifierGain,
+  // Quick-win high-traffic calculators
+  reactanceCalculator,
+  currentDivider,
+  deltaWyeConversion,
+  dopplerShift
 ];
 function getAllCalculators() {
   return ALL_CALCULATORS;
 }
 function getCalculator(slug) {
-  return ALL_CALCULATORS.find((c) => c.slug === slug);
+  return ALL_CALCULATORS.find((c2) => c2.slug === slug);
 }
 function getCalculatorsByCategory(category) {
-  return ALL_CALCULATORS.filter((c) => c.category === category);
+  return ALL_CALCULATORS.filter((c2) => c2.category === category);
 }
 
 // src/lib/calculators/types.ts
@@ -25812,11 +26597,11 @@ server.registerTool(
         isError: true
       };
     }
-    const listing = calcs.map((c) => ({
-      slug: c.slug,
-      title: c.title,
-      category: c.category,
-      description: c.description
+    const listing = calcs.map((c2) => ({
+      slug: c2.slug,
+      title: c2.title,
+      category: c2.category,
+      description: c2.description
     }));
     return {
       content: [
