@@ -25691,9 +25691,9 @@ function calculateDeltaWye(inputs) {
   let rdA, rdB, rdC;
   if (conversionDir === 0) {
     const rSum = ra + rb + rc;
-    r1 = ra * rb / rSum;
-    r2 = rb * rc / rSum;
-    r3 = ra * rc / rSum;
+    r1 = rb * rc / rSum;
+    r2 = ra * rc / rSum;
+    r3 = ra * rb / rSum;
     rdA = ra;
     rdB = rb;
     rdC = rc;
@@ -25702,9 +25702,9 @@ function calculateDeltaWye(inputs) {
     const r2w = rb;
     const r3w = rc;
     const numerator = r1w * r2w + r2w * r3w + r3w * r1w;
-    rdA = numerator / r3w;
-    rdB = numerator / r1w;
-    rdC = numerator / r2w;
+    rdA = numerator / r1w;
+    rdB = numerator / r2w;
+    rdC = numerator / r3w;
     r1 = r1w;
     r2 = r2w;
     r3 = r3w;
@@ -25811,7 +25811,7 @@ var deltaWyeConversion = {
       precision: 4,
       format: "engineering",
       primary: true,
-      tooltip: "Delta\u2192Wye: R1 = Ra\xB7Rb/(Ra+Rb+Rc)"
+      tooltip: "Delta\u2192Wye: R1 = Rb\xB7Rc/(Ra+Rb+Rc) \u2014 R1 opposite Ra"
     },
     {
       key: "r2",
@@ -25820,7 +25820,7 @@ var deltaWyeConversion = {
       unit: "\u03A9",
       precision: 4,
       format: "engineering",
-      tooltip: "Delta\u2192Wye: R2 = Rb\xB7Rc/(Ra+Rb+Rc)"
+      tooltip: "Delta\u2192Wye: R2 = Ra\xB7Rc/(Ra+Rb+Rc) \u2014 R2 opposite Rb"
     },
     {
       key: "r3",
@@ -25829,7 +25829,7 @@ var deltaWyeConversion = {
       unit: "\u03A9",
       precision: 4,
       format: "engineering",
-      tooltip: "Delta\u2192Wye: R3 = Ra\xB7Rc/(Ra+Rb+Rc)"
+      tooltip: "Delta\u2192Wye: R3 = Ra\xB7Rb/(Ra+Rb+Rc) \u2014 R3 opposite Rc"
     },
     {
       key: "rdA",
@@ -25838,7 +25838,7 @@ var deltaWyeConversion = {
       unit: "\u03A9",
       precision: 4,
       format: "engineering",
-      tooltip: "Wye\u2192Delta: Ra = (R1R2+R2R3+R3R1)/R3"
+      tooltip: "Wye\u2192Delta: Ra = (R1R2+R2R3+R3R1)/R1 \u2014 Ra opposite R1"
     },
     {
       key: "rdB",
@@ -25847,7 +25847,7 @@ var deltaWyeConversion = {
       unit: "\u03A9",
       precision: 4,
       format: "engineering",
-      tooltip: "Wye\u2192Delta: Rb = (R1R2+R2R3+R3R1)/R1"
+      tooltip: "Wye\u2192Delta: Rb = (R1R2+R2R3+R3R1)/R2 \u2014 Rb opposite R2"
     },
     {
       key: "rdC",
@@ -25856,7 +25856,7 @@ var deltaWyeConversion = {
       unit: "\u03A9",
       precision: 4,
       format: "engineering",
-      tooltip: "Wye\u2192Delta: Rc = (R1R2+R2R3+R3R1)/R2"
+      tooltip: "Wye\u2192Delta: Rc = (R1R2+R2R3+R3R1)/R3 \u2014 Rc opposite R3"
     }
   ],
   calculate: calculateDeltaWye,
@@ -25868,12 +25868,11 @@ var deltaWyeConversion = {
       { symbol: "R1, R2, R3", description: "Wye (Y) resistors", unit: "\u03A9" }
     ],
     derivation: [
-      "Delta\u2192Wye (Kennelly): R1 = Ra\xB7Rb / (Ra+Rb+Rc)",
-      "R2 = Rb\xB7Rc / (Ra+Rb+Rc)",
-      "R3 = Ra\xB7Rc / (Ra+Rb+Rc)",
-      "Wye\u2192Delta: Ra = (R1R2+R2R3+R3R1)/R3",
-      "Rb = (R1R2+R2R3+R3R1)/R1",
-      "Rc = (R1R2+R2R3+R3R1)/R2",
+      "Delta\u2192Wye (Kennelly): Each wye resistor is opposite its corresponding delta resistor",
+      "R1 = Rb\xB7Rc / (Ra+Rb+Rc) \u2014 R1 opposite Ra",
+      "R2 = Ra\xB7Rc / (Ra+Rb+Rc) \u2014 R2 opposite Rb",
+      "R3 = Ra\xB7Rb / (Ra+Rb+Rc) \u2014 R3 opposite Rc",
+      "Wye\u2192Delta: Ra = (R1R2+R2R3+R3R1)/R1, Rb = .../R2, Rc = .../R3",
       "For balanced networks (Ra=Rb=Rc=R): R_wye = R/3"
     ],
     reference: "Hayt & Kemmerly, Engineering Circuit Analysis, 8th ed."
@@ -25890,12 +25889,15 @@ var deltaWyeConversion = {
     {
       inputs: { ra: 10, rb: 20, rc: 30, conversionDir: 0 },
       expectedOutputs: {
-        r1: 10 * 20 / 60,
-        r2: 20 * 30 / 60,
-        r3: 10 * 30 / 60
+        r1: 20 * 30 / 60,
+        // R1 = Rb×Rc/sum = 10 Ω
+        r2: 10 * 30 / 60,
+        // R2 = Ra×Rc/sum = 5 Ω
+        r3: 10 * 20 / 60
+        // R3 = Ra×Rb/sum = 3.333 Ω
       },
       tolerance: 1e-3,
-      source: "\u0394\u2192Y: R1=10\xD720/60=3.333, R2=20\xD730/60=10, R3=10\xD730/60=5"
+      source: "\u0394\u2192Y (Kennelly): R1=Rb\xD7Rc/sum=10, R2=Ra\xD7Rc/sum=5, R3=Ra\xD7Rb/sum=3.333"
     },
     {
       inputs: { ra: 10 / 3, rb: 10 / 3, rc: 10 / 3, conversionDir: 1 },

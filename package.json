@@ -1,6 +1,6 @@
 {
   "name": "rftools-mcp",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "mcpName": "io.github.antonpogrebenko-public/rftools",
   "description": "MCP server for rftools.io — 210 RF & electronics calculators for AI agents via the MCP",
   "keywords": [
