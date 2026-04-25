@@ -1898,13 +1898,19 @@ function calculateSmithChart(inputs) {
 }
 var smithChart = {
   slug: "smith-chart",
-  title: "Smith Chart Calculator",
+  title: "Online Smith Chart Calculator",
   shortTitle: "Smith Chart",
   category: "rf",
-  description: "Enter your load impedance (R + jX) to instantly see reflection coefficient, VSWR, return loss, and where it falls on the Smith Chart. Includes real-world presets \u2014 antenna, cable, and reactive loads.",
-  metaTitle: "Online Smith Chart Calculator \u2014 Interactive Impedance Matching Tool",
+  description: "Free interactive online Smith Chart tool \u2014 plot impedance, calculate VSWR, return loss, and reflection coefficient instantly. Real-time updates, load presets, and shareable URLs.",
+  metaTitle: "Smith Chart Online \u2014 Free Interactive Calculator & RF Impedance Tool",
   keywords: [
+    "smith chart online",
+    "online smith chart",
+    "smith chart tool",
+    "smith chart calculator",
     "smith chart",
+    "interactive smith chart",
+    "free smith chart",
     "impedance matching",
     "reflection coefficient",
     "VSWR",
@@ -1913,7 +1919,9 @@ var smithChart = {
     "normalized impedance",
     "return loss",
     "microwave",
-    "S11"
+    "S11",
+    "impedance plot",
+    "RF impedance tool"
   ],
   inputs: [
     {
@@ -4334,6 +4342,7 @@ var filterDesigner = {
   },
   visualization: { type: "bode-plot", freqRange: [1, 1e7] },
   relatedCalculators: ["rc-time-constant", "sampling-nyquist", "lc-resonance"],
+  relatedTools: ["filter-monte-carlo"],
   exportComponents: (inputs, outputs) => {
     const filterType = Math.round(inputs.filterType ?? 0);
     const order = Math.round(Math.min(10, Math.max(1, inputs.order ?? 1)));
@@ -9399,6 +9408,7 @@ var radarRangeEquation = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "noise-figure-cascade", "eirp-calculator"],
+  relatedTools: ["radar-detection"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
   ]
@@ -15493,7 +15503,519 @@ var bldcMotor = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["dc-motor-speed", "stepper-motor", "mosfet-power-dissipation"]
+  relatedCalculators: ["bldc-winding", "bldc-efficiency", "bldc-thermal", "dc-motor-speed", "stepper-motor"]
+};
+
+// src/lib/calculators/motor/bldc-winding.ts
+var AWG_TABLE = [
+  { awg: 10, diameterMm: 2.588, areaMm2: 5.261 },
+  { awg: 12, diameterMm: 2.053, areaMm2: 3.309 },
+  { awg: 14, diameterMm: 1.628, areaMm2: 2.081 },
+  { awg: 16, diameterMm: 1.291, areaMm2: 1.309 },
+  { awg: 18, diameterMm: 1.024, areaMm2: 0.823 },
+  { awg: 20, diameterMm: 0.812, areaMm2: 0.518 },
+  { awg: 22, diameterMm: 0.644, areaMm2: 0.326 },
+  { awg: 24, diameterMm: 0.511, areaMm2: 0.205 },
+  { awg: 26, diameterMm: 0.405, areaMm2: 0.129 },
+  { awg: 28, diameterMm: 0.321, areaMm2: 0.081 },
+  { awg: 30, diameterMm: 0.255, areaMm2: 0.051 },
+  { awg: 32, diameterMm: 0.202, areaMm2: 0.032 }
+];
+var COPPER_RESISTIVITY = 1724e-11;
+function selectWireGauge(requiredAreaMm2) {
+  let best = AWG_TABLE[0];
+  for (const entry of AWG_TABLE) {
+    if (entry.areaMm2 >= requiredAreaMm2) best = entry;
+  }
+  return best;
+}
+function calculateBldcWinding(inputs) {
+  const {
+    targetKv,
+    poleCount,
+    slotCount,
+    statorInnerDia,
+    statorStackLength,
+    maxCurrent,
+    windingType
+  } = inputs;
+  const safeSlots = Math.max(3, Math.round(slotCount));
+  const safePoles = Math.max(2, Math.round(poleCount / 2) * 2);
+  const phases = 3;
+  const isWye = windingType === 0;
+  const slotWidthMm = Math.PI * statorInnerDia / safeSlots * 0.55;
+  const slotDepthMm = statorInnerDia * 0.2;
+  const slotAreaMm2 = slotWidthMm * slotDepthMm;
+  const coilsPerPhase = safeSlots / phases;
+  const bGap = 0.8;
+  const polePitch = Math.PI * statorInnerDia / safePoles;
+  const poleAreaM2 = polePitch * statorStackLength / 1e6;
+  const fluxPerPole = bGap * poleAreaM2;
+  const connectionFactor = isWye ? 1 : Math.sqrt(3);
+  const polePairs = safePoles / 2;
+  const slotAngleDeg = 180 * safePoles / safeSlots;
+  const q = safeSlots / (phases * safePoles);
+  const coilSpan = Math.round(safeSlots / safePoles);
+  const polePitchSlots = safeSlots / safePoles;
+  const pitchFactor = Math.abs(Math.sin(coilSpan / polePitchSlots * (Math.PI / 2)));
+  const qRound = Math.max(1, Math.round(q));
+  const distributionFactor = qRound <= 1 ? 1 : Math.sin(qRound * slotAngleDeg * Math.PI / (2 * 180)) / (qRound * Math.sin(slotAngleDeg * Math.PI / (2 * 180)));
+  const windingFactor = Math.abs(pitchFactor * distributionFactor);
+  const safeKv = Math.max(targetKv, 1);
+  const kvRadS = safeKv * (2 * Math.PI / 60);
+  const nSeriesTotal = 1 / (kvRadS * polePairs * Math.max(fluxPerPole, 1e-9) * Math.max(windingFactor, 0.1) * connectionFactor);
+  const turnsPerCoil = Math.max(1, Math.round(nSeriesTotal / coilsPerPhase));
+  const actualNSeries = turnsPerCoil * coilsPerPhase;
+  const actualKvRadS = 1 / (actualNSeries * polePairs * fluxPerPole * windingFactor * connectionFactor);
+  const actualKv = actualKvRadS * 60 / (2 * Math.PI);
+  const deltaEquivKv = isWye ? actualKv * Math.sqrt(3) : actualKv / Math.sqrt(3);
+  const targetCurrentDensity = 6.5;
+  const requiredWireArea = maxCurrent / targetCurrentDensity;
+  const wire = selectWireGauge(requiredWireArea);
+  const copperAreaPerSlot = turnsPerCoil * wire.areaMm2;
+  const fillFactor = Math.min(copperAreaPerSlot / Math.max(slotAreaMm2, 0.01) * 100, 100);
+  const endWindingMm = statorInnerDia * 0.15;
+  const meanTurnLengthMm = 2 * statorStackLength + 2 * (slotDepthMm + endWindingMm);
+  const meanTurnLengthM = meanTurnLengthMm / 1e3;
+  const wireAreaM2 = wire.areaMm2 / 1e6;
+  const resistancePerCoil = COPPER_RESISTIVITY * meanTurnLengthM * turnsPerCoil / wireAreaM2;
+  const phaseResistanceMohm = resistancePerCoil * coilsPerPhase * 1e3;
+  const warnings = [];
+  if (fillFactor > 75) {
+    warnings.push("Fill factor exceeds 75% \u2014 winding may be difficult to assemble");
+  }
+  if (fillFactor > 90) {
+    warnings.push("Fill factor exceeds 90% \u2014 physically impossible, increase slot count or reduce turns");
+  }
+  if (safeSlots % 3 !== 0) {
+    warnings.push("Slot count should be a multiple of 3 for balanced 3-phase winding");
+  }
+  return {
+    values: {
+      turnsPerCoil,
+      wireAwg: wire.awg,
+      wireDiameter: wire.diameterMm,
+      fillFactor,
+      phaseResistance: phaseResistanceMohm,
+      coilSpan,
+      windingFactor,
+      actualKv,
+      deltaEquivKv
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var bldcWinding = {
+  slug: "bldc-winding",
+  title: "BLDC Winding Calculator",
+  shortTitle: "BLDC Winding",
+  category: "motor",
+  description: "Calculate BLDC motor winding parameters: turns per coil, wire gauge, fill factor, winding factor, and phase resistance. Visual winding scheme diagram for delta and wye configurations.",
+  metaTitle: "BLDC Winding Calculator \u2014 Turns, Wire Gauge & Winding Scheme",
+  keywords: [
+    "bldc winding calculator",
+    "bldc motor winding",
+    "winding scheme",
+    "turns per coil",
+    "motor winding diagram",
+    "bldc coil calculator",
+    "wire gauge motor",
+    "winding factor",
+    "slot pole combination",
+    "delta wye winding",
+    "motor rewinding",
+    "stator winding",
+    "bldc winding pattern",
+    "motor fill factor",
+    "concentrated winding"
+  ],
+  inputs: [
+    {
+      key: "targetKv",
+      label: "Target Kv Rating",
+      symbol: "K_v",
+      unit: "RPM/V",
+      defaultValue: 920,
+      min: 1,
+      max: 1e4,
+      tooltip: "Desired motor velocity constant \u2014 determines turns per coil"
+    },
+    {
+      key: "poleCount",
+      label: "Pole Count",
+      symbol: "P",
+      unit: "poles",
+      defaultValue: 14,
+      min: 2,
+      max: 60,
+      step: 2,
+      tooltip: "Number of permanent magnet poles (always even)",
+      presets: [
+        { label: "12N14P (drone)", values: { slotCount: 12, poleCount: 14 } },
+        { label: "9N6P (small)", values: { slotCount: 9, poleCount: 6 } },
+        { label: "12N16P (hub)", values: { slotCount: 12, poleCount: 16 } },
+        { label: "24N22P (gimbal)", values: { slotCount: 24, poleCount: 22 } },
+        { label: "36N42P (DD)", values: { slotCount: 36, poleCount: 42 } }
+      ]
+    },
+    {
+      key: "slotCount",
+      label: "Slot Count",
+      symbol: "S",
+      unit: "slots",
+      defaultValue: 12,
+      min: 3,
+      max: 72,
+      step: 3,
+      tooltip: "Number of stator slots (should be multiple of 3)"
+    },
+    {
+      key: "statorInnerDia",
+      label: "Stator Inner Diameter",
+      symbol: "d_s",
+      unit: "mm",
+      defaultValue: 23,
+      min: 5,
+      max: 300,
+      tooltip: "Inner bore diameter of the stator"
+    },
+    {
+      key: "statorStackLength",
+      label: "Stator Stack Length",
+      symbol: "L_s",
+      unit: "mm",
+      defaultValue: 10,
+      min: 1,
+      max: 200,
+      tooltip: "Axial depth of the stator lamination stack"
+    },
+    {
+      key: "maxCurrent",
+      label: "Max Continuous Current",
+      symbol: "I_max",
+      unit: "A",
+      defaultValue: 20,
+      min: 0.1,
+      max: 500,
+      tooltip: "Maximum continuous phase current for wire gauge selection"
+    },
+    {
+      key: "supplyVoltage",
+      label: "Supply Voltage",
+      symbol: "V",
+      unit: "V",
+      defaultValue: 22.2,
+      min: 1,
+      max: 400,
+      presets: [
+        { label: "3S LiPo (11.1V)", values: { supplyVoltage: 11.1 } },
+        { label: "4S LiPo (14.8V)", values: { supplyVoltage: 14.8 } },
+        { label: "6S LiPo (22.2V)", values: { supplyVoltage: 22.2 } },
+        { label: "12S LiPo (44.4V)", values: { supplyVoltage: 44.4 } },
+        { label: "48V (e-bike)", values: { supplyVoltage: 48 } }
+      ]
+    },
+    {
+      key: "windingType",
+      label: "Winding Type",
+      symbol: "",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      tooltip: "0 = Wye (Y), 1 = Delta (\u0394)",
+      presets: [
+        { label: "Wye (Y)", values: { windingType: 0 } },
+        { label: "Delta (\u0394)", values: { windingType: 1 } }
+      ]
+    }
+  ],
+  outputs: [
+    { key: "turnsPerCoil", label: "Turns per Coil", symbol: "N", unit: "turns", precision: 0, tooltip: "Number of wire turns per stator coil" },
+    { key: "wireAwg", label: "Recommended Wire AWG", symbol: "AWG", unit: "", precision: 0, tooltip: "American Wire Gauge for target current density of 6.5 A/mm\xB2" },
+    { key: "wireDiameter", label: "Wire Diameter", symbol: "d_w", unit: "mm", precision: 3 },
+    {
+      key: "fillFactor",
+      label: "Fill Factor",
+      symbol: "FF",
+      unit: "%",
+      precision: 1,
+      thresholds: { good: { max: 65 }, warning: { max: 80 }, danger: { min: 80 } },
+      tooltip: "Ratio of copper area to slot area \u2014 above 75% is very difficult to wind"
+    },
+    { key: "phaseResistance", label: "Phase Resistance", symbol: "R_ph", unit: "m\u03A9", precision: 1 },
+    { key: "coilSpan", label: "Coil Span", symbol: "", unit: "slots", precision: 0 },
+    { key: "windingFactor", label: "Winding Factor (Kw1)", symbol: "K_{w1}", unit: "", precision: 4, tooltip: "Fundamental winding factor = pitch factor \xD7 distribution factor" },
+    { key: "actualKv", label: "Achieved Kv", symbol: "K_v", unit: "RPM/V", precision: 1, tooltip: "Actual Kv with integer turns (may differ from target)" },
+    {
+      key: "deltaEquivKv",
+      label: "Delta/Wye Equivalent Kv",
+      symbol: "K_v'",
+      unit: "RPM/V",
+      precision: 1,
+      tooltip: "Equivalent Kv if winding connection type were changed (Kv_delta = Kv_wye \xD7 \u221A3)"
+    }
+  ],
+  calculate: calculateBldcWinding,
+  formula: {
+    primary: "N = 1 / (Kv_rad \xD7 p \xD7 \u03A6 \xD7 Kw \xD7 C),  Kv_delta = Kv_wye \xD7 \u221A3",
+    latex: "N = \\frac{1}{K_{v,rad} \\cdot p \\cdot \\Phi \\cdot K_{w1} \\cdot C_{conn}}, \\quad K_{v,\\Delta} = K_{v,Y} \\times \\sqrt{3}",
+    variables: [
+      { symbol: "N", description: "Turns per coil (series per phase)", unit: "turns" },
+      { symbol: "K_v,rad", description: "Motor velocity constant", unit: "rad/s/V" },
+      { symbol: "p", description: "Pole pairs", unit: "" },
+      { symbol: "\u03A6", description: "Flux per pole", unit: "Wb" },
+      { symbol: "K_w1", description: "Fundamental winding factor", unit: "" },
+      { symbol: "C", description: "Connection factor (1 for wye, \u221A3 for delta)", unit: "" }
+    ],
+    reference: "Hanselman, D. \u2014 Brushless Permanent Magnet Motor Design, 2nd ed."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["bldc-motor", "bldc-efficiency", "bldc-thermal", "motor-winding-resistance"],
+  liveWidgets: [
+    { type: "bldc-winding", position: "below-outputs" }
+  ]
+};
+
+// src/lib/calculators/motor/bldc-efficiency.ts
+function calculateBldcEfficiency(inputs) {
+  const { kvRating, phaseResistance, noLoadCurrent, supplyVoltage, operatingCurrent, polePairs } = inputs;
+  const safeKv = Math.max(kvRating, 1);
+  const safeRm = Math.max(phaseResistance, 0.01) / 1e3;
+  const safeI0 = Math.max(noLoadCurrent, 1e-3);
+  const safeV = Math.max(supplyVoltage, 0.1);
+  const safeI = Math.max(operatingCurrent, 1e-3);
+  const safePP = Math.max(polePairs, 1);
+  const inputPower = safeV * safeI;
+  const copperLoss = safeI * safeI * safeRm * 1.5;
+  const rpm = safeKv * safeV * (1 - safeI * safeRm / safeV);
+  const noLoadPower = safeV * safeI0;
+  const noLoadCopper = safeI0 * safeI0 * safeRm * 1.5;
+  const ironLossRef = Math.max(noLoadPower - noLoadCopper, 0);
+  const noLoadRpm = safeKv * safeV;
+  const ironLossScale = noLoadRpm > 0 ? Math.pow(Math.max(rpm, 0) / noLoadRpm, 1.5) : 1;
+  const ironLoss = ironLossRef * ironLossScale;
+  const mechanicalLoss = noLoadCopper;
+  const totalLoss = copperLoss + ironLoss + mechanicalLoss;
+  const outputPower = Math.max(inputPower - totalLoss, 0);
+  const efficiency = inputPower > 0 ? outputPower / inputPower * 100 : 0;
+  const stallCurrent = safeV / safeRm;
+  const optimalCurrent = Math.sqrt(safeI0 * stallCurrent);
+  const optimalRpm = safeKv * safeV * (1 - optimalCurrent * safeRm / safeV);
+  const copperPct = totalLoss > 0 ? copperLoss / totalLoss * 100 : 0;
+  const ironPct = totalLoss > 0 ? ironLoss / totalLoss * 100 : 0;
+  const mechPct = totalLoss > 0 ? mechanicalLoss / totalLoss * 100 : 0;
+  return {
+    values: {
+      copperLoss,
+      ironLoss,
+      mechanicalLoss,
+      totalLoss,
+      outputPower,
+      efficiency,
+      optimalCurrent,
+      optimalRpm,
+      copperPct,
+      ironPct,
+      mechPct
+    }
+  };
+}
+var bldcEfficiency = {
+  slug: "bldc-efficiency",
+  title: "BLDC Efficiency Analyzer",
+  shortTitle: "BLDC Efficiency",
+  category: "motor",
+  description: "Analyze BLDC motor efficiency at any operating point. Breaks down copper, iron, and mechanical losses. Finds the optimal current and RPM for peak efficiency.",
+  metaTitle: "BLDC Efficiency Analyzer \u2014 Loss Breakdown & Optimal Operating Point",
+  keywords: [
+    "bldc efficiency",
+    "motor efficiency calculator",
+    "bldc power loss",
+    "copper loss motor",
+    "iron loss motor",
+    "motor loss breakdown",
+    "optimal efficiency point",
+    "bldc operating point",
+    "motor efficiency analysis",
+    "bldc thermal losses",
+    "Steinmetz",
+    "motor power dissipation"
+  ],
+  inputs: [
+    { key: "kvRating", label: "Kv Rating", symbol: "K_v", unit: "RPM/V", defaultValue: 920, min: 1, max: 1e4 },
+    { key: "phaseResistance", label: "Phase Resistance", symbol: "R_ph", unit: "m\u03A9", defaultValue: 45, min: 0.1, tooltip: "Phase-to-phase winding resistance" },
+    { key: "noLoadCurrent", label: "No-Load Current", symbol: "I_0", unit: "A", defaultValue: 1.5, min: 1e-3, tooltip: "Current drawn at no mechanical load (iron + friction losses)" },
+    {
+      key: "supplyVoltage",
+      label: "Supply Voltage",
+      symbol: "V",
+      unit: "V",
+      defaultValue: 22.2,
+      min: 1,
+      presets: [
+        { label: "3S LiPo (11.1V)", values: { supplyVoltage: 11.1 } },
+        { label: "4S LiPo (14.8V)", values: { supplyVoltage: 14.8 } },
+        { label: "6S LiPo (22.2V)", values: { supplyVoltage: 22.2 } }
+      ]
+    },
+    { key: "operatingCurrent", label: "Operating Current", symbol: "I", unit: "A", defaultValue: 10, min: 0.01, tooltip: "Actual load current to analyze" },
+    { key: "polePairs", label: "Pole Pairs", symbol: "p", unit: "", defaultValue: 7, min: 1, max: 30 }
+  ],
+  outputs: [
+    { key: "copperLoss", label: "Copper Loss", symbol: "P_Cu", unit: "W", precision: 2 },
+    { key: "ironLoss", label: "Iron Loss", symbol: "P_Fe", unit: "W", precision: 2 },
+    { key: "mechanicalLoss", label: "Mechanical Loss", symbol: "P_mech", unit: "W", precision: 2 },
+    { key: "totalLoss", label: "Total Loss", symbol: "P_loss", unit: "W", precision: 2 },
+    { key: "outputPower", label: "Output Power", symbol: "P_out", unit: "W", precision: 2 },
+    {
+      key: "efficiency",
+      label: "Efficiency",
+      symbol: "\u03B7",
+      unit: "%",
+      precision: 1,
+      thresholds: { good: { min: 85 }, warning: { min: 70 }, danger: { min: 50 } }
+    },
+    { key: "optimalCurrent", label: "Optimal Current", symbol: "I_opt", unit: "A", precision: 2, tooltip: "Current that maximizes efficiency: \u221A(I\u2080 \xD7 I_stall)" },
+    { key: "optimalRpm", label: "Optimal RPM", symbol: "N_opt", unit: "RPM", precision: 0 },
+    { key: "copperPct", label: "Copper Loss Share", symbol: "", unit: "%", precision: 1 },
+    { key: "ironPct", label: "Iron Loss Share", symbol: "", unit: "%", precision: 1 },
+    { key: "mechPct", label: "Mechanical Loss Share", symbol: "", unit: "%", precision: 1 }
+  ],
+  calculate: calculateBldcEfficiency,
+  formula: {
+    primary: "\u03B7 = P_out / P_in, P_Cu = I\xB2R, P_Fe \u2248 k\xB7(RPM)^1.5, I_opt = \u221A(I\u2080\xB7I_stall)",
+    latex: "\\eta = \\frac{P_{out}}{P_{in}}, \\quad P_{Cu} = I^2 R, \\quad I_{opt} = \\sqrt{I_0 \\cdot I_{stall}}",
+    variables: [
+      { symbol: "\u03B7", description: "Motor efficiency", unit: "%" },
+      { symbol: "P_Cu", description: "Copper (I\xB2R) losses", unit: "W" },
+      { symbol: "P_Fe", description: "Iron (core) losses", unit: "W" },
+      { symbol: "I_opt", description: "Current for peak efficiency", unit: "A" }
+    ],
+    reference: "Hanselman, D. \u2014 Brushless Permanent Magnet Motor Design"
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["bldc-motor", "bldc-winding", "bldc-thermal", "motor-efficiency"]
+};
+
+// src/lib/calculators/motor/bldc-thermal.ts
+var COPPER_TEMP_COEFF = 393e-5;
+var INSULATION_CLASSES = [
+  { label: "Class B (130\xB0C)", values: { maxWindingTemp: 130 } },
+  { label: "Class F (155\xB0C)", values: { maxWindingTemp: 155 } },
+  { label: "Class H (180\xB0C)", values: { maxWindingTemp: 180 } }
+];
+function calculateBldcThermal(inputs) {
+  const {
+    phaseResistance,
+    continuousCurrent,
+    peakCurrent,
+    thermalResWC,
+    thermalResCA,
+    ambientTemp,
+    maxWindingTemp,
+    operatingCurrent
+  } = inputs;
+  const safeRm = Math.max(phaseResistance, 0.01) / 1e3;
+  const safeI = Math.max(operatingCurrent, 1e-3);
+  const safeIPeak = Math.max(peakCurrent, 1e-3);
+  const totalThermalRes = thermalResWC + thermalResCA;
+  const copperLoss = safeI * safeI * safeRm * 1.5;
+  const tempRise = copperLoss * totalThermalRes;
+  const steadyStateTemp = ambientTemp + tempRise;
+  const thermalMargin = maxWindingTemp - steadyStateTemp;
+  const deratedCurrent = Math.sqrt(
+    Math.max(maxWindingTemp - ambientTemp, 0) / (1.5 * safeRm * Math.max(totalThermalRes, 0.01))
+  );
+  const thermalCapacitance = 10;
+  const tau = thermalCapacitance * totalThermalRes;
+  const peakLoss = safeIPeak * safeIPeak * safeRm * 1.5;
+  const peakSteadyState = ambientTemp + peakLoss * totalThermalRes;
+  const timeToLimit = peakSteadyState > maxWindingTemp ? tau * Math.log((peakSteadyState - ambientTemp) / Math.max(peakSteadyState - maxWindingTemp, 0.01)) : Infinity;
+  const safeTimeToLimit = Number.isFinite(timeToLimit) ? timeToLimit : 9999;
+  const hotResistanceMohm = safeRm * (1 + COPPER_TEMP_COEFF * (steadyStateTemp - 25)) * 1e3;
+  return {
+    values: {
+      tempRise,
+      steadyStateTemp,
+      thermalMargin,
+      deratedCurrent,
+      timeToLimit: safeTimeToLimit,
+      hotResistance: hotResistanceMohm
+    }
+  };
+}
+var bldcThermal = {
+  slug: "bldc-thermal",
+  title: "BLDC Thermal Derating Calculator",
+  shortTitle: "BLDC Thermal",
+  category: "motor",
+  description: "Calculate BLDC motor winding temperature, thermal margin, derated current, and time to thermal limit. Supports insulation classes B, F, and H.",
+  metaTitle: "BLDC Thermal Derating \u2014 Winding Temperature & Current Limits",
+  keywords: [
+    "bldc thermal",
+    "motor thermal derating",
+    "winding temperature",
+    "motor thermal resistance",
+    "insulation class",
+    "thermal margin",
+    "motor current derating",
+    "motor overheating",
+    "bldc temperature limit",
+    "motor thermal model",
+    "copper temperature coefficient"
+  ],
+  inputs: [
+    { key: "phaseResistance", label: "Phase Resistance (at 25\xB0C)", symbol: "R_ph", unit: "m\u03A9", defaultValue: 45, min: 0.1, tooltip: "Cold resistance at 25\xB0C reference temperature" },
+    { key: "continuousCurrent", label: "Rated Continuous Current", symbol: "I_cont", unit: "A", defaultValue: 20, min: 0.1, tooltip: "Manufacturer rated continuous current" },
+    { key: "peakCurrent", label: "Peak Current", symbol: "I_peak", unit: "A", defaultValue: 40, min: 0.1, tooltip: "Short-duration maximum current" },
+    { key: "thermalResWC", label: "Thermal Resistance (Winding\u2192Case)", symbol: "R\u03B8_wc", unit: "\xB0C/W", defaultValue: 2.5, min: 0.01, tooltip: "From motor datasheet or measurement" },
+    { key: "thermalResCA", label: "Thermal Resistance (Case\u2192Ambient)", symbol: "R\u03B8_ca", unit: "\xB0C/W", defaultValue: 8, min: 0.01, tooltip: "Depends on mounting, airflow, heatsinking" },
+    { key: "ambientTemp", label: "Ambient Temperature", symbol: "T_amb", unit: "\xB0C", defaultValue: 25, min: -40, max: 85 },
+    {
+      key: "maxWindingTemp",
+      label: "Max Winding Temperature",
+      symbol: "T_max",
+      unit: "\xB0C",
+      defaultValue: 155,
+      min: 80,
+      max: 250,
+      presets: INSULATION_CLASSES,
+      tooltip: "Maximum allowable winding temperature \u2014 depends on insulation class"
+    },
+    { key: "operatingCurrent", label: "Operating Current", symbol: "I_op", unit: "A", defaultValue: 15, min: 0.01, tooltip: "Current you intend to run continuously" }
+  ],
+  outputs: [
+    { key: "tempRise", label: "Temperature Rise", symbol: "\u0394T", unit: "\xB0C", precision: 1 },
+    { key: "steadyStateTemp", label: "Steady-State Winding Temp", symbol: "T_w", unit: "\xB0C", precision: 1 },
+    {
+      key: "thermalMargin",
+      label: "Thermal Margin",
+      symbol: "\u0394T_m",
+      unit: "\xB0C",
+      precision: 1,
+      thresholds: { good: { min: 30 }, warning: { min: 10 }, danger: { min: 0 } },
+      tooltip: "Remaining temperature headroom before insulation limit"
+    },
+    { key: "deratedCurrent", label: "Derated Continuous Current", symbol: "I_derated", unit: "A", precision: 2, tooltip: "Max continuous current for this ambient + thermal path" },
+    { key: "timeToLimit", label: "Time to Thermal Limit (at peak)", symbol: "t_limit", unit: "s", precision: 1, tooltip: "Estimated time from cold start at peak current until winding reaches max temp" },
+    { key: "hotResistance", label: "Hot Resistance", symbol: "R_hot", unit: "m\u03A9", precision: 1, tooltip: "Winding resistance at steady-state temperature (\u03B1 = 0.00393/\xB0C for copper)" }
+  ],
+  calculate: calculateBldcThermal,
+  formula: {
+    primary: "\u0394T = P_loss \xD7 R\u03B8_total,  I_derated = \u221A((T_max\u2212T_amb) / (1.5\xB7R\xB7R\u03B8)),  R_hot = R_cold\xB7(1+\u03B1\xB7\u0394T)",
+    latex: "\\Delta T = P_{loss} \\cdot R_{\\theta}, \\quad I_{derated} = \\sqrt{\\frac{T_{max} - T_{amb}}{1.5 \\cdot R \\cdot R_{\\theta}}}, \\quad R_{hot} = R_{cold}(1 + \\alpha \\Delta T)",
+    variables: [
+      { symbol: "\u0394T", description: "Temperature rise above ambient", unit: "\xB0C" },
+      { symbol: "R\u03B8", description: "Total thermal resistance (winding\u2192case + case\u2192ambient)", unit: "\xB0C/W" },
+      { symbol: "\u03B1", description: "Copper temperature coefficient (0.00393/\xB0C)", unit: "1/\xB0C" },
+      { symbol: "I_derated", description: "Maximum safe continuous current", unit: "A" }
+    ],
+    reference: "IEC 60034-1 \u2014 Rotating electrical machines; NEMA MG-1"
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["bldc-winding", "bldc-efficiency", "motor-heat-dissipation", "bldc-motor"]
 };
 
 // src/lib/calculators/motor/servo-motor.ts
@@ -19699,21 +20221,26 @@ function calculateBerSnr(inputs) {
 }
 var berSnr = {
   slug: "ber-snr",
-  title: "Bit Error Rate (BER) Calculator",
-  shortTitle: "BER vs Eb/N0",
+  title: "BER Calculator \u2014 Bit Error Rate from SNR",
+  shortTitle: "BER Calculator",
   category: "signal",
-  description: "Free online BER calculator \u2014 enter Eb/N0 (dB) to instantly get bit error rate for BPSK, QPSK, 8PSK, and 16QAM. Plots BER curves and compares to the Shannon limit.",
-  metaTitle: "BER Calculator \u2014 Bit Error Rate vs Eb/N0 for BPSK, QPSK, QAM",
+  description: "Free BER calculator for BPSK, QPSK, 8PSK, 16-QAM. Enter Eb/N0 to instantly compute bit error rate. Compare modulation schemes and optimize link performance.",
+  metaTitle: "BER Calculator \u2014 Bit Error Rate from Eb/N0 | rftools.io",
   keywords: [
-    "bit error rate",
     "BER calculator",
-    "Eb/N0",
+    "bit error rate calculator",
+    "ber calculator online",
+    "bit error rate",
+    "Eb/N0 calculator",
     "BPSK BER",
     "QPSK BER",
+    "8PSK BER",
     "16QAM BER",
-    "digital modulation",
-    "SNR BER",
-    "communications performance"
+    "digital modulation BER",
+    "SNR to BER",
+    "BER vs SNR",
+    "BER curve",
+    "error probability calculator"
   ],
   inputs: [
     {
@@ -22881,10 +23408,10 @@ var emiFilterLc = {
   slug: "emi-filter-lc",
   title: "LC EMI Filter Design Calculator",
   shortTitle: "LC EMI Filter",
-  metaTitle: "LC EMI Filter Design Calculator - Free Online Tool",
+  metaTitle: "EMI Filter Calculator \u2014 LC Low-Pass Design for CISPR Compliance",
   category: "emc",
-  description: "Design an LC low-pass EMI filter for conducted emissions. Calculate inductance, capacitance, filter order, and stop-band attenuation for CISPR compliance.",
-  keywords: ["emi filter design", "lc filter emc", "conducted emissions filter", "cispr 22 filter", "emc low pass filter calculator"],
+  description: "Design LC EMI filters for conducted emissions compliance. Calculate inductance, capacitance, cutoff frequency, and attenuation for CISPR 22/32 and FCC Part 15. Free, instant results.",
+  keywords: ["emi filter design", "emi filter calculator", "lc filter emc", "conducted emissions filter", "cispr 22 filter", "cispr 32 filter", "emc low pass filter calculator", "fcc part 15 filter", "lc emi filter design"],
   inputs: [
     {
       key: "fc",
@@ -24613,10 +25140,10 @@ var equalizerQFactor = {
   slug: "equalizer-q-factor",
   title: "Equalizer Filter Q & Bandwidth",
   shortTitle: "EQ Q Factor",
-  metaTitle: "Equalizer Filter Q & Bandwidth \u2014 Free Audio Electronics Tool",
+  metaTitle: "Equalizer Q Factor Calculator \u2014 Bandwidth, Octave & Frequency Converter",
   category: "audio",
-  description: "Calculate equalizer Q factor from center frequency and bandwidth, or convert between Q, octaves, and frequency limits.",
-  keywords: ["equalizer Q factor", "EQ bandwidth", "parametric EQ", "Q factor audio", "octave bandwidth", "EQ filter"],
+  description: "Free EQ Q factor calculator \u2014 enter center frequency and bandwidth to get Q, octaves, and 3dB points. Convert between Q factor, fractional bandwidth, and octave bandwidth for parametric equalizer design.",
+  keywords: ["equalizer Q factor", "EQ bandwidth", "parametric EQ", "Q factor audio", "octave bandwidth", "EQ filter", "Q factor calculator", "EQ Q calculator", "bandwidth to octave", "3dB bandwidth", "parametric equalizer design"],
   inputs: [
     { key: "centerFreq", label: "Center Frequency", symbol: "f\u2080", unit: "Hz", defaultValue: 1e3, min: 1 },
     { key: "bandwidth", label: "Bandwidth (\u22123 dB)", symbol: "BW", unit: "Hz", defaultValue: 200, min: 0.1 }
@@ -24894,6 +25421,9 @@ var ALL_CALCULATORS = [
   currentMirror,
   thermalResistanceNetwork,
   bldcMotor,
+  bldcWinding,
+  bldcEfficiency,
+  bldcThermal,
   // Batch 7 — Motor (15 new)
   servoMotor,
   gearRatio,
