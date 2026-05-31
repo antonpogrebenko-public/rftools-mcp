@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
-**MCP server for [rftools.io](https://rftools.io) — 210 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
+**MCP server for [rftools.io](https://rftools.io) — 213 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
 
 Give Claude, Cursor, or any MCP-compatible AI assistant access to validated engineering calculators and heavy server-side simulations. Microstrip impedance, link budgets, filter design, converter sizing, antenna patterns, and 200+ more calculators — plus NEC2 antenna simulation, FDTD, Monte Carlo, SMPS analysis, EMI estimation, and more, all callable as MCP tools.
 
@@ -204,23 +204,23 @@ Submit a simulation job and wait for the result. Returns the full result JSON al
 >
 > **AI:** *Calls `run_calculation` with buck-converter* → Duty cycle: 20.8%, inductor: 17.4 μH, output cap: 22 μF. [View on rftools.io →](https://rftools.io/calculators/power/buck-converter)
 
-## All 210 Calculators
+## All 213 Calculators
 
 | Category | Count | Examples |
 |----------|------:|---------|
 | **RF & Microwave** | 28 | Microstrip impedance, VSWR/return loss, Smith chart, link budget, noise figure cascade, radar range, free-space path loss, mixer spur |
 | **PCB Design** | 13 | Trace width for current, differential pair, controlled impedance, via calculator, crosstalk, decoupling capacitor |
-| **Power Electronics** | 20 | Buck converter, boost converter, flyback, LDO thermal, battery life, MOSFET dissipation, solar panel sizing |
+| **Power Electronics** | 21 | Buck converter, boost converter, flyback, LDO thermal, battery life, MOSFET dissipation, solar panel sizing |
 | **Signal Processing** | 13 | Filter designer, ADC SNR, FFT bin resolution, PLL loop filter, BER/SNR, Johnson noise |
 | **Antenna Design** | 8 | Dipole, patch, Yagi-Uda, horn, parabolic dish, loop, EIRP, beamwidth |
 | **General Electronics** | 23 | Ohm's law, op-amp gain, 555 timer, BJT bias, MOSFET operating point, Schmitt trigger, crystal load capacitance |
-| **Motor Control** | 21 | DC motor speed, stepper, BLDC, servo, PID tuning, gear ratio, H-bridge selection, torque converter |
+| **Motor Control** | 22 | DC motor speed, stepper, BLDC, servo, PID tuning, gear ratio, H-bridge selection, torque converter |
 | **Communications** | 11 | UART baud rate, I2C pull-up, SPI timing, CAN bus, USB termination, RS-485, Ethernet, Modbus, LIN bus |
 | **EMC/EMI** | 16 | Shielding effectiveness, EMI filter, ferrite bead, ESD/TVS diode, radiated emission estimate, common-mode choke |
 | **Thermal** | 6 | Heatsink calculator, junction temperature, thermal via array, PCB trace temperature |
 | **Sensor Interface** | 17 | NTC thermistor, RTD, thermocouple, Wheatstone bridge, load cell, photodiode, 4-20 mA loop transmitter |
 | **Unit Conversion** | 17 | dBm↔Watts, frequency↔wavelength, AWG wire, capacitor code, temperature, inductance, data rate |
-| **Audio Electronics** | 17 | Speaker crossover, room modes, headphone power, class-D efficiency, audio transformer, equalizer Q |
+| **Audio Electronics** | 18 | Speaker crossover, room modes, headphone power, class-D efficiency, audio transformer, equalizer Q |
 
 ## Why Use This Instead of Asking the AI to Calculate?
 
