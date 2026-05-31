@@ -148,6 +148,8 @@ var microstripImpedance = {
   },
   visualization: { type: "cross-section", layers: ["trace", "substrate", "ground"] },
   relatedCalculators: ["vswr-return-loss", "trace-width-current", "rf-link-budget"],
+  relatedTools: ["impedance-matching", "pdn-impedance"],
+  relatedBlogPosts: ["coax-loss", "eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"],
   verificationData: [
     {
       // 50Ω on FR4 1.6mm: ~3.1mm wide per Hammerstad-Jensen (±5% between tools is normal)
@@ -216,6 +218,7 @@ var rfLinkBudget = {
   category: "rf",
   description: "Free RF link budget calculator: enter Tx power, antenna gains, frequency, and distance to get received signal level, link margin, and max range. Covers satellite, terrestrial, and IoT links.",
   metaTitle: "RF Link Budget Calculator \u2014 Free: EIRP, FSPL, Link Margin & Max Range",
+  metaDescription: "Enter Tx power, gains, frequency & distance \u2192 get EIRP, FSPL, received power, link margin & max range. Includes rain fade and atmospheric loss. Free RF link budget calculator.",
   keywords: ["rf link budget calculator", "free space path loss", "fspl calculator", "link margin", "received signal level", "friis equation"],
   inputs: [
     { key: "txPower", label: "TX Power", symbol: "P\u209C\u2093", unit: "dBm", defaultValue: 30, min: -30, max: 100, group: "Transmitter", tooltip: "Transmitter output power" },
@@ -298,6 +301,8 @@ var rfLinkBudget = {
   },
   visualization: { type: "signal-chain" },
   relatedCalculators: ["db-converter", "vswr-return-loss", "eirp-calculator", "free-space-path-loss"],
+  relatedTools: ["sat-link-budget", "rf-cascade"],
+  relatedBlogPosts: ["rf-link-budget-calculator-guide", "cubesat-uhf-link-budget-walkthrough", "rf-link-budget-explained"],
   verificationData: [
     {
       inputs: { txPower: 0, txGain: 0, txCableLoss: 0, frequency: 2400, distance: 1, rxGain: 0, rxCableLoss: 0, rxSensitivity: -100, rainFade: 0, atmosphericLoss: 0, pointingLoss: 0 },
@@ -309,7 +314,15 @@ var rfLinkBudget = {
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "A Note on a Simple Transmission Formula", source: "Harald T. Friis, Proc. IRE 34(5), pp. 254\u2013256 (1946)" },
+      { title: "ITU-R P.525-4", source: "Calculation of free-space attenuation", url: "https://www.itu.int/rec/R-REC-P.525" },
+      { title: "ITU-R P.618-13", source: "Rain and atmospheric attenuation for Earth-space links", url: "https://www.itu.int/rec/R-REC-P.618" },
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 14 \u2014 Wireless Communication Systems" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/vswr-return-loss.ts
@@ -421,6 +434,8 @@ var vswrReturnLoss = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["microstrip-impedance", "rf-link-budget", "db-converter"],
+  relatedTools: ["impedance-matching"],
+  relatedBlogPosts: ["smith-chart-vs-vswr-when-to-use-which", "how-to-read-smith-chart", "impedance-matching-wideband-lna"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -534,6 +549,7 @@ var dbConverter = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["vswr-return-loss", "rf-link-budget"],
+  relatedBlogPosts: ["audio-transformer", "cable-shield-effectiveness", "decibels-explained-db-dbm-dbi"],
   verificationData: [
     {
       inputs: { dbm: 0, impedance: 50 },
@@ -882,6 +898,8 @@ var noiseFigureCascade = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "db-converter", "intermodulation-distortion", "mixer-spur-calculator"],
+  relatedTools: ["rf-cascade"],
+  relatedBlogPosts: ["rf-link-budget-calculator-guide", "impedance-matching-wideband-lna", "migrate-from-stk-cloud"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
   ],
@@ -898,7 +916,15 @@ var noiseFigureCascade = {
       tolerance: 0.01,
       source: "Friis: F=2+(2-1)/1=3 \u2192 4.77dB"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Noise Figures of Radio Receivers", source: "Harald T. Friis, Proc. IRE 32(7), pp. 419\u2013422 (1944)" },
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 10" },
+      { title: "RF Microelectronics, 2nd ed.", source: "Behzad Razavi (2011), Chapter 2" },
+      { title: "IEEE Std 182-1989", source: "IEEE Standard for Measurement of Amplifier Noise Figure" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/skin-depth.ts
@@ -1036,6 +1062,7 @@ var skinDepth = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["microstrip-impedance", "trace-resistance"],
+  relatedBlogPosts: ["cable-shield-effectiveness", "loop-antenna", "wavelength-frequency"],
   verificationData: [
     {
       inputs: { frequency: 1e3, conductivity: 58e6, relativePermeability: 1 },
@@ -1192,6 +1219,7 @@ var wavelengthFrequency = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "microstrip-impedance"],
+  relatedBlogPosts: ["chassis-resonance", "ethernet-cable", "yagi-antenna-simulation-2m-band"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -1375,6 +1403,8 @@ var coaxImpedance = {
   },
   visualization: { type: "cross-section", layers: ["inner", "dielectric", "outer"] },
   relatedCalculators: ["microstrip-impedance", "vswr-return-loss"],
+  relatedTools: ["impedance-matching"],
+  relatedBlogPosts: ["esd-clamp-selection", "s-parameter-pipeline-connector-deembedding"],
   verificationData: [
     {
       inputs: { innerDiameter: 0.9, outerDiameter: 2.95, dielectricConstant: 2.3 },
@@ -1515,6 +1545,7 @@ var coaxLoss = {
     reference: "Times Microwave LMR cable datasheets; Belden cable catalog"
   },
   relatedCalculators: ["coax-impedance", "rf-link-budget", "vswr-return-loss", "link-margin"],
+  relatedBlogPosts: ["eirp-calculator", "ethernet-cable", "vswr-return-loss"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
   ]
@@ -1901,8 +1932,9 @@ var smithChart = {
   title: "Online Smith Chart Calculator",
   shortTitle: "Smith Chart",
   category: "rf",
-  description: "Free interactive online Smith Chart tool \u2014 plot impedance, calculate VSWR, return loss, and reflection coefficient instantly. Real-time updates, load presets, and shareable URLs.",
-  metaTitle: "Smith Chart Online \u2014 Free Interactive Calculator & RF Impedance Tool",
+  description: "Free online Smith Chart calculator. Plot impedance, calculate VSWR, return loss, and reflection coefficient. No signup \u2014 instant results, shareable URLs.",
+  metaTitle: "Smith Chart Online \u2014 Free Interactive Impedance Tool",
+  metaDescription: "Interactive Smith Chart tool \u2014 enter R + jX, instantly see \u0393, VSWR, return loss & mismatch loss on a live plot. Export matching networks. Used by 1,000+ RF engineers weekly.",
   keywords: [
     "smith chart online",
     "online smith chart",
@@ -2064,6 +2096,8 @@ var smithChart = {
   },
   visualization: { type: "smith-chart" },
   relatedCalculators: ["vswr-return-loss", "microstrip-impedance", "rf-link-budget", "coax-impedance"],
+  relatedTools: ["impedance-matching"],
+  relatedBlogPosts: ["how-to-read-smith-chart", "smith-chart-impedance-matching-tutorial", "smith-chart-vs-vswr-when-to-use-which"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -2109,7 +2143,14 @@ var smithChart = {
       tolerance: 1e-3,
       source: "Short circuit: Z = 0, \u0393 = \u22121"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Transmission Line Calculator", source: "Phillip H. Smith, Electronics 12(1), pp. 29\u201331 (1939)" },
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 2.4 \u2014 The Smith Chart" },
+      { title: "Electronic Applications of the Smith Chart, 2nd ed.", source: "Phillip H. Smith (1995)" }
+    ]
+  }
 };
 
 // src/lib/calculators/pcb/trace-width-current.ts
@@ -2132,14 +2173,14 @@ function calculateTraceWidth(inputs) {
   const thicknessM = copperMil * 0.0254 * 1e-3;
   const lengthM = traceLength * 1e-3;
   const resistance = rho * lengthM / (widthM * thicknessM);
-  const voltageDrop = current * resistance;
+  const voltageDrop2 = current * resistance;
   const powerDiss = current * current * resistance;
   return {
     values: {
       width2221mm,
       width2152mm,
       resistance,
-      voltageDrop,
+      voltageDrop: voltageDrop2,
       powerDiss
     }
   };
@@ -2271,6 +2312,7 @@ var traceWidthCurrent = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["microstrip-impedance", "trace-resistance", "via-calculator"],
+  relatedBlogPosts: ["microstrip-impedance-design-guide", "microstrip-impedance", "pcb-trace-width-current-capacity"],
   verificationData: [
     {
       inputs: { current: 1, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1 },
@@ -2387,6 +2429,7 @@ var traceResistance = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["trace-width-current", "microstrip-impedance"],
+  relatedBlogPosts: ["pcb-trace-width-current-capacity"],
   verificationData: [
     {
       inputs: { traceWidth: 1, traceLength: 1e3, copperThickness: 35, temperature: 20 },
@@ -2587,6 +2630,8 @@ var differentialPair = {
     layers: ["trace1", "gap", "trace2", "substrate", "ground"]
   },
   relatedCalculators: ["microstrip-impedance", "trace-width-current"],
+  relatedTools: ["eye-diagram", "fdtd-sparam"],
+  relatedBlogPosts: ["eye-diagram-signal-integrity-10gbps", "microstrip-impedance-design-guide", "opamp-gain"],
   verificationData: [
     {
       inputs: {
@@ -2818,6 +2863,7 @@ var viaCalculator = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["trace-width-current", "microstrip-impedance"],
+  relatedBlogPosts: ["decoupling-capacitor", "fdtd-via-transition-signal-integrity", "pdn-impedance-plane-resonances-decoupling"],
   verificationData: [
     {
       inputs: {
@@ -3077,6 +3123,8 @@ var stackupBuilder = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-width-current"],
+  relatedTools: ["pdn-impedance", "fdtd-sparam"],
+  relatedBlogPosts: ["pcb-stackup-controlled-impedance"],
   verificationData: [
     {
       inputs: {
@@ -3238,6 +3286,7 @@ var voltageDivider = {
   },
   visualization: { type: "circuit-schematic", svgId: "voltage-divider" },
   relatedCalculators: ["ohms-law", "led-resistor"],
+  relatedBlogPosts: ["accelerometer-sensitivity", "audio-transformer", "bjt-bias-point"],
   verificationData: [
     {
       inputs: { vin: 10, r1: 1e4, r2: 1e4 },
@@ -3359,6 +3408,7 @@ var ledResistor = {
   },
   visualization: { type: "circuit-schematic", svgId: "led-resistor" },
   relatedCalculators: ["voltage-divider", "ohms-law"],
+  relatedBlogPosts: ["ohms-law", "transistor-switch"],
   exportComponents: (_inputs, outputs) => {
     const r = outputs?.rNearest ?? 0;
     const fmtR = (ohm) => ohm >= 1e6 ? `${+(ohm / 1e6).toPrecision(3)} M\u03A9` : ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} k\u03A9` : `${ohm} \u03A9`;
@@ -3410,7 +3460,7 @@ var buckConverter = {
   shortTitle: "Buck Converter",
   metaTitle: "Buck Converter Calculator \u2014 Free Online Tool",
   category: "power",
-  description: "Design a synchronous buck (step-down) converter: calculate duty cycle, inductor value, output capacitor, and input capacitor.",
+  description: "Design a synchronous buck converter: calculate duty cycle, inductor, output and input capacitors, peak current, and ripple. Free, instant results.",
   keywords: ["buck converter calculator", "step down converter", "dc dc converter design", "inductor value buck", "duty cycle calculator", "switching regulator design"],
   inputs: [
     {
@@ -3535,6 +3585,8 @@ var buckConverter = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["ldo-thermal", "voltage-divider"],
+  relatedTools: ["smps-control-loop"],
+  relatedBlogPosts: ["buck-converter-design-guide", "magnetics-optimizer-transformer-design", "smps-control-loop-stability-buck-converter"],
   verificationData: [
     {
       inputs: { vin: 12, vout: 5, iout: 1, fsw: 500, deltaIL: 30, deltaVout: 1 },
@@ -3721,6 +3773,7 @@ var ldoThermal = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["buck-converter", "voltage-divider"],
+  relatedBlogPosts: ["buck-converter-design-guide", "smps-control-loop-stability-buck-converter"],
   verificationData: [
     {
       inputs: { vin: 5, vout: 3.3, iload: 500, thetaJA: 50, tamb: 25, tjMax: 125 },
@@ -3897,6 +3950,7 @@ var batteryLife = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["buck-converter", "ldo-thermal", "voltage-divider"],
+  relatedBlogPosts: ["battery-runtime-motor", "solar-panel-sizing"],
   verificationData: [
     {
       inputs: { capacity: 2e3, avgCurrent: 100, dutyCycle: 100, selfDischarge: 2, cutoffSoc: 20 },
@@ -4079,6 +4133,7 @@ var filterDesigner = {
   title: "Passive RC/LC Filter Designer",
   shortTitle: "Filter Designer",
   metaTitle: "LC Filter Designer Calculator \u2014 Free Online Tool",
+  metaDescription: "Design Butterworth & Chebyshev LC filters (order 1\u201310) \u2014 enter cutoff frequency, get L and C values instantly. Lowpass, highpass & bandpass. Free passive filter calculator.",
   category: "signal",
   description: "Design passive Butterworth and Chebyshev LC ladder filters up to order 10. Calculate component values for low-pass, high-pass, and band-pass topologies. Free, instant results.",
   keywords: ["filter designer", "rc filter calculator", "lc filter", "butterworth filter", "chebyshev filter", "low pass filter design", "high pass filter", "band pass filter", "passive filter components", "lc ladder", "filter order"],
@@ -4342,6 +4397,7 @@ var filterDesigner = {
   },
   visualization: { type: "bode-plot", freqRange: [1, 1e7] },
   relatedCalculators: ["rc-time-constant", "sampling-nyquist", "lc-resonance"],
+  relatedBlogPosts: ["filter-design-butterworth-chebyshev", "opamp-bandwidth", "rf-filter-tolerance-analysis"],
   relatedTools: ["filter-monte-carlo"],
   exportComponents: (inputs, outputs) => {
     const filterType = Math.round(inputs.filterType ?? 0);
@@ -4639,6 +4695,7 @@ var samplingNyquist = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["filter-designer", "rc-time-constant", "rf-link-budget"],
+  relatedBlogPosts: ["ber-snr", "rf-filter-tolerance-analysis"],
   verificationData: [
     {
       inputs: { signalFreq: 1e4, samplingRate: 44100, adcBits: 16, channels: 1 },
@@ -4692,6 +4749,7 @@ var dipoleAntenna = {
   category: "antenna",
   description: "Calculate dipole antenna length for any frequency \u2014 enter MHz, get half-wave and quarter-wave dimensions in mm. Includes gain (2.15 dBi), radiation resistance (73 \u03A9), and 50 \u03A9 VSWR. Supports velocity factor for insulated wire.",
   metaTitle: "Dipole Antenna Calculator \u2014 Length, Gain & VSWR for Any Frequency",
+  metaDescription: "Enter frequency \u2192 get half-wave dipole length (mm), gain (2.15 dBi), radiation resistance & 50 \u03A9 VSWR. Supports velocity factor for real wire. Free antenna length calculator.",
   keywords: [
     "dipole antenna calculator",
     "antenna calculator",
@@ -4814,6 +4872,8 @@ var dipoleAntenna = {
     "rf-link-budget",
     "vswr-return-loss"
   ],
+  relatedTools: ["antenna-sim"],
+  relatedBlogPosts: ["cubesat-uhf-link-budget-walkthrough", "loop-antenna", "yagi-antenna-simulation-2m-band"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -4888,6 +4948,7 @@ var patchAntenna = {
   title: "Microstrip Patch Antenna Calculator",
   shortTitle: "Patch Antenna",
   metaTitle: "Microstrip Patch Antenna Calculator \u2014 Free PCB Antenna Tool",
+  metaDescription: "Enter frequency & substrate (FR4, Rogers) \u2192 get patch width, length, gain & feed impedance. Transmission Line Model with fringing correction. Free patch antenna calculator.",
   category: "antenna",
   description: "Calculate rectangular microstrip patch antenna dimensions (width, length) using the Transmission Line Model. Outputs effective dielectric constant, edge-feed impedance, and nominal gain for common substrates like FR4 and Rogers.",
   keywords: [
@@ -5026,8 +5087,10 @@ var patchAntenna = {
   relatedCalculators: [
     "dipole-antenna",
     "eirp-calculator",
-    "microstrip-impedance"
+    "microstrip-impedance",
+    "rf-link-budget"
   ],
+  relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -5212,6 +5275,8 @@ var eirpCalculator = {
     "patch-antenna",
     "db-converter"
   ],
+  relatedTools: ["sat-link-budget"],
+  relatedBlogPosts: ["rf-link-budget-calculator-guide", "cubesat-uhf-link-budget-walkthrough", "migrate-from-stk-cloud"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -5300,6 +5365,7 @@ var ohmsLaw = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["voltage-divider", "rc-time-constant", "led-resistor"],
+  relatedBlogPosts: ["4-20ma-transmitter", "bjt-bias-point", "db-converter"],
   verificationData: [
     {
       inputs: { voltage: 12, current: 2, resistance: -1, power: -1 },
@@ -5450,6 +5516,7 @@ var resistorColorCode = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["ohms-law", "voltage-divider"],
+  relatedBlogPosts: ["capacitor-code", "led-resistor"],
   verificationData: [
     {
       inputs: { numBands: 4, band1: 1, band2: 0, band3: 0, multiplier: 2, tolerance: 10 },
@@ -5534,6 +5601,7 @@ var rcTimeConstant = {
   },
   visualization: { type: "xy-plot", xLabel: "Time (\u03BCs)", yLabel: "Voltage (%)" },
   relatedCalculators: ["ohms-law", "lc-resonance"],
+  relatedBlogPosts: ["capacitive-proximity", "capacitor-code", "equalizer-q-factor"],
   verificationData: [
     {
       inputs: { resistance: 1e4, capacitance: 100 },
@@ -5684,6 +5752,7 @@ var seriesParallelResistor = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["ohms-law", "voltage-divider", "rc-time-constant", "lc-resonance"],
+  relatedBlogPosts: ["delta-wye-conversion", "ohms-law"],
   verificationData: [
     {
       inputs: { r1: 1e3, r2: 1e3, r3: 0, r4: 0, componentType: 0 },
@@ -5892,6 +5961,7 @@ var lcResonance = {
   },
   visualization: { type: "bode-plot", freqRange: [1e3, 1e9] },
   relatedCalculators: ["rc-time-constant", "filter-designer", "series-parallel-resistor", "coax-impedance"],
+  relatedBlogPosts: ["capacitor-code", "equalizer-q-factor", "filter-design-butterworth-chebyshev"],
   verificationData: [
     {
       inputs: { inductance: 10, capacitance: 100, resistance: 0, circuitType: 0 },
@@ -6078,6 +6148,7 @@ var opampGain = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["filter-designer", "rc-time-constant", "ohms-law", "series-parallel-resistor"],
+  relatedBlogPosts: ["filter-design-butterworth-chebyshev", "opamp-bandwidth", "pid-tuning"],
   verificationData: [
     {
       inputs: { configuration: 1, r1: 10, r2: 1, gbwProduct: 1, supplyVoltage: 15 },
@@ -6135,6 +6206,7 @@ var uartBaudRate = {
   title: "UART Baud Rate & Frame Timing Calculator",
   shortTitle: "UART Baud Rate",
   metaTitle: "UART Baud Rate & Frame Timing Calculator \u2014 Free Protocol Tool",
+  metaDescription: "Enter baud rate & MCU clock \u2192 get frame timing, BRR divisor, baud error %, and effective throughput. Supports 8N1/8E1/8O1 formats. Free UART calculator for embedded engineers.",
   category: "protocol",
   description: "Calculate UART frame timing, throughput, and USART BRR register divisor from baud rate, data format, and MCU clock frequency. Identify baud rate error for reliable serial communication.",
   keywords: [
@@ -6319,6 +6391,7 @@ var uartBaudRate = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["i2c-pullup", "rc-time-constant"],
+  relatedBlogPosts: ["can-bus-timing", "data-rate-units", "lin-bus-timing"],
   verificationData: [
     {
       inputs: { baudRate: 115200, dataBits: 8, stopBits: 1, parity: 0, clockFreq: 16 },
@@ -6537,6 +6610,7 @@ var i2cPullup = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["uart-baud-rate", "rc-time-constant", "ohms-law"],
+  relatedBlogPosts: ["can-bus-timing", "data-rate-units", "lin-bus-timing"],
   exportComponents: (_inputs, outputs) => {
     const r = outputs?.R_recommended_ohm ?? 0;
     const fmtR = (ohm) => ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} k\u03A9` : `${ohm} \u03A9`;
@@ -6671,7 +6745,7 @@ var heatsinkCalculator = {
   shortTitle: "Heatsink",
   metaTitle: "Heatsink Calculator \u2014 Free Thermal Design Tool",
   category: "thermal",
-  description: "Calculate required heatsink thermal resistance and junction temperature for power devices",
+  description: "Calculate required heatsink thermal resistance (\u03B8_SA) and junction temperature for MOSFETs, IGBTs, and power ICs. Verify thermal design feasibility. Free results.",
   keywords: ["heatsink", "thermal resistance", "junction temperature", "\u03B8JA", "\u03B8JC", "\u03B8CS", "thermal management", "power dissipation"],
   inputs: [
     {
@@ -6775,7 +6849,8 @@ var heatsinkCalculator = {
     reference: "JEDEC JESD51 thermal measurement standard"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["ldo-thermal", "pcb-trace-temp", "buck-converter"]
+  relatedCalculators: ["ldo-thermal", "pcb-trace-temp", "buck-converter"],
+  relatedBlogPosts: ["class-d-efficiency", "motor-heat-dissipation", "motor-winding-resistance"]
 };
 
 // src/lib/calculators/thermal/pcb-trace-temp.ts
@@ -6923,7 +6998,8 @@ var pcbTraceTemp = {
     reference: "IPC-2221B Appendix B (external layers)"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["heatsink-calculator", "trace-width-current", "trace-resistance"]
+  relatedCalculators: ["heatsink-calculator", "trace-width-current", "trace-resistance"],
+  relatedBlogPosts: ["pcb-trace-width-current-capacity", "trace-width-current"]
 };
 
 // src/lib/calculators/motor/dc-motor-speed.ts
@@ -7090,7 +7166,8 @@ var dcMotorSpeed = {
     reference: "Chapman, Electric Machinery Fundamentals"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["stepper-motor", "power-factor", "buck-converter"]
+  relatedCalculators: ["stepper-motor", "power-factor", "buck-converter"],
+  relatedBlogPosts: ["battery-runtime-motor", "dc-motor-control-pwm-drivers", "motor-driver-power"]
 };
 
 // src/lib/calculators/motor/stepper-motor.ts
@@ -7201,7 +7278,8 @@ var stepperMotor = {
     reference: "Microchip AN2164 \u2014 Stepper Motor Control"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["dc-motor-speed", "uart-baud-rate"]
+  relatedCalculators: ["dc-motor-speed", "uart-baud-rate"],
+  relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "torque-unit-converter"]
 };
 
 // src/lib/calculators/emc/shielding-effectiveness.ts
@@ -7345,7 +7423,8 @@ var shieldingEffectiveness = {
     reference: "MIL-STD-285, Schulz et al."
   },
   visualization: { type: "none" },
-  relatedCalculators: ["skin-depth", "vswr-return-loss", "db-converter"]
+  relatedCalculators: ["skin-depth", "vswr-return-loss", "db-converter"],
+  relatedBlogPosts: ["chassis-resonance", "emc-fcc-ce-testing-guide", "emi-radiated-emissions-pcb-fcc-compliance"]
 };
 
 // src/lib/calculators/general/wire-gauge.ts
@@ -7354,14 +7433,14 @@ function calculateWireGauge(inputs) {
   const diameter = 0.127 * Math.pow(92, (36 - awg) / 39);
   const crossSection = Math.PI * Math.pow(diameter / 2, 2);
   const resistance = resistivity * length / crossSection;
-  const voltageDrop = current * resistance;
+  const voltageDrop2 = current * resistance;
   const currentCapacity = 2.5 * crossSection;
   return {
     values: {
       diameter,
       crossSection,
       resistance,
-      voltageDrop,
+      voltageDrop: voltageDrop2,
       currentCapacity
     }
   };
@@ -7566,7 +7645,8 @@ var capacitorEnergy = {
     reference: "Horowitz & Hill, The Art of Electronics"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["rc-time-constant", "lc-resonance", "power-factor"]
+  relatedCalculators: ["rc-time-constant", "lc-resonance", "power-factor"],
+  relatedBlogPosts: ["capacitive-proximity", "inrush-current-limiter"]
 };
 
 // src/lib/calculators/power/power-factor.ts
@@ -7841,7 +7921,8 @@ var qFactor = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["lc-resonance", "vswr-return-loss", "filter-designer"]
+  relatedCalculators: ["lc-resonance", "vswr-return-loss", "filter-designer"],
+  relatedBlogPosts: ["equalizer-q-factor", "impedance-matching-wideband-lna", "lc-resonance"]
 };
 
 // src/lib/calculators/rf/waveguide-cutoff.ts
@@ -8295,7 +8376,8 @@ var inductorEnergy = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["lc-resonance", "rc-time-constant", "buck-converter"]
+  relatedCalculators: ["lc-resonance", "rc-time-constant", "buck-converter"],
+  relatedBlogPosts: ["smps-control-loop-stability-buck-converter", "transformer-turns-ratio"]
 };
 
 // src/lib/calculators/power/boost-converter.ts
@@ -8455,7 +8537,9 @@ var boostConverter = {
     reference: 'Erickson & Maksimovic, "Fundamentals of Power Electronics" 3rd ed.'
   },
   visualization: { type: "none" },
-  relatedCalculators: ["buck-converter", "ldo-thermal", "voltage-divider"]
+  relatedCalculators: ["buck-converter", "ldo-thermal", "voltage-divider"],
+  relatedTools: ["smps-control-loop"],
+  relatedBlogPosts: ["switching-regulator-ripple"]
 };
 
 // src/lib/calculators/power/three-phase-power.ts
@@ -8482,7 +8566,7 @@ var threePhasePower = {
   shortTitle: "3-Phase Power",
   metaTitle: "Three-Phase Power Calculator \u2014 Free Online Tool",
   category: "power",
-  description: "Calculate three-phase real power, reactive power, apparent power, current, and power factor from line or phase values",
+  description: "Calculate three-phase real power (kW), reactive power (kVAR), apparent power (kVA), and power factor angle for wye or delta connections. Free results.",
   keywords: [
     "three phase power",
     "3 phase",
@@ -8715,6 +8799,8 @@ var antennaBeamwidth = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["eirp-calculator", "dipole-antenna", "patch-antenna"],
+  relatedTools: ["antenna-sim"],
+  relatedBlogPosts: ["power-density"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
   ]
@@ -8851,7 +8937,8 @@ var snrCalculator = {
     reference: "Friis, 'Noise Figures of Radio Receivers', Proc. IRE, 1944"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["noise-figure-cascade", "rf-link-budget", "filter-designer"]
+  relatedCalculators: ["noise-figure-cascade", "rf-link-budget", "filter-designer"],
+  relatedBlogPosts: ["am-modulation-index", "ber-snr", "ber-vs-snr-digital-communications"]
 };
 
 // src/lib/calculators/pcb/controlled-impedance.ts
@@ -9039,7 +9126,9 @@ var controlledImpedance = {
     reference: "IPC-2141 Controlled Impedance Circuit Boards"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-resistance"]
+  relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-resistance"],
+  relatedTools: ["pdn-impedance"],
+  relatedBlogPosts: ["decoupling-capacitor", "ethernet-cable", "eye-diagram-signal-integrity-10gbps"]
 };
 
 // src/lib/calculators/emc/ferrite-bead.ts
@@ -9162,7 +9251,8 @@ var ferriteBead = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["shielding-effectiveness", "filter-designer", "microstrip-impedance"]
+  relatedCalculators: ["shielding-effectiveness", "filter-designer", "microstrip-impedance"],
+  relatedBlogPosts: ["emc-fcc-ce-testing-guide"]
 };
 
 // src/lib/calculators/rf/free-space-path-loss.ts
@@ -9185,6 +9275,7 @@ var freeSpacePathLoss = {
   title: "Free-Space Path Loss Calculator",
   shortTitle: "Free-Space Path Loss",
   metaTitle: "Free Space Path Loss Calculator \u2014 FSPL in dB Online",
+  metaDescription: "Enter frequency & distance \u2192 get FSPL in dB (Friis equation). Supports MHz/GHz, meters/km/miles. Essential for RF link budgets and wireless range estimation. Free calculator.",
   category: "rf",
   description: "Calculate free-space path loss (FSPL) in dB using the Friis equation. Enter frequency and distance for wireless link budget analysis. Free, instant results.",
   keywords: [
@@ -9258,10 +9349,19 @@ var freeSpacePathLoss = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "eirp-calculator", "wavelength-frequency"],
+  relatedTools: ["sat-link-budget"],
+  relatedBlogPosts: ["rf-link-budget-calculator-guide", "eirp-calculator", "python-rftools-library"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "ITU-R P.525-4", source: "Calculation of free-space attenuation", url: "https://www.itu.int/rec/R-REC-P.525" },
+      { title: "A Note on a Simple Transmission Formula", source: "Harald T. Friis, Proc. IRE 34(5), pp. 254\u2013256 (1946)" },
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 14.1" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/radar-range-equation.ts
@@ -9408,10 +9508,18 @@ var radarRangeEquation = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "noise-figure-cascade", "eirp-calculator"],
+  relatedBlogPosts: ["radar-detection-monte-carlo-pulsed-radar", "radar-detection-monte-carlo"],
   relatedTools: ["radar-detection"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Introduction to Radar Systems, 3rd ed.", source: "Merrill I. Skolnik (2001), Chapter 1 \u2014 The Nature of Radar" },
+      { title: "Principles of Modern Radar: Basic Principles", source: "Mark A. Richards, James A. Scheer, William A. Holm (2010)" },
+      { title: "Radar Handbook, 3rd ed.", source: "Merrill I. Skolnik, editor (2008)" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/power-amplifier-efficiency.ts
@@ -9551,7 +9659,8 @@ var powerAmplifierEfficiency = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["rf-link-budget", "db-converter", "noise-figure-cascade"]
+  relatedCalculators: ["rf-link-budget", "db-converter", "noise-figure-cascade"],
+  relatedBlogPosts: ["class-d-efficiency", "current-mirror", "heatsink-selection"]
 };
 
 // src/lib/calculators/rf/intermodulation-distortion.ts
@@ -9783,7 +9892,9 @@ var intermodulationDistortion = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["mixer-spur-calculator", "noise-figure-cascade", "db-converter", "rf-link-budget"]
+  relatedCalculators: ["mixer-spur-calculator", "noise-figure-cascade", "db-converter", "rf-link-budget"],
+  relatedTools: ["rf-cascade"],
+  relatedBlogPosts: ["rf-cascade-budget-monte-carlo", "rf-cascade-noise-figure-yield-analysis"]
 };
 
 // src/lib/calculators/rf/phase-noise-to-jitter.ts
@@ -10529,7 +10640,8 @@ var adcSnr = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["sampling-nyquist", "snr-calculator", "johnson-noise"]
+  relatedCalculators: ["sampling-nyquist", "snr-calculator", "johnson-noise"],
+  relatedBlogPosts: ["accelerometer-sensitivity", "ber-snr", "pressure-bridge-output"]
 };
 
 // src/lib/calculators/signal/fft-bin-resolution.ts
@@ -11047,7 +11159,8 @@ var fmModulationIndex = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["am-modulation-index", "snr-calculator", "sampling-nyquist"]
+  relatedCalculators: ["am-modulation-index", "snr-calculator", "sampling-nyquist"],
+  relatedBlogPosts: ["am-modulation-index"]
 };
 
 // src/lib/calculators/signal/oversampling-snr.ts
@@ -11307,7 +11420,8 @@ var digitalFilterOrder = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["filter-designer", "sampling-nyquist", "fft-bin-resolution"]
+  relatedCalculators: ["filter-designer", "sampling-nyquist", "fft-bin-resolution"],
+  relatedBlogPosts: ["rf-filter-tolerance-analysis"]
 };
 
 // src/lib/calculators/antenna/yagi-antenna.ts
@@ -11442,7 +11556,9 @@ var yagiAntenna = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["dipole-antenna", "eirp-calculator", "patch-antenna"],
+  relatedCalculators: ["dipole-antenna", "eirp-calculator", "patch-antenna", "rf-link-budget"],
+  relatedTools: ["antenna-sim"],
+  relatedBlogPosts: ["cubesat-uhf-link-budget-walkthrough"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -11481,6 +11597,7 @@ var hornAntenna = {
   title: "Horn Antenna Gain & Beamwidth Calculator",
   shortTitle: "Horn Antenna",
   metaTitle: "Horn Antenna Gain Calculator \u2014 Free Online Tool",
+  metaDescription: "Calculate pyramidal horn gain, 3 dB beamwidth (E/H-plane), and effective aperture from aperture dimensions & frequency. Covers 1\u2013100 GHz. Free online horn antenna calculator.",
   category: "antenna",
   description: "Calculate pyramidal horn antenna gain, E/H-plane beamwidths, and effective aperture area. Design horn antennas for microwave systems. Free, instant results.",
   keywords: [
@@ -11577,6 +11694,7 @@ var hornAntenna = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["parabolic-dish-antenna", "eirp-calculator", "antenna-beamwidth"],
+  relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
   ]
@@ -11699,6 +11817,7 @@ var parabolicDishAntenna = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["horn-antenna", "eirp-calculator", "rf-link-budget"],
+  relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
   ]
@@ -11838,6 +11957,7 @@ var loopAntenna = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["dipole-antenna", "q-factor", "antenna-beamwidth"],
+  relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
   ]
@@ -11987,7 +12107,8 @@ var spiTiming = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["can-bus-timing", "uart-baud-rate", "i2c-pullup"]
+  relatedCalculators: ["can-bus-timing", "uart-baud-rate", "i2c-pullup"],
+  relatedBlogPosts: ["can-bus-timing", "data-rate-units"]
 };
 
 // src/lib/calculators/protocol/can-bus-timing.ts
@@ -12141,7 +12262,8 @@ var canBusTiming = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["spi-timing", "uart-baud-rate", "i2c-pullup"]
+  relatedCalculators: ["spi-timing", "uart-baud-rate", "i2c-pullup"],
+  relatedBlogPosts: ["data-rate-units", "lin-bus-timing"]
 };
 
 // src/lib/calculators/protocol/usb-termination.ts
@@ -12742,7 +12864,8 @@ var mosfetPowerDissipation = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["buck-converter", "mosfet-operating-point", "linear-regulator-dropout"]
+  relatedCalculators: ["buck-converter", "mosfet-operating-point", "linear-regulator-dropout"],
+  relatedBlogPosts: ["buck-converter-design-guide", "class-d-efficiency", "led-resistor"]
 };
 
 // src/lib/calculators/power/solar-panel-sizing.ts
@@ -13049,7 +13172,8 @@ var batteryChargeTime = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["solar-panel-sizing", "pwm-duty-cycle", "mosfet-power-dissipation"]
+  relatedCalculators: ["solar-panel-sizing", "pwm-duty-cycle", "mosfet-power-dissipation"],
+  relatedBlogPosts: ["battery-internal-resistance"]
 };
 
 // src/lib/calculators/power/inrush-current-limiter.ts
@@ -13478,7 +13602,8 @@ var switchingRegulatorRipple = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["buck-converter", "decoupling-capacitor", "mosfet-power-dissipation"]
+  relatedCalculators: ["buck-converter", "decoupling-capacitor", "mosfet-power-dissipation"],
+  relatedBlogPosts: ["power-supply-ripple-filter"]
 };
 
 // src/lib/calculators/power/linear-regulator-dropout.ts
@@ -13782,7 +13907,9 @@ var pcbCrosstalk = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["differential-pair", "controlled-impedance", "pcb-trace-inductance"]
+  relatedCalculators: ["differential-pair", "controlled-impedance", "pcb-trace-inductance"],
+  relatedTools: ["fdtd-sparam"],
+  relatedBlogPosts: ["stackup-builder"]
 };
 
 // src/lib/calculators/pcb/decoupling-capacitor.ts
@@ -13943,7 +14070,9 @@ var decouplingCapacitor = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["switching-regulator-ripple", "pcb-trace-inductance", "lc-resonance"]
+  relatedCalculators: ["switching-regulator-ripple", "pcb-trace-inductance", "lc-resonance"],
+  relatedTools: ["pdn-impedance"],
+  relatedBlogPosts: ["pdn-impedance-analyzer", "pdn-impedance-plane-resonances-decoupling", "power-supply-ripple-filter"]
 };
 
 // src/lib/calculators/pcb/pcb-trace-inductance.ts
@@ -14057,7 +14186,8 @@ var pcbTraceInductance = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["decoupling-capacitor", "pcb-crosstalk", "via-calculator"]
+  relatedCalculators: ["decoupling-capacitor", "pcb-crosstalk", "via-calculator"],
+  relatedBlogPosts: ["magnetics-optimizer-transformer-design"]
 };
 
 // src/lib/calculators/pcb/via-thermal-resistance.ts
@@ -14210,7 +14340,8 @@ var viaThermalResistance = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["thermal-resistance-network", "via-calculator", "pcb-trace-temp"]
+  relatedCalculators: ["thermal-resistance-network", "via-calculator", "pcb-trace-temp"],
+  relatedBlogPosts: ["pcb-trace-width-current-capacity", "thermal-resistance-network"]
 };
 
 // src/lib/calculators/general/bjt-bias-point.ts
@@ -14398,7 +14529,8 @@ var bjtBiasPoint = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["transistor-switch", "mosfet-operating-point", "opamp-gain"]
+  relatedCalculators: ["transistor-switch", "mosfet-operating-point", "opamp-gain"],
+  relatedBlogPosts: ["current-mirror"]
 };
 
 // src/lib/calculators/general/mosfet-operating-point.ts
@@ -15020,7 +15152,8 @@ var transistorSwitch = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["bjt-bias-point", "mosfet-operating-point", "led-resistor"]
+  relatedCalculators: ["bjt-bias-point", "mosfet-operating-point", "led-resistor"],
+  relatedBlogPosts: ["bjt-bias-point", "current-mirror"]
 };
 
 // src/lib/calculators/general/current-mirror.ts
@@ -15174,7 +15307,8 @@ var currentMirror = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["bjt-bias-point", "transistor-switch", "opamp-gain"]
+  relatedCalculators: ["bjt-bias-point", "transistor-switch", "opamp-gain"],
+  relatedBlogPosts: ["bjt-bias-point"]
 };
 
 // src/lib/calculators/thermal/thermal-resistance-network.ts
@@ -15326,7 +15460,8 @@ var thermalResistanceNetwork = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["via-thermal-resistance", "linear-regulator-dropout", "mosfet-power-dissipation"]
+  relatedCalculators: ["via-thermal-resistance", "linear-regulator-dropout", "mosfet-power-dissipation"],
+  relatedBlogPosts: ["heatsink-selection", "motor-driver-power", "motor-heat-dissipation"]
 };
 
 // src/lib/calculators/motor/bldc-motor.ts
@@ -15366,7 +15501,8 @@ var bldcMotor = {
   shortTitle: "BLDC Motor",
   category: "motor",
   description: "BLDC motor calculator: enter Kv rating and voltage to get no-load RPM, stall torque, max efficiency point, and propeller thrust. Supports drone, RC, and industrial winding calculations.",
-  metaTitle: "BLDC Motor Calculator \u2014 Kv, RPM, Stall Torque & Propeller Thrust",
+  metaTitle: "BLDC Motor Calculator \u2014 Kv, RPM & Torque (Free)",
+  metaDescription: "Enter Kv rating & voltage \u2192 get RPM, torque, efficiency, and propeller thrust instantly. Free BLDC motor calculator for drones, RC, and industrial brushless designs.",
   keywords: [
     "BLDC motor",
     "brushless motor",
@@ -15503,7 +15639,8 @@ var bldcMotor = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["bldc-winding", "bldc-efficiency", "bldc-thermal", "dc-motor-speed", "stepper-motor"]
+  relatedCalculators: ["bldc-winding", "bldc-efficiency", "bldc-thermal", "dc-motor-speed", "stepper-motor"],
+  relatedBlogPosts: ["bldc-efficiency", "bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"]
 };
 
 // src/lib/calculators/motor/bldc-winding.ts
@@ -15612,6 +15749,7 @@ var bldcWinding = {
   category: "motor",
   description: "Calculate BLDC motor winding parameters: turns per coil, wire gauge, fill factor, winding factor, and phase resistance. Visual winding scheme diagram for delta and wye configurations.",
   metaTitle: "BLDC Winding Calculator \u2014 Turns, Wire Gauge & Winding Scheme",
+  metaDescription: "Enter stator slots, poles & wire gauge \u2192 get turns per coil, fill factor, phase resistance & winding scheme diagram. Free BLDC winding calculator with delta/wye support.",
   keywords: [
     "bldc winding calculator",
     "bldc motor winding",
@@ -15773,6 +15911,7 @@ var bldcWinding = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["bldc-motor", "bldc-efficiency", "bldc-thermal", "motor-winding-resistance"],
+  relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"],
   liveWidgets: [
     { type: "bldc-winding", position: "below-outputs" }
   ]
@@ -15896,7 +16035,8 @@ var bldcEfficiency = {
     reference: "Hanselman, D. \u2014 Brushless Permanent Magnet Motor Design"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["bldc-motor", "bldc-winding", "bldc-thermal", "motor-efficiency"]
+  relatedCalculators: ["bldc-motor", "bldc-winding", "bldc-thermal", "motor-efficiency"],
+  relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-motor", "bldc-winding-turns-wire-gauge-patterns"]
 };
 
 // src/lib/calculators/motor/bldc-thermal.ts
@@ -16015,7 +16155,8 @@ var bldcThermal = {
     reference: "IEC 60034-1 \u2014 Rotating electrical machines; NEMA MG-1"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["bldc-winding", "bldc-efficiency", "motor-heat-dissipation", "bldc-motor"]
+  relatedCalculators: ["bldc-winding", "bldc-efficiency", "motor-heat-dissipation", "bldc-motor"],
+  relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"]
 };
 
 // src/lib/calculators/motor/servo-motor.ts
@@ -16106,7 +16247,8 @@ var gearRatio = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["servo-motor", "dc-motor-speed", "torque-unit-converter"]
+  relatedCalculators: ["servo-motor", "dc-motor-speed", "torque-unit-converter"],
+  relatedBlogPosts: ["torque-unit-converter"]
 };
 
 // src/lib/calculators/motor/pwm-duty-cycle-motor.ts
@@ -16149,7 +16291,8 @@ var pwmDutyCycleMotor = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["dc-motor-speed", "h-bridge-selection", "motor-driver-power"]
+  relatedCalculators: ["dc-motor-speed", "h-bridge-selection", "motor-driver-power"],
+  relatedBlogPosts: ["dc-motor-control-pwm-drivers", "motor-driver-power", "pid-tuning"]
 };
 
 // src/lib/calculators/motor/torque-unit-converter.ts
@@ -16246,7 +16389,8 @@ var motorEfficiency = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["dc-motor-speed", "motor-heat-dissipation", "bldc-motor"]
+  relatedCalculators: ["dc-motor-speed", "motor-heat-dissipation", "bldc-motor"],
+  relatedBlogPosts: ["motor-heat-dissipation"]
 };
 
 // src/lib/calculators/motor/induction-motor-slip.ts
@@ -16445,7 +16589,8 @@ var encoderResolution = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["dc-motor-speed", "servo-motor", "gear-ratio"]
+  relatedCalculators: ["dc-motor-speed", "servo-motor", "gear-ratio"],
+  relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
 };
 
 // src/lib/calculators/motor/motor-starting-torque.ts
@@ -16486,7 +16631,8 @@ var motorStartingTorque = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["dc-motor-speed", "motor-inrush-current", "gear-ratio"]
+  relatedCalculators: ["dc-motor-speed", "motor-inrush-current", "gear-ratio"],
+  relatedBlogPosts: ["torque-units"]
 };
 
 // src/lib/calculators/motor/battery-runtime-motor.ts
@@ -16534,7 +16680,8 @@ var batteryRuntimeMotor = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["battery-life", "motor-efficiency", "dc-motor-speed"]
+  relatedCalculators: ["battery-life", "motor-efficiency", "dc-motor-speed"],
+  relatedBlogPosts: ["battery-internal-resistance"]
 };
 
 // src/lib/calculators/motor/motor-winding-resistance.ts
@@ -16552,7 +16699,7 @@ var motorWindingResistance = {
   shortTitle: "Winding Resistance",
   metaTitle: "Winding Resistance vs Temperature \u2014 Free Motor Design Tool",
   category: "motor",
-  description: "Calculate motor winding resistance at operating temperature using the copper temperature coefficient of resistance.",
+  description: "Calculate motor winding resistance at any temperature using copper or aluminum TCR. Get resistance change percentage for motor derating. Free, instant results.",
   keywords: ["winding resistance", "motor resistance temperature", "copper TCR", "motor temperature coefficient", "winding temperature", "motor derating"],
   inputs: [
     { key: "resistance25", label: "Resistance at 25\xB0C", symbol: "R\u2082\u2085", unit: "\u03A9", defaultValue: 1, min: 1e-3 },
@@ -16573,7 +16720,8 @@ var motorWindingResistance = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["motor-heat-dissipation", "motor-efficiency", "dc-motor-speed"]
+  relatedCalculators: ["motor-heat-dissipation", "motor-efficiency", "dc-motor-speed"],
+  relatedBlogPosts: ["bldc-motor"]
 };
 
 // src/lib/calculators/motor/h-bridge-selection.ts
@@ -16628,7 +16776,8 @@ var hBridgeSelection = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["motor-driver-power", "motor-inrush-current", "mosfet-power-dissipation"]
+  relatedCalculators: ["motor-driver-power", "motor-inrush-current", "mosfet-power-dissipation"],
+  relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
 };
 
 // src/lib/calculators/motor/motor-driver-power.ts
@@ -16673,7 +16822,8 @@ var motorDriverPower = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["h-bridge-selection", "mosfet-power-dissipation", "motor-efficiency"]
+  relatedCalculators: ["h-bridge-selection", "mosfet-power-dissipation", "motor-efficiency"],
+  relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
 };
 
 // src/lib/calculators/motor/pid-tuning.ts
@@ -16721,7 +16871,8 @@ var pidTuning = {
     reference: "Ziegler & Nichols, 1942"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["dc-motor-speed", "encoder-resolution", "induction-motor-slip"]
+  relatedCalculators: ["dc-motor-speed", "encoder-resolution", "induction-motor-slip"],
+  relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
 };
 
 // src/lib/calculators/sensor/ntc-thermistor.ts
@@ -16836,7 +16987,8 @@ var ntcThermistor = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["rtd-temperature", "wheatstone-bridge", "junction-temperature"]
+  relatedCalculators: ["rtd-temperature", "wheatstone-bridge", "junction-temperature"],
+  relatedBlogPosts: ["inrush-current-limiter", "temperature-converter"]
 };
 
 // src/lib/calculators/sensor/rtd-temperature.ts
@@ -16860,7 +17012,7 @@ var rtdTemperature = {
   shortTitle: "RTD Temperature",
   category: "sensor",
   description: "Calculate temperature from PT100 or PT1000 resistance \u2014 enter measured ohms, get \xB0C instantly. Uses the Callendar-Van Dusen linear approximation. Includes presets for common PT100 values (119.4 \u03A9 = 50 \xB0C, 138.5 \u03A9 = 100 \xB0C).",
-  metaTitle: "PT100 RTD Calculator \u2014 Convert Resistance to Temperature (\xB0C)",
+  metaTitle: "PT100 RTD Calculator \u2014 Resistance to Temperature",
   keywords: [
     "PT100 calculator",
     "RTD temperature calculator",
@@ -16945,7 +17097,8 @@ var rtdTemperature = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["ntc-thermistor", "wheatstone-bridge", "junction-temperature"]
+  relatedCalculators: ["ntc-thermistor", "wheatstone-bridge", "junction-temperature"],
+  relatedBlogPosts: ["pt100-resistance"]
 };
 
 // src/lib/calculators/sensor/wheatstone-bridge.ts
@@ -17076,7 +17229,8 @@ var wheatstoneBridge = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["strain-gauge-bridge", "rtd-temperature", "ntc-thermistor"]
+  relatedCalculators: ["strain-gauge-bridge", "rtd-temperature", "ntc-thermistor"],
+  relatedBlogPosts: ["pressure-bridge-output", "sensor-signal-conditioning"]
 };
 
 // src/lib/calculators/sensor/hall-effect-sensor.ts
@@ -17338,7 +17492,8 @@ var strainGaugeBridge = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["wheatstone-bridge", "rtd-temperature", "ntc-thermistor"]
+  relatedCalculators: ["wheatstone-bridge", "rtd-temperature", "ntc-thermistor"],
+  relatedBlogPosts: ["4-20ma-transmitter"]
 };
 
 // src/lib/calculators/sensor/pt100-resistance.ts
@@ -17408,7 +17563,8 @@ var pt100Resistance = {
     reference: "IEC 60751 / ITS-90"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["rtd-temperature", "ntc-thermistor", "thermocouple-voltage"]
+  relatedCalculators: ["rtd-temperature", "ntc-thermistor", "thermocouple-voltage"],
+  relatedBlogPosts: ["rtd-temperature", "sensor-signal-conditioning"]
 };
 
 // src/lib/calculators/sensor/thermocouple-voltage.ts
@@ -17485,7 +17641,8 @@ var thermocoupleVoltage = {
     reference: "NIST Monograph 175"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["pt100-resistance", "rtd-temperature", "ntc-thermistor"]
+  relatedCalculators: ["pt100-resistance", "rtd-temperature", "ntc-thermistor"],
+  relatedBlogPosts: ["pt100-resistance", "rtd-temperature", "sensor-signal-conditioning"]
 };
 
 // src/lib/calculators/sensor/load-cell-amplifier.ts
@@ -17559,7 +17716,8 @@ var loadCellAmplifier = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["wheatstone-bridge", "strain-gauge-bridge", "pressure-bridge-output"]
+  relatedCalculators: ["wheatstone-bridge", "strain-gauge-bridge", "pressure-bridge-output"],
+  relatedBlogPosts: ["sensor-signal-conditioning"]
 };
 
 // src/lib/calculators/sensor/photodiode-transimpedance.ts
@@ -17621,7 +17779,8 @@ var photodiodeTransimpedance = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["wheatstone-bridge", "load-cell-amplifier", "sensor-accuracy-budget"]
+  relatedCalculators: ["wheatstone-bridge", "load-cell-amplifier", "sensor-accuracy-budget"],
+  relatedBlogPosts: ["sensor-signal-conditioning"]
 };
 
 // src/lib/calculators/sensor/capacitive-proximity.ts
@@ -17756,7 +17915,8 @@ var currentShunt = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["wheatstone-bridge", "load-cell-amplifier", "sensor-accuracy-budget"]
+  relatedCalculators: ["wheatstone-bridge", "load-cell-amplifier", "sensor-accuracy-budget"],
+  relatedBlogPosts: ["sensor-signal-conditioning"]
 };
 
 // src/lib/calculators/sensor/accelerometer-sensitivity.ts
@@ -17988,7 +18148,8 @@ var sensorAccuracyBudget = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["wheatstone-bridge", "load-cell-amplifier", "current-shunt"]
+  relatedCalculators: ["wheatstone-bridge", "load-cell-amplifier", "current-shunt"],
+  relatedBlogPosts: ["4-20ma-transmitter", "capacitive-proximity", "pt100-resistance"]
 };
 
 // src/lib/calculators/sensor/optical-sensor-range.ts
@@ -18222,7 +18383,8 @@ var loopTransmitter420ma = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["current-shunt", "sensor-accuracy-budget", "load-cell-amplifier"]
+  relatedCalculators: ["current-shunt", "sensor-accuracy-budget", "load-cell-amplifier"],
+  relatedBlogPosts: ["sensor-signal-conditioning"]
 };
 
 // src/lib/calculators/unit-conversion/frequency-wavelength.ts
@@ -18354,6 +18516,7 @@ var frequencyWavelength = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["free-space-path-loss", "dipole-antenna", "wavelength-frequency"],
+  relatedBlogPosts: ["filter-designer", "lc-resonance"],
   liveWidgets: [
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
   ]
@@ -18472,7 +18635,8 @@ var dbmWatts = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["db-converter", "rf-link-budget", "eirp-calculator"]
+  relatedCalculators: ["db-converter", "rf-link-budget", "eirp-calculator"],
+  relatedBlogPosts: ["am-modulation-index", "decibels-explained-db-dbm-dbi", "vswr-return-loss"]
 };
 
 // src/lib/calculators/unit-conversion/temperature-converter.ts
@@ -18573,7 +18737,8 @@ var temperatureConverter = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["junction-temperature", "ntc-thermistor", "rtd-temperature"]
+  relatedCalculators: ["junction-temperature", "ntc-thermistor", "rtd-temperature"],
+  relatedBlogPosts: ["rtd-temperature"]
 };
 
 // src/lib/calculators/unit-conversion/awg-wire.ts
@@ -18918,7 +19083,8 @@ var capacitanceUnits = {
     variables: []
   },
   visualization: { type: "none" },
-  relatedCalculators: ["inductance-units", "capacitor-code", "lc-resonance"]
+  relatedCalculators: ["inductance-units", "capacitor-code", "lc-resonance"],
+  relatedBlogPosts: ["capacitor-code"]
 };
 
 // src/lib/calculators/unit-conversion/resistance-units.ts
@@ -18971,7 +19137,8 @@ var resistanceUnits = {
     variables: []
   },
   visualization: { type: "none" },
-  relatedCalculators: ["inductance-units", "capacitance-units", "ohms-law"]
+  relatedCalculators: ["inductance-units", "capacitance-units", "ohms-law"],
+  relatedBlogPosts: ["delta-wye-conversion"]
 };
 
 // src/lib/calculators/unit-conversion/current-units.ts
@@ -18992,7 +19159,7 @@ var currentUnits = {
   shortTitle: "Current Converter",
   metaTitle: "Current Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
-  description: "Convert electric current between amperes, milliamperes, microamperes, nanoamperes, and picoamperes.",
+  description: "Convert electric current between amperes (A), milliamperes (mA), microamperes (\u03BCA), nanoamperes (nA), and picoamperes (pA). Free, instant conversion.",
   keywords: ["current converter", "mA to \u03BCA", "nA to mA", "current unit conversion", "ampere converter", "\u03BCA to A"],
   inputs: [
     {
@@ -19025,7 +19192,8 @@ var currentUnits = {
     variables: []
   },
   visualization: { type: "none" },
-  relatedCalculators: ["voltage-units", "resistance-units", "ohms-law"]
+  relatedCalculators: ["voltage-units", "resistance-units", "ohms-law"],
+  relatedBlogPosts: ["4-20ma-transmitter"]
 };
 
 // src/lib/calculators/unit-conversion/voltage-units.ts
@@ -19632,7 +19800,8 @@ var junctionTemperature = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["heatsink-selection", "heatsink-calculator", "thermal-resistance-network"]
+  relatedCalculators: ["heatsink-selection", "heatsink-calculator", "thermal-resistance-network"],
+  relatedBlogPosts: ["linear-regulator-dropout", "motor-winding-resistance", "pt100-resistance"]
 };
 
 // src/lib/calculators/thermal/heatsink-selection.ts
@@ -19769,7 +19938,8 @@ var heatsinkSelection = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["junction-temperature", "heatsink-calculator", "thermal-resistance-network"]
+  relatedCalculators: ["junction-temperature", "heatsink-calculator", "thermal-resistance-network"],
+  relatedBlogPosts: ["linear-regulator-dropout"]
 };
 
 // src/lib/calculators/thermal/thermal-via-array.ts
@@ -20226,6 +20396,7 @@ var berSnr = {
   category: "signal",
   description: "Free BER calculator for BPSK, QPSK, 8PSK, 16-QAM. Enter Eb/N0 to instantly compute bit error rate. Compare modulation schemes and optimize link performance.",
   metaTitle: "BER Calculator \u2014 Bit Error Rate from Eb/N0 | rftools.io",
+  metaDescription: "Enter Eb/N0 \u2192 get BER for BPSK, QPSK, 8PSK & 16-QAM side by side. Compare modulation schemes instantly. Free online bit error rate calculator with exact erfc formulas.",
   keywords: [
     "BER calculator",
     "bit error rate calculator",
@@ -20321,7 +20492,8 @@ var berSnr = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["snr-calculator", "quantization-noise", "adc-snr"]
+  relatedCalculators: ["snr-calculator", "quantization-noise", "adc-snr", "rf-link-budget"],
+  relatedBlogPosts: ["am-modulation-index", "ber-vs-snr-digital-communications"]
 };
 
 // src/lib/calculators/signal/quantization-noise.ts
@@ -20481,7 +20653,8 @@ var quantizationNoise = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["adc-snr", "ber-snr", "snr-calculator"]
+  relatedCalculators: ["adc-snr", "ber-snr", "snr-calculator"],
+  relatedBlogPosts: ["ber-snr", "ber-vs-snr-digital-communications"]
 };
 
 // src/lib/calculators/rf/fresnel-zone.ts
@@ -20601,6 +20774,7 @@ var fresnelZone = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["free-space-path-loss", "rf-link-budget", "link-margin"],
+  relatedBlogPosts: ["rf-link-budget-calculator-guide"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -20871,6 +21045,8 @@ var balunTransformer = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["vswr-return-loss", "rf-link-budget", "microstrip-impedance"],
+  relatedTools: ["impedance-matching"],
+  relatedBlogPosts: ["how-to-read-smith-chart"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -21050,6 +21226,7 @@ var linkMargin = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["free-space-path-loss", "rf-link-budget", "fresnel-zone"],
+  relatedBlogPosts: ["rf-link-budget-calculator-guide", "cubesat-uhf-link-budget-walkthrough"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -21234,6 +21411,7 @@ var mixerSpurCalculator = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["intermodulation-distortion", "noise-figure-cascade", "rf-link-budget"],
+  relatedBlogPosts: ["noise-figure-cascade"],
   liveWidgets: [
     { type: "spur-chart", position: "below-outputs", props: {} },
     { type: "space-weather", position: "below-outputs" }
@@ -21525,7 +21703,7 @@ var opampBandwidth = {
   shortTitle: "Op-Amp Bandwidth",
   metaTitle: "Op-Amp Closed-Loop Bandwidth Calculator \u2014 Free Electronics Tool",
   category: "general",
-  description: "Calculate op-amp closed-loop -3dB bandwidth from the gain-bandwidth product (GBW), determine rise time, and verify phase margin.",
+  description: "Calculate op-amp closed-loop bandwidth from GBW, determine 10-90% rise time, and verify stability. Essential for amplifier design. Free, instant results.",
   keywords: ["op amp bandwidth calculator", "gain bandwidth product", "closed loop bandwidth", "opamp rise time", "unity gain bandwidth"],
   inputs: [
     {
@@ -21605,7 +21783,8 @@ var opampBandwidth = {
     reference: 'Texas Instruments, "Op Amp Applications Handbook"'
   },
   visualization: { type: "none" },
-  relatedCalculators: ["opamp-gain", "comparator-hysteresis", "schmitt-trigger"]
+  relatedCalculators: ["opamp-gain", "comparator-hysteresis", "schmitt-trigger"],
+  relatedBlogPosts: ["filter-design-butterworth-chebyshev"]
 };
 
 // src/lib/calculators/general/lm317-resistors.ts
@@ -21875,7 +22054,8 @@ var voltageRegulatorDropout = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["ldo-thermal", "lm317-resistors", "linear-regulator-dropout"]
+  relatedCalculators: ["ldo-thermal", "lm317-resistors", "linear-regulator-dropout"],
+  relatedBlogPosts: ["linear-regulator-dropout", "solar-panel-sizing"]
 };
 
 // src/lib/calculators/power/transformer-turns-ratio.ts
@@ -22007,7 +22187,9 @@ var transformerTurnsRatio = {
     reference: "Faraday's Law of Electromagnetic Induction"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["flyback-converter", "buck-converter", "three-phase-power"]
+  relatedCalculators: ["flyback-converter", "buck-converter", "three-phase-power"],
+  relatedTools: ["magnetics-optimizer"],
+  relatedBlogPosts: ["audio-transformer", "magnetics-optimizer-transformer-design"]
 };
 
 // src/lib/calculators/power/flyback-converter.ts
@@ -22165,7 +22347,9 @@ var flybackConverter = {
     reference: "Unitrode Power Supply Design Seminar SEM600"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["transformer-turns-ratio", "buck-converter", "mosfet-power-dissipation"]
+  relatedCalculators: ["transformer-turns-ratio", "buck-converter", "mosfet-power-dissipation"],
+  relatedTools: ["magnetics-optimizer", "smps-control-loop"],
+  relatedBlogPosts: ["magnetics-optimizer-transformer-design"]
 };
 
 // src/lib/calculators/power/supercapacitor-backup.ts
@@ -22434,7 +22618,8 @@ var batteryInternalResistance = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["battery-life", "supercapacitor-backup", "battery-charge-time"]
+  relatedCalculators: ["battery-life", "supercapacitor-backup", "battery-charge-time"],
+  relatedBlogPosts: ["battery-runtime-motor"]
 };
 
 // src/lib/calculators/protocol/i2s-timing.ts
@@ -23093,7 +23278,9 @@ var powerPlaneImpedance = {
     reference: "IPC-2141A / Larry Smith PDN analysis techniques"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["decoupling-capacitor", "via-stub-resonance", "pcb-trace-inductance"]
+  relatedCalculators: ["decoupling-capacitor", "via-stub-resonance", "pcb-trace-inductance"],
+  relatedTools: ["pdn-impedance"],
+  relatedBlogPosts: ["pdn-impedance-analyzer", "trace-width-current"]
 };
 
 // src/lib/calculators/pcb/via-stub-resonance.ts
@@ -23236,7 +23423,9 @@ var viaStubResonance = {
     reference: 'Eric Bogatin, "Signal and Power Integrity Simplified" 3rd ed.'
   },
   visualization: { type: "none" },
-  relatedCalculators: ["via-calculator", "power-plane-impedance", "controlled-impedance"]
+  relatedCalculators: ["via-calculator", "power-plane-impedance", "controlled-impedance"],
+  relatedTools: ["fdtd-sparam"],
+  relatedBlogPosts: ["eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"]
 };
 
 // src/lib/calculators/pcb/solder-paste-volume.ts
@@ -23273,6 +23462,7 @@ var solderPasteVolume = {
   title: "Solder Paste Volume Calculator",
   shortTitle: "Solder Paste Volume",
   metaTitle: "Solder Paste Volume Calculator \u2014 Free Stencil Tool",
+  metaDescription: "Enter pad size & stencil thickness \u2192 get paste volume, aperture area ratio (IPC-7525A pass/fail), and transfer efficiency. Free solder paste calculator for SMD reflow.",
   category: "pcb",
   description: "Calculate solder paste volume, stencil aperture area, and IPC-7525A area ratio. Design SMD stencils for reliable reflow soldering. Free, instant results.",
   keywords: ["solder paste volume", "stencil aperture design", "solder paste calculator", "ipc-7525 area ratio", "smt stencil thickness"],
@@ -23408,7 +23598,7 @@ var emiFilterLc = {
   slug: "emi-filter-lc",
   title: "LC EMI Filter Design Calculator",
   shortTitle: "LC EMI Filter",
-  metaTitle: "EMI Filter Calculator \u2014 LC Low-Pass Design for CISPR Compliance",
+  metaTitle: "EMI Filter Calculator \u2014 LC Low-Pass for CISPR",
   category: "emc",
   description: "Design LC EMI filters for conducted emissions compliance. Calculate inductance, capacitance, cutoff frequency, and attenuation for CISPR 22/32 and FCC Part 15. Free, instant results.",
   keywords: ["emi filter design", "emi filter calculator", "lc filter emc", "conducted emissions filter", "cispr 22 filter", "cispr 32 filter", "emc low pass filter calculator", "fcc part 15 filter", "lc emi filter design"],
@@ -23531,7 +23721,9 @@ var emiFilterLc = {
     reference: 'Williams & Taylor, "Electronic Filter Design Handbook" 4th ed.'
   },
   visualization: { type: "none" },
-  relatedCalculators: ["ferrite-bead", "shielding-effectiveness", "esd-tvs-diode"]
+  relatedCalculators: ["ferrite-bead", "shielding-effectiveness", "esd-tvs-diode"],
+  relatedTools: ["emi-radiated"],
+  relatedBlogPosts: ["cable-shield-effectiveness", "emc-fcc-ce-testing-guide", "emi-filter-design-cispr-compliance"]
 };
 
 // src/lib/calculators/emc/esd-tvs-diode.ts
@@ -23685,7 +23877,8 @@ var esdTvsDiode = {
     reference: "JEDEC JESD22-A114 HBM / IEC 61000-4-2"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["emi-filter-lc", "shielding-effectiveness", "ferrite-bead"]
+  relatedCalculators: ["emi-filter-lc", "shielding-effectiveness", "ferrite-bead"],
+  relatedBlogPosts: ["esd-clamp-selection"]
 };
 
 // src/lib/calculators/emc/common-mode-choke.ts
@@ -23724,7 +23917,8 @@ var commonModeChoke = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["ferrite-bead", "emi-filter-lc", "differential-mode-filter"]
+  relatedCalculators: ["ferrite-bead", "emi-filter-lc", "differential-mode-filter"],
+  relatedBlogPosts: ["emi-radiated-emissions-pcb-fcc-compliance"]
 };
 
 // src/lib/calculators/emc/decoupling-capacitor-emc.ts
@@ -23780,7 +23974,8 @@ var decouplingCapacitorEmc = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["emi-filter-lc", "common-mode-choke", "conducted-emissions-filter"]
+  relatedCalculators: ["emi-filter-lc", "common-mode-choke", "conducted-emissions-filter"],
+  relatedBlogPosts: ["emi-radiated-emissions-pcb-fcc-compliance"]
 };
 
 // src/lib/calculators/emc/esd-clamp-selection.ts
@@ -23874,7 +24069,8 @@ var radiatedEmissionEstimate = {
     reference: "Henry Ott, Electromagnetic Compatibility Engineering"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["shielding-effectiveness", "emi-margin-budget", "ground-plane-impedance"]
+  relatedCalculators: ["shielding-effectiveness", "emi-margin-budget", "ground-plane-impedance"],
+  relatedBlogPosts: ["chassis-resonance", "emc-fcc-ce-testing-guide", "emi-radiated-emissions-pcb-fcc-compliance"]
 };
 
 // src/lib/calculators/emc/ground-plane-impedance.ts
@@ -24033,7 +24229,8 @@ var powerSupplyRippleFilter = {
     variables: []
   },
   visualization: { type: "none" },
-  relatedCalculators: ["emi-filter-lc", "conducted-emissions-filter", "common-mode-choke"]
+  relatedCalculators: ["emi-filter-lc", "conducted-emissions-filter", "common-mode-choke"],
+  relatedBlogPosts: ["linear-regulator-dropout", "ohms-law", "solar-panel-sizing"]
 };
 
 // src/lib/calculators/emc/cable-shield-effectiveness.ts
@@ -24067,7 +24264,8 @@ var cableShieldEffectiveness = {
     variables: []
   },
   visualization: { type: "none" },
-  relatedCalculators: ["shielding-effectiveness", "radiated-emission-estimate", "emi-margin-budget"]
+  relatedCalculators: ["shielding-effectiveness", "radiated-emission-estimate", "emi-margin-budget"],
+  relatedBlogPosts: ["emi-filter-design-cispr-compliance"]
 };
 
 // src/lib/calculators/emc/chassis-resonance.ts
@@ -24146,7 +24344,8 @@ var emiMarginBudget = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["radiated-emission-estimate", "shielding-effectiveness", "esd-clamp-selection"]
+  relatedCalculators: ["radiated-emission-estimate", "shielding-effectiveness", "esd-clamp-selection"],
+  relatedBlogPosts: ["emc-fcc-ce-testing-guide"]
 };
 
 // src/lib/calculators/emc/conducted-emissions-filter.ts
@@ -24190,6 +24389,8 @@ var conductedEmissionsFilter = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["emi-filter-lc", "power-supply-ripple-filter", "common-mode-choke"],
+  relatedTools: ["emi-radiated"],
+  relatedBlogPosts: ["emi-filter-design-cispr-compliance"],
   exportComponents: (_inputs, outputs) => {
     const l = outputs?.lValue ?? 0;
     const c2 = outputs?.cValue ?? 0;
@@ -24392,7 +24593,8 @@ var audioPowerAmplifier = {
     reference: 'Cordell, "Designing Audio Power Amplifiers" 2nd ed.'
   },
   visualization: { type: "none" },
-  relatedCalculators: ["speaker-crossover", "opamp-gain", "opamp-bandwidth"]
+  relatedCalculators: ["speaker-crossover", "opamp-gain", "opamp-bandwidth"],
+  relatedBlogPosts: ["audio-amplifier-design-guide", "class-d-efficiency", "room-modes"]
 };
 
 // src/lib/calculators/audio/speaker-crossover.ts
@@ -24441,7 +24643,7 @@ var speakerCrossover = {
   slug: "speaker-crossover",
   title: "Passive Speaker Crossover Calculator",
   shortTitle: "Speaker Crossover",
-  metaTitle: "Passive Speaker Crossover Calculator \u2014 Free Audio Electronics...",
+  metaTitle: "Passive Speaker Crossover Calculator \u2014 2/3-Way Design",
   category: "audio",
   description: "Calculate passive 2-way speaker crossover component values for 1st order (6dB/oct) and 2nd order Butterworth (12dB/oct) networks.",
   keywords: ["speaker crossover calculator", "passive crossover design", "2 way crossover components", "butterworth crossover", "woofer tweeter crossover"],
@@ -24554,6 +24756,7 @@ var speakerCrossover = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "lc-resonance", "filter-designer"],
+  relatedBlogPosts: ["room-modes"],
   exportComponents: (_inputs, outputs) => {
     const fmtL = (mh) => mh >= 1 ? `${+mh.toPrecision(3)} mH` : `${+(mh * 1e3).toPrecision(3)} \u03BCH`;
     const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} \u03BCF` : `${+(uf * 1e3).toPrecision(3)} nF`;
@@ -24611,7 +24814,8 @@ var roomModes = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["speaker-sensitivity", "subwoofer-box", "audio-snr"]
+  relatedCalculators: ["speaker-sensitivity", "subwoofer-box", "audio-snr"],
+  relatedBlogPosts: ["speaker-crossover"]
 };
 
 // src/lib/calculators/audio/speaker-sensitivity.ts
@@ -24654,7 +24858,8 @@ var speakerSensitivity = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["audio-power-amplifier", "room-modes", "headphone-power"]
+  relatedCalculators: ["audio-power-amplifier", "room-modes", "headphone-power"],
+  relatedBlogPosts: ["audio-amplifier-design-guide", "decibels-explained-db-dbm-dbi"]
 };
 
 // src/lib/calculators/audio/headphone-power.ts
@@ -24710,7 +24915,8 @@ var headphonePower = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["speaker-sensitivity", "audio-power-amplifier", "power-amplifier-gain"]
+  relatedCalculators: ["speaker-sensitivity", "audio-power-amplifier", "power-amplifier-gain"],
+  relatedBlogPosts: ["audio-amplifier-design-guide"]
 };
 
 // src/lib/calculators/audio/audio-snr.ts
@@ -24749,7 +24955,8 @@ var audioSnr = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["audio-adc-snr", "audio-power-amplifier", "amplifier-clipping"]
+  relatedCalculators: ["audio-adc-snr", "audio-power-amplifier", "amplifier-clipping"],
+  relatedBlogPosts: ["audio-amplifier-design-guide", "decibels-explained-db-dbm-dbi"]
 };
 
 // src/lib/calculators/audio/op-amp-slew-rate.ts
@@ -24790,7 +24997,8 @@ var opAmpSlewRate = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["audio-power-amplifier", "audio-snr", "equalizer-q-factor"]
+  relatedCalculators: ["audio-power-amplifier", "audio-snr", "equalizer-q-factor"],
+  relatedBlogPosts: ["opamp-gain"]
 };
 
 // src/lib/calculators/audio/audio-transformer.ts
@@ -24834,7 +25042,8 @@ var audioTransformer = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["audio-power-amplifier", "speaker-sensitivity", "tweeter-capacitor"]
+  relatedCalculators: ["audio-power-amplifier", "speaker-sensitivity", "tweeter-capacitor"],
+  relatedBlogPosts: ["transformer-turns-ratio"]
 };
 
 // src/lib/calculators/audio/cable-capacitance-rolloff.ts
@@ -24888,7 +25097,8 @@ var cableCapacitanceRolloff = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["audio-transformer", "op-amp-slew-rate", "audio-snr"]
+  relatedCalculators: ["audio-transformer", "op-amp-slew-rate", "audio-snr"],
+  relatedBlogPosts: ["capacitive-proximity"]
 };
 
 // src/lib/calculators/audio/subwoofer-box.ts
@@ -24942,7 +25152,8 @@ var subwooferBox = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["room-modes", "speaker-sensitivity", "tweeter-capacitor"]
+  relatedCalculators: ["room-modes", "speaker-sensitivity", "tweeter-capacitor"],
+  relatedBlogPosts: ["room-modes"]
 };
 
 // src/lib/calculators/audio/tweeter-capacitor.ts
@@ -25053,7 +25264,8 @@ var classDEfficiency = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["audio-power-amplifier", "audio-snr", "amplifier-clipping"]
+  relatedCalculators: ["audio-power-amplifier", "audio-snr", "amplifier-clipping"],
+  relatedBlogPosts: ["audio-amplifier-design-guide"]
 };
 
 // src/lib/calculators/audio/audio-adc-snr.ts
@@ -25140,7 +25352,8 @@ var equalizerQFactor = {
   slug: "equalizer-q-factor",
   title: "Equalizer Filter Q & Bandwidth",
   shortTitle: "EQ Q Factor",
-  metaTitle: "Equalizer Q Factor Calculator \u2014 Bandwidth, Octave & Frequency Converter",
+  metaTitle: "EQ Q Factor Calculator \u2014 Bandwidth & Octave",
+  metaDescription: "Calculate Q factor from center frequency & bandwidth \u2014 get octave width, 3 dB points, and fractional BW instantly. Free parametric EQ calculator for audio engineers.",
   category: "audio",
   description: "Free EQ Q factor calculator \u2014 enter center frequency and bandwidth to get Q, octaves, and 3dB points. Convert between Q factor, fractional bandwidth, and octave bandwidth for parametric equalizer design.",
   keywords: ["equalizer Q factor", "EQ bandwidth", "parametric EQ", "Q factor audio", "octave bandwidth", "EQ filter", "Q factor calculator", "EQ Q calculator", "bandwidth to octave", "3dB bandwidth", "parametric equalizer design"],
@@ -25216,7 +25429,8 @@ var amplifierClipping = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["audio-power-amplifier", "audio-snr", "power-amplifier-gain"]
+  relatedCalculators: ["audio-power-amplifier", "audio-snr", "power-amplifier-gain"],
+  relatedBlogPosts: ["audio-amplifier-design-guide", "db-converter", "opamp-gain"]
 };
 
 // src/lib/calculators/audio/audio-delay-time.ts
@@ -25318,7 +25532,8 @@ var powerAmplifierGain = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["audio-power-amplifier", "amplifier-clipping", "audio-snr"]
+  relatedCalculators: ["audio-power-amplifier", "amplifier-clipping", "audio-snr"],
+  relatedBlogPosts: ["audio-amplifier-design-guide", "rf-cascade-noise-figure-yield-analysis"]
 };
 
 // src/lib/calculators/rf/reactance-calculator.ts
@@ -25861,8 +26076,8 @@ var deltaWyeConversion = {
   ],
   calculate: calculateDeltaWye,
   formula: {
-    primary: "R_1 = \\frac{R_a R_b}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_3}",
-    latex: "R_1 = \\frac{R_a R_b}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_3}",
+    primary: "R_1 = \\frac{R_b R_c}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_1}",
+    latex: "R_1 = \\frac{R_b R_c}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_1}",
     variables: [
       { symbol: "Ra, Rb, Rc", description: "Delta (\u0394) resistors", unit: "\u03A9" },
       { symbol: "R1, R2, R3", description: "Wye (Y) resistors", unit: "\u03A9" }
@@ -26103,6 +26318,247 @@ var dopplerShift = {
   ]
 };
 
+// src/lib/calculators/audio/rt60-reverberation.ts
+function calculateRT60(inputs) {
+  const { length, width, height, avgAbsorption } = inputs;
+  if (length <= 0 || width <= 0 || height <= 0) {
+    return { values: {}, errors: ["Room dimensions must be positive"] };
+  }
+  if (avgAbsorption <= 0 || avgAbsorption >= 1) {
+    return { values: {}, errors: ["Average absorption coefficient must be between 0 and 1"] };
+  }
+  const volume = length * width * height;
+  const surfaceArea = 2 * (length * width + length * height + width * height);
+  const totalAbsorption = surfaceArea * avgAbsorption;
+  const rt60Sabine = 0.161 * volume / totalAbsorption;
+  const rt60Eyring = 0.161 * volume / (-surfaceArea * Math.log(1 - avgAbsorption));
+  const schroederFreq = 2e3 * Math.sqrt(rt60Sabine / volume);
+  const criticalDistance = 0.057 * Math.sqrt(volume / rt60Sabine);
+  const optimalSpeech = 0.32 * Math.log10(volume) + 0.03;
+  const optimalMusic = 0.6 * Math.log10(volume) + 0.1;
+  return {
+    values: {
+      volume,
+      surfaceArea,
+      totalAbsorption,
+      rt60Sabine,
+      rt60Eyring,
+      schroederFreq,
+      criticalDistance,
+      optimalSpeech,
+      optimalMusic
+    }
+  };
+}
+var rt60Reverberation = {
+  slug: "rt60-reverberation",
+  title: "RT60 Reverberation Time Calculator",
+  shortTitle: "RT60 Calculator",
+  category: "audio",
+  metaTitle: "RT60 Calculator \u2014 Reverberation Time (Sabine & Eyring)",
+  metaDescription: "Enter room dimensions & absorption \u2192 get RT60 (Sabine + Eyring), critical distance & Schroeder frequency. Free reverberation time calculator for acoustic design.",
+  description: "Calculate room reverberation time (RT60) using Sabine and Eyring equations. Enter dimensions and average absorption coefficient to get decay time, critical distance, and Schroeder frequency for acoustic treatment design.",
+  keywords: ["RT60 calculator", "reverberation time", "Sabine equation", "Eyring equation", "room acoustics", "acoustic treatment", "critical distance", "reverb time calculator", "decay time", "absorption coefficient"],
+  inputs: [
+    { key: "length", label: "Room Length", symbol: "L", unit: "m", defaultValue: 6, min: 1, max: 100, step: 0.1 },
+    { key: "width", label: "Room Width", symbol: "W", unit: "m", defaultValue: 4, min: 1, max: 100, step: 0.1 },
+    { key: "height", label: "Room Height", symbol: "H", unit: "m", defaultValue: 3, min: 1.5, max: 30, step: 0.1 },
+    { key: "avgAbsorption", label: "Avg. Absorption Coefficient", symbol: "\u1FB1", unit: "", defaultValue: 0.2, min: 0.01, max: 0.99, step: 0.01, tooltip: "Bare concrete ~0.03, carpet ~0.3, acoustic panels ~0.8" }
+  ],
+  outputs: [
+    { key: "rt60Sabine", label: "RT60 (Sabine)", symbol: "T\u2086\u2080", unit: "s", precision: 2 },
+    { key: "rt60Eyring", label: "RT60 (Eyring)", symbol: "T\u2086\u2080\u2091", unit: "s", precision: 2 },
+    { key: "criticalDistance", label: "Critical Distance", symbol: "D\u1D9C", unit: "m", precision: 2 },
+    { key: "schroederFreq", label: "Schroeder Frequency", symbol: "f_S", unit: "Hz", precision: 0 },
+    { key: "totalAbsorption", label: "Total Absorption", symbol: "A", unit: "sabins", precision: 1 },
+    { key: "volume", label: "Room Volume", symbol: "V", unit: "m\xB3", precision: 1 },
+    { key: "surfaceArea", label: "Surface Area", symbol: "S", unit: "m\xB2", precision: 1 },
+    { key: "optimalSpeech", label: "Optimal RT60 (Speech)", symbol: "T_speech", unit: "s", precision: 2 },
+    { key: "optimalMusic", label: "Optimal RT60 (Music)", symbol: "T_music", unit: "s", precision: 2 }
+  ],
+  calculate: calculateRT60,
+  formula: {
+    primary: "T\u2086\u2080 = 0.161 \xD7 V / A",
+    latex: "T_{60} = \\frac{0.161 \\cdot V}{S \\cdot \\bar{\\alpha}}",
+    variables: [
+      { symbol: "V", description: "Room volume", unit: "m\xB3" },
+      { symbol: "S", description: "Total surface area", unit: "m\xB2" },
+      { symbol: "\u1FB1", description: "Average absorption coefficient (0\u20131)", unit: "" },
+      { symbol: "A", description: "Total absorption (S \xD7 \u1FB1)", unit: "sabins (m\xB2)" }
+    ]
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["room-modes", "speaker-sensitivity", "equalizer-q-factor", "audio-delay-time"],
+  relatedBlogPosts: ["speaker-crossover"]
+};
+
+// src/lib/calculators/motor/vfd-motor-speed.ts
+function calculateVfdMotorSpeed(inputs) {
+  const { poles, lineFrequency, driveFrequency, ratedSlip } = inputs;
+  if (poles < 2 || poles % 2 !== 0) {
+    return { values: {}, errors: ["Number of poles must be an even number \u2265 2"] };
+  }
+  if (lineFrequency <= 0 || driveFrequency <= 0) {
+    return { values: {}, errors: ["Frequencies must be positive"] };
+  }
+  if (ratedSlip < 0 || ratedSlip >= 100) {
+    return { values: {}, errors: ["Slip must be between 0% and 100%"] };
+  }
+  const slipFraction = ratedSlip / 100;
+  const syncSpeedLine = 120 * lineFrequency / poles;
+  const syncSpeedDrive = 120 * driveFrequency / poles;
+  const actualSpeedLine = syncSpeedLine * (1 - slipFraction);
+  const actualSpeedDrive = syncSpeedDrive * (1 - slipFraction);
+  const vhzRatio = 1 / lineFrequency;
+  const voltageAtDrive = Math.min(driveFrequency * vhzRatio, 1);
+  const torqueDerating = driveFrequency <= lineFrequency ? 100 : lineFrequency / driveFrequency * 100;
+  const powerDerating = driveFrequency <= lineFrequency ? driveFrequency / lineFrequency * 100 : 100;
+  const speedRatio = actualSpeedDrive / actualSpeedLine;
+  const frequencyRatio = driveFrequency / lineFrequency;
+  return {
+    values: {
+      syncSpeedLine,
+      syncSpeedDrive,
+      actualSpeedLine,
+      actualSpeedDrive,
+      torqueDerating,
+      powerDerating,
+      voltageAtDrive,
+      speedRatio,
+      frequencyRatio
+    }
+  };
+}
+var vfdMotorSpeed = {
+  slug: "vfd-motor-speed",
+  title: "VFD Motor Speed & Torque Calculator",
+  shortTitle: "VFD Calculator",
+  category: "motor",
+  metaTitle: "VFD Calculator \u2014 Motor Speed, Torque & V/Hz",
+  metaDescription: "Enter poles, line frequency & drive frequency \u2192 get synchronous speed, actual RPM, torque derating & V/Hz ratio. Free VFD motor speed calculator for AC drive sizing.",
+  description: "Calculate AC induction motor speed under VFD (Variable Frequency Drive) control. Enter pole count, line and drive frequencies to get synchronous speed, actual RPM with slip, torque derating above base speed, and V/Hz characteristics.",
+  keywords: ["VFD calculator", "variable frequency drive", "motor speed calculator", "V/Hz ratio", "AC motor speed", "drive frequency", "synchronous speed", "motor slip", "VFD torque", "field weakening"],
+  inputs: [
+    { key: "poles", label: "Number of Poles", symbol: "P", unit: "", defaultValue: 4, min: 2, max: 48, step: 2, tooltip: "2-pole = 3000/3600 RPM, 4-pole = 1500/1800 RPM" },
+    { key: "lineFrequency", label: "Line Frequency (Base)", symbol: "f_line", unit: "Hz", defaultValue: 60, min: 25, max: 400, step: 1, tooltip: "50 Hz (EU/Asia) or 60 Hz (US/Americas)" },
+    { key: "driveFrequency", label: "Drive Output Frequency", symbol: "f_drive", unit: "Hz", defaultValue: 45, min: 0.5, max: 400, step: 0.5 },
+    { key: "ratedSlip", label: "Rated Slip", symbol: "s", unit: "%", defaultValue: 3, min: 0, max: 15, step: 0.5, tooltip: "Typical: 2\u20135% for standard motors" }
+  ],
+  outputs: [
+    { key: "actualSpeedDrive", label: "Actual Motor Speed", symbol: "n", unit: "RPM", precision: 0 },
+    { key: "syncSpeedDrive", label: "Synchronous Speed", symbol: "n_s", unit: "RPM", precision: 0 },
+    { key: "actualSpeedLine", label: "Speed at Line Frequency", symbol: "n_rated", unit: "RPM", precision: 0 },
+    { key: "torqueDerating", label: "Available Torque", symbol: "T_%", unit: "%", precision: 1 },
+    { key: "powerDerating", label: "Available Power", symbol: "P_%", unit: "%", precision: 1 },
+    { key: "speedRatio", label: "Speed Ratio", symbol: "n/n_rated", unit: "", precision: 3 },
+    { key: "frequencyRatio", label: "Frequency Ratio", symbol: "f/f_base", unit: "", precision: 3 }
+  ],
+  calculate: calculateVfdMotorSpeed,
+  formula: {
+    primary: "n_s = 120 \xD7 f / P",
+    latex: "n_s = \\frac{120 \\cdot f}{P}, \\quad n = n_s \\cdot (1 - s)",
+    variables: [
+      { symbol: "f", description: "Drive output frequency", unit: "Hz" },
+      { symbol: "P", description: "Number of motor poles", unit: "" },
+      { symbol: "n_s", description: "Synchronous speed", unit: "RPM" },
+      { symbol: "s", description: "Slip (typically 0.02\u20130.05)", unit: "" },
+      { symbol: "n", description: "Actual rotor speed", unit: "RPM" }
+    ]
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["induction-motor-slip", "motor-efficiency", "dc-motor-speed", "bldc-motor"]
+};
+
+// src/lib/calculators/power/voltage-drop.ts
+var AWG_RESISTANCE = {
+  0: 0.3224,
+  // 0 AWG
+  2: 0.5127,
+  4: 0.8152,
+  6: 1.296,
+  8: 2.061,
+  10: 3.277,
+  12: 5.211,
+  14: 8.286,
+  16: 13.17,
+  18: 20.95,
+  20: 33.31,
+  22: 52.96,
+  24: 84.22
+};
+function calculateVoltageDrop(inputs) {
+  const { voltage, current, wireGauge: wireGauge2, cableLength, conductorType } = inputs;
+  if (voltage <= 0) {
+    return { values: {}, errors: ["Supply voltage must be positive"] };
+  }
+  if (current <= 0) {
+    return { values: {}, errors: ["Current must be positive"] };
+  }
+  if (cableLength <= 0) {
+    return { values: {}, errors: ["Cable length must be positive"] };
+  }
+  const resistancePerKm = AWG_RESISTANCE[wireGauge2] ?? 5.211;
+  const materialFactor = conductorType === 1 ? 1.61 : 1;
+  const actualResistancePerKm = resistancePerKm * materialFactor;
+  const totalResistance = 2 * cableLength * actualResistancePerKm / 1e3;
+  const voltageDrop2 = current * totalResistance;
+  const voltageDropPercent = voltageDrop2 / voltage * 100;
+  const voltageAtLoad = voltage - voltageDrop2;
+  const powerLoss = current * current * totalResistance;
+  const necStatus = voltageDropPercent <= 3 ? 1 : voltageDropPercent <= 5 ? 2 : 3;
+  const maxLengthFor3Pct = 0.03 * voltage * 1e3 / (2 * current * actualResistancePerKm);
+  return {
+    values: {
+      voltageDrop: voltageDrop2,
+      voltageDropPercent,
+      voltageAtLoad,
+      powerLoss,
+      totalResistance,
+      necStatus,
+      maxLengthFor3Pct
+    }
+  };
+}
+var voltageDrop = {
+  slug: "voltage-drop",
+  title: "Cable Voltage Drop Calculator",
+  shortTitle: "Voltage Drop",
+  category: "power",
+  metaTitle: "Voltage Drop Calculator \u2014 Wire Size & Cable Length (NEC)",
+  metaDescription: "Enter voltage, current, wire gauge & cable length \u2192 get voltage drop (V and %), power loss, and NEC compliance. Copper and aluminum. Free wire voltage drop calculator.",
+  description: "Calculate voltage drop across a cable run. Enter supply voltage, load current, wire gauge (AWG), and one-way distance to get voltage drop in volts and percent, power loss, and NEC 3%/5% compliance status. Supports copper and aluminum conductors.",
+  keywords: ["voltage drop calculator", "cable voltage drop", "wire voltage drop", "NEC voltage drop", "AWG voltage drop", "wire size calculator", "12V voltage drop", "solar cable sizing", "wire gauge distance", "voltage loss cable"],
+  inputs: [
+    { key: "voltage", label: "Supply Voltage", symbol: "V_s", unit: "V", defaultValue: 120, min: 1, max: 1e4, step: 1 },
+    { key: "current", label: "Load Current", symbol: "I", unit: "A", defaultValue: 15, min: 0.1, max: 1e3, step: 0.1 },
+    { key: "wireGauge", label: "Wire Gauge (AWG)", symbol: "AWG", unit: "", defaultValue: 12, min: 0, max: 24, step: 2, tooltip: "12 AWG typical for 20A circuits" },
+    { key: "cableLength", label: "One-Way Distance", symbol: "d", unit: "m", defaultValue: 30, min: 0.5, max: 5e3, step: 0.5, tooltip: "Distance from panel to load (not round-trip)" },
+    { key: "conductorType", label: "Conductor (0=Cu, 1=Al)", symbol: "", unit: "", defaultValue: 0, min: 0, max: 1, step: 1, tooltip: "0 = Copper, 1 = Aluminum" }
+  ],
+  outputs: [
+    { key: "voltageDrop", label: "Voltage Drop", symbol: "V_drop", unit: "V", precision: 2 },
+    { key: "voltageDropPercent", label: "Voltage Drop", symbol: "V_%", unit: "%", precision: 2 },
+    { key: "voltageAtLoad", label: "Voltage at Load", symbol: "V_load", unit: "V", precision: 2 },
+    { key: "powerLoss", label: "Cable Power Loss", symbol: "P_loss", unit: "W", precision: 1 },
+    { key: "totalResistance", label: "Round-Trip Resistance", symbol: "R_total", unit: "\u03A9", precision: 4 },
+    { key: "necStatus", label: "NEC Status (1=OK, 2=Marginal, 3=Fail)", symbol: "", unit: "", precision: 0 },
+    { key: "maxLengthFor3Pct", label: "Max Length for 3% Drop", symbol: "d_max", unit: "m", precision: 1 }
+  ],
+  calculate: calculateVoltageDrop,
+  formula: {
+    primary: "V_drop = I \xD7 2 \xD7 d \xD7 R_km / 1000",
+    latex: "V_{drop} = I \\cdot \\frac{2 \\cdot d \\cdot R_{/km}}{1000}",
+    variables: [
+      { symbol: "I", description: "Load current", unit: "A" },
+      { symbol: "d", description: "One-way cable length", unit: "m" },
+      { symbol: "R_km", description: "Wire resistance per km (from AWG)", unit: "\u03A9/km" },
+      { symbol: "V_drop%", description: "Drop as percentage of supply", unit: "%" }
+    ]
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["led-resistor", "voltage-divider", "trace-width-current", "solar-panel-sizing"]
+};
+
 // src/lib/calculators/registry.ts
 var ALL_CALCULATORS = [
   microstripImpedance,
@@ -26324,7 +26780,11 @@ var ALL_CALCULATORS = [
   reactanceCalculator,
   currentDivider,
   deltaWyeConversion,
-  dopplerShift
+  dopplerShift,
+  // P6: New calculator verticals
+  rt60Reverberation,
+  vfdMotorSpeed,
+  voltageDrop
 ];
 function getAllCalculators() {
   return ALL_CALCULATORS;

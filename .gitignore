@@ -1,3 +1,7 @@
 node_modules/
 *.tgz
 .DS_Store
+
+# Secrets (never commit)
+.mcpregistry_github_token
+.mcpregistry_registry_token
