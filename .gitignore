@@ -5,3 +5,4 @@ node_modules/
 # Secrets (never commit)
 .mcpregistry_github_token
 .mcpregistry_registry_token
+package-lock.json

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-#!/usr/bin/env node
 "use strict";
 
 // ../rftools-mcp/mcp-server.ts
@@ -172,7 +171,13 @@ var microstripImpedance = {
       tolerance: 0.02,
       source: "Hammerstad-Jensen formula self-consistency (W/H=3.125)"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Transmission Line Design Handbook", source: "Brian C. Wadell, Artech House (1991), Chapter 3 \u2014 Microstrip" },
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 3.8 \u2014 Microstrip and effective permittivity" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/rf-link-budget.ts
@@ -459,7 +464,13 @@ var vswrReturnLoss = {
       tolerance: 0.01,
       source: "Standard reference values"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 2.3 \u2014 Reflection coefficient and VSWR" },
+      { title: "Fundamentals of RF and Microwave Transistor Amplifiers", source: "Inder J. Bahl (2009), Chapter 2 \u2014 S-parameters and VSWR" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/db-converter.ts
@@ -563,7 +574,13 @@ var dbConverter = {
       tolerance: 1e-4,
       source: "IEEE standard: 30 dBm = 1 W"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 1 \u2014 dBm and power units" },
+      { title: "RF Circuit Design Theory and Applications", source: "Reinhold Ludwig & Pavel Bretchko (2000), Chapter 2 \u2014 Power and gain definitions" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/noise-figure-cascade.ts
@@ -1076,7 +1093,13 @@ var skinDepth = {
       tolerance: 0.02,
       source: "Standard reference: copper at 100 MHz \u2248 6.61 \u03BCm"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 1.6 \u2014 Skin depth and surface resistance" },
+      { title: "Classical Electrodynamics, 3rd ed.", source: "John D. Jackson (1999), Chapter 5 \u2014 Skin effect in conductors" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/wavelength-frequency.ts
@@ -1237,7 +1260,13 @@ var wavelengthFrequency = {
       tolerance: 5e-3,
       source: "c/f = 299.792/1GHz = 299.8 mm"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 1.3 \u2014 Wavelength and wave velocity" },
+      { title: "ITU Radio Regulations", source: "International Telecommunication Union (2020), Article 2 \u2014 Frequency and wavelength definitions", url: "https://www.itu.int/pub/R-REG-RR" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/coax-impedance.ts
@@ -1418,7 +1447,13 @@ var coaxImpedance = {
       tolerance: 0.01,
       source: "60\xB7ln(3.73) = 78.98\u03A9 air-dielectric coax"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 3.4 \u2014 Coaxial line" },
+      { title: "Transmission Line Design Handbook", source: "Brian C. Wadell, Artech House (1991), Chapter 3" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/coax-loss.ts
@@ -1548,7 +1583,13 @@ var coaxLoss = {
   relatedBlogPosts: ["eirp-calculator", "ethernet-cable", "vswr-return-loss"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 3.4 \u2014 Coaxial line loss" },
+      { title: "Times Microwave LMR Coaxial Cable Datasheet", source: "Times Microwave Systems (2020), Application Note AN-107" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/ism-coexistence.ts
@@ -1661,7 +1702,13 @@ var ismCoexistence = {
   liveWidgets: [
     { type: "ism-coexistence", position: "above-outputs", props: { bandMhz: 2400 } },
     { type: "space-weather", position: "below-outputs" }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "ETSI EN 300 220-1 V3.1.1", source: "Short Range Devices (SRD) \u2014 ISM band coexistence (2017)", url: "https://www.etsi.org/deliver/etsi_en/300200_300299/30022001/03.01.01_60/en_30022001v030101p.pdf" },
+      { title: "FCC Part 15 \u2014 Unlicensed ISM Devices", source: "Federal Communications Commission (47 CFR Part 15)", url: "https://www.ecfr.gov/current/title-47/chapter-I/subchapter-A/part-15" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/attenuator-designer.ts
@@ -1871,7 +1918,13 @@ var attenuatorDesigner = {
       tolerance: 0.01,
       source: "RF Design Guide tables: K=1.995, R1=50*2.995/0.995=150.5\u03A9, R2=50*2.98/3.99=37.3\u03A9"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 7.5 \u2014 Resistive attenuators" },
+      { title: "Matthaei, Young & Jones \u2014 Microwave Filters, Impedance-Matching Networks", source: "Artech House (1980), Appendix B" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/smith-chart.ts
@@ -1934,7 +1987,7 @@ var smithChart = {
   category: "rf",
   description: "Free online Smith Chart calculator. Plot impedance, calculate VSWR, return loss, and reflection coefficient. No signup \u2014 instant results, shareable URLs.",
   metaTitle: "Smith Chart Online \u2014 Free Interactive Impedance Tool",
-  metaDescription: "Interactive Smith Chart tool \u2014 enter R + jX, instantly see \u0393, VSWR, return loss & mismatch loss on a live plot. Export matching networks. Used by 1,000+ RF engineers weekly.",
+  metaDescription: "Free interactive Smith Chart \u2014 enter R + jX and instantly see reflection coefficient \u0393, VSWR, return loss & mismatch loss on a live plot. Design matching networks. No signup, shareable URLs.",
   keywords: [
     "smith chart online",
     "online smith chart",
@@ -4130,13 +4183,13 @@ function calculateFilterDesigner(inputs) {
 }
 var filterDesigner = {
   slug: "filter-designer",
-  title: "Passive RC/LC Filter Designer",
+  title: "LC Filter Calculator \u2014 Low-Pass, High-Pass & Band-Pass",
   shortTitle: "Filter Designer",
-  metaTitle: "LC Filter Designer Calculator \u2014 Free Online Tool",
-  metaDescription: "Design Butterworth & Chebyshev LC filters (order 1\u201310) \u2014 enter cutoff frequency, get L and C values instantly. Lowpass, highpass & bandpass. Free passive filter calculator.",
+  metaTitle: "LC Filter Calculator \u2014 Low-Pass, High-Pass, Band-Pass",
+  metaDescription: "Free LC filter calculator for low-pass, high-pass & band-pass designs. Enter cutoff frequency, get Butterworth or Chebyshev inductor & capacitor values instantly (order 1\u201310), with E-series snapping and KiCad export.",
   category: "signal",
   description: "Design passive Butterworth and Chebyshev LC ladder filters up to order 10. Calculate component values for low-pass, high-pass, and band-pass topologies. Free, instant results.",
-  keywords: ["filter designer", "rc filter calculator", "lc filter", "butterworth filter", "chebyshev filter", "low pass filter design", "high pass filter", "band pass filter", "passive filter components", "lc ladder", "filter order"],
+  keywords: ["low pass filter calculator", "lc filter calculator", "rf filter calculator", "lc low pass calculator", "high pass filter calculator", "band pass filter calculator", "lc filter design tool", "passive filter calculator", "filter designer", "rc filter calculator", "lc filter", "butterworth filter", "chebyshev filter", "low pass filter design", "high pass filter", "band pass filter", "lc ladder", "filter order"],
   inputs: [
     {
       key: "responseType",
@@ -4891,7 +4944,13 @@ var dipoleAntenna = {
       tolerance: 0.02,
       source: "\u03BB = 299792458/2400e6 = 0.1249 m; L = 0.97\xD70.1249/2\xD71000 = 60.6 mm"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Antenna Theory: Analysis and Design, 4th ed.", source: "Constantine A. Balanis (2016), Chapter 4 \u2014 Dipole antenna radiation resistance and gain" },
+      { title: "Antenna Theory and Design, 3rd ed.", source: "Warren L. Stutzman & Gary A. Thiele (2012), Chapter 3 \u2014 Wire antenna analysis" }
+    ]
+  }
 };
 
 // src/lib/calculators/antenna/patch-antenna.ts
@@ -5102,7 +5161,13 @@ var patchAntenna = {
       tolerance: 0.05,
       source: "\u03BB=122.4mm; W=37.2mm; L=28.8mm; Rin=90\xB7\u03B5r\xB2/(\u03B5r-1)\xB7(L/W)\xB2=306.8\u03A9 (Balanis Ch.14, Derneryd 1978)"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Antenna Theory: Analysis and Design, 4th ed.", source: "Constantine A. Balanis (2016), Chapter 14 \u2014 Microstrip patch antenna transmission-line model" },
+      { title: "Microstrip Antenna Design Handbook", source: "R. Garg, P. Bhartia, I. Bahl & A. Ittipiboon, Artech House (2001), Chapter 3 \u2014 Patch dimensions" }
+    ]
+  }
 };
 
 // src/lib/calculators/antenna/eirp-calculator.ts
@@ -5293,7 +5358,13 @@ var eirpCalculator = {
       tolerance: 0.01,
       source: "EIRP = 20 \u2212 1 + 2.15 = 21.15 dBm; margin = 36 \u2212 21.15 = 14.85 dB"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "ITU-R BS.705-1", source: "HF transmitting antennas \u2014 characteristics and diagrams (EIRP definitions)", url: "https://www.itu.int/rec/R-REC-BS.705" },
+      { title: "Antenna Theory: Analysis and Design, 4th ed.", source: "Constantine A. Balanis (2016), Chapter 2 \u2014 EIRP, ERP, and radiation intensity" }
+    ]
+  }
 };
 
 // src/lib/calculators/general/ohms-law.ts
@@ -5645,7 +5716,6 @@ var seriesParallelResistor = {
   slug: "series-parallel-resistor",
   title: "Series / Parallel Resistor, Capacitor & Inductor Calculator",
   shortTitle: "Series/Parallel R\xB7C\xB7L",
-  metaTitle: "Series / Parallel Resistor, Capacitor & Inductor Calculator \u2014...",
   category: "general",
   description: "Calculate the equivalent series and parallel combination of up to four resistors, capacitors, or inductors. Also computes the voltage divider ratio for two-resistor networks.",
   keywords: [
@@ -7922,7 +7992,13 @@ var qFactor = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["lc-resonance", "vswr-return-loss", "filter-designer"],
-  relatedBlogPosts: ["equalizer-q-factor", "impedance-matching-wideband-lna", "lc-resonance"]
+  relatedBlogPosts: ["equalizer-q-factor", "impedance-matching-wideband-lna", "lc-resonance"],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 6.1 \u2014 Quality factor and resonator loss" },
+      { title: "RF Circuit Design Theory and Applications", source: "Reinhold Ludwig & Pavel Bretchko (2000), Chapter 4 \u2014 Q factor definitions" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/waveguide-cutoff.ts
@@ -8084,7 +8160,13 @@ var waveguideCutoff = {
     reference: "Pozar, Microwave Engineering 4th Ed., Chapter 3"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["microstrip-impedance", "coax-impedance", "wavelength-frequency"]
+  relatedCalculators: ["microstrip-impedance", "coax-impedance", "wavelength-frequency"],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 3.3 \u2014 Rectangular waveguide modes and cutoff" },
+      { title: "Time-Harmonic Electromagnetic Fields", source: "Roger F. Harrington (2001), Chapter 8 \u2014 Waveguide theory" }
+    ]
+  }
 };
 
 // src/lib/calculators/general/zener-diode.ts
@@ -8278,7 +8360,6 @@ var inductorEnergy = {
   slug: "inductor-energy",
   title: "Inductor Energy & Time Constant Calculator",
   shortTitle: "Inductor Energy",
-  metaTitle: "Inductor Energy & Time Constant Calculator \u2014 Free Electronics...",
   category: "general",
   description: "Calculate energy stored in an inductor, L/R time constant, and current rise time",
   keywords: [
@@ -8803,7 +8884,13 @@ var antennaBeamwidth = {
   relatedBlogPosts: ["power-density"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Antenna Theory: Analysis and Design, 4th ed.", source: "Constantine A. Balanis (2016), Chapter 2 \u2014 Directivity, gain, and half-power beamwidth" },
+      { title: "Antenna Theory and Design, 3rd ed.", source: "Warren L. Stutzman & Gary A. Thiele (2012), Chapter 2 \u2014 Aperture antenna beamwidth" }
+    ]
+  }
 };
 
 // src/lib/calculators/signal/snr-calculator.ts
@@ -9660,7 +9747,13 @@ var powerAmplifierEfficiency = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "db-converter", "noise-figure-cascade"],
-  relatedBlogPosts: ["class-d-efficiency", "current-mirror", "heatsink-selection"]
+  relatedBlogPosts: ["class-d-efficiency", "current-mirror", "heatsink-selection"],
+  methodology: {
+    references: [
+      { title: "RF Power Amplifiers for Wireless Communications, 2nd ed.", source: "Steve C. Cripps (2006), Chapter 2 \u2014 Efficiency definitions" },
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 12 \u2014 Power amplifier gain and PAE" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/intermodulation-distortion.ts
@@ -9894,7 +9987,14 @@ var intermodulationDistortion = {
   visualization: { type: "none" },
   relatedCalculators: ["mixer-spur-calculator", "noise-figure-cascade", "db-converter", "rf-link-budget"],
   relatedTools: ["rf-cascade"],
-  relatedBlogPosts: ["rf-cascade-budget-monte-carlo", "rf-cascade-noise-figure-yield-analysis"]
+  relatedBlogPosts: ["rf-cascade-budget-monte-carlo", "rf-cascade-noise-figure-yield-analysis"],
+  methodology: {
+    references: [
+      { title: "RF Microelectronics, 2nd ed.", source: "Behzad Razavi (2011), Chapter 6 \u2014 Nonlinearity and intermodulation" },
+      { title: "Nonlinear Microwave and RF Circuits, 2nd ed.", source: "Stephen A. Maas (2003), Chapter 3 \u2014 Intermodulation and IP3" },
+      { title: "RF Circuit Design", source: "Peter Vizmuller (1995), Chapter 3 \u2014 IIP3 and OIP3" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/phase-noise-to-jitter.ts
@@ -10151,7 +10251,13 @@ var phaseNoiseToJitter = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["adc-snr", "q-factor", "snr-calculator", "rf-link-budget"]
+  relatedCalculators: ["adc-snr", "q-factor", "snr-calculator", "rf-link-budget"],
+  methodology: {
+    references: [
+      { title: "A Simple Model of Feedback Oscillator Noise Spectrum", source: "D. B. Leeson, Proc. IEEE 54(2), pp. 329\u2013330 (1966)" },
+      { title: "Oscillator Design and Computer Simulation", source: "Randall W. Rhea, SciTech Publishing (1995), Chapter 3 \u2014 Phase noise and jitter conversion" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/vibration-phase-noise.ts
@@ -10317,7 +10423,13 @@ var vibrationPhaseNoise = {
   },
   liveWidgets: [{ type: "space-weather", position: "below-outputs" }],
   visualization: { type: "none" },
-  relatedCalculators: ["phase-noise-to-jitter", "q-factor", "rf-link-budget"]
+  relatedCalculators: ["phase-noise-to-jitter", "q-factor", "rf-link-budget"],
+  methodology: {
+    references: [
+      { title: "A Simple Model of Feedback Oscillator Noise Spectrum", source: "D. B. Leeson, Proc. IEEE 54(2), pp. 329\u2013330 (1966)" },
+      { title: "Microwave Oscillator Design", source: "Alexander Chenakin, Artech House (2012), Chapter 6 \u2014 Vibration-induced phase noise" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/return-loss-error.ts
@@ -10496,7 +10608,13 @@ var returnLossError = {
       tolerance: 0.5,
       source: "Basic coupler measuring poor DUT"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 5.3 \u2014 Return loss and mismatch error" },
+      { title: "Applying Error Correction to Network Analyzer Measurements", source: "Keysight Application Note AN 1287-3 (2002)" }
+    ]
+  }
 };
 
 // src/lib/calculators/signal/adc-snr.ts
@@ -11562,7 +11680,13 @@ var yagiAntenna = {
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Antenna Theory: Analysis and Design, 4th ed.", source: "Constantine A. Balanis (2016), Chapter 10 \u2014 Yagi-Uda array design" },
+      { title: "Antenna Theory and Design, 3rd ed.", source: "Warren L. Stutzman & Gary A. Thiele (2012), Chapter 5 \u2014 Yagi-Uda element spacing and gain" }
+    ]
+  }
 };
 
 // src/lib/calculators/antenna/horn-antenna.ts
@@ -11697,7 +11821,13 @@ var hornAntenna = {
   relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Antenna Theory: Analysis and Design, 4th ed.", source: "Constantine A. Balanis (2016), Chapter 13 \u2014 Aperture antennas and horn gain" },
+      { title: "Antenna Theory and Design, 3rd ed.", source: "Warren L. Stutzman & Gary A. Thiele (2012), Chapter 8 \u2014 Horn antenna beamwidth" }
+    ]
+  }
 };
 
 // src/lib/calculators/antenna/parabolic-dish-antenna.ts
@@ -11820,7 +11950,13 @@ var parabolicDishAntenna = {
   relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Antenna Theory: Analysis and Design, 4th ed.", source: "Constantine A. Balanis (2016), Chapter 15 \u2014 Reflector antennas and parabolic dish gain" },
+      { title: "Antenna Theory and Design, 3rd ed.", source: "Warren L. Stutzman & Gary A. Thiele (2012), Chapter 9 \u2014 Parabolic reflector efficiency and directivity" }
+    ]
+  }
 };
 
 // src/lib/calculators/antenna/loop-antenna.ts
@@ -11960,7 +12096,13 @@ var loopAntenna = {
   relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Antenna Theory: Analysis and Design, 4th ed.", source: "Constantine A. Balanis (2016), Chapter 5 \u2014 Small and large loop antennas" },
+      { title: "Antenna Theory and Design, 3rd ed.", source: "Warren L. Stutzman & Gary A. Thiele (2012), Chapter 4 \u2014 Loop antenna radiation resistance" }
+    ]
+  }
 };
 
 // src/lib/calculators/protocol/spi-timing.ts
@@ -12290,7 +12432,6 @@ var usbTermination = {
   slug: "usb-termination",
   title: "USB Termination & Signal Integrity Calculator",
   shortTitle: "USB Termination",
-  metaTitle: "USB Termination & Signal Integrity Calculator \u2014 Free Protocol...",
   category: "protocol",
   description: "Calculate USB bus termination resistor values, differential impedance, cable propagation delay, signal rise time, and eye opening for USB 2.0 and USB 3.0",
   keywords: [
@@ -12424,7 +12565,6 @@ var rs485Termination = {
   slug: "rs485-termination",
   title: "RS-485 Termination & Bias Resistor Calculator",
   shortTitle: "RS-485 Termination",
-  metaTitle: "RS-485 Termination & Bias Resistor Calculator \u2014 Free Protocol...",
   category: "protocol",
   description: "Calculate RS-485 bus termination resistors, bias resistors, maximum baud rate for cable length, propagation delay, and bias current consumption",
   keywords: [
@@ -14708,7 +14848,6 @@ var comparatorHysteresis = {
   slug: "comparator-hysteresis",
   title: "Comparator Hysteresis (Schmitt Trigger) Calculator",
   shortTitle: "Comparator Hysteresis",
-  metaTitle: "Comparator Hysteresis (Schmitt Trigger) Calculator \u2014 Free...",
   category: "general",
   description: "Calculate comparator hysteresis trip points for Schmitt trigger circuits, upper and lower threshold voltages, and design resistor values for a desired hysteresis percentage",
   keywords: [
@@ -14862,7 +15001,6 @@ var timer555 = {
   slug: "555-timer",
   title: "555 Timer Calculator (Astable & Monostable)",
   shortTitle: "555 Timer",
-  metaTitle: "555 Timer Calculator (Astable & Monostable) \u2014 Free...",
   category: "general",
   description: "Calculate 555 timer frequency, period, duty cycle, and pulse width for both astable oscillator and monostable one-shot configurations",
   keywords: [
@@ -20778,7 +20916,13 @@ var fresnelZone = {
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "ITU-R P.526-15", source: "Propagation by diffraction \u2014 Fresnel zone clearance", url: "https://www.itu.int/rec/R-REC-P.526" },
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 14 \u2014 Fresnel zones and path clearance" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/power-density.ts
@@ -20911,7 +21055,13 @@ var powerDensity = {
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "ITU-R P.525-4", source: "Calculation of free-space attenuation \u2014 power flux density", url: "https://www.itu.int/rec/R-REC-P.525" },
+      { title: "ICNIRP Guidelines 2020", source: "International Commission on Non-Ionizing Radiation Protection, Health Physics 118(5), pp. 483\u2013524 (2020)", url: "https://www.icnirp.org/cms/upload/publications/ICNIRPrfgdl2020.pdf" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/balun-transformer.ts
@@ -21050,7 +21200,13 @@ var balunTransformer = {
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 8.5 \u2014 Baluns and power dividers" },
+      { title: "Matthaei, Young & Jones \u2014 Microwave Filters, Impedance-Matching Networks", source: "Artech House (1980), Chapter 4 \u2014 Coupled resonators and transformers" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/link-margin.ts
@@ -21230,7 +21386,13 @@ var linkMargin = {
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "ITU-R P.525-4", source: "Calculation of free-space attenuation", url: "https://www.itu.int/rec/R-REC-P.525" },
+      { title: "A Note on a Simple Transmission Formula", source: "Harald T. Friis, Proc. IRE 34(5), pp. 254\u2013256 (1946)" }
+    ]
+  }
 };
 
 // src/lib/calculators/rf/mixer-spur-calculator.ts
@@ -21415,7 +21577,13 @@ var mixerSpurCalculator = {
   liveWidgets: [
     { type: "spur-chart", position: "below-outputs", props: {} },
     { type: "space-weather", position: "below-outputs" }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Nonlinear Microwave and RF Circuits, 2nd ed.", source: "Stephen A. Maas (2003), Chapter 5 \u2014 Mixer spurious products" },
+      { title: "RF Circuit Design", source: "Peter Vizmuller (1995), Chapter 4 \u2014 Mixer spur analysis" }
+    ]
+  }
 };
 
 // src/lib/calculators/general/schmitt-trigger.ts
@@ -23043,7 +23211,6 @@ var ethernetCable = {
   slug: "ethernet-cable",
   title: "Ethernet Cable Length & Attenuation Calculator",
   shortTitle: "Ethernet Cable",
-  metaTitle: "Ethernet Cable Length & Attenuation Calculator \u2014 Free...",
   category: "protocol",
   description: "Calculate Ethernet cable attenuation, maximum cable length, and pass/fail for Cat5e, Cat6, Cat6a, and Cat8 at 100Mbps, 1Gbps, and 10Gbps.",
   keywords: ["ethernet cable length", "cat6 maximum length", "ethernet attenuation", "cat5e 10 gigabit", "cable run calculator"],
@@ -24974,7 +25141,6 @@ var opAmpSlewRate = {
   slug: "op-amp-slew-rate",
   title: "Op-Amp Slew Rate & Full-Power Bandwidth",
   shortTitle: "Op-Amp Slew Rate",
-  metaTitle: "Op-Amp Slew Rate & Full-Power Bandwidth \u2014 Free Audio...",
   category: "audio",
   description: "Calculate op-amp full-power bandwidth from slew rate and signal amplitude, and verify the op-amp can handle your signal without slew-rate distortion.",
   keywords: ["op-amp slew rate", "full power bandwidth", "slew rate distortion", "op amp bandwidth", "audio op amp", "slewing"],
@@ -25062,7 +25228,6 @@ var cableCapacitanceRolloff = {
   slug: "cable-capacitance-rolloff",
   title: "Cable Capacitance High-Frequency Rolloff",
   shortTitle: "Cable Rolloff",
-  metaTitle: "Cable Capacitance High-Frequency Rolloff \u2014 Free Audio...",
   category: "audio",
   description: "Calculate the high-frequency rolloff (-3 dB point) caused by cable capacitance interacting with source impedance.",
   keywords: ["cable capacitance", "high frequency rolloff", "guitar cable", "audio cable rolloff", "capacitance rolloff", "cable treble loss"],
@@ -25352,11 +25517,11 @@ var equalizerQFactor = {
   slug: "equalizer-q-factor",
   title: "Equalizer Filter Q & Bandwidth",
   shortTitle: "EQ Q Factor",
-  metaTitle: "EQ Q Factor Calculator \u2014 Bandwidth & Octave",
-  metaDescription: "Calculate Q factor from center frequency & bandwidth \u2014 get octave width, 3 dB points, and fractional BW instantly. Free parametric EQ calculator for audio engineers.",
+  metaTitle: "EQ Q Factor Calculator \u2014 Q to Bandwidth & Octave",
+  metaDescription: "Free equalizer calculator \u2014 convert Q factor to bandwidth, octaves & 3 dB points (or bandwidth back to Q). Instant fractional-bandwidth results for parametric EQ and audio filter design.",
   category: "audio",
   description: "Free EQ Q factor calculator \u2014 enter center frequency and bandwidth to get Q, octaves, and 3dB points. Convert between Q factor, fractional bandwidth, and octave bandwidth for parametric equalizer design.",
-  keywords: ["equalizer Q factor", "EQ bandwidth", "parametric EQ", "Q factor audio", "octave bandwidth", "EQ filter", "Q factor calculator", "EQ Q calculator", "bandwidth to octave", "3dB bandwidth", "parametric equalizer design"],
+  keywords: ["equalizer calculator", "q to bandwidth calculator", "q to octave calculator", "q factor to bandwidth calculator", "fractional bandwidth calculator", "equalizer Q factor", "EQ bandwidth", "parametric EQ", "Q factor audio", "octave bandwidth", "EQ filter", "Q factor calculator", "EQ Q calculator", "bandwidth to octave", "3dB bandwidth", "parametric equalizer design"],
   inputs: [
     { key: "centerFreq", label: "Center Frequency", symbol: "f\u2080", unit: "Hz", defaultValue: 1e3, min: 1 },
     { key: "bandwidth", label: "Bandwidth (\u22123 dB)", symbol: "BW", unit: "Hz", defaultValue: 200, min: 0.1 }
@@ -25701,7 +25866,13 @@ var reactanceCalculator = {
       tolerance: 1e-3,
       source: "XL = 2\u03C0\xD71MHz\xD710\xB5H = 62.832 \u03A9; XC = 1/(2\u03C0\xD71MHz\xD7100pF) = 1591.55 \u03A9"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 2 \u2014 Reactance and susceptance" },
+      { title: "The ARRL Handbook for Radio Communications", source: "ARRL (2023), Chapter 4 \u2014 Reactance formulae" }
+    ]
+  }
 };
 
 // src/lib/calculators/general/current-divider.ts
@@ -26315,7 +26486,13 @@ var dopplerShift = {
       tolerance: 1e-3,
       source: "At 60\xB0 aspect: cos(60\xB0) = 0.5, f_d = 1000 Hz"
     }
-  ]
+  ],
+  methodology: {
+    references: [
+      { title: "Introduction to Radar Systems, 3rd ed.", source: "Merrill I. Skolnik (2001), Chapter 3 \u2014 Doppler effect in radar" },
+      { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 14 \u2014 Doppler frequency shift" }
+    ]
+  }
 };
 
 // src/lib/calculators/audio/rt60-reverberation.ts
@@ -27035,7 +27212,7 @@ function pollInterval(elapsedMs) {
 }
 var server = new import_mcp.McpServer({
   name: "rftools",
-  version: "1.3.1"
+  version: "1.5.3"
 });
 server.registerTool(
   "list_calculators",
