@@ -4921,6 +4921,7 @@ var dipoleAntenna = {
   visualization: { type: "none" },
   relatedCalculators: [
     "patch-antenna",
+    "horn-antenna",
     "eirp-calculator",
     "rf-link-budget",
     "vswr-return-loss"
@@ -6957,7 +6958,7 @@ var pcbTraceTemp = {
   shortTitle: "Trace Temp",
   metaTitle: "PCB Trace Temperature Rise \u2014 Free Thermal Design Tool",
   category: "thermal",
-  description: "Calculate PCB copper trace temperature rise under load current using IPC-2152",
+  description: "Calculate PCB copper trace temperature rise under load current using IPC-2152 and IPC-2221 standards. Enter trace width, thickness, and current to get \u0394T above ambient. Essential for thermal PCB design and reliability engineering. Free, instant results.",
   keywords: ["PCB trace temperature", "IPC-2152", "trace heating", "copper trace", "current capacity", "thermal"],
   inputs: [
     {
@@ -11674,7 +11675,7 @@ var yagiAntenna = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["dipole-antenna", "eirp-calculator", "patch-antenna", "rf-link-budget"],
+  relatedCalculators: ["dipole-antenna", "horn-antenna", "eirp-calculator", "patch-antenna", "rf-link-budget"],
   relatedTools: ["antenna-sim"],
   relatedBlogPosts: ["cubesat-uhf-link-budget-walkthrough"],
   liveWidgets: [
@@ -11817,7 +11818,8 @@ var hornAntenna = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["parabolic-dish-antenna", "eirp-calculator", "antenna-beamwidth"],
+  relatedCalculators: ["parabolic-dish-antenna", "eirp-calculator", "antenna-beamwidth", "yagi-antenna", "dipole-antenna"],
+  relatedBlogPosts: ["yagi-antenna-simulation-2m-band"],
   relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
@@ -19134,7 +19136,7 @@ var inductanceUnits = {
   shortTitle: "Inductance Converter",
   metaTitle: "Inductance Unit Converter \u2014 Free Online Conversion Tool",
   category: "unit-conversion",
-  description: "Convert inductance between henries, millihenries, microhenries, nanohenries, and picohenries.",
+  description: "Convert inductance units instantly \u2014 henries (H), millihenries (mH), microhenries (\xB5H), nanohenries (nH), and picohenries (pH). Essential for RF coil design, power converter inductors, and EMC filter components. Free online inductance unit converter.",
   keywords: ["inductance converter", "henry to microhenry", "mH to \u03BCH", "nH to \u03BCH", "inductance unit conversion", "inductor value converter"],
   inputs: [
     {
@@ -23731,7 +23733,8 @@ var solderPasteVolume = {
     reference: "IPC-7525A Stencil Design Guidelines"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["via-calculator", "trace-width-current", "via-stub-resonance"]
+  relatedCalculators: ["via-calculator", "trace-width-current", "via-stub-resonance"],
+  relatedBlogPosts: ["pcb-trace-width-current-capacity", "pcb-stackup-controlled-impedance"]
 };
 
 // src/lib/calculators/emc/emi-filter-lc.ts
@@ -26736,6 +26739,1845 @@ var voltageDrop = {
   relatedCalculators: ["led-resistor", "voltage-divider", "trace-width-current", "solar-panel-sizing"]
 };
 
+// src/lib/pcb/impedance.ts
+var ETA_0 = 376.730313412;
+var FRINGE_PEAK_T_OVER_B = 1 / 3;
+function stripFringeFactor(tOverB) {
+  const x = Math.min(Math.max(tOverB, 0), FRINGE_PEAK_T_OVER_B);
+  const a = 1 / (1 - x);
+  const second = a - 1 > 0 ? (a - 1) * Math.log(a * a - 1) : 0;
+  return 2 / Math.PI * (a * Math.log(a + 1) - second);
+}
+var FRINGE_ZERO_T = 2 / Math.PI * Math.LN2;
+function centredStripNormC(w, b) {
+  if (!(w > 0) || !(b > 0)) return 0;
+  const x = Math.PI * w / (2 * b);
+  if (x > 20) {
+    return 8 * (Math.LN2 + x + Math.log1p(Math.exp(-2 * x))) / Math.PI;
+  }
+  return 4 * ellipticK(Math.tanh(x)) / ellipticK(1 / Math.cosh(x));
+}
+var OFFSET_A = 0.245266;
+var OFFSET_P = 0.718328;
+var OFFSET_C = 3.038156;
+var OFFSET_Q = 0.578186;
+function striplineNormC(w, h1, h2, t) {
+  if (!(w > 0) || !(h1 > 0) || !(h2 > 0)) return 0;
+  const b0 = h1 + h2;
+  let c2 = 0.5 * (centredStripNormC(w, 2 * h1) + centredStripNormC(w, 2 * h2));
+  const u = Math.min(h1, h2) / b0;
+  if (u < 0.5) {
+    const excess = OFFSET_A * (Math.pow(0.5 / u, OFFSET_P) - 1);
+    const rolloff = 1 - Math.exp(-OFFSET_C * Math.pow(w / b0, OFFSET_Q));
+    c2 += excess * rolloff;
+  }
+  if (t > 0) {
+    const b = b0 + t;
+    c2 += 4 * (stripFringeFactor(t / b) - FRINGE_ZERO_T);
+  }
+  return c2;
+}
+function symmetricStripline(w, b, er, t) {
+  if (!(b > t) || !(w > 0)) return { Z0: 0, erEff: er };
+  const gap = (b - t) / 2;
+  const c2 = striplineNormC(w, gap, gap, t);
+  return { Z0: c2 > 0 ? ETA_0 / (Math.sqrt(er) * c2) : 0, erEff: er };
+}
+function asymmetricStripline(w, h1, h2, er, t) {
+  const c2 = striplineNormC(w, h1, h2, t);
+  return { Z0: c2 > 0 ? ETA_0 / (Math.sqrt(er) * c2) : 0, erEff: er };
+}
+function homogeneousStripZ0(w, h, er) {
+  const u = w / h;
+  if (!(u > 0) || !Number.isFinite(u)) return NaN;
+  if (u <= 1) {
+    return ETA_0 / (2 * Math.PI * Math.sqrt(er)) * Math.log(8 / u + u / 4);
+  }
+  return ETA_0 / Math.sqrt(er) / (u + 1.393 + 0.667 * Math.log(u + 1.444));
+}
+var EVEN_A = 0.518109;
+var EVEN_P = -0.356102;
+var EVEN_C = 1.484632;
+var EVEN_Q = 0.690292;
+function broadsideEvenNormC(w, h, s, t) {
+  if (!(h > 0) || !(w > 0)) return 0;
+  const half = 0.5 * centredStripNormC(w, 2 * h);
+  const excess = EVEN_A * Math.pow(w / h, EVEN_P) * (1 - Math.exp(-EVEN_C * Math.pow(s / h, EVEN_Q)));
+  let c2 = half * (1 + excess);
+  if (t > 0) c2 += 2 * (stripFringeFactor(t / (2 * h + t)) - FRINGE_ZERO_T);
+  return c2;
+}
+function broadsideStripline(w, b, d, er, t) {
+  const h = (b - d - 2 * t) / 2;
+  if (!(h > 0)) return { Z0: 0, erEff: er, Zodd: 0, Zeven: 0, Zdiff: 0, Zcommon: 0 };
+  const { Z0 } = asymmetricStripline(w, h, h + d + t, er, t);
+  const { Z0: Zodd } = asymmetricStripline(w, d / 2, h, er, t);
+  const cEven = broadsideEvenNormC(w, h, d / 2, t);
+  const Zeven = cEven > 0 ? ETA_0 / (Math.sqrt(er) * cEven) : 0;
+  return { Z0, erEff: er, Zodd, Zeven, Zdiff: 2 * Zodd, Zcommon: Zeven / 2 };
+}
+function broadsideUnshielded(w, d, er, t = 0) {
+  const h = d / 2;
+  const dw = t > 0 && h > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
+  const Zodd = homogeneousStripZ0(w + dw, h, er);
+  return { Z0: Zodd, erEff: er, Zdiff: 2 * Zodd };
+}
+function ellipticRatio(k) {
+  return ellipticK(k) / ellipticK(Math.sqrt(Math.max(1 - k * k, 0)));
+}
+var CPW_SIDEWALL_A = 0.195008;
+function cpwg(w, g, h, er, t) {
+  const k0i = w / (w + 2 * g);
+  const k1i = Math.tanh(Math.PI * w / (4 * h)) / Math.tanh(Math.PI * (w + 2 * g) / (4 * h));
+  const r0i = ellipticRatio(k0i);
+  const r1i = ellipticRatio(k1i);
+  const erEff0 = 1 + r1i / (r0i + r1i) * (er - 1);
+  const dg = t > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
+  const we = w + dg;
+  const ge = Math.max(g - dg / 2, 1e-4);
+  const k0 = we / (we + 2 * ge);
+  const k1 = Math.tanh(Math.PI * we / (4 * h)) / Math.tanh(Math.PI * (we + 2 * ge) / (4 * h));
+  const sum = ellipticRatio(k0) + ellipticRatio(k1);
+  let erEff = erEff0;
+  if (t > 0 && g > 0) {
+    const tg = t / g;
+    const dC = 2 * (tg + 2 / Math.PI * Math.log1p(CPW_SIDEWALL_A * tg));
+    const cAir = 2 * (r0i + r1i);
+    erEff = (erEff0 * cAir + dC) / (cAir + dC);
+  }
+  const Z0 = ETA_0 / 2 / (Math.sqrt(erEff) * sum);
+  return { Z0, erEff };
+}
+function ellipticK(k) {
+  if (k <= 0) return Math.PI / 2;
+  if (k >= 1) return Infinity;
+  let a = 1, b = Math.sqrt(1 - k * k);
+  for (let i = 0; i < 16; i++) {
+    const aNext = (a + b) / 2;
+    const bNext = Math.sqrt(a * b);
+    a = aNext;
+    b = bNext;
+    if (Math.abs(a - b) < 1e-12) break;
+  }
+  return Math.PI / (2 * a);
+}
+
+// src/lib/calculators/rf/coplanar-waveguide.ts
+var C_MM_PER_PS = 0.299792458;
+var ETA_02 = 376.730313412;
+var CPW_SIDEWALL_A2 = 0.195008;
+function ungroundedCpw(w, g, h, er, t) {
+  const ratio = (k) => ellipticK(k) / ellipticK(Math.sqrt(Math.max(1 - k * k, 0)));
+  const kIdeal = w / (w + 2 * g);
+  const k2 = Math.sinh(Math.PI * w / (4 * h)) / Math.sinh(Math.PI * (w + 2 * g) / (4 * h));
+  const erEff0 = 1 + (er - 1) / 2 * (ratio(k2) / ratio(kIdeal));
+  let erEff = erEff0;
+  if (t > 0 && g > 0) {
+    const tg = t / g;
+    const dC = 2 * (tg + 2 / Math.PI * Math.log1p(CPW_SIDEWALL_A2 * tg));
+    const cAir = 4 * ratio(kIdeal);
+    erEff = (erEff0 * cAir + dC) / (cAir + dC);
+  }
+  const dg = t > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
+  const wEff = w + dg;
+  const gEff = Math.max(g - dg / 2, 1e-4);
+  const kZ = wEff / (wEff + 2 * gEff);
+  const Z0 = ETA_02 / 4 / (Math.sqrt(erEff) * ratio(kZ));
+  return { Z0, erEff };
+}
+function calculateCoplanarWaveguide(inputs) {
+  const { structure, traceWidth, gapWidth, substrateHeight, dielectricConst, copperThickness } = inputs;
+  const warnings = [];
+  const t = copperThickness / 1e3;
+  const isGrounded = structure >= 0.5;
+  const { Z0: impedance, erEff: effectiveDielectric } = isGrounded ? cpwg(traceWidth, gapWidth, substrateHeight, dielectricConst, t) : ungroundedCpw(traceWidth, gapWidth, substrateHeight, dielectricConst, t);
+  const propagationDelay = Math.sqrt(effectiveDielectric) / C_MM_PER_PS;
+  const zAtGap = (gap) => isGrounded ? cpwg(traceWidth, gap, substrateHeight, dielectricConst, t).Z0 : ungroundedCpw(traceWidth, gap, substrateHeight, dielectricConst, t).Z0;
+  let lo = 0.01;
+  let hi = 10;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (zAtGap(mid) < 50) lo = mid;
+    else hi = mid;
+  }
+  const gapFor50 = (lo + hi) / 2;
+  if (isGrounded && gapWidth / substrateHeight > 2) {
+    warnings.push(
+      "Gap \u226B substrate height \u2014 the backing plane dominates and the line behaves as microstrip, not CPW"
+    );
+  }
+  if (t > 0 && t > gapWidth / 2) {
+    warnings.push("Copper thickness exceeds half the gap \u2014 thickness correction is unreliable");
+  }
+  if (Math.abs(impedance - 50) > 10) {
+    warnings.push(
+      `Z\u2080 is ${impedance.toFixed(1)} \u03A9 \u2014 set the gap to ${gapFor50.toFixed(3)} mm for 50 \u03A9`
+    );
+  }
+  return {
+    values: {
+      impedance,
+      effectiveDielectric,
+      propagationDelay,
+      gapFor50,
+      wavelengthAt1GHz: C_MM_PER_PS * 1e3 / Math.sqrt(effectiveDielectric)
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var coplanarWaveguide = {
+  slug: "coplanar-waveguide",
+  title: "Coplanar Waveguide Calculator (CPW & GCPW)",
+  shortTitle: "Coplanar Waveguide",
+  metaTitle: "Coplanar Waveguide Calculator \u2014 CPW & Grounded CPW Impedance",
+  category: "rf",
+  description: "Calculate coplanar waveguide impedance for CPW and grounded CPW (GCPW/CBCPW). Get Z\u2080, effective dielectric constant, propagation delay, and the gap width for 50 \u03A9.",
+  keywords: [
+    "coplanar waveguide calculator",
+    "CPW impedance",
+    "grounded coplanar waveguide",
+    "GCPW calculator",
+    "CBCPW impedance",
+    "conductor backed coplanar waveguide",
+    "50 ohm CPW"
+  ],
+  inputs: [
+    {
+      key: "structure",
+      label: "Structure",
+      symbol: "type",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 1,
+      step: 1,
+      tooltip: "Grounded CPW adds a ground plane on the far side of the substrate",
+      presets: [
+        { label: "Grounded CPW (GCPW)", values: { structure: 1 } },
+        { label: "CPW (no backing plane)", values: { structure: 0 } }
+      ]
+    },
+    {
+      key: "traceWidth",
+      label: "Centre Conductor Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 1,
+      min: 0.02,
+      step: 0.01
+    },
+    {
+      key: "gapWidth",
+      label: "Gap to Coplanar Ground",
+      symbol: "G",
+      unit: "mm",
+      defaultValue: 0.3,
+      min: 0.02,
+      step: 0.01,
+      tooltip: "Edge-to-edge spacing between the centre conductor and each side ground"
+    },
+    {
+      key: "substrateHeight",
+      label: "Substrate Height",
+      symbol: "h",
+      unit: "mm",
+      defaultValue: 0.508,
+      min: 0.05,
+      step: 0.01,
+      presets: [
+        { label: "0.254 mm (10 mil)", values: { substrateHeight: 0.254 } },
+        { label: "0.508 mm (20 mil)", values: { substrateHeight: 0.508 } },
+        { label: "0.762 mm (30 mil)", values: { substrateHeight: 0.762 } },
+        { label: "1.524 mm (60 mil)", values: { substrateHeight: 1.524 } }
+      ]
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 3.55,
+      min: 1,
+      step: 0.01,
+      presets: [
+        { label: "Rogers RO4003C (3.55)", values: { dielectricConst: 3.55 } },
+        { label: "Rogers RO4350B (3.66)", values: { dielectricConst: 3.66 } },
+        { label: "FR4 (4.4)", values: { dielectricConst: 4.4 } },
+        { label: "PTFE / RO5880 (2.2)", values: { dielectricConst: 2.2 } },
+        { label: "Alumina 96% (9.6)", values: { dielectricConst: 9.6 } }
+      ]
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Thickness",
+      symbol: "t",
+      unit: "\u03BCm",
+      defaultValue: 35,
+      min: 0,
+      step: 1,
+      presets: [
+        { label: "\xBD oz (17.5 \u03BCm)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } },
+        { label: "2 oz (70 \u03BCm)", values: { copperThickness: 70 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "impedance",
+      label: "Characteristic Impedance",
+      symbol: "Z\u2080",
+      unit: "\u03A9",
+      precision: 2,
+      primary: true,
+      thresholds: {
+        good: { min: 48, max: 52 },
+        warning: { min: 45, max: 55 }
+      }
+    },
+    {
+      key: "effectiveDielectric",
+      label: "Effective Dielectric Constant",
+      symbol: "\u03B5r_eff",
+      unit: "",
+      precision: 3
+    },
+    {
+      key: "propagationDelay",
+      label: "Propagation Delay",
+      symbol: "t_pd",
+      unit: "ps/mm",
+      precision: 3
+    },
+    { key: "gapFor50", label: "Gap for 50 \u03A9", symbol: "G\u2085\u2080", unit: "mm", precision: 4 },
+    {
+      key: "wavelengthAt1GHz",
+      label: "Guided Wavelength at 1 GHz",
+      symbol: "\u03BBg",
+      unit: "mm",
+      precision: 2
+    }
+  ],
+  calculate: calculateCoplanarWaveguide,
+  formula: {
+    primary: "GCPW: Z\u2080 = 60\u03C0 / (\u221A\u03B5r_eff \xB7 [K(k)/K(k\u2032) + K(k\u2083)/K(k\u2083\u2032)]);  CPW: Z\u2080 = (30\u03C0/\u221A\u03B5r_eff)\xB7K(k\u2032)/K(k)",
+    latex: "Z_0^{GCPW} = \\frac{60\\pi}{\\sqrt{\\varepsilon_{r,eff}}\\left[\\frac{K(k)}{K(k')} + \\frac{K(k_3)}{K(k_3')}\\right]}, \\qquad Z_0^{CPW} = \\frac{30\\pi}{\\sqrt{\\varepsilon_{r,eff}}}\\cdot\\frac{K(k')}{K(k)}, \\quad k=\\frac{W}{W+2G}",
+    variables: [
+      { symbol: "Z\u2080", description: "Characteristic impedance", unit: "\u03A9" },
+      { symbol: "W", description: "Centre conductor width", unit: "mm" },
+      { symbol: "G", description: "Gap to coplanar ground", unit: "mm" },
+      { symbol: "h", description: "Substrate height", unit: "mm" },
+      { symbol: "K(k)", description: "Complete elliptic integral of the first kind", unit: "" },
+      { symbol: "\u03B5r_eff", description: "Effective dielectric constant", unit: "" }
+    ],
+    derivation: [
+      "Conformal mapping transforms the CPW cross-section into a parallel-plate capacitor, so the impedance is set by the elliptic-integral ratio K(k\u2032)/K(k).",
+      "The ideal modulus is k = W/(W+2G); the finite substrate contributes a second modulus built from sinh (CPW) or tanh (grounded CPW) terms.",
+      "For grounded CPW, \u03B5r_eff = (1 + \u03B5r\xB7q)/(1 + q) with q the ratio of the two elliptic ratios. As h \u2192 \u221E this returns (1 + \u03B5r)/2, the ungrounded CPW limit.",
+      "Finite copper thickness widens the strip and narrows the gap, shifting Z\u2080 down by a few percent at 1 oz copper."
+    ],
+    reference: 'R. N. Simons, "Coplanar Waveguide Circuits, Components and Systems", Wiley 2001, ch. 2'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "microstrip-impedance",
+    "controlled-impedance",
+    "skin-depth",
+    "coax-impedance"
+  ],
+  relatedTools: ["sparam-pipeline"],
+  methodology: {
+    references: [
+      {
+        title: "Coplanar Waveguide Circuits, Components and Systems, ch. 2",
+        source: "R. N. Simons, Wiley 2001"
+      },
+      {
+        title: "Transmission Line Design Handbook, \xA73.3 (coplanar lines)",
+        source: "B. C. Wadell, Artech House 1991"
+      },
+      {
+        title: "Handbook of Mathematical Functions, ch. 17 (elliptic integrals)",
+        source: "Abramowitz & Stegun, NBS 1964"
+      }
+    ],
+    validationNote: "Complete elliptic integrals are evaluated by the arithmetic-geometric mean, which converges quadratically to double precision. The grounded-CPW branch is checked against its own limit: as substrate height grows the result converges to the ungrounded CPW value, with \u03B5r_eff \u2192 (1 + \u03B5r)/2. Copper thickness is modelled on both quantities \u2014 it widens the strip and narrows the gap for Z\u2080, and its sidewall capacitance sits in air, which lowers \u03B5r_eff. Validated against a 2-D electrostatic solver (itself checked against the analytic zero-thickness result to 0.11%) across \xBD\u20132 oz copper and four geometries: \u03B5r_eff within 0.52%, impedance within about 1%."
+  },
+  faqs: [
+    {
+      question: "When should I use grounded CPW instead of microstrip?",
+      answer: "Grounded CPW gives tighter field confinement, lower radiation, and easier 50 \u03A9 control on thick substrates where a microstrip trace would need to be impractically wide. It is the usual choice above roughly 10 GHz and for RF connector launches."
+    },
+    {
+      question: "Why does my grounded CPW behave like microstrip?",
+      answer: "When the gap is much larger than the substrate height, most of the field terminates on the backing plane rather than on the coplanar grounds, and the structure degenerates into microstrip. Keep the gap comparable to or smaller than the substrate height to stay in the CPW regime."
+    },
+    {
+      question: "How far apart should the stitching vias be?",
+      answer: "Space the vias that tie the coplanar grounds to the backing plane no more than \u03BB/20 apart at the highest frequency of interest \u2014 closer near connector launches and discontinuities \u2014 to suppress the parallel-plate mode."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/asymmetric-stripline.ts
+var C_MM_PER_PS2 = 0.299792458;
+function calculateAsymmetricStripline(inputs) {
+  const { traceWidth, heightToNearPlane, heightToFarPlane, copperThickness, dielectricConst } = inputs;
+  const warnings = [];
+  const t = copperThickness / 1e3;
+  const h1 = heightToNearPlane;
+  const h2 = heightToFarPlane;
+  const planeSpacing = h1 + h2 + t;
+  const { Z0: impedance } = asymmetricStripline(traceWidth, h1, h2, dielectricConst, t);
+  const { Z0: centredImpedance } = symmetricStripline(
+    traceWidth,
+    planeSpacing,
+    dielectricConst,
+    t
+  );
+  const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS2;
+  const asymmetryRatio = h2 / h1;
+  const offsetPenalty = centredImpedance > 0 ? (impedance - centredImpedance) / centredImpedance * 100 : 0;
+  if (h2 < h1) {
+    warnings.push("Far-plane height is smaller than near-plane height \u2014 swap the two values");
+  }
+  if (traceWidth / (2 * h1 + t) > 0.5) {
+    warnings.push(
+      "Wide trace relative to the near-plane spacing \u2014 the parallel-plate branch is in use and Z\u2080 carries a few percent more uncertainty"
+    );
+  }
+  if (t / planeSpacing > 0.25) {
+    warnings.push("t/b > 0.25 \u2014 copper is thick relative to the plane spacing; Z\u2080 is approximate");
+  }
+  if (asymmetryRatio > 3) {
+    warnings.push(
+      "Strongly offset trace \u2014 it couples almost entirely to the near plane, so keep that plane unbroken beneath the route. Beyond a 3:1 offset the superposition model also drifts a few percent high"
+    );
+  }
+  return {
+    values: {
+      impedance,
+      centredImpedance,
+      offsetPenalty,
+      propagationDelay,
+      planeSpacing,
+      asymmetryRatio
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var asymmetricStriplineCalc = {
+  slug: "asymmetric-stripline",
+  title: "Asymmetric Stripline Impedance Calculator",
+  shortTitle: "Asymmetric Stripline",
+  metaTitle: "Asymmetric Stripline Calculator \u2014 Offset Stripline Impedance",
+  category: "pcb",
+  description: "Calculate the characteristic impedance of an offset (asymmetric) stripline where the trace sits closer to one reference plane than the other. Compares against the centred case.",
+  keywords: [
+    "asymmetric stripline calculator",
+    "offset stripline impedance",
+    "stripline impedance calculator",
+    "unbalanced stripline",
+    "PCB stripline offset",
+    "IPC-2141 stripline"
+  ],
+  inputs: [
+    {
+      key: "traceWidth",
+      label: "Trace Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 0.15,
+      min: 0.02,
+      step: 0.01
+    },
+    {
+      key: "heightToNearPlane",
+      label: "Dielectric to Near Plane",
+      symbol: "h\u2081",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.01,
+      step: 0.01,
+      tooltip: "Dielectric thickness between the trace and the closer reference plane"
+    },
+    {
+      key: "heightToFarPlane",
+      label: "Dielectric to Far Plane",
+      symbol: "h\u2082",
+      unit: "mm",
+      defaultValue: 0.6,
+      min: 0.01,
+      step: 0.01,
+      tooltip: "Dielectric thickness between the trace and the farther reference plane"
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Thickness",
+      symbol: "t",
+      unit: "\u03BCm",
+      defaultValue: 35,
+      min: 5,
+      step: 1,
+      presets: [
+        { label: "\xBD oz (17.5 \u03BCm)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } },
+        { label: "2 oz (70 \u03BCm)", values: { copperThickness: 70 } }
+      ]
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.2,
+      min: 1,
+      step: 0.01,
+      presets: [
+        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
+        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
+        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
+        { label: "PTFE (2.2)", values: { dielectricConst: 2.2 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "impedance",
+      label: "Characteristic Impedance",
+      symbol: "Z\u2080",
+      unit: "\u03A9",
+      precision: 2,
+      primary: true,
+      thresholds: {
+        good: { min: 48, max: 52 },
+        warning: { min: 45, max: 55 }
+      }
+    },
+    {
+      key: "centredImpedance",
+      label: "Z\u2080 if Trace Were Centred",
+      symbol: "Z\u2080_sym",
+      unit: "\u03A9",
+      precision: 2,
+      tooltip: "Same plane-to-plane spacing, trace on the centreline"
+    },
+    {
+      key: "offsetPenalty",
+      label: "Impedance Shift from Offset",
+      symbol: "\u0394Z",
+      unit: "%",
+      precision: 2
+    },
+    {
+      key: "propagationDelay",
+      label: "Propagation Delay",
+      symbol: "t_pd",
+      unit: "ps/mm",
+      precision: 3
+    },
+    {
+      key: "planeSpacing",
+      label: "Plane-to-Plane Spacing",
+      symbol: "b",
+      unit: "mm",
+      precision: 3
+    },
+    { key: "asymmetryRatio", label: "Asymmetry Ratio", symbol: "h\u2082/h\u2081", unit: "", precision: 2 }
+  ],
+  calculate: calculateAsymmetricStripline,
+  formula: {
+    primary: "Z\u2080 = 2\xB7Z_a\xB7Z_b/(Z_a+Z_b),  Z_x = (60/\u221A\u03B5r)\xB7ln[4(2h_x+t)/(0.67\u03C0(0.8W+t))]",
+    latex: "Z_0 = \\frac{2 Z_a Z_b}{Z_a + Z_b},\\quad Z_x = \\frac{60}{\\sqrt{\\varepsilon_r}}\\ln\\!\\left[\\frac{4(2h_x+t)}{0.67\\pi(0.8W+t)}\\right]",
+    variables: [
+      { symbol: "Z\u2080", description: "Characteristic impedance", unit: "\u03A9" },
+      { symbol: "W", description: "Trace width", unit: "mm" },
+      { symbol: "h\u2081", description: "Dielectric to the near plane", unit: "mm" },
+      { symbol: "h\u2082", description: "Dielectric to the far plane", unit: "mm" },
+      { symbol: "t", description: "Copper thickness", unit: "mm" },
+      { symbol: "\u03B5r", description: "Dielectric constant", unit: "" }
+    ],
+    derivation: [
+      "An offset trace sees two independent half-structures: one bounded by the near plane, one by the far plane.",
+      "Mirroring each half about its own plane produces a symmetric stripline of spacing b = 2h + t, whose impedance is half that of the half-structure.",
+      "The two halves share the same conductor, so their capacitances add and their impedances combine in parallel: Z\u2080 = 2\xB7Z_a\xB7Z_b/(Z_a + Z_b).",
+      "With h\u2081 = h\u2082 the expression collapses exactly to the symmetric stripline result, and as either gap approaches zero Z\u2080 correctly goes to zero."
+    ],
+    reference: 'S. B. Cohn, "Characteristic Impedance of the Shielded-Strip Transmission Line", IRE Trans. MTT-2, 1954; IPC-2141A'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "controlled-impedance",
+    "dual-stripline",
+    "differential-pair",
+    "broadside-coupled-pair"
+  ],
+  relatedTools: ["sparam-pipeline"],
+  faqs: [
+    {
+      question: "Why would a stripline end up asymmetric?",
+      answer: "Standard stack-ups rarely land a signal layer exactly halfway between two planes \u2014 prepreg and core thicknesses come in fixed steps. Any stack-up with an odd core/prepreg arrangement puts the trace closer to one plane, which raises impedance sensitivity to that plane."
+    },
+    {
+      question: "Which plane carries the return current?",
+      answer: "Overwhelmingly the near plane. With h\u2082/h\u2081 of 3 or more, well over 70% of the return current flows in the closer plane, so that plane must stay unbroken beneath the entire route."
+    },
+    {
+      question: "Is asymmetric stripline worse than centred stripline?",
+      answer: "Not inherently. It is slightly more sensitive to plane splits and to etch tolerance on the near-plane dielectric, but impedance control is achievable. What matters is that the fabricator builds the stack-up you modelled."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/dual-stripline.ts
+var C_MM_PER_PS3 = 0.299792458;
+function calculateDualStripline(inputs) {
+  const {
+    traceWidth,
+    planeSpacing,
+    layer1Offset,
+    layerSeparation,
+    copperThickness,
+    dielectricConst
+  } = inputs;
+  const warnings = [];
+  const t = copperThickness / 1e3;
+  const h1 = layer1Offset;
+  const s = layerSeparation;
+  const h2 = planeSpacing - h1 - s - 2 * t;
+  if (h2 <= 0) {
+    return {
+      values: {
+        impedanceLayer1: 0,
+        impedanceLayer2: 0,
+        layer2Offset: 0,
+        propagationDelay: Math.sqrt(dielectricConst) / C_MM_PER_PS3,
+        broadsideCoupling: 0
+      },
+      errors: [
+        "Geometry does not fit: layer-1 offset + layer separation + 2\xD7 copper exceeds the plane spacing"
+      ]
+    };
+  }
+  const { Z0: impedanceLayer1 } = asymmetricStripline(
+    traceWidth,
+    h1,
+    s + t + h2,
+    dielectricConst,
+    t
+  );
+  const { Z0: impedanceLayer2 } = asymmetricStripline(
+    traceWidth,
+    h2,
+    s + t + h1,
+    dielectricConst,
+    t
+  );
+  const { Zodd, Zeven } = broadsideStripline(
+    traceWidth,
+    planeSpacing,
+    s,
+    dielectricConst,
+    t
+  );
+  const broadsideCoupling = Zeven + Zodd > 0 ? (Zeven - Zodd) / (Zeven + Zodd) * 100 : 0;
+  const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS3;
+  if (broadsideCoupling > 10) {
+    warnings.push(
+      `Broadside coupling is ${broadsideCoupling.toFixed(1)}% if the layers overlap \u2014 route the two signal layers orthogonally`
+    );
+  }
+  if (s < h1 || s < h2) {
+    warnings.push(
+      "Signal layers are closer to each other than to their reference planes \u2014 layer-to-layer coupling will dominate"
+    );
+  }
+  if ((s + 2 * t) / planeSpacing > 0.5) {
+    warnings.push(
+      "Signal layers are separated by more than half the plane gap \u2014 the coupling estimate is outside its accurate range and reads low"
+    );
+  }
+  if (traceWidth / (2 * Math.min(h1, h2) + t) > 0.5) {
+    warnings.push(
+      "Wide trace relative to the nearer plane spacing \u2014 the parallel-plate branch is in use and impedance carries a few percent more uncertainty"
+    );
+  }
+  return {
+    values: {
+      impedanceLayer1,
+      impedanceLayer2,
+      layer2Offset: h2,
+      propagationDelay,
+      broadsideCoupling
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var dualStripline = {
+  slug: "dual-stripline",
+  title: "Dual Stripline Impedance Calculator",
+  shortTitle: "Dual Stripline",
+  metaTitle: "Dual Stripline Calculator \u2014 Two Signal Layers Between Planes",
+  category: "pcb",
+  description: "Calculate impedance for both signal layers of a dual stripline (two routing layers sharing one plane pair), plus the broadside crosstalk penalty when traces overlap.",
+  keywords: [
+    "dual stripline calculator",
+    "dual stripline impedance",
+    "two signal layers stripline",
+    "PCB stackup impedance",
+    "broadside crosstalk",
+    "IPC-2141 dual stripline"
+  ],
+  inputs: [
+    {
+      key: "traceWidth",
+      label: "Trace Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 0.13,
+      min: 0.02,
+      step: 0.01
+    },
+    {
+      key: "planeSpacing",
+      label: "Plane-to-Plane Spacing",
+      symbol: "b",
+      unit: "mm",
+      defaultValue: 0.8,
+      min: 0.05,
+      step: 0.01,
+      tooltip: "Total dielectric height between the two reference planes"
+    },
+    {
+      key: "layer1Offset",
+      label: "Layer 1 to Upper Plane",
+      symbol: "h\u2081",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.01,
+      step: 0.01
+    },
+    {
+      key: "layerSeparation",
+      label: "Separation Between Signal Layers",
+      symbol: "s",
+      unit: "mm",
+      defaultValue: 0.33,
+      min: 0.01,
+      step: 0.01
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Thickness",
+      symbol: "t",
+      unit: "\u03BCm",
+      defaultValue: 35,
+      min: 5,
+      step: 1,
+      presets: [
+        { label: "\xBD oz (17.5 \u03BCm)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } }
+      ]
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.2,
+      min: 1,
+      step: 0.01,
+      presets: [
+        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
+        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
+        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "impedanceLayer1",
+      label: "Layer 1 Impedance",
+      symbol: "Z\u2080\u2081",
+      unit: "\u03A9",
+      precision: 2,
+      primary: true,
+      thresholds: { good: { min: 48, max: 52 }, warning: { min: 45, max: 55 } }
+    },
+    {
+      key: "impedanceLayer2",
+      label: "Layer 2 Impedance",
+      symbol: "Z\u2080\u2082",
+      unit: "\u03A9",
+      precision: 2,
+      thresholds: { good: { min: 48, max: 52 }, warning: { min: 45, max: 55 } }
+    },
+    {
+      key: "layer2Offset",
+      label: "Layer 2 to Lower Plane",
+      symbol: "h\u2082",
+      unit: "mm",
+      precision: 3
+    },
+    {
+      key: "broadsideCoupling",
+      label: "Broadside Coupling (Overlapping Traces)",
+      symbol: "k_b",
+      unit: "%",
+      precision: 2,
+      tooltip: "Backward-crosstalk coefficient if the two layers run directly over each other",
+      thresholds: { good: { max: 5 }, warning: { max: 10 }, danger: { min: 10 } }
+    },
+    {
+      key: "propagationDelay",
+      label: "Propagation Delay",
+      symbol: "t_pd",
+      unit: "ps/mm",
+      precision: 3
+    }
+  ],
+  calculate: calculateDualStripline,
+  formula: {
+    primary: "Z\u2080\u2099 = 2\xB7Z_a\xB7Z_b/(Z_a+Z_b) per layer;  k_b = (Z_even \u2212 Z_odd)/(Z_even + Z_odd)",
+    latex: "Z_{0n} = \\frac{2 Z_a Z_b}{Z_a + Z_b},\\qquad k_b = \\frac{Z_{even} - Z_{odd}}{Z_{even} + Z_{odd}}",
+    variables: [
+      { symbol: "b", description: "Plane-to-plane spacing", unit: "mm" },
+      { symbol: "h\u2081", description: "Layer 1 to upper plane", unit: "mm" },
+      { symbol: "h\u2082", description: "Layer 2 to lower plane", unit: "mm" },
+      { symbol: "s", description: "Separation between the two signal layers", unit: "mm" },
+      { symbol: "k_b", description: "Broadside backward-crosstalk coefficient", unit: "" }
+    ],
+    derivation: [
+      "Each signal layer is an offset stripline: closer to its own plane by h, farther from the opposite plane by s + t + h_other.",
+      "The other signal layer is a floating conductor rather than a reference, so it is excluded from the impedance model. That assumption holds when the two layers route orthogonally.",
+      "Where traces do overlap, the pair behaves as a broadside-coupled line. Odd mode places an electric wall midway between the layers; even mode leaves each trace referenced only to its nearer plane.",
+      "The backward-crosstalk coefficient follows from the mode split, k_b = (Z_even \u2212 Z_odd)/(Z_even + Z_odd)."
+    ],
+    reference: 'IPC-2141A; E. Bogatin, "Signal and Power Integrity \u2014 Simplified", 3rd ed., ch. 11'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "asymmetric-stripline",
+    "controlled-impedance",
+    "pcb-crosstalk",
+    "stackup-builder"
+  ],
+  relatedTools: ["sparam-pipeline"],
+  faqs: [
+    {
+      question: "Why use dual stripline at all?",
+      answer: "It buys a second routing layer for the same pair of reference planes, which saves two copper layers and the associated cost on dense boards. The price is layer-to-layer coupling that has to be managed by routing discipline."
+    },
+    {
+      question: "Do the two signal layers really have to be orthogonal?",
+      answer: "Yes, in practice. Parallel overlapping runs on the two layers see broadside coupling that is far stronger than the edge coupling within a layer, because the traces face each other across a thin dielectric with no plane between them. Routing one layer horizontally and the other vertically keeps the overlap length near zero."
+    },
+    {
+      question: "Why do the two layers show different impedance?",
+      answer: "Unless the stack-up is symmetric, each layer sits at a different distance from its nearer plane. The layer closer to its plane has the lower impedance. Adjust trace width per layer if you need both to hit the same target."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/broadside-coupled-pair.ts
+var C_MM_PER_PS4 = 0.299792458;
+function calculateBroadsideCoupledPair(inputs) {
+  const { shielded, traceWidth, traceSeparation, planeSpacing, copperThickness, dielectricConst } = inputs;
+  const warnings = [];
+  const t = copperThickness / 1e3;
+  const isShielded = shielded >= 0.5;
+  const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS4;
+  if (isShielded) {
+    const heightToPlane = (planeSpacing - traceSeparation - 2 * t) / 2;
+    if (heightToPlane <= 0) {
+      return {
+        values: {
+          diffImpedance: 0,
+          oddImpedance: 0,
+          commonImpedance: 0,
+          uncoupledImpedance: 0,
+          heightToPlane: 0,
+          propagationDelay
+        },
+        errors: [
+          "Geometry does not fit: trace separation + 2\xD7 copper thickness exceeds the plane spacing"
+        ]
+      };
+    }
+    const {
+      Z0: uncoupledImpedance,
+      Zodd: oddImpedance2,
+      Zdiff: Zdiff2,
+      Zcommon
+    } = broadsideStripline(traceWidth, planeSpacing, traceSeparation, dielectricConst, t);
+    if (traceSeparation > 2 * heightToPlane) {
+      warnings.push(
+        "Traces are farther apart than they are from their planes \u2014 coupling is weak and the pair behaves as two independent striplines"
+      );
+    }
+    if ((traceSeparation + 2 * t) / planeSpacing > 0.5) {
+      warnings.push(
+        "Trace separation fills more than half the plane gap \u2014 the common-mode model is outside its accurate range and understates coupling"
+      );
+    }
+    if (Zdiff2 < 70 || Zdiff2 > 130) {
+      warnings.push(
+        `Z_diff is ${Zdiff2.toFixed(1)} \u03A9 \u2014 typical targets are 90 \u03A9 (USB), 100 \u03A9 (Ethernet/LVDS), or 85 \u03A9 (PCIe)`
+      );
+    }
+    return {
+      values: {
+        diffImpedance: Zdiff2,
+        oddImpedance: oddImpedance2,
+        commonImpedance: Zcommon,
+        uncoupledImpedance,
+        heightToPlane,
+        propagationDelay
+      },
+      warnings: warnings.length > 0 ? warnings : void 0
+    };
+  }
+  const { Z0: oddImpedance, Zdiff } = broadsideUnshielded(
+    traceWidth,
+    traceSeparation,
+    dielectricConst,
+    t
+  );
+  warnings.push(
+    "No reference planes: common-mode impedance is undefined and common-mode noise has no return path \u2014 this geometry radiates"
+  );
+  if (traceSeparation > traceWidth) {
+    warnings.push(
+      "Separation exceeds trace width \u2014 fields spread well beyond the pair and the closed-form model loses accuracy"
+    );
+  }
+  return {
+    values: {
+      diffImpedance: Zdiff,
+      oddImpedance,
+      commonImpedance: 0,
+      uncoupledImpedance: 0,
+      heightToPlane: 0,
+      propagationDelay
+    },
+    warnings
+  };
+}
+var broadsideCoupledPair = {
+  slug: "broadside-coupled-pair",
+  title: "Broadside-Coupled Differential Pair Calculator",
+  shortTitle: "Broadside Pair",
+  metaTitle: "Broadside-Coupled Differential Pair Calculator \u2014 Stacked Trace Zdiff",
+  category: "pcb",
+  description: "Calculate differential and common-mode impedance for a broadside-coupled pair \u2014 two traces stacked on adjacent layers \u2014 for both shielded (between planes) and unshielded geometries.",
+  keywords: [
+    "broadside coupled differential pair",
+    "broadside coupled stripline",
+    "stacked differential pair impedance",
+    "differential impedance calculator",
+    "odd mode impedance",
+    "broadside pair Zdiff"
+  ],
+  inputs: [
+    {
+      key: "shielded",
+      label: "Geometry",
+      symbol: "type",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 1,
+      step: 1,
+      presets: [
+        { label: "Shielded (between planes)", values: { shielded: 1 } },
+        { label: "Unshielded (no planes)", values: { shielded: 0 } }
+      ]
+    },
+    {
+      key: "traceWidth",
+      label: "Trace Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 0.15,
+      min: 0.02,
+      step: 0.01
+    },
+    {
+      key: "traceSeparation",
+      label: "Vertical Separation Between Traces",
+      symbol: "d",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.01,
+      step: 0.01,
+      tooltip: "Dielectric thickness between the two stacked traces"
+    },
+    {
+      key: "planeSpacing",
+      label: "Plane-to-Plane Spacing",
+      symbol: "b",
+      unit: "mm",
+      defaultValue: 1,
+      min: 0.05,
+      step: 0.01,
+      tooltip: "Shielded geometry only \u2014 ignored when no planes are present"
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Thickness",
+      symbol: "t",
+      unit: "\u03BCm",
+      defaultValue: 35,
+      min: 5,
+      step: 1,
+      presets: [
+        { label: "\xBD oz (17.5 \u03BCm)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } }
+      ]
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.2,
+      min: 1,
+      step: 0.01,
+      presets: [
+        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
+        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
+        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
+        { label: "Polyimide flex (3.5)", values: { dielectricConst: 3.5 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "diffImpedance",
+      label: "Differential Impedance",
+      symbol: "Z_diff",
+      unit: "\u03A9",
+      precision: 2,
+      primary: true,
+      thresholds: { good: { min: 90, max: 110 }, warning: { min: 80, max: 120 } }
+    },
+    {
+      key: "oddImpedance",
+      label: "Odd-Mode (Single-Ended) Impedance",
+      symbol: "Z_odd",
+      unit: "\u03A9",
+      precision: 2
+    },
+    {
+      key: "commonImpedance",
+      label: "Common-Mode Impedance",
+      symbol: "Z_common",
+      unit: "\u03A9",
+      precision: 2,
+      tooltip: "Undefined (reported as 0) for the unshielded geometry"
+    },
+    {
+      key: "uncoupledImpedance",
+      label: "Single Trace Without Its Partner",
+      symbol: "Z\u2080",
+      unit: "\u03A9",
+      precision: 2,
+      tooltip: "Reference value \u2014 the same trace with the other layer removed"
+    },
+    {
+      key: "heightToPlane",
+      label: "Each Trace to Its Nearer Plane",
+      symbol: "h",
+      unit: "mm",
+      precision: 3
+    },
+    {
+      key: "propagationDelay",
+      label: "Propagation Delay",
+      symbol: "t_pd",
+      unit: "ps/mm",
+      precision: 3
+    }
+  ],
+  calculate: calculateBroadsideCoupledPair,
+  formula: {
+    primary: "Z_diff = 2\xB7Z_odd,  Z_odd = offset stripline with a virtual ground at d/2",
+    latex: "Z_{diff} = 2 Z_{odd},\\qquad Z_{common} = \\tfrac{1}{2} Z_{even}",
+    variables: [
+      { symbol: "Z_diff", description: "Differential impedance", unit: "\u03A9" },
+      { symbol: "Z_odd", description: "Odd-mode impedance of one trace", unit: "\u03A9" },
+      { symbol: "W", description: "Trace width", unit: "mm" },
+      { symbol: "d", description: "Vertical separation between traces", unit: "mm" },
+      { symbol: "b", description: "Plane-to-plane spacing", unit: "mm" },
+      { symbol: "h", description: "(b \u2212 d \u2212 2t)/2, each trace to its nearer plane", unit: "mm" }
+    ],
+    derivation: [
+      "A symmetric broadside pair driven differentially puts a virtual ground exactly midway between the two traces \u2014 an electric wall at d/2.",
+      "Shielded case: each trace is then an offset stripline with the virtual ground at d/2 on one side and the real plane at h on the other, so Z_diff = 2\xB7Z_odd.",
+      "Even mode replaces the electric wall with a magnetic wall, leaving each trace referenced only to its own plane, so Z_common = Z_even/2.",
+      "Unshielded case: with no planes, the virtual ground is the only reference, and each trace becomes a strip at height d/2 over ground in a homogeneous dielectric."
+    ],
+    reference: 'B. C. Wadell, "Transmission Line Design Handbook", Artech House 1991, \xA74.5 (broadside-coupled lines)'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "differential-pair",
+    "asymmetric-stripline",
+    "dual-stripline",
+    "controlled-impedance"
+  ],
+  relatedTools: ["sparam-pipeline", "eye-diagram"],
+  faqs: [
+    {
+      question: "When is a broadside pair better than an edge-coupled pair?",
+      answer: "Broadside pairs are the standard choice on flex circuits and on very dense boards, because they occupy half the routing width of an edge-coupled pair. They also give tighter coupling for a given layer thickness."
+    },
+    {
+      question: "What is the main drawback?",
+      answer: "Layer-to-layer registration. The differential impedance depends directly on the vertical alignment of the two traces, and fabricators hold layer-to-layer registration much less tightly than they hold etch width. Any lateral misalignment converts differential signal into common mode."
+    },
+    {
+      question: "Why is common-mode impedance reported as zero for the unshielded case?",
+      answer: "Common mode needs a return path, and with no reference plane there is none \u2014 the quantity is genuinely undefined rather than zero. Treat that geometry as differential-only, and expect it to radiate any common-mode current it picks up."
+    }
+  ]
+};
+
+// src/lib/calculators/signal/rise-time-bandwidth.ts
+var LN9_OVER_2PI = Math.log(9) / (2 * Math.PI);
+var RATIO_20_80_TO_10_90 = Math.log(9) / Math.log(4);
+function calculateRiseTimeBandwidth(inputs) {
+  const { riseTime, riseTimeConvention, clockFrequency } = inputs;
+  const warnings = [];
+  const tr1090Ps = riseTimeConvention >= 0.5 ? riseTime * RATIO_20_80_TO_10_90 : riseTime;
+  const tr = tr1090Ps * 1e-12;
+  if (!(tr > 0)) {
+    return {
+      values: {
+        kneeFrequency: 0,
+        bandwidth3dB: 0,
+        spectralBandwidth: 0,
+        harmonicNumber: 0,
+        riseTime1090: 0
+      },
+      errors: ["Rise time must be greater than zero"]
+    };
+  }
+  const bandwidth3dB = LN9_OVER_2PI / tr / 1e6;
+  const kneeFrequency = 0.5 / tr / 1e6;
+  const spectralBandwidth = 1 / (Math.PI * tr) / 1e6;
+  const harmonicNumber = clockFrequency > 0 ? kneeFrequency / clockFrequency : 0;
+  if (clockFrequency > 0 && harmonicNumber < 3) {
+    warnings.push(
+      "Knee frequency is below the 3rd harmonic \u2014 edges are slow relative to the clock, so the waveform will look rounded rather than square"
+    );
+  }
+  if (clockFrequency > 0 && tr1090Ps > 0.4 * (1e6 / clockFrequency)) {
+    warnings.push("Rise time exceeds 40% of the bit period \u2014 expect significant ISI");
+  }
+  if (kneeFrequency > 2e4) {
+    warnings.push(
+      "Knee frequency is above 20 GHz \u2014 dielectric loss and copper roughness dominate; a closed-form estimate is no longer enough"
+    );
+  }
+  return {
+    values: {
+      kneeFrequency,
+      bandwidth3dB,
+      spectralBandwidth,
+      harmonicNumber,
+      riseTime1090: tr1090Ps
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var riseTimeBandwidth = {
+  slug: "rise-time-bandwidth",
+  title: "Rise Time to Bandwidth Calculator",
+  shortTitle: "Rise Time \u2194 BW",
+  metaTitle: "Rise Time to Bandwidth Calculator \u2014 Knee Frequency & 3 dB BW",
+  category: "signal",
+  description: "Convert digital rise time to signal bandwidth. Get the knee frequency, 3 dB bandwidth, IPC-2251 spectral bandwidth, and the highest significant harmonic of your clock.",
+  keywords: [
+    "rise time bandwidth calculator",
+    "knee frequency calculator",
+    "signal bandwidth from rise time",
+    "0.35 rise time bandwidth",
+    "digital signal bandwidth",
+    "IPC-2251 bandwidth"
+  ],
+  inputs: [
+    {
+      key: "riseTime",
+      label: "Rise Time",
+      symbol: "t_r",
+      unit: "ps",
+      defaultValue: 500,
+      min: 1,
+      step: 10,
+      presets: [
+        { label: "1 ns (slow CMOS)", values: { riseTime: 1e3 } },
+        { label: "500 ps (LVCMOS)", values: { riseTime: 500 } },
+        { label: "150 ps (DDR4)", values: { riseTime: 150 } },
+        { label: "35 ps (25G SerDes)", values: { riseTime: 35 } }
+      ]
+    },
+    {
+      key: "riseTimeConvention",
+      label: "Rise Time Convention",
+      symbol: "conv",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      tooltip: "Datasheets quote either 10\u201390% or 20\u201380%. The 1.585 conversion is the single-pole value \u2014 the largest in common use, so it is the least conservative choice for sizing an interconnect",
+      presets: [
+        { label: "10\u201390%", values: { riseTimeConvention: 0 } },
+        { label: "20\u201380%", values: { riseTimeConvention: 1 } }
+      ]
+    },
+    {
+      key: "clockFrequency",
+      label: "Clock Frequency",
+      symbol: "f_clk",
+      unit: "MHz",
+      defaultValue: 100,
+      min: 0,
+      step: 1,
+      tooltip: "Optional \u2014 used to report how many harmonics fall below the knee frequency",
+      presets: [
+        { label: "25 MHz", values: { clockFrequency: 25 } },
+        { label: "100 MHz", values: { clockFrequency: 100 } },
+        { label: "400 MHz", values: { clockFrequency: 400 } },
+        { label: "1600 MHz (DDR4-3200)", values: { clockFrequency: 1600 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "kneeFrequency",
+      label: "Knee Frequency",
+      symbol: "f_knee",
+      unit: "MHz",
+      precision: 2,
+      primary: true,
+      tooltip: "0.5/t_r \u2014 above this a digital edge carries negligible energy"
+    },
+    {
+      key: "bandwidth3dB",
+      label: "3 dB Bandwidth",
+      symbol: "f_3dB",
+      unit: "MHz",
+      precision: 2,
+      tooltip: "ln(9)/(2\u03C0\xB7t_r) = 0.3497/t_r, the exact single-pole result"
+    },
+    {
+      key: "spectralBandwidth",
+      label: "Spectral Bandwidth (1/\u03C0t_r)",
+      symbol: "f_s",
+      unit: "MHz",
+      precision: 2
+    },
+    {
+      key: "harmonicNumber",
+      label: "Highest Significant Harmonic",
+      symbol: "n",
+      unit: "\xD7f_clk",
+      precision: 2
+    },
+    {
+      key: "riseTime1090",
+      label: "Rise Time (10\u201390% equivalent)",
+      symbol: "t_r,10-90",
+      unit: "ps",
+      precision: 2
+    }
+  ],
+  calculate: calculateRiseTimeBandwidth,
+  formula: {
+    primary: "f_knee = 0.5/t_r,  f_3dB = ln(9)/(2\u03C0\xB7t_r) \u2248 0.35/t_r",
+    latex: "f_{knee} = \\frac{0.5}{t_r},\\qquad f_{3dB} = \\frac{\\ln 9}{2\\pi t_r} \\approx \\frac{0.35}{t_r}",
+    variables: [
+      { symbol: "t_r", description: "Rise time, 10\u201390%", unit: "s" },
+      { symbol: "f_knee", description: "Knee frequency", unit: "Hz" },
+      { symbol: "f_3dB", description: "3 dB bandwidth", unit: "Hz" },
+      { symbol: "f_clk", description: "Clock frequency", unit: "Hz" }
+    ],
+    derivation: [
+      "A single-pole step response reaches 10% at \u2212\u03C4\xB7ln(0.9) and 90% at \u2212\u03C4\xB7ln(0.1), so t_r = \u03C4\xB7ln(9).",
+      "With f_3dB = 1/(2\u03C0\u03C4), the product f_3dB\xB7t_r = ln(9)/(2\u03C0) = 0.3497 \u2014 the familiar 0.35 constant, exactly.",
+      "The knee frequency 0.5/t_r comes from Johnson & Graham: it is the frequency above which a digital edge contains negligible energy, which sets how far an interconnect model must remain valid.",
+      "For a 20\u201380% quoted rise time, scale by ln(9)/ln(4) = 1.585 to get the 10\u201390% equivalent before applying either relation."
+    ],
+    reference: 'H. Johnson & M. Graham, "High-Speed Digital Design: A Handbook of Black Magic", Prentice Hall 1993, \xA71.3; IPC-2251'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "critical-trace-length",
+    "pcb-crosstalk",
+    "clock-jitter",
+    "controlled-impedance"
+  ],
+  relatedTools: ["eye-diagram"],
+  faqs: [
+    {
+      question: "Should I design to the knee frequency or the 3 dB bandwidth?",
+      answer: "Design the interconnect to the knee frequency and the receiver front end to the 3 dB bandwidth. The knee tells you where the trace, connector, and via must still behave; the 3 dB figure tells you what the amplifier must pass without degrading the edge."
+    },
+    {
+      question: "Why is the constant 0.35 and not 0.5?",
+      answer: "They answer different questions. 0.35/t_r is the exact single-pole 3 dB bandwidth, derived from ln(9)/2\u03C0. 0.5/t_r is Johnson and Graham's knee frequency \u2014 a deliberately conservative bound on where a digital edge stops carrying meaningful energy."
+    },
+    {
+      question: "What if my signal is not single-pole?",
+      answer: "Real channels are multi-pole, so the true relationship sits between roughly 0.32 and 0.45 depending on the response shape. Use 0.35 for estimation and simulate when the margin is tight."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/critical-trace-length.ts
+var C_MM_PER_PS5 = 0.299792458;
+function calculateCriticalTraceLength(inputs) {
+  const { riseTime, dielectricConst, traceLength, criterion, traceType } = inputs;
+  const warnings = [];
+  const erEff = traceType >= 0.5 ? dielectricConst : (dielectricConst + 1) / 2 + (dielectricConst - 1) / 2 * Math.pow(1 + 12 / 2, -0.5);
+  const propagationDelay = Math.sqrt(erEff) / C_MM_PER_PS5;
+  const traceDelay = traceLength * propagationDelay;
+  const divisor = criterion >= 0.5 ? 3 : 5;
+  const criticalLength = riseTime / (divisor * propagationDelay);
+  const criticalLengthPermissive = riseTime / (3 * propagationDelay);
+  const lengthRatio = criticalLength > 0 ? traceLength / criticalLength : 0;
+  if (lengthRatio > 1) {
+    warnings.push(
+      `Trace is ${lengthRatio.toFixed(2)}\xD7 the critical length \u2014 terminate it and route it as a controlled-impedance transmission line`
+    );
+  }
+  if (lengthRatio > 0.7 && lengthRatio <= 1) {
+    warnings.push(
+      "Trace is close to the critical length \u2014 leave room for a series termination resistor"
+    );
+  }
+  if (traceDelay > riseTime) {
+    warnings.push(
+      "One-way delay already exceeds the rise time \u2014 reflections arrive after the edge has settled and will show as distinct steps"
+    );
+  }
+  return {
+    values: {
+      criticalLength,
+      criticalLengthPermissive,
+      propagationDelay,
+      traceDelay,
+      lengthRatio,
+      effectiveDielectric: erEff
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var criticalTraceLength = {
+  slug: "critical-trace-length",
+  title: "Critical Trace Length Calculator",
+  shortTitle: "Critical Length",
+  metaTitle: "Critical Trace Length Calculator \u2014 When to Terminate a PCB Trace",
+  category: "pcb",
+  description: "Find the maximum PCB trace length before transmission-line effects matter. Compares your trace against Bogatin's 20% and 3\xD7 rise-time criteria and reports propagation delay.",
+  keywords: [
+    "critical trace length calculator",
+    "maximum trace length",
+    "when to terminate PCB trace",
+    "transmission line effects",
+    "electrically long trace",
+    "propagation delay PCB"
+  ],
+  inputs: [
+    {
+      key: "riseTime",
+      label: "Signal Rise Time",
+      symbol: "t_r",
+      unit: "ps",
+      defaultValue: 500,
+      min: 1,
+      step: 10,
+      presets: [
+        { label: "2 ns (slow logic)", values: { riseTime: 2e3 } },
+        { label: "1 ns (HC/HCT)", values: { riseTime: 1e3 } },
+        { label: "500 ps (LVCMOS)", values: { riseTime: 500 } },
+        { label: "150 ps (DDR4)", values: { riseTime: 150 } }
+      ]
+    },
+    {
+      key: "traceType",
+      label: "Trace Type",
+      symbol: "type",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      presets: [
+        { label: "Microstrip (outer layer)", values: { traceType: 0 } },
+        { label: "Stripline (inner layer)", values: { traceType: 1 } }
+      ]
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.2,
+      min: 1,
+      step: 0.01,
+      tooltip: "Microstrip \u03B5r_eff assumes W/h = 2; other aspect ratios shift the delay by a few percent",
+      presets: [
+        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
+        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
+        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
+        { label: "PTFE (2.2)", values: { dielectricConst: 2.2 } }
+      ]
+    },
+    {
+      key: "traceLength",
+      label: "Actual Trace Length",
+      symbol: "L",
+      unit: "mm",
+      defaultValue: 50,
+      min: 0,
+      step: 1
+    },
+    {
+      key: "criterion",
+      label: "Criterion",
+      symbol: "crit",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      tooltip: "Conservative is Bogatin's 20% rule (reflections virtually invisible); permissive is his t_r > 3\xB7t_d threshold",
+      presets: [
+        { label: "Conservative (t_d < 0.2\xB7t_r)", values: { criterion: 0 } },
+        { label: "Permissive (t_r > 3\xB7t_d)", values: { criterion: 1 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "criticalLength",
+      label: "Critical Trace Length",
+      symbol: "L_crit",
+      unit: "mm",
+      precision: 2,
+      primary: true
+    },
+    {
+      key: "criticalLengthPermissive",
+      label: "Critical Length (permissive rule)",
+      symbol: "L_crit,3",
+      unit: "mm",
+      precision: 2
+    },
+    {
+      key: "lengthRatio",
+      label: "Actual \xF7 Critical Length",
+      symbol: "L/L_crit",
+      unit: "\xD7",
+      precision: 3,
+      thresholds: { good: { max: 0.7 }, warning: { max: 1 }, danger: { min: 1 } }
+    },
+    {
+      key: "traceDelay",
+      label: "One-Way Trace Delay",
+      symbol: "t_d",
+      unit: "ps",
+      precision: 2
+    },
+    {
+      key: "propagationDelay",
+      label: "Propagation Delay",
+      symbol: "t_pd",
+      unit: "ps/mm",
+      precision: 3
+    },
+    {
+      key: "effectiveDielectric",
+      label: "Effective Dielectric Constant",
+      symbol: "\u03B5r_eff",
+      unit: "",
+      precision: 3
+    }
+  ],
+  calculate: calculateCriticalTraceLength,
+  formula: {
+    primary: "L_crit = t_r / (k \xB7 t_pd),  t_pd = \u221A\u03B5r_eff / c,  k = 5 (conservative) or 3",
+    latex: "L_{crit} = \\frac{t_r}{k\\, t_{pd}},\\qquad t_{pd} = \\frac{\\sqrt{\\varepsilon_{r,eff}}}{c}",
+    variables: [
+      { symbol: "L_crit", description: "Critical trace length", unit: "mm" },
+      { symbol: "t_r", description: "Signal rise time", unit: "ps" },
+      { symbol: "t_pd", description: "Propagation delay per unit length", unit: "ps/mm" },
+      { symbol: "\u03B5r_eff", description: "Effective dielectric constant", unit: "" },
+      { symbol: "k", description: "Criterion divisor, 5 or 3", unit: "" }
+    ],
+    derivation: [
+      "A signal travels at c/\u221A\u03B5r_eff, so the delay per unit length is t_pd = \u221A\u03B5r_eff/c \u2014 about 6.8 ps/mm for FR4 stripline and 6.0 ps/mm for FR4 microstrip.",
+      "A reflection from the far end takes 2\xB7t_d to return. If that round trip completes well inside the rise time, driver and load stay in lockstep and the net behaves as a lumped capacitor.",
+      'Bogatin gives two thresholds. Keeping the trace delay under 20% of the rise time makes reflections "virtually invisible" \u2014 that is k = 5. The looser form asks only that the rise time exceed three times the delay, which is k = 3.',
+      "Microstrip carries part of its field in air, so \u03B5r_eff is well below \u03B5r and the same trace can run noticeably longer than an inner-layer stripline. The microstrip \u03B5r_eff here assumes W/h = 2; across a realistic W/h span of 0.5 to 10 the delay varies by about \u22125% to +7%."
+    ],
+    reference: 'E. Bogatin, "Signal and Power Integrity \u2014 Simplified", 2nd ed. (20% rule); E. Bogatin, "The Critical Length of a Transmission Line", Polar Instruments'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "rise-time-bandwidth",
+    "controlled-impedance",
+    "pcb-crosstalk",
+    "via-stub-resonance"
+  ],
+  relatedTools: ["eye-diagram"],
+  faqs: [
+    {
+      question: "Which criterion should I use?",
+      answer: "Use the conservative one \u2014 trace delay under 20% of the rise time \u2014 for anything with real timing margin, such as DDR, SerDes, and fast clocks. Bogatin describes reflections as virtually invisible below that threshold. Use the permissive one, rise time greater than three times the delay, for slow non-critical signals like resets, LEDs, or configuration straps where a few percent of ringing is harmless."
+    },
+    {
+      question: "Does this apply to differential pairs?",
+      answer: "Yes, with the same numbers \u2014 the criterion is about the edge rate versus the delay, not about the signalling scheme. Differential pairs are simply almost always terminated anyway, because the receivers require it."
+    },
+    {
+      question: "What do I do when a trace exceeds the critical length?",
+      answer: "Route it as a controlled-impedance line and terminate it: a series resistor at the driver for point-to-point nets, or a parallel/Thevenin termination at the receiver for multi-drop. Keep the reference plane continuous underneath either way."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/fusing-current.ts
+var COPPER_MELTING_C = 1083;
+var COPPER_INFERRED_ZERO_C = 234;
+var ONDERDONK_CONSTANT = 33;
+var SQ_MIL_TO_CIRCULAR_MIL = 4 / Math.PI;
+var MM_TO_MIL = 1e3 / 25.4;
+function calculateFusingCurrent(inputs) {
+  const { traceWidth, copperThickness, duration, ambientTemp, etchFactor, operatingCurrent } = inputs;
+  const warnings = [];
+  const wMil = traceWidth * MM_TO_MIL;
+  const tMil = copperThickness / 1e3 * MM_TO_MIL;
+  const sideLoss = etchFactor > 0 ? tMil / etchFactor : 0;
+  const topWidthMil = Math.max(wMil - 2 * sideLoss, 0);
+  const areaSqMil = tMil * ((wMil + topWidthMil) / 2);
+  const areaCircularMil = areaSqMil * SQ_MIL_TO_CIRCULAR_MIL;
+  if (areaSqMil <= 0 || duration <= 0) {
+    return {
+      values: {
+        fusingCurrent: 0,
+        crossSectionArea: 0,
+        timeToFuse: 0,
+        currentMargin: 0,
+        effectiveWidth: 0
+      },
+      errors: ["Cross-sectional area and duration must both be greater than zero"]
+    };
+  }
+  const tempTerm = Math.log10(
+    (COPPER_MELTING_C - ambientTemp) / (COPPER_INFERRED_ZERO_C + ambientTemp) + 1
+  );
+  const fusingCurrent2 = areaCircularMil * Math.sqrt(tempTerm / (ONDERDONK_CONSTANT * duration));
+  const timeToFuse = operatingCurrent > 0 ? Math.pow(areaCircularMil / operatingCurrent, 2) * tempTerm / ONDERDONK_CONSTANT : 0;
+  const currentMargin = operatingCurrent > 0 ? fusingCurrent2 / operatingCurrent : 0;
+  if (duration > 1.5) {
+    warnings.push(
+      "Beyond about 1.5 s the adiabatic assumption weakens \u2014 the laminate and planes carry heat away. Measured PCB traces survive roughly 1.2\xD7 to 2.5\xD7 this current at long durations, so treat the result as a lower bound"
+    );
+  }
+  if (operatingCurrent > 0 && currentMargin < 2) {
+    warnings.push(
+      `Only ${currentMargin.toFixed(2)}\xD7 margin to fusing \u2014 this is a survival limit, not a continuous rating. Size continuous current with IPC-2152 instead`
+    );
+  }
+  if (etchFactor > 0 && topWidthMil <= 0) {
+    warnings.push(
+      "Etch slope consumes the full trace width \u2014 check the copper weight and etch factor"
+    );
+  }
+  return {
+    values: {
+      fusingCurrent: fusingCurrent2,
+      crossSectionArea: areaSqMil,
+      timeToFuse,
+      currentMargin,
+      effectiveWidth: (wMil + topWidthMil) / 2 / MM_TO_MIL
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var fusingCurrent = {
+  slug: "fusing-current",
+  title: "PCB Trace Fusing Current Calculator",
+  shortTitle: "Fusing Current",
+  metaTitle: "PCB Fusing Current Calculator \u2014 Onderdonk Trace Fuse Current",
+  category: "pcb",
+  description: "Calculate the current that will fuse a PCB trace using Onderdonk's equation. Includes etch-factor trapezoid correction, time-to-fuse at your operating current, and safety margin.",
+  keywords: [
+    "fusing current calculator",
+    "Onderdonk equation",
+    "PCB trace fuse current",
+    "trace fusing",
+    "copper trace melting current",
+    "PCB fuse trace design"
+  ],
+  inputs: [
+    {
+      key: "traceWidth",
+      label: "Trace Width (bottom)",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 0.5,
+      min: 0.02,
+      step: 0.01,
+      tooltip: "Width at the base of the trace, where it meets the laminate"
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Weight",
+      symbol: "t",
+      unit: "\u03BCm",
+      defaultValue: 35,
+      min: 5,
+      step: 1,
+      presets: [
+        { label: "\xBD oz (17.5 \u03BCm)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } },
+        { label: "2 oz (70 \u03BCm)", values: { copperThickness: 70 } },
+        { label: "3 oz (105 \u03BCm)", values: { copperThickness: 105 } }
+      ]
+    },
+    {
+      key: "duration",
+      label: "Fault Duration",
+      symbol: "S",
+      unit: "s",
+      defaultValue: 1,
+      min: 1e-3,
+      step: 1e-3,
+      presets: [
+        { label: "10 ms", values: { duration: 0.01 } },
+        { label: "100 ms", values: { duration: 0.1 } },
+        { label: "1 s", values: { duration: 1 } },
+        { label: "10 s", values: { duration: 10 } }
+      ]
+    },
+    {
+      key: "ambientTemp",
+      label: "Ambient Temperature",
+      symbol: "T_a",
+      unit: "\xB0C",
+      defaultValue: 25,
+      min: -55,
+      max: 150,
+      step: 1
+    },
+    {
+      key: "etchFactor",
+      label: "Etch Factor (sidewall slope)",
+      symbol: "EF",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 5,
+      step: 0.5,
+      tooltip: "Etch depth divided by lateral undercut per side (IPC-T-50). A larger number means straighter sidewalls; enter 0 for perfectly vertical walls",
+      presets: [
+        { label: "None (vertical walls)", values: { etchFactor: 0 } },
+        { label: "2:1 slope", values: { etchFactor: 2 } },
+        { label: "1:1 slope", values: { etchFactor: 1 } }
+      ]
+    },
+    {
+      key: "operatingCurrent",
+      label: "Operating / Fault Current",
+      symbol: "I_op",
+      unit: "A",
+      defaultValue: 5,
+      min: 0,
+      step: 0.1,
+      tooltip: "Optional \u2014 used to report time-to-fuse and safety margin"
+    }
+  ],
+  outputs: [
+    {
+      key: "fusingCurrent",
+      label: "Fusing Current",
+      symbol: "I_fuse",
+      unit: "A",
+      precision: 2,
+      primary: true
+    },
+    {
+      key: "timeToFuse",
+      label: "Time to Fuse at Operating Current",
+      symbol: "t_fuse",
+      unit: "s",
+      precision: 4
+    },
+    {
+      key: "currentMargin",
+      label: "Margin to Fusing",
+      symbol: "I_fuse/I_op",
+      unit: "\xD7",
+      precision: 2,
+      thresholds: { good: { min: 4 }, warning: { min: 2 }, danger: { max: 2 } }
+    },
+    {
+      key: "crossSectionArea",
+      label: "Cross-Sectional Area",
+      symbol: "A",
+      unit: "sq mil",
+      precision: 2
+    },
+    {
+      key: "effectiveWidth",
+      label: "Effective (Mean) Width",
+      symbol: "W_eff",
+      unit: "mm",
+      precision: 4
+    }
+  ],
+  calculate: calculateFusingCurrent,
+  formula: {
+    primary: "I = A \xB7 \u221A( log\u2081\u2080[(T_m \u2212 T_a)/(234 + T_a) + 1] / (33\xB7S) )",
+    latex: "I = A\\sqrt{\\frac{\\log_{10}\\!\\left[\\frac{T_m - T_a}{234 + T_a} + 1\\right]}{33\\,S}}",
+    variables: [
+      { symbol: "I", description: "Fusing current", unit: "A" },
+      { symbol: "A", description: "Cross-sectional area", unit: "circular mils" },
+      { symbol: "S", description: "Fault duration", unit: "s" },
+      { symbol: "T_m", description: "Copper melting point, 1083", unit: "\xB0C" },
+      { symbol: "T_a", description: "Ambient temperature", unit: "\xB0C" }
+    ],
+    derivation: [
+      "Onderdonk assumed the fault is fast enough that no heat leaves the conductor, so all I\xB2R energy goes into raising its temperature to the melting point.",
+      "Integrating the temperature-dependent resistivity of copper over that adiabatic rise produces the log\u2081\u2080 term, with 234 \xB0C the inferred zero-resistance temperature of copper.",
+      "The constant 33 collects copper's density, specific heat, and resistivity for A expressed in circular mils and S in seconds.",
+      "Etched traces are trapezoidal rather than rectangular: each sidewall pulls in by t/EF, so the mean width is used for the area."
+    ],
+    reference: 'I. M. Onderdonk, as published in E. R. Stauffacher, "Short-time Current Carrying Capacity of Copper Wire", General Electric Review, 1928; IPC-2152 Appendix A'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "trace-width-current",
+    "trace-resistance",
+    "pcb-trace-temp",
+    "inrush-current-limiter"
+  ],
+  faqs: [
+    {
+      question: "Can I use this to size a trace for normal operating current?",
+      answer: "No. Onderdonk gives the current that destroys the trace, not the one it can carry indefinitely. Use IPC-2152 (the trace width calculator) for continuous current, and treat the fusing figure purely as a fault-survival check."
+    },
+    {
+      question: "Is a deliberate fuse trace a good idea?",
+      answer: "It is used in cost-sensitive designs, but the tolerance is poor \u2014 trace width, copper weight, and etch all vary, and the fuse point moves with them. It also vents metal onto the board when it blows. Prefer a real fuse anywhere safety or repairability matters."
+    },
+    {
+      question: "Why does the result change so much with duration?",
+      answer: "Fusing current scales as 1/\u221AS, so a trace that survives 10 A for a second will survive over 30 A for 10 ms. That is also why the adiabatic assumption fails at long durations \u2014 given seconds, the laminate and planes carry heat away and the real limit is higher than the equation predicts."
+    }
+  ]
+};
+
+// src/lib/calculators/unit-conversion/length-units.ts
+var MM_PER_INCH = 25.4;
+var MM_PER_MIL = MM_PER_INCH / 1e3;
+var MM_PER_OZ_COPPER = 0.0348;
+function calculateLengthUnits(inputs) {
+  const { millimeter } = inputs;
+  return {
+    values: {
+      micrometer: millimeter * 1e3,
+      mil: millimeter / MM_PER_MIL,
+      inch: millimeter / MM_PER_INCH,
+      centimeter: millimeter / 10,
+      meter: millimeter / 1e3,
+      ounceCopperEquivalent: millimeter / MM_PER_OZ_COPPER
+    }
+  };
+}
+var lengthUnits = {
+  slug: "length-units",
+  title: "Length Unit Converter (mm, mil, inch, \u03BCm)",
+  shortTitle: "Length Converter",
+  metaTitle: "mm to mil Converter \u2014 PCB Length Unit Conversion Calculator",
+  category: "unit-conversion",
+  description: "Convert PCB dimensions between millimetres, mils (thou), inches, micrometres, centimetres, and metres. Includes the copper-weight equivalent for plating thickness.",
+  keywords: [
+    "mm to mil converter",
+    "mil to mm",
+    "thou to mm",
+    "PCB length converter",
+    "inch to mm calculator",
+    "micrometre to mil",
+    "length unit conversion"
+  ],
+  inputs: [
+    {
+      key: "millimeter",
+      label: "Length",
+      symbol: "L",
+      unit: "mm",
+      defaultValue: 1,
+      min: 0,
+      step: 1e-3,
+      presets: [
+        { label: "0.1 mm (4 mil trace)", values: { millimeter: 0.1 } },
+        { label: "0.2 mm (8 mil trace)", values: { millimeter: 0.2 } },
+        { label: "0.035 mm (1 oz copper)", values: { millimeter: 0.035 } },
+        { label: "0.254 mm (10 mil core)", values: { millimeter: 0.254 } },
+        { label: "1.6 mm (standard board)", values: { millimeter: 1.6 } },
+        { label: '2.54 mm (0.1" pitch)', values: { millimeter: 2.54 } }
+      ]
+    }
+  ],
+  outputs: [
+    { key: "mil", label: "Mils (thou)", symbol: "mil", unit: "mil", precision: 4 },
+    { key: "micrometer", label: "Micrometres", symbol: "\u03BCm", unit: "\u03BCm", precision: 3 },
+    { key: "inch", label: "Inches", symbol: "in", unit: "in", precision: 6 },
+    { key: "centimeter", label: "Centimetres", symbol: "cm", unit: "cm", precision: 5 },
+    { key: "meter", label: "Metres", symbol: "m", unit: "m", precision: 6 },
+    {
+      key: "ounceCopperEquivalent",
+      label: "Copper Weight Equivalent",
+      symbol: "oz/ft\xB2",
+      unit: "oz",
+      precision: 4,
+      tooltip: "Only meaningful when the length is a copper foil thickness (1 oz \u2248 34.8 \u03BCm, \xB110%)"
+    }
+  ],
+  calculate: calculateLengthUnits,
+  formula: {
+    primary: "1 in = 25.4 mm exactly;  1 mil = 0.0254 mm;  1 mm = 39.3701 mil",
+    latex: "1\\,\\text{mil} = \\frac{25.4}{1000}\\,\\text{mm} = 25.4\\,\\mu\\text{m}",
+    variables: [
+      { symbol: "mil", description: "One thousandth of an inch (also called a thou)", unit: "" },
+      { symbol: "in", description: "International inch, defined as exactly 25.4 mm", unit: "" }
+    ],
+    reference: "International yard and pound agreement, 1959"
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["awg-wire", "trace-width-current", "controlled-impedance", "wire-gauge"],
+  faqs: [
+    {
+      question: "Is a mil the same as a millimetre?",
+      answer: "No, and the confusion is expensive. A mil is one thousandth of an inch \u2014 0.0254 mm. A millimetre is roughly 39.4 mils. PCB fabricators in North America quote in mils; most of the rest of the world quotes in millimetres."
+    },
+    {
+      question: "What is a thou?",
+      answer: 'Exactly the same thing as a mil. British usage prefers "thou", American usage prefers "mil". Both mean 0.001 inch.'
+    },
+    {
+      question: "Why is copper thickness quoted in ounces?",
+      answer: "It is a weight per unit area: one ounce of copper spread evenly over one square foot, which works out to about 34.8 \u03BCm (1.37 mil). The convention survives because foil is sold by weight, not thickness. Expect around \xB110% variation in the delivered foil."
+    }
+  ]
+};
+
 // src/lib/calculators/registry.ts
 var ALL_CALCULATORS = [
   microstripImpedance,
@@ -26961,7 +28803,16 @@ var ALL_CALCULATORS = [
   // P6: New calculator verticals
   rt60Reverberation,
   vfdMotorSpeed,
-  voltageDrop
+  voltageDrop,
+  // Saturn PCB Toolkit parity — tier 1
+  coplanarWaveguide,
+  asymmetricStriplineCalc,
+  dualStripline,
+  broadsideCoupledPair,
+  riseTimeBandwidth,
+  criticalTraceLength,
+  fusingCurrent,
+  lengthUnits
 ];
 function getAllCalculators() {
   return ALL_CALCULATORS;
@@ -27212,7 +29063,7 @@ function pollInterval(elapsedMs) {
 }
 var server = new import_mcp.McpServer({
   name: "rftools",
-  version: "1.5.3"
+  version: "1.6.0"
 });
 server.registerTool(
   "list_calculators",
