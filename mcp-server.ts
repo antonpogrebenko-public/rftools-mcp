@@ -149,7 +149,7 @@ function pollInterval(elapsedMs: number): number {
 
 const server = new McpServer({
   name: 'rftools',
-  version: '1.6.0',
+  version: '1.7.0',
 });
 
 // --- list_calculators ---

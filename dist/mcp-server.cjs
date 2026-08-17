@@ -27085,6 +27085,7 @@ var coplanarWaveguide = {
     "skin-depth",
     "coax-impedance"
   ],
+  relatedBlogPosts: ["coplanar-waveguide-vs-microstrip"],
   relatedTools: ["sparam-pipeline"],
   methodology: {
     references: [
@@ -27312,6 +27313,7 @@ var asymmetricStriplineCalc = {
     "differential-pair",
     "broadside-coupled-pair"
   ],
+  relatedBlogPosts: ["asymmetric-stripline-offset-impedance"],
   relatedTools: ["sparam-pipeline"],
   faqs: [
     {
@@ -27562,6 +27564,7 @@ var dualStripline = {
     "pcb-crosstalk",
     "stackup-builder"
   ],
+  relatedBlogPosts: ["dual-stripline-orthogonal-routing"],
   relatedTools: ["sparam-pipeline"],
   faqs: [
     {
@@ -27826,6 +27829,7 @@ var broadsideCoupledPair = {
     "dual-stripline",
     "controlled-impedance"
   ],
+  relatedBlogPosts: ["broadside-coupled-pairs-flex"],
   relatedTools: ["sparam-pipeline", "eye-diagram"],
   faqs: [
     {
@@ -28019,6 +28023,7 @@ var riseTimeBandwidth = {
     "clock-jitter",
     "controlled-impedance"
   ],
+  relatedBlogPosts: ["rise-time-knee-frequency"],
   relatedTools: ["eye-diagram"],
   faqs: [
     {
@@ -28233,6 +28238,7 @@ var criticalTraceLength = {
     "pcb-crosstalk",
     "via-stub-resonance"
   ],
+  relatedBlogPosts: ["when-a-trace-becomes-a-transmission-line"],
   relatedTools: ["eye-diagram"],
   faqs: [
     {
@@ -28467,6 +28473,7 @@ var fusingCurrent = {
     "pcb-trace-temp",
     "inrush-current-limiter"
   ],
+  relatedBlogPosts: ["fusing-current-pcb-trace"],
   faqs: [
     {
       question: "Can I use this to size a trace for normal operating current?",
@@ -28562,6 +28569,7 @@ var lengthUnits = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["awg-wire", "trace-width-current", "controlled-impedance", "wire-gauge"],
+  relatedBlogPosts: ["mils-mm-pcb-units"],
   faqs: [
     {
       question: "Is a mil the same as a millimetre?",
@@ -28574,6 +28582,915 @@ var lengthUnits = {
     {
       question: "Why is copper thickness quoted in ounces?",
       answer: "It is a weight per unit area: one ounce of copper spread evenly over one square foot, which works out to about 34.8 \u03BCm (1.37 mil). The convention survives because foil is sold by weight, not thickness. Expect around \xB110% variation in the delivered foil."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/padstack-annular-ring.ts
+function calculatePadstack(inputs) {
+  const { drillDiameter, platingThickness, fabricationAllowance, ipcClass, boardThickness } = inputs;
+  const platingMm = platingThickness / 1e3;
+  const finishedHoleDia = drillDiameter - 2 * platingMm;
+  const minAnnularExt = 0.05;
+  const minAnnularInt = ipcClass === 3 ? 0.05 : 0.025;
+  const minPadDiaExt = drillDiameter + 2 * minAnnularExt + fabricationAllowance;
+  const minPadDiaInt = drillDiameter + 2 * minAnnularInt + fabricationAllowance;
+  const landAreaExt = Math.PI / 4 * (minPadDiaExt ** 2 - drillDiameter ** 2);
+  const landAreaInt = Math.PI / 4 * (minPadDiaInt ** 2 - drillDiameter ** 2);
+  const aspectRatio = boardThickness / drillDiameter;
+  const maxAspect = ipcClass === 3 ? 12 : 10;
+  const warnings = [];
+  if (aspectRatio > maxAspect) {
+    warnings.push(
+      `Aspect ratio ${aspectRatio.toFixed(1)}:1 exceeds IPC Class ${ipcClass} maximum of ${maxAspect}:1`
+    );
+  }
+  if (finishedHoleDia < 0.1) {
+    warnings.push("Finished hole diameter is very small \u2014 verify plating capability");
+  }
+  return {
+    values: {
+      finishedHoleDia,
+      minPadDiaExt,
+      minPadDiaInt,
+      minAnnularExt,
+      minAnnularInt,
+      landAreaExt,
+      landAreaInt,
+      aspectRatio,
+      maxAspect
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var padstackAnnularRing = {
+  slug: "padstack-annular-ring",
+  title: "Padstack & Annular Ring Calculator",
+  shortTitle: "Annular Ring",
+  category: "pcb",
+  description: "Calculate minimum pad diameter and annular ring per IPC-6012 for through-hole vias and component pads.",
+  keywords: [
+    "padstack",
+    "annular ring",
+    "via pad",
+    "IPC-6012",
+    "drill size",
+    "pad diameter",
+    "plating",
+    "aspect ratio"
+  ],
+  inputs: [
+    {
+      key: "drillDiameter",
+      label: "Drill Diameter",
+      symbol: "D",
+      unit: "mm",
+      defaultValue: 0.3,
+      min: 0.1,
+      max: 6.35
+    },
+    {
+      key: "platingThickness",
+      label: "Plating Thickness",
+      symbol: "t_p",
+      unit: "\xB5m",
+      defaultValue: 25,
+      min: 18,
+      max: 50
+    },
+    {
+      key: "fabricationAllowance",
+      label: "Fabrication Allowance",
+      symbol: "FA",
+      unit: "mm",
+      defaultValue: 0.05,
+      min: 0,
+      max: 0.15,
+      step: 0.01
+    },
+    {
+      key: "ipcClass",
+      label: "IPC Class",
+      unit: "",
+      defaultValue: 2,
+      min: 2,
+      max: 3,
+      step: 1
+    },
+    {
+      key: "boardThickness",
+      label: "Board Thickness",
+      symbol: "T",
+      unit: "mm",
+      defaultValue: 1.6,
+      min: 0.2,
+      max: 6
+    }
+  ],
+  outputs: [
+    { key: "finishedHoleDia", label: "Finished Hole Diameter", unit: "mm" },
+    { key: "minPadDiaExt", label: "Min Pad Diameter (External)", unit: "mm", primary: true },
+    { key: "minPadDiaInt", label: "Min Pad Diameter (Internal)", unit: "mm" },
+    { key: "minAnnularExt", label: "Min Annular Ring (External)", unit: "mm" },
+    { key: "minAnnularInt", label: "Min Annular Ring (Internal)", unit: "mm" },
+    { key: "landAreaExt", label: "Land Area (External)", unit: "mm\xB2" },
+    { key: "aspectRatio", label: "Aspect Ratio", unit: ":1" },
+    { key: "maxAspect", label: "Max Allowed Aspect Ratio", unit: ":1" }
+  ],
+  calculate: calculatePadstack,
+  formula: {
+    primary: "Pad_min = Drill + 2 \xD7 Annular_ring_min + Fab_allowance",
+    latex: "D_{pad} = D_{drill} + 2 \\cdot AR_{min} + FA",
+    variables: [
+      { symbol: "D_pad", description: "Minimum pad diameter", unit: "mm" },
+      { symbol: "D_drill", description: "Drill diameter", unit: "mm" },
+      { symbol: "AR_min", description: "Minimum annular ring (IPC-6012)", unit: "mm" },
+      { symbol: "FA", description: "Fabrication allowance for drill wander", unit: "mm" }
+    ],
+    derivation: [
+      "IPC-6012 Rev E specifies minimum annular ring of 0.050 mm external (Class 2 and 3) and 0.025 mm internal (Class 2, breakout allowed) or 0.050 mm internal (Class 3, no breakout). Fabrication allowance accounts for drill wander."
+    ]
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["via-calculator", "via-thermal-resistance", "bga-land-pad", "controlled-impedance"],
+  faqs: [
+    {
+      question: "What is annular ring?",
+      answer: "The annular ring is the width of copper pad remaining around a drilled hole after plating. IPC-6012 specifies minimums to ensure reliable solder joints and electrical connections."
+    },
+    {
+      question: "What is the difference between Class 2 and Class 3?",
+      answer: "Class 2 (dedicated service electronics) allows tangential breakout on internal layers with a minimum 0.025 mm annular ring. Class 3 (high reliability) requires no breakout and a minimum 0.050 mm annular ring on all layers."
+    },
+    {
+      question: "What does fabrication allowance account for?",
+      answer: "Drill wander during the drilling process. The bit may not hit the exact pad centre. Adding fabrication allowance (typically 0.05 mm) ensures the annular ring requirement is met even with worst-case positional error."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/bga-land-pad.ts
+function calculateBgaLand(inputs) {
+  const { ballPitch, ballDiameter, densityLevel, solderMaskDefined, viaInPad } = inputs;
+  const factor = densityLevel === 0 ? 1 : densityLevel === 1 ? 0.9 : 0.8;
+  const padDia = Math.round(ballDiameter * factor * 20) / 20;
+  const isSMD = solderMaskDefined >= 0.5;
+  const maskOpening = isSMD ? padDia - 0.1 : padDia + 0.1;
+  const maxViaDrill = viaInPad >= 0.5 ? padDia - 0.2 : 0;
+  const channelWidth = ballPitch - padDia;
+  const oneTraceMin = 0.2;
+  const twoTraceMin = 0.38;
+  const escapeRoutes = channelWidth >= twoTraceMin ? 2 : channelWidth >= oneTraceMin ? 1 : 0;
+  const maxTraceWidth = escapeRoutes > 0 ? (channelWidth - 0.05 * 2 * escapeRoutes) / escapeRoutes : 0;
+  const stencilReduction = ballPitch < 0.5 ? 0.9 : 1;
+  const stencilAperture = padDia * stencilReduction;
+  const padToPadGap = ballPitch - padDia;
+  const warnings = [];
+  if (channelWidth < 0.1) {
+    warnings.push("Channel width below 0.1 mm \u2014 no escape routing possible between pads");
+  }
+  if (padDia > ballPitch * 0.85) {
+    warnings.push("Pad-to-pad gap is very tight \u2014 solder bridging risk");
+  }
+  if (maxViaDrill > 0 && maxViaDrill < 0.1) {
+    warnings.push("Via drill for via-in-pad is below 0.1 mm \u2014 check fab capability");
+  }
+  return {
+    values: {
+      padDia,
+      maskOpening,
+      maxViaDrill,
+      channelWidth,
+      escapeRoutes,
+      maxTraceWidth,
+      stencilAperture,
+      padToPadGap
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var bgaLandPad = {
+  slug: "bga-land-pad",
+  title: "BGA Land Pad Calculator",
+  shortTitle: "BGA Land Pad",
+  category: "pcb",
+  description: "Calculate BGA land pad diameter, solder mask opening, and escape routing per IPC-7351B density levels.",
+  keywords: [
+    "BGA",
+    "ball grid array",
+    "land pad",
+    "IPC-7351",
+    "solder mask",
+    "via in pad",
+    "escape routing",
+    "ball pitch"
+  ],
+  inputs: [
+    {
+      key: "ballPitch",
+      label: "Ball Pitch",
+      symbol: "P",
+      unit: "mm",
+      defaultValue: 1,
+      min: 0.3,
+      max: 1.27
+    },
+    {
+      key: "ballDiameter",
+      label: "Ball Diameter",
+      symbol: "D_b",
+      unit: "mm",
+      defaultValue: 0.6,
+      min: 0.15,
+      max: 0.89
+    },
+    {
+      key: "densityLevel",
+      label: "Density Level (0=Most, 1=Nominal, 2=Least)",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 2,
+      step: 1
+    },
+    {
+      key: "solderMaskDefined",
+      label: "Solder Mask Defined (0=NSMD, 1=SMD)",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1
+    },
+    {
+      key: "viaInPad",
+      label: "Via-in-Pad (0=No, 1=Yes)",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1
+    }
+  ],
+  outputs: [
+    { key: "padDia", label: "Pad Diameter", unit: "mm", primary: true },
+    { key: "maskOpening", label: "Solder Mask Opening", unit: "mm" },
+    { key: "maxViaDrill", label: "Max Via Drill (via-in-pad)", unit: "mm" },
+    { key: "channelWidth", label: "Channel Width", unit: "mm" },
+    { key: "escapeRoutes", label: "Escape Routes per Channel", unit: "" },
+    { key: "maxTraceWidth", label: "Max Trace Width in Channel", unit: "mm" },
+    { key: "stencilAperture", label: "Stencil Aperture", unit: "mm" },
+    { key: "padToPadGap", label: "Pad-to-Pad Gap", unit: "mm" }
+  ],
+  calculate: calculateBgaLand,
+  formula: {
+    primary: "Pad = Ball_dia \xD7 Factor (rounded to 0.05 mm)",
+    latex: "D_{pad} = \\text{round}_{0.05}(D_{ball} \\times k)",
+    variables: [
+      { symbol: "D_pad", description: "Pad diameter", unit: "mm" },
+      { symbol: "D_ball", description: "Ball diameter", unit: "mm" },
+      { symbol: "k", description: "Density factor (1.0/0.9/0.8)", unit: "" }
+    ],
+    derivation: [
+      "IPC-7351B specifies land diameter as a fraction of ball diameter: 100% (most land), 90% (nominal), 80% (least land). NSMD mask opening adds 0.1 mm clearance; SMD subtracts 0.1 mm overlap."
+    ]
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["padstack-annular-ring", "via-calculator", "minimum-conductor-spacing", "controlled-impedance"],
+  faqs: [
+    {
+      question: "What is the difference between NSMD and SMD pads?",
+      answer: "NSMD (non-solder-mask-defined) has the mask pulled back from the pad edge, so the copper pad defines the solder joint size. SMD has the mask overlapping the pad edge, so the mask opening defines the joint. NSMD is preferred for BGA because it gives better solder self-alignment."
+    },
+    {
+      question: "When should I use via-in-pad?",
+      answer: "For fine-pitch BGAs (0.5 mm or below) where dog-bone fanout is not possible due to insufficient channel width. Via-in-pad requires the via to be filled and planarised, which adds cost."
+    },
+    {
+      question: "How many escape routes do I get between BGA pads?",
+      answer: "Depends on channel width (pitch minus pad diameter). One trace needs about 0.2 mm (trace plus clearances). Two traces need about 0.38 mm. At 1.0 mm pitch with 0.55 mm pads, the 0.45 mm channel fits two traces comfortably."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/minimum-conductor-spacing.ts
+var VOLTAGE_BP = [15, 30, 50, 100, 150, 170, 250, 300, 500];
+var SPACING_TABLE = {
+  B1: [0.05, 0.05, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.25],
+  B2: [0.1, 0.1, 0.6, 0.6, 0.6, 1.25, 1.25, 1.25, 2.5],
+  B3: [0.05, 0.05, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8],
+  B4: [0.05, 0.05, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8]
+};
+var PER_VOLT_ABOVE_500 = {
+  B1: 5e-4,
+  B2: 5e-3,
+  B3: 125e-5,
+  B4: 125e-5
+};
+function interpolateSpacing(voltage, condition) {
+  const table = SPACING_TABLE[condition];
+  if (voltage <= VOLTAGE_BP[0]) return table[0];
+  if (voltage >= 500) {
+    return table[table.length - 1] + (voltage - 500) * PER_VOLT_ABOVE_500[condition];
+  }
+  for (let i = 1; i < VOLTAGE_BP.length; i++) {
+    if (voltage <= VOLTAGE_BP[i]) {
+      const frac = (voltage - VOLTAGE_BP[i - 1]) / (VOLTAGE_BP[i] - VOLTAGE_BP[i - 1]);
+      return table[i - 1] + frac * (table[i] - table[i - 1]);
+    }
+  }
+  return table[table.length - 1];
+}
+function calculateSpacing(inputs) {
+  const { voltage, condition, altitude } = inputs;
+  const condKey = condition === 0 ? "B1" : condition === 1 ? "B2" : condition === 2 ? "B3" : "B4";
+  let spacing = interpolateSpacing(voltage, condKey);
+  let altitudeFactor = 1;
+  if (altitude > 3048 && condKey !== "B1") {
+    altitudeFactor = Math.sqrt(altitude / 3048);
+    spacing *= altitudeFactor;
+  }
+  const spacingMils = spacing / 0.0254;
+  const spacingB1 = interpolateSpacing(voltage, "B1");
+  const spacingB2 = interpolateSpacing(voltage, "B2") * (altitude > 3048 ? altitudeFactor : 1);
+  const spacingB3 = interpolateSpacing(voltage, "B3") * (altitude > 3048 ? altitudeFactor : 1);
+  return {
+    values: {
+      spacing,
+      spacingMils,
+      altitudeFactor,
+      spacingB1,
+      spacingB2,
+      spacingB3
+    },
+    warnings: void 0
+  };
+}
+var minimumConductorSpacing = {
+  slug: "minimum-conductor-spacing",
+  title: "Minimum Conductor Spacing Calculator",
+  shortTitle: "Conductor Spacing",
+  category: "pcb",
+  description: "Determine minimum electrical clearance between conductors per IPC-2221B Table 6.1 based on voltage and conductor condition.",
+  keywords: [
+    "conductor spacing",
+    "clearance",
+    "creepage",
+    "IPC-2221",
+    "voltage clearance",
+    "PCB spacing",
+    "high voltage",
+    "safety"
+  ],
+  inputs: [
+    {
+      key: "voltage",
+      label: "Voltage (DC or Peak AC)",
+      symbol: "V",
+      unit: "V",
+      defaultValue: 50,
+      min: 0,
+      max: 1e3
+    },
+    {
+      key: "condition",
+      label: "Condition (0=B1 Internal, 1=B2 Ext Uncoated, 2=B3 Polymer, 3=B4 Conformal)",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 3,
+      step: 1
+    },
+    {
+      key: "altitude",
+      label: "Operating Altitude",
+      symbol: "h",
+      unit: "m",
+      defaultValue: 0,
+      min: 0,
+      max: 3e4
+    }
+  ],
+  outputs: [
+    { key: "spacing", label: "Minimum Spacing", unit: "mm", primary: true },
+    { key: "spacingMils", label: "Minimum Spacing", unit: "mil" },
+    { key: "altitudeFactor", label: "Altitude Derating Factor", unit: "\xD7" },
+    { key: "spacingB1", label: "B1 (Internal)", unit: "mm" },
+    { key: "spacingB2", label: "B2 (External Uncoated)", unit: "mm" },
+    { key: "spacingB3", label: "B3 (Polymer Coated)", unit: "mm" }
+  ],
+  calculate: calculateSpacing,
+  formula: {
+    primary: "IPC-2221B Table 6.1 lookup with linear interpolation",
+    latex: "d_{min} = \\text{Table}_{6.1}(V, \\text{cond}) \\times \\sqrt{h / 3048}",
+    variables: [
+      { symbol: "d_min", description: "Minimum conductor spacing", unit: "mm" },
+      { symbol: "V", description: "Applied voltage (DC or peak AC)", unit: "V" },
+      { symbol: "h", description: "Operating altitude", unit: "m" }
+    ],
+    derivation: [
+      "IPC-2221B Rev B Table 6.1 provides minimum conductor spacing for four conditions: B1 (internal), B2 (external uncoated), B3 (permanent polymer coating), B4 (conformal coating). Above 3048 m altitude, external spacings are multiplied by sqrt(altitude/3048) to account for reduced air breakdown voltage."
+    ]
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["padstack-annular-ring", "trace-width-current", "controlled-impedance", "via-calculator"],
+  faqs: [
+    {
+      question: "What is the difference between clearance and creepage?",
+      answer: "Clearance is the shortest distance through air between two conductors. Creepage is the shortest distance along a surface. IPC-2221B Table 6.1 addresses clearance. For creepage, consult IPC-2221B Table 6.2 or IEC 60664-1."
+    },
+    {
+      question: "Why does altitude affect spacing?",
+      answer: "Air breakdown voltage decreases at lower pressure (higher altitude). Above 3048 m (10,000 ft), the dielectric strength of air drops and spacing must increase. Internal conductors (B1) are not affected because the dielectric is solid laminate."
+    },
+    {
+      question: "Should I use peak or RMS voltage?",
+      answer: "Use peak voltage (or DC). For AC mains at 120 V RMS, the peak is 170 V. For 240 V RMS, peak is 340 V. The table applies to the maximum instantaneous voltage between conductors."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/planar-spiral-inductor.ts
+var WHEELER_K = {
+  square: [2.34, 2.75],
+  hexagonal: [2.33, 3.82],
+  octagonal: [2.25, 3.55],
+  circular: [2.23, 3.45]
+};
+var CURRENT_SHEET = {
+  square: [1.27, 2.07, 0.18, 0.13],
+  hexagonal: [1.09, 2.23, 0, 0.17],
+  octagonal: [1.07, 2.29, 0, 0.19],
+  circular: [1, 2.46, 0, 0.2]
+};
+var MU0_NH_PER_MM = 4 * Math.PI * 0.1;
+function calculateSpiralInductor(inputs) {
+  const { outerDiameter, innerDiameter, turns, traceWidth, traceSpacing, shape } = inputs;
+  const dAvg = (outerDiameter + innerDiameter) / 2;
+  const fillRatio = (outerDiameter - innerDiameter) / (outerDiameter + innerDiameter);
+  const shapeKey = shape === 0 ? "square" : shape === 1 ? "hexagonal" : shape === 2 ? "octagonal" : "circular";
+  const [K1, K2] = WHEELER_K[shapeKey];
+  const inductanceWheeler = K1 * MU0_NH_PER_MM * turns * turns * dAvg / (1 + K2 * fillRatio);
+  const [c1, c2, c3, c4] = CURRENT_SHEET[shapeKey];
+  const inductance = MU0_NH_PER_MM * turns * turns * dAvg * c1 / 2 * (Math.log(c2 / fillRatio) + c3 * fillRatio + c4 * fillRatio * fillRatio);
+  const computedTurns = (outerDiameter - innerDiameter) / (2 * (traceWidth + traceSpacing));
+  const totalTraceLength = turns * Math.PI * dAvg;
+  const rho_cu = 1724e-8;
+  const crossSection = traceWidth * 0.035;
+  const dcResistance = rho_cu * totalTraceLength / crossSection;
+  const omega = 2 * Math.PI * 1e8;
+  const xl = omega * inductance * 1e-9;
+  const qFactor2 = xl / dcResistance;
+  const cPara = inductance * 1e-13;
+  const srf = 1 / (2 * Math.PI * Math.sqrt(inductance * 1e-9 * cPara)) / 1e9;
+  const warnings = [];
+  if (fillRatio > 0.8) {
+    warnings.push("Fill ratio > 0.8 \u2014 model accuracy degrades; consider widening inner opening");
+  }
+  if (fillRatio < 0.05) {
+    warnings.push("Fill ratio near zero \u2014 inductor is mostly empty; reduce outer diameter");
+  }
+  if (computedTurns < turns * 0.8) {
+    warnings.push(
+      `Geometry fits ~${computedTurns.toFixed(1)} turns \u2014 ${turns} turns may not physically fit`
+    );
+  }
+  return {
+    values: {
+      inductance,
+      inductanceWheeler,
+      fillRatio,
+      dAvg,
+      totalTraceLength,
+      dcResistance,
+      qFactor: qFactor2,
+      srf
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var planarSpiralInductor = {
+  slug: "planar-spiral-inductor",
+  title: "Planar Spiral Inductor Calculator",
+  shortTitle: "Spiral Inductor",
+  category: "pcb",
+  description: "Calculate PCB planar spiral inductance using Mohan current-sheet and modified Wheeler methods for square, hexagonal, octagonal, and circular geometries.",
+  keywords: [
+    "spiral inductor",
+    "planar inductor",
+    "PCB inductor",
+    "Mohan",
+    "Wheeler",
+    "fill ratio",
+    "inductance",
+    "RFID"
+  ],
+  inputs: [
+    {
+      key: "outerDiameter",
+      label: "Outer Diameter",
+      symbol: "d_out",
+      unit: "mm",
+      defaultValue: 10,
+      min: 1,
+      max: 100
+    },
+    {
+      key: "innerDiameter",
+      label: "Inner Diameter",
+      symbol: "d_in",
+      unit: "mm",
+      defaultValue: 4,
+      min: 0.5,
+      max: 99
+    },
+    {
+      key: "turns",
+      label: "Number of Turns",
+      symbol: "N",
+      unit: "",
+      defaultValue: 5,
+      min: 1,
+      max: 50,
+      step: 1
+    },
+    {
+      key: "traceWidth",
+      label: "Trace Width",
+      symbol: "w",
+      unit: "mm",
+      defaultValue: 0.3,
+      min: 0.05,
+      max: 5
+    },
+    {
+      key: "traceSpacing",
+      label: "Trace Spacing",
+      symbol: "s",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.05,
+      max: 5
+    },
+    {
+      key: "shape",
+      label: "Shape (0=Square, 1=Hex, 2=Octagonal, 3=Circular)",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 3,
+      step: 1
+    }
+  ],
+  outputs: [
+    { key: "inductance", label: "Inductance (Mohan)", unit: "nH", primary: true },
+    { key: "inductanceWheeler", label: "Inductance (Wheeler)", unit: "nH" },
+    { key: "fillRatio", label: "Fill Ratio (\u03C1)", unit: "" },
+    { key: "dAvg", label: "Average Diameter", unit: "mm" },
+    { key: "totalTraceLength", label: "Total Trace Length", unit: "mm" },
+    { key: "dcResistance", label: "DC Resistance (1 oz Cu)", unit: "\u03A9" },
+    { key: "qFactor", label: "Q at 100 MHz (est.)", unit: "" },
+    { key: "srf", label: "Self-Resonant Freq (est.)", unit: "GHz" }
+  ],
+  calculate: calculateSpiralInductor,
+  formula: {
+    primary: "L = (\xB5\u2080\xB7n\xB2\xB7d_avg\xB7c\u2081/2)\xB7[ln(c\u2082/\u03C1) + c\u2083\u03C1 + c\u2084\u03C1\xB2]",
+    latex: "L = \\frac{\\mu_0 n^2 d_{avg} c_1}{2} \\left[ \\ln\\frac{c_2}{\\rho} + c_3\\rho + c_4\\rho^2 \\right]",
+    variables: [
+      { symbol: "N", description: "Number of turns", unit: "" },
+      { symbol: "d_avg", description: "Average diameter (d_out + d_in) / 2", unit: "mm" },
+      { symbol: "\u03C1", description: "Fill ratio (d_out \u2212 d_in) / (d_out + d_in)", unit: "" },
+      { symbol: "c\u2081\u2013c\u2084", description: "Shape-dependent Mohan coefficients", unit: "" }
+    ],
+    derivation: [
+      "Mohan et al. (IEEE JSSC 1999) current-sheet approximation. Fill ratio \u03C1 = (d_out - d_in)/(d_out + d_in). Coefficients c\u2081\u2013c\u2084 depend on geometry. Accurate within 3% for \u03C1 < 0.8."
+    ],
+    reference: 'Mohan et al., "Simple Accurate Expressions for Planar Spiral Inductances", IEEE JSSC, vol. 34, no. 10, Oct 1999'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["lc-resonance", "pcb-trace-inductance", "skin-depth", "controlled-impedance"],
+  faqs: [
+    {
+      question: "Which formula is more accurate \u2014 Wheeler or Mohan?",
+      answer: "Mohan current-sheet is more accurate at high fill ratios (\u03C1 > 0.4). Both agree within 1% at low fill. Use Mohan as primary."
+    },
+    {
+      question: "What fill ratio should I target?",
+      answer: "Between 0.3 and 0.6 for best Q. Below 0.2 wastes board area. Above 0.7 the inner turns add resistance more than inductance, reducing Q."
+    },
+    {
+      question: "Why does shape matter?",
+      answer: "Circular spirals have highest Q for a given area (shortest current path). Square spirals are easiest to route but have slightly lower Q due to current crowding at corners."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/embedded-resistor.ts
+var MATERIALS = {
+  0: { name: "NiP (Ohmega-Ply)", sheetR: 25, tolerance: 10, powerDensity: 25 },
+  1: { name: "NiP 100\u03A9", sheetR: 100, tolerance: 10, powerDensity: 25 },
+  2: { name: "TaN", sheetR: 100, tolerance: 5, powerDensity: 50 },
+  3: { name: "CrSiO", sheetR: 1e3, tolerance: 15, powerDensity: 15 },
+  4: { name: "Carbon", sheetR: 100, tolerance: 20, powerDensity: 10 }
+};
+function calculateEmbeddedResistor(inputs) {
+  const { targetResistance, sheetResistance, width, trimAllowance, material } = inputs;
+  const matInfo = MATERIALS[material] || MATERIALS[0];
+  const rSheet = sheetResistance > 0 ? sheetResistance : matInfo.sheetR;
+  const numSquares = targetResistance / rSheet;
+  const length = numSquares * width;
+  const designResistance = targetResistance * (1 - trimAllowance / 100);
+  const designSquares = designResistance / rSheet;
+  const designLength = designSquares * width;
+  const area = width * length;
+  const maxPower = area * matInfo.powerDensity;
+  const toleranceWithoutTrim = matInfo.tolerance;
+  const toleranceWithTrim = trimAllowance > 0 ? Math.min(5, toleranceWithoutTrim / 2) : toleranceWithoutTrim;
+  const aspectRatio = length / width;
+  const warnings = [];
+  if (aspectRatio > 10) {
+    warnings.push("L/W > 10:1 \u2014 serpentine layout recommended");
+  }
+  if (aspectRatio < 0.1) {
+    warnings.push("L/W < 0.1 \u2014 very wide resistor; etch tolerance dominates");
+  }
+  if (numSquares < 0.1) {
+    warnings.push("Less than 0.1 squares \u2014 target R much lower than sheet R");
+  }
+  return {
+    values: {
+      numSquares,
+      length,
+      designLength,
+      designResistance,
+      area,
+      maxPower,
+      toleranceWithoutTrim,
+      toleranceWithTrim,
+      aspectRatio
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var embeddedResistor = {
+  slug: "embedded-resistor",
+  title: "Embedded Resistor Calculator",
+  shortTitle: "Embedded Resistor",
+  category: "pcb",
+  description: "Calculate geometry for PCB embedded resistors from target resistance and sheet resistance. Supports NiP, TaN, CrSiO, and carbon materials.",
+  keywords: [
+    "embedded resistor",
+    "sheet resistance",
+    "squares",
+    "Ohmega-Ply",
+    "Ticer",
+    "thin film",
+    "PCB resistor",
+    "IPC-2316"
+  ],
+  inputs: [
+    {
+      key: "targetResistance",
+      label: "Target Resistance",
+      symbol: "R_target",
+      unit: "\u03A9",
+      defaultValue: 100,
+      min: 0.1,
+      max: 1e5
+    },
+    {
+      key: "sheetResistance",
+      label: "Sheet Resistance (0=auto from material)",
+      symbol: "R_\u25A1",
+      unit: "\u03A9/sq",
+      defaultValue: 0,
+      min: 0,
+      max: 1e4
+    },
+    {
+      key: "width",
+      label: "Resistor Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 1,
+      min: 0.1,
+      max: 25
+    },
+    {
+      key: "trimAllowance",
+      label: "Trim Allowance",
+      unit: "%",
+      defaultValue: 10,
+      min: 0,
+      max: 50
+    },
+    {
+      key: "material",
+      label: "Material (0=NiP 25\u03A9, 1=NiP 100\u03A9, 2=TaN, 3=CrSiO, 4=Carbon)",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 4,
+      step: 1
+    }
+  ],
+  outputs: [
+    { key: "numSquares", label: "Number of Squares", unit: "", primary: true },
+    { key: "length", label: "Resistor Length", unit: "mm" },
+    { key: "designLength", label: "Design Length (pre-trim)", unit: "mm" },
+    { key: "designResistance", label: "Design Resistance (pre-trim)", unit: "\u03A9" },
+    { key: "area", label: "Resistor Area", unit: "mm\xB2" },
+    { key: "maxPower", label: "Max Power Dissipation", unit: "mW" },
+    { key: "toleranceWithoutTrim", label: "Tolerance (untrimmed)", unit: "%" },
+    { key: "toleranceWithTrim", label: "Tolerance (trimmed)", unit: "%" },
+    { key: "aspectRatio", label: "Aspect Ratio (L/W)", unit: "" }
+  ],
+  calculate: calculateEmbeddedResistor,
+  formula: {
+    primary: "R = R_sheet \xD7 (L / W) = R_sheet \xD7 N_squares",
+    latex: "R = R_{\\square} \\times \\frac{L}{W}",
+    variables: [
+      { symbol: "R", description: "Resistance", unit: "\u03A9" },
+      { symbol: "R_\u25A1", description: "Sheet resistance of resistive film", unit: "\u03A9/\u25A1" },
+      { symbol: "L", description: "Resistor length", unit: "mm" },
+      { symbol: "W", description: "Resistor width", unit: "mm" }
+    ],
+    derivation: [
+      "An embedded resistor is a thin resistive film patterned on an inner PCB layer. Resistance equals sheet resistance (\u03A9/square) times number of squares (length/width). Laser trimming tightens tolerance from \xB110-20% to \xB11-5%."
+    ]
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["trace-resistance", "voltage-divider", "attenuator-designer", "skin-depth"],
+  faqs: [
+    {
+      question: 'What is a "square" in sheet resistance?',
+      answer: "Any rectangle where length equals width. A 1\xD71 mm square has the same resistance as a 10\xD710 mm square of the same material. Sheet resistance in \u03A9/square is the fundamental property of the film."
+    },
+    {
+      question: "Why design lower and trim up?",
+      answer: "Laser trimming can only increase resistance (by cutting material). Designing 10% below target ensures the final trimmed value hits target even with process variation."
+    },
+    {
+      question: "What resistance range is practical?",
+      answer: "NiP at 25 \u03A9/sq handles 10\u20131000 \u03A9. CrSiO at 1000 \u03A9/sq handles 1k\u2013100k \u03A9. Below 10 \u03A9 or above 100k \u03A9 the geometries become impractical."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/via-voltage-drop.ts
+function calculateViaVoltageDrop(inputs) {
+  const { drillDiameter, platingThickness, viaLength, current, temperature, numVias } = inputs;
+  const rho20 = 1724e-11;
+  const alpha = 393e-5;
+  const rho = rho20 * (1 + alpha * (temperature - 20));
+  const D = drillDiameter / 1e3;
+  const t = platingThickness / 1e6;
+  const area = Math.PI * t * (D - t);
+  const L = viaLength / 1e3;
+  const rSingle = rho * L / area;
+  const n = Math.round(numVias);
+  const rTotal = rSingle / n;
+  const vDrop = current * rTotal;
+  const pDissipation = current * current * rTotal;
+  const kCu = 385;
+  const thetaVia = L / (kCu * area * n);
+  const deltaT = pDissipation * thetaVia;
+  const rSingleMOhm = rSingle * 1e3;
+  const rTotalMOhm = rTotal * 1e3;
+  const vDropMV = vDrop * 1e3;
+  const pDissipationMW = pDissipation * 1e3;
+  const areaMm2 = area * 1e6;
+  const warnings = [];
+  if (deltaT > 20) {
+    warnings.push(`Temperature rise ~${deltaT.toFixed(1)} \xB0C \u2014 verify thermal path`);
+  }
+  if (vDrop > 0.1) {
+    warnings.push("Voltage drop > 100 mV \u2014 add more parallel vias");
+  }
+  return {
+    values: {
+      rSingleMOhm,
+      rTotalMOhm,
+      vDropMV,
+      pDissipationMW,
+      areaMm2,
+      deltaT,
+      thetaVia
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var viaVoltageDrop = {
+  slug: "via-voltage-drop",
+  title: "Via Voltage Drop & Power Calculator",
+  shortTitle: "Via Voltage Drop",
+  category: "pcb",
+  description: "Calculate DC resistance, voltage drop, and power dissipation of plated through-hole vias with temperature compensation and parallel via arrays.",
+  keywords: [
+    "via resistance",
+    "via voltage drop",
+    "via power dissipation",
+    "plating thickness",
+    "via array",
+    "via current",
+    "thermal"
+  ],
+  inputs: [
+    {
+      key: "drillDiameter",
+      label: "Drill Diameter",
+      symbol: "D",
+      unit: "mm",
+      defaultValue: 0.3,
+      min: 0.1,
+      max: 1
+    },
+    {
+      key: "platingThickness",
+      label: "Plating Thickness",
+      symbol: "t",
+      unit: "\xB5m",
+      defaultValue: 25,
+      min: 12,
+      max: 50
+    },
+    {
+      key: "viaLength",
+      label: "Via Length (board thickness)",
+      symbol: "L",
+      unit: "mm",
+      defaultValue: 1.6,
+      min: 0.1,
+      max: 6
+    },
+    {
+      key: "current",
+      label: "Current",
+      symbol: "I",
+      unit: "A",
+      defaultValue: 1,
+      min: 1e-3,
+      max: 50
+    },
+    {
+      key: "temperature",
+      label: "Operating Temperature",
+      symbol: "T",
+      unit: "\xB0C",
+      defaultValue: 25,
+      min: -40,
+      max: 125
+    },
+    {
+      key: "numVias",
+      label: "Number of Parallel Vias",
+      symbol: "N",
+      unit: "",
+      defaultValue: 1,
+      min: 1,
+      max: 100,
+      step: 1
+    }
+  ],
+  outputs: [
+    { key: "rSingleMOhm", label: "Single Via Resistance", unit: "m\u03A9", primary: true },
+    { key: "rTotalMOhm", label: "Total Resistance (parallel)", unit: "m\u03A9" },
+    { key: "vDropMV", label: "Voltage Drop", unit: "mV" },
+    { key: "pDissipationMW", label: "Power Dissipation", unit: "mW" },
+    { key: "areaMm2", label: "Via Cross-Section", unit: "mm\xB2" },
+    { key: "deltaT", label: "Temperature Rise (est.)", unit: "\xB0C" },
+    { key: "thetaVia", label: "Thermal Resistance", unit: "\xB0C/W" }
+  ],
+  calculate: calculateViaVoltageDrop,
+  formula: {
+    primary: "R = \u03C1(T) \xD7 L / A, where A = \u03C0\xB7t\xB7(D\u2212t)",
+    latex: "R = \\frac{\\rho_0 [1 + \\alpha(T-20)]\\, L}{\\pi\\, t\\,(D - t)}",
+    variables: [
+      { symbol: "R", description: "Via resistance", unit: "\u03A9" },
+      { symbol: "\u03C1\u2080", description: "Copper resistivity at 20\xB0C (1.724\xD710\u207B\u2078)", unit: "\u03A9\xB7m" },
+      { symbol: "\u03B1", description: "Temperature coefficient (0.00393)", unit: "/\xB0C" },
+      { symbol: "L", description: "Via barrel length", unit: "m" },
+      { symbol: "t", description: "Plating thickness", unit: "m" },
+      { symbol: "D", description: "Drill diameter", unit: "m" }
+    ],
+    derivation: [
+      "Via resistance from copper resistivity (temperature-compensated) times barrel length divided by thin-wall annular cross-section \u03C0\xB7t\xB7(D\u2212t). For N parallel vias, divide by N. V_drop = I\xD7R; P = I\xB2R."
+    ]
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["via-calculator", "via-thermal-resistance", "padstack-annular-ring", "trace-resistance"],
+  faqs: [
+    {
+      question: "How much current can a single via carry?",
+      answer: "A 0.3 mm via with 25 \xB5m plating has ~2.6 m\u03A9 through 1.6 mm board. At 1 A the drop is 2.6 mV \u2014 negligible. Thermal limit is roughly 3\u20135 A before significant rise."
+    },
+    {
+      question: "Why does temperature matter?",
+      answer: "Copper resistivity increases 0.393%/\xB0C. At 85 \xB0C resistance is 26% higher than at 20 \xB0C. Matters for power delivery paths."
+    },
+    {
+      question: "How do parallel vias help?",
+      answer: "Total resistance divides by N. Eight parallel 0.3 mm vias give ~0.33 m\u03A9 total \u2014 comparable to a short trace segment."
     }
   ]
 };
@@ -28812,7 +29729,14 @@ var ALL_CALCULATORS = [
   riseTimeBandwidth,
   criticalTraceLength,
   fusingCurrent,
-  lengthUnits
+  lengthUnits,
+  // Saturn PCB Toolkit parity — tier 2
+  padstackAnnularRing,
+  bgaLandPad,
+  minimumConductorSpacing,
+  planarSpiralInductor,
+  embeddedResistor,
+  viaVoltageDrop
 ];
 function getAllCalculators() {
   return ALL_CALCULATORS;
@@ -29063,7 +29987,7 @@ function pollInterval(elapsedMs) {
 }
 var server = new import_mcp.McpServer({
   name: "rftools",
-  version: "1.6.0"
+  version: "1.7.0"
 });
 server.registerTool(
   "list_calculators",
