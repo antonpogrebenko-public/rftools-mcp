@@ -26740,6 +26740,17 @@ var voltageDrop = {
 };
 
 // src/lib/pcb/impedance.ts
+function hammerstadJensen2(w, h, er, t) {
+  const dw = t / Math.PI * (1 + Math.log(2 * h / Math.max(t, 1e-6)));
+  const wEff = w + dw;
+  const u = wEff / h;
+  const a = 1 + 1 / 49 * Math.log((Math.pow(u, 4) + Math.pow(u / 52, 2)) / (Math.pow(u, 4) + 0.432)) + 1 / 18.7 * Math.log(1 + Math.pow(u / 18.1, 3));
+  const b = 0.564 * Math.pow((er - 0.9) / (er + 3), 0.053);
+  const erEff = (er + 1) / 2 + (er - 1) / 2 * Math.pow(1 + 10 / u, -a * b);
+  const F = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
+  const Z0 = 60 / Math.sqrt(erEff) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
+  return { Z0, erEff };
+}
 var ETA_0 = 376.730313412;
 var FRINGE_PEAK_T_OVER_B = 1 / 3;
 function stripFringeFactor(tOverB) {
@@ -29495,6 +29506,1138 @@ var viaVoltageDrop = {
   ]
 };
 
+// src/lib/calculators/unit-conversion/rectangular-polar.ts
+var DEG_PER_RAD = 180 / Math.PI;
+function calculateRectangularPolar(inputs) {
+  const { real, imaginary, magnitude, angleDeg } = inputs;
+  const magnitudeOut = Math.hypot(real, imaginary);
+  const angleRadOut = Math.atan2(imaginary, real);
+  const angleDegOut = angleRadOut * DEG_PER_RAD;
+  const angleDeg360 = angleDegOut < 0 ? angleDegOut + 360 : angleDegOut;
+  const angleRadIn = angleDeg / DEG_PER_RAD;
+  const realOut = magnitude * Math.cos(angleRadIn);
+  const imagOut = magnitude * Math.sin(angleRadIn);
+  const warnings = [];
+  if (real === 0 && imaginary === 0) {
+    warnings.push("Angle of the zero vector is undefined; atan2(0, 0) returns 0 by convention");
+  }
+  if (magnitude < 0) {
+    warnings.push("Negative magnitude flips the vector by 180\xB0 \u2014 normally magnitude is taken \u2265 0");
+  }
+  return {
+    values: {
+      magnitudeOut,
+      angleDegOut,
+      angleRadOut,
+      angleDeg360,
+      realOut,
+      imagOut
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var rectangularPolar = {
+  slug: "rectangular-polar",
+  title: "Rectangular \u2194 Polar Complex Number Converter",
+  shortTitle: "Rectangular \u2194 Polar",
+  metaTitle: "Rectangular to Polar Converter \u2014 Complex Number Calculator",
+  category: "unit-conversion",
+  description: "Convert complex numbers between rectangular (a + jb) and polar (r\u2220\u03B8) form. Quadrant-correct via atan2, with degrees, radians, and 0\u2013360\xB0 wrapped angle. For impedance, S-parameters, and phasor arithmetic.",
+  keywords: [
+    "rectangular to polar",
+    "polar to rectangular",
+    "complex number converter",
+    "phasor conversion",
+    "impedance polar form",
+    "atan2 quadrant",
+    "magnitude and phase"
+  ],
+  inputs: [
+    {
+      key: "real",
+      label: "Real Part (rect \u2192 polar)",
+      symbol: "a",
+      unit: "",
+      defaultValue: 3,
+      tooltip: "Real component of a + jb. For impedance this is resistance R.",
+      presets: [
+        { label: "3 + j4 (magnitude 5)", values: { real: 3, imaginary: 4 } },
+        { label: "50 + j0 (matched load)", values: { real: 50, imaginary: 0 } },
+        { label: "50 \u2212 j25 (capacitive)", values: { real: 50, imaginary: -25 } },
+        { label: "\u221230 + j40 (quadrant II)", values: { real: -30, imaginary: 40 } },
+        { label: "0 + j1 (pure reactance)", values: { real: 0, imaginary: 1 } }
+      ]
+    },
+    {
+      key: "imaginary",
+      label: "Imaginary Part (rect \u2192 polar)",
+      symbol: "b",
+      unit: "",
+      defaultValue: 4,
+      tooltip: "Imaginary component of a + jb. For impedance this is reactance X."
+    },
+    {
+      key: "magnitude",
+      label: "Magnitude (polar \u2192 rect)",
+      symbol: "r",
+      unit: "",
+      defaultValue: 5,
+      tooltip: "Vector length r of r\u2220\u03B8.",
+      presets: [
+        { label: "1 \u2220 0\xB0 (unit vector)", values: { magnitude: 1, angleDeg: 0 } },
+        { label: "5 \u2220 53.13\xB0", values: { magnitude: 5, angleDeg: 53.13010235415598 } },
+        { label: "1 \u2220 90\xB0 (pure +j)", values: { magnitude: 1, angleDeg: 90 } },
+        { label: "0.5 \u2220 180\xB0 (\u0393 real negative)", values: { magnitude: 0.5, angleDeg: 180 } },
+        { label: "100 \u2220 \u221245\xB0", values: { magnitude: 100, angleDeg: -45 } }
+      ]
+    },
+    {
+      key: "angleDeg",
+      label: "Angle (polar \u2192 rect)",
+      symbol: "\u03B8",
+      unit: "\xB0",
+      defaultValue: 53.13010235415598,
+      min: -360,
+      max: 360,
+      tooltip: "Phase angle in degrees, measured counter-clockwise from the +real axis."
+    }
+  ],
+  outputs: [
+    { key: "magnitudeOut", label: "Magnitude |a + jb|", symbol: "r", unit: "", primary: true },
+    { key: "angleDegOut", label: "Angle (\u2212180\u2026180\xB0)", symbol: "\u03B8", unit: "\xB0" },
+    { key: "angleRadOut", label: "Angle (radians)", symbol: "\u03B8", unit: "rad" },
+    { key: "angleDeg360", label: "Angle (0\u2026360\xB0)", symbol: "\u03B8", unit: "\xB0" },
+    { key: "realOut", label: "Real Part from r\u2220\u03B8", symbol: "a", unit: "" },
+    { key: "imagOut", label: "Imaginary Part from r\u2220\u03B8", symbol: "b", unit: "" }
+  ],
+  calculate: calculateRectangularPolar,
+  formula: {
+    primary: "r = \u221A(a\xB2 + b\xB2), \u03B8 = atan2(b, a) \xB7 180/\u03C0 ; a = r\xB7cos \u03B8, b = r\xB7sin \u03B8",
+    latex: "r = \\sqrt{a^{2} + b^{2}},\\quad \\theta = \\operatorname{atan2}(b,\\,a) \\qquad a = r\\cos\\theta,\\quad b = r\\sin\\theta",
+    variables: [
+      { symbol: "a", description: "Real part (resistance R for impedance)", unit: "" },
+      { symbol: "b", description: "Imaginary part (reactance X for impedance)", unit: "" },
+      { symbol: "r", description: "Magnitude / modulus", unit: "" },
+      { symbol: "\u03B8", description: "Phase angle / argument", unit: "\xB0 or rad" }
+    ],
+    derivation: [
+      "A complex number a + jb is a point in the plane. Its distance from the origin is the Pythagorean magnitude r = \u221A(a\xB2 + b\xB2), and its angle from the +real axis is \u03B8.",
+      "\u03B8 must be computed with the two-argument arctangent atan2(b, a), not arctan(b/a). The single-argument form loses the sign of a, mapping quadrant II onto IV and quadrant III onto I \u2014 a 180\xB0 error that silently inverts a reflection coefficient or an impedance phase.",
+      "atan2 returns \u03B8 on (\u2212180\xB0, 180\xB0]. Adding 360\xB0 to negative results gives the equivalent 0\u2013360\xB0 convention used by most VNAs and network-analysis file formats.",
+      "The inverse mapping is the definition of polar coordinates: a = r\xB7cos \u03B8, b = r\xB7sin \u03B8."
+    ],
+    reference: "Standard complex-plane identities; Touchstone MA/RI conventions"
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["angle-units", "vswr-return-loss", "reactance-calculator", "db-converter"],
+  faqs: [
+    {
+      question: "Why is atan2 required instead of arctan(b/a)?",
+      answer: "arctan(b/a) only returns \u221290\xB0\u2026+90\xB0, so it cannot distinguish \u22123 \u2212 j4 from 3 + j4 \u2014 both give the same ratio. atan2 uses the signs of a and b separately and returns the correct quadrant over the full \u2212180\xB0\u2026180\xB0 range. Getting this wrong flips an impedance from inductive to capacitive."
+    },
+    {
+      question: "How does this apply to impedance?",
+      answer: "An impedance Z = R + jX in rectangular form becomes |Z|\u2220\u03B8 in polar form. |Z| is what an impedance meter reads as magnitude and \u03B8 is the phase between voltage and current. A positive \u03B8 is inductive, negative is capacitive, and \u03B8 = 0 is purely resistive."
+    },
+    {
+      question: "Which angle convention do Touchstone files use?",
+      answer: "Touchstone MA (magnitude-angle) and DB formats both store the angle in degrees, normally in the \u2212180\xB0\u2026180\xB0 range that atan2 produces. The RI format stores the rectangular real and imaginary parts directly, which is what this converter produces on the right-hand side."
+    },
+    {
+      question: "What is the magnitude of a pure reactance?",
+      answer: "For 0 + j1 the magnitude is 1 and the angle is exactly +90\xB0. For 0 \u2212 j1 the magnitude is also 1 but the angle is \u221290\xB0. Magnitude alone cannot tell inductive from capacitive \u2014 the sign of the angle carries that information."
+    },
+    {
+      question: "Should magnitude ever be negative?",
+      answer: 'By convention no. A "negative magnitude" r\u2220\u03B8 is the same vector as |r|\u2220(\u03B8+180\xB0). This calculator will still evaluate it so that you can see the equivalence, but it warns because most downstream tools assume r \u2265 0.'
+    }
+  ]
+};
+
+// src/lib/calculators/general/frequency-ppm-tolerance.ts
+var SECONDS_PER_DAY = 86400;
+var MINUTES_PER_YEAR = 525600;
+function calculateFrequencyPpmTolerance(inputs) {
+  const {
+    nominalFrequency,
+    // MHz
+    initialTolerance,
+    // ±ppm
+    tempStability,
+    // ±ppm
+    agingPerYear,
+    // ±ppm/year
+    years
+  } = inputs;
+  const nominalHz = nominalFrequency * 1e6;
+  const agingTotalPpm = agingPerYear * years;
+  const totalPpmWorst = initialTolerance + tempStability + agingTotalPpm;
+  const totalPpmRss = Math.sqrt(
+    initialTolerance * initialTolerance + tempStability * tempStability + agingTotalPpm * agingTotalPpm
+  );
+  const deviationHz = nominalHz * totalPpmWorst / 1e6;
+  const fMinHz = nominalHz - deviationHz;
+  const fMaxHz = nominalHz + deviationHz;
+  const spanHz = 2 * deviationHz;
+  const driftSecPerDay = SECONDS_PER_DAY * totalPpmWorst / 1e6;
+  const driftMinPerYear = MINUTES_PER_YEAR * totalPpmWorst / 1e6;
+  const warnings = [];
+  if (totalPpmWorst > 50) {
+    warnings.push(
+      `Worst-case ${totalPpmWorst.toFixed(1)} ppm exceeds the \xB150 ppm budget most UART links assume`
+    );
+  }
+  if (totalPpmWorst > 100) {
+    warnings.push("Above \xB1100 ppm \u2014 too loose for USB, Ethernet, and most radio reference clocks");
+  }
+  if (years > 5 && agingPerYear > 0) {
+    warnings.push(
+      "Aging is accumulated linearly (worst case); real crystals age roughly logarithmically, so this over-estimates years 2+"
+    );
+  }
+  return {
+    values: {
+      totalPpmWorst,
+      totalPpmRss,
+      agingTotalPpm,
+      deviationHz,
+      fMinHz,
+      fMaxHz,
+      spanHz,
+      driftSecPerDay,
+      driftMinPerYear
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var frequencyPpmTolerance = {
+  slug: "frequency-ppm-tolerance",
+  title: "Crystal PPM Tolerance & Frequency Error Calculator",
+  shortTitle: "PPM Tolerance",
+  metaTitle: "PPM to Hz Calculator \u2014 Crystal Frequency Tolerance & Drift",
+  category: "general",
+  description: "Convert crystal tolerance in ppm to absolute frequency error in Hz. Stacks initial tolerance, temperature stability, and aging into worst-case and RSS budgets, with clock drift in seconds per day.",
+  keywords: [
+    "ppm calculator",
+    "crystal tolerance",
+    "ppm to Hz",
+    "frequency stability",
+    "oscillator aging",
+    "clock drift seconds per day",
+    "frequency error budget"
+  ],
+  inputs: [
+    {
+      key: "nominalFrequency",
+      label: "Nominal Frequency",
+      symbol: "f\u2080",
+      unit: "MHz",
+      defaultValue: 25,
+      min: 1e-6,
+      max: 1e3,
+      tooltip: "Marked frequency of the crystal or oscillator.",
+      presets: [
+        {
+          label: "32.768 kHz RTC (\xB120 ppm)",
+          values: { nominalFrequency: 0.032768, initialTolerance: 20, tempStability: 10, agingPerYear: 3, years: 10 }
+        },
+        {
+          label: "8 MHz MCU (\xB130 ppm)",
+          values: { nominalFrequency: 8, initialTolerance: 30, tempStability: 20, agingPerYear: 5, years: 5 }
+        },
+        {
+          label: "25 MHz Ethernet (\xB150 ppm)",
+          values: { nominalFrequency: 25, initialTolerance: 30, tempStability: 15, agingPerYear: 3, years: 5 }
+        },
+        {
+          label: "26 MHz LTE TCXO (\xB10.5 ppm)",
+          values: { nominalFrequency: 26, initialTolerance: 0.5, tempStability: 0.5, agingPerYear: 1, years: 3 }
+        },
+        {
+          label: "12 MHz USB (\xB10.25%)",
+          values: { nominalFrequency: 12, initialTolerance: 50, tempStability: 30, agingPerYear: 5, years: 10 }
+        }
+      ]
+    },
+    {
+      key: "initialTolerance",
+      label: "Initial Tolerance @ 25 \xB0C",
+      symbol: "\xB1ppm",
+      unit: "ppm",
+      defaultValue: 20,
+      min: 0,
+      max: 1e3,
+      tooltip: "Calibration accuracy at room temperature, from the datasheet."
+    },
+    {
+      key: "tempStability",
+      label: "Temperature Stability",
+      symbol: "\xB1ppm",
+      unit: "ppm",
+      defaultValue: 15,
+      min: 0,
+      max: 1e3,
+      tooltip: "Frequency deviation over the full operating temperature range."
+    },
+    {
+      key: "agingPerYear",
+      label: "Aging (first year)",
+      symbol: "\xB1ppm/yr",
+      unit: "ppm/yr",
+      defaultValue: 3,
+      min: 0,
+      max: 100,
+      tooltip: "Long-term drift per year. AT-cut crystals are typically 1\u20135 ppm in year one."
+    },
+    {
+      key: "years",
+      label: "Service Life",
+      symbol: "t",
+      unit: "years",
+      defaultValue: 3,
+      min: 0,
+      max: 30,
+      step: 1,
+      tooltip: "How long the aging term is accumulated for."
+    }
+  ],
+  outputs: [
+    { key: "totalPpmWorst", label: "Total Error (worst case)", symbol: "\xB1ppm", unit: "ppm", primary: true },
+    { key: "totalPpmRss", label: "Total Error (RSS)", symbol: "\xB1ppm", unit: "ppm" },
+    { key: "agingTotalPpm", label: "Accumulated Aging", symbol: "\xB1ppm", unit: "ppm" },
+    { key: "deviationHz", label: "Frequency Deviation", symbol: "\xB1\u0394f", unit: "Hz" },
+    { key: "fMinHz", label: "Minimum Frequency", symbol: "f_min", unit: "Hz" },
+    { key: "fMaxHz", label: "Maximum Frequency", symbol: "f_max", unit: "Hz" },
+    { key: "spanHz", label: "Total Frequency Span", symbol: "\u0394f_pp", unit: "Hz" },
+    { key: "driftSecPerDay", label: "Clock Drift", symbol: "", unit: "s/day" },
+    { key: "driftMinPerYear", label: "Clock Drift", symbol: "", unit: "min/year" }
+  ],
+  calculate: calculateFrequencyPpmTolerance,
+  formula: {
+    primary: "\u0394f = f\u2080 \xD7 ppm_total / 10\u2076, ppm_total = ppm_init + ppm_temp + ppm_age \xD7 years",
+    latex: "\\Delta f = f_0 \\cdot \\frac{\\text{ppm}_{\\text{init}} + \\text{ppm}_{\\text{temp}} + \\text{ppm}_{\\text{age}}\\, t}{10^{6}} \\qquad \\text{ppm}_{\\text{RSS}} = \\sqrt{\\text{ppm}_{\\text{init}}^{2} + \\text{ppm}_{\\text{temp}}^{2} + (\\text{ppm}_{\\text{age}} t)^{2}}",
+    variables: [
+      { symbol: "f\u2080", description: "Nominal frequency", unit: "Hz" },
+      { symbol: "\u0394f", description: "Absolute frequency deviation", unit: "Hz" },
+      { symbol: "ppm_init", description: "Initial calibration tolerance at 25 \xB0C", unit: "ppm" },
+      { symbol: "ppm_temp", description: "Stability over the operating temperature range", unit: "ppm" },
+      { symbol: "ppm_age", description: "Aging rate", unit: "ppm/year" },
+      { symbol: "t", description: "Service life", unit: "years" }
+    ],
+    derivation: [
+      "One part per million is a fractional error of 10\u207B\u2076, so the absolute error scales with the carrier: \xB110 ppm is \xB10.33 Hz at 32.768 kHz but \xB1250 Hz at 25 MHz. This is why the same crystal grade is fine for an RTC and marginal for a radio.",
+      "The three datasheet terms are specified independently and none of them subsumes the others. Arithmetic summing gives the guaranteed limit \u2014 every unit will be inside it \u2014 and is the correct input to a protocol margin such as the \xB10.25 % a UART can survive or the \xB120 ppm a GSM handset must hold.",
+      "The root-sum-square combination assumes the three errors are uncorrelated, which they largely are (a trim offset says nothing about the turnover temperature). It gives the realistic distribution width and is what a Cpk yield calculation should use.",
+      "Because ppm is a fractional rate, timing error follows directly: 1 ppm is 1 \xB5s per second, 86.4 ms per day, and 31.5 s per year. A \xB120 ppm RTC therefore drifts up to \xB11.7 s/day and \xB110.5 min/year."
+    ],
+    reference: "IEEE 177 quartz resonator definitions; typical AT-cut crystal datasheet parameters"
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "crystal-load-capacitance",
+    "frequency-wavelength",
+    "rc-time-constant",
+    "lc-resonance"
+  ],
+  faqs: [
+    {
+      question: "How many Hz is 1 ppm?",
+      answer: "One ppm is one millionth of the nominal frequency. At 32.768 kHz that is 0.032768 Hz; at 8 MHz it is 8 Hz; at 25 MHz it is 25 Hz. Multiply the frequency in MHz by the ppm figure to get the deviation in Hz directly."
+    },
+    {
+      question: "How much does a \xB120 ppm RTC drift per day?",
+      answer: "A day is 86,400 s, so \xB120 ppm is \xB186,400 \xD7 20 \xD7 10\u207B\u2076 = \xB11.73 s/day, or roughly \xB110.5 minutes per year. That is why calendar clocks that must stay within a minute a year need a \xB12 ppm TCXO or periodic NTP correction."
+    },
+    {
+      question: "Should I add the tolerances or root-sum-square them?",
+      answer: "Add them when you need a guaranteed limit that no unit may exceed \u2014 protocol compliance, worst-case link margin, regulatory frequency accuracy. Use RSS when you are estimating the real spread across production, because the three mechanisms are independent and rarely all hit their limit in the same direction on the same part."
+    },
+    {
+      question: "Why does UART need better than \xB150 ppm?",
+      answer: "A standard 8N1 UART frame samples the stop bit about 9.5 bit times after the start edge, so the accumulated timing error must stay under half a bit \u2014 roughly \xB15 % total between the two ends. That budget is dominated by baud-rate divider rounding, not the crystal; the \xB150 ppm figure is what keeps the crystal from eating into the divider allowance."
+    },
+    {
+      question: "Is linear aging realistic over ten years?",
+      answer: 'No \u2014 it is deliberately pessimistic. Crystal aging is approximately logarithmic: most of the shift happens in the first year and the rate falls after that, so ten years is usually closer to 2\u20133\xD7 the first-year figure rather than 10\xD7. Linear accumulation is the conservative reading of a "\xB1X ppm/year" specification and is what you want for a guaranteed limit.'
+    },
+    {
+      question: "Does load capacitance error count as extra ppm?",
+      answer: "Yes, and it is not included here. A crystal specified for 12 pF running against an actual 15 pF load is pulled by tens of ppm \u2014 often larger than every datasheet term combined. Use the crystal load capacitance calculator to size the loading capacitors first, then treat any residual mismatch as an additional tolerance term."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/effective-dielectric-constant.ts
+var C_MM_PER_PS6 = 0.299792458;
+var MU_0 = 4 * Math.PI * 1e-7;
+function calculateEffectiveDielectricConstant(inputs) {
+  const { traceWidth, dielectricHeight, dielectricConst, copperThickness, frequency } = inputs;
+  const w = traceWidth;
+  const h = dielectricHeight;
+  const er = dielectricConst;
+  const t = copperThickness / 1e3;
+  if (!(w > 0) || !(h > 0) || er < 1) {
+    return {
+      values: {},
+      errors: ["Trace width and dielectric height must be positive and \u03B5r must be \u2265 1"]
+    };
+  }
+  const { Z0, erEff } = hammerstadJensen2(w, h, er, t);
+  const fillingFactor = er > 1 ? (erEff - 1) / (er - 1) : 1;
+  const hMetres = h / 1e3;
+  const fpHz = Z0 / (2 * MU_0 * hMetres);
+  const G = 0.6 + 9e-3 * Z0;
+  const fHz = frequency * 1e9;
+  const ratio = fHz / fpHz;
+  const erEffAtFreq = er - (er - erEff) / (1 + G * ratio * ratio);
+  const dispersionPercent = (erEffAtFreq - erEff) / erEff * 100;
+  const velocityPercentC = 100 / Math.sqrt(erEff);
+  const propDelayPsPerMm = Math.sqrt(erEff) / C_MM_PER_PS6;
+  const propDelayPsPerInch = propDelayPsPerMm * 25.4;
+  const wavelengthMm = C_MM_PER_PS6 / (frequency * 1e-3 * Math.sqrt(erEffAtFreq));
+  const quarterWaveMm = wavelengthMm / 4;
+  const warnings = [];
+  const u = w / h;
+  if (u < 0.05 || u > 20) {
+    warnings.push(`w/h = ${u.toFixed(3)} is outside the 0.05\u201320 range where Hammerstad\u2013Jensen is accurate to ~1 %`);
+  }
+  if (Math.abs(dispersionPercent) > 2) {
+    warnings.push(
+      `Dispersion shifts \u03B5eff by ${dispersionPercent.toFixed(1)} % at ${frequency} GHz \u2014 use the dispersive value for stub and wavelength work`
+    );
+  }
+  if (er > 12) {
+    warnings.push("\u03B5r above 12 is outside the range Hammerstad\u2013Jensen was fitted over");
+  }
+  return {
+    values: {
+      erEff,
+      erEffAtFreq,
+      fillingFactor,
+      z0Ohm: Z0,
+      velocityPercentC,
+      propDelayPsPerMm,
+      propDelayPsPerInch,
+      wavelengthMm,
+      quarterWaveMm,
+      dispersionPercent
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var effectiveDielectricConstant = {
+  slug: "effective-dielectric-constant",
+  title: "Effective Dielectric Constant Calculator (Microstrip)",
+  shortTitle: "Effective Dielectric Constant",
+  metaTitle: "Effective Dielectric Constant Calculator \u2014 \u03B5eff, Propagation Delay",
+  category: "pcb",
+  description: "Calculate microstrip effective dielectric constant \u03B5eff with Hammerstad\u2013Jensen, plus Getsinger dispersion, propagation velocity, delay in ps/mm and ps/inch, and guided wavelength.",
+  keywords: [
+    "effective dielectric constant",
+    "epsilon effective",
+    "microstrip permittivity",
+    "Hammerstad Jensen",
+    "propagation delay ps per inch",
+    "guided wavelength",
+    "microstrip dispersion"
+  ],
+  inputs: [
+    {
+      key: "traceWidth",
+      label: "Trace Width",
+      symbol: "w",
+      unit: "mm",
+      defaultValue: 0.3,
+      min: 0.01,
+      max: 50,
+      presets: [
+        { label: "50 \u03A9 on 0.2 mm FR-4", values: { traceWidth: 0.36, dielectricHeight: 0.2, dielectricConst: 4.3 } },
+        { label: "50 \u03A9 on 0.508 mm RO4350B", values: { traceWidth: 1.1, dielectricHeight: 0.508, dielectricConst: 3.48 } },
+        { label: "50 \u03A9 on 0.254 mm RT/duroid 5880", values: { traceWidth: 0.78, dielectricHeight: 0.254, dielectricConst: 2.2 } },
+        { label: "Narrow 0.1 mm signal trace", values: { traceWidth: 0.1, dielectricHeight: 0.2, dielectricConst: 4.3 } }
+      ]
+    },
+    {
+      key: "dielectricHeight",
+      label: "Dielectric Height to Plane",
+      symbol: "h",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.01,
+      max: 10,
+      tooltip: "Thickness of dielectric between the trace and the reference plane below it."
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.3,
+      min: 1,
+      max: 20,
+      presets: [
+        { label: "FR-4 (4.3)", values: { dielectricConst: 4.3 } },
+        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
+        { label: "Rogers RO4003C (3.38)", values: { dielectricConst: 3.38 } },
+        { label: "RT/duroid 5880 (2.2)", values: { dielectricConst: 2.2 } },
+        { label: "Alumina (9.8)", values: { dielectricConst: 9.8 } }
+      ]
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Thickness",
+      symbol: "t",
+      unit: "\xB5m",
+      defaultValue: 35,
+      min: 1,
+      max: 400,
+      presets: [
+        { label: "\xBD oz (17.5 \xB5m)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 \xB5m)", values: { copperThickness: 35 } },
+        { label: "2 oz (70 \xB5m)", values: { copperThickness: 70 } }
+      ]
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 1,
+      min: 1e-3,
+      max: 110,
+      tooltip: "Used for the dispersion correction and the guided wavelength.",
+      presets: [
+        { label: "100 MHz", values: { frequency: 0.1 } },
+        { label: "2.4 GHz ISM", values: { frequency: 2.4 } },
+        { label: "5.8 GHz ISM", values: { frequency: 5.8 } },
+        { label: "10 GHz X-band", values: { frequency: 10 } },
+        { label: "28 GHz mmWave", values: { frequency: 28 } }
+      ]
+    }
+  ],
+  outputs: [
+    { key: "erEff", label: "Effective Dielectric Constant (static)", symbol: "\u03B5eff", unit: "", primary: true },
+    { key: "erEffAtFreq", label: "\u03B5eff with Dispersion", symbol: "\u03B5eff(f)", unit: "" },
+    { key: "dispersionPercent", label: "Dispersion Shift", symbol: "", unit: "%" },
+    { key: "fillingFactor", label: "Filling Factor", symbol: "q", unit: "" },
+    { key: "z0Ohm", label: "Characteristic Impedance", symbol: "Z\u2080", unit: "\u03A9" },
+    { key: "velocityPercentC", label: "Propagation Velocity", symbol: "v\u209A", unit: "% of c" },
+    { key: "propDelayPsPerMm", label: "Propagation Delay", symbol: "t\u209Ad", unit: "ps/mm" },
+    { key: "propDelayPsPerInch", label: "Propagation Delay", symbol: "t\u209Ad", unit: "ps/inch" },
+    { key: "wavelengthMm", label: "Guided Wavelength", symbol: "\u03BBg", unit: "mm" },
+    { key: "quarterWaveMm", label: "Quarter Wavelength", symbol: "\u03BBg/4", unit: "mm" }
+  ],
+  calculate: calculateEffectiveDielectricConstant,
+  formula: {
+    primary: "\u03B5eff = (\u03B5r+1)/2 + ((\u03B5r\u22121)/2)\xB7(1 + 10h/w)^(\u2212a\xB7b)",
+    latex: "\\varepsilon_{\\text{eff}} = \\frac{\\varepsilon_r + 1}{2} + \\frac{\\varepsilon_r - 1}{2}\\left(1 + \\frac{10}{u}\\right)^{-a(u)\\,b(\\varepsilon_r)},\\qquad u = \\frac{w_{\\text{eff}}}{h}",
+    variables: [
+      { symbol: "\u03B5eff", description: "Effective dielectric constant seen by the wave", unit: "" },
+      { symbol: "\u03B5r", description: "Substrate relative permittivity", unit: "" },
+      { symbol: "w", description: "Trace width", unit: "mm" },
+      { symbol: "h", description: "Dielectric height to the reference plane", unit: "mm" },
+      { symbol: "t", description: "Copper thickness (widens the effective trace)", unit: "mm" },
+      { symbol: "q", description: "Filling factor, (\u03B5eff\u22121)/(\u03B5r\u22121)", unit: "" },
+      { symbol: "tpd", description: "Propagation delay, \u221A\u03B5eff / c", unit: "ps/mm" }
+    ],
+    derivation: [
+      "A microstrip has substrate below the trace and air above it, so the field is split between two media. The wave propagates as if it were in a single uniform medium of permittivity \u03B5eff, bounded by 1 < \u03B5eff < \u03B5r.",
+      "Hammerstad and Jensen fit \u03B5eff to the exact quasi-static solution as a function of the single shape parameter u = w/h, with an \u03B5r-dependent exponent. The fit holds to about 1 % over 0.05 \u2264 u \u2264 20 and \u03B5r \u2264 12 \u2014 the range that covers essentially all PCB work.",
+      "Copper thickness is folded in first as an effective width increase \u0394w = (t/\u03C0)\xB7ln(1 + 2h/t), because a thick conductor presents extra sidewall to the field. Ignoring it overstates Z\u2080 on heavy copper.",
+      "Two limits check the model. As w/h \u2192 0 the line barely disturbs the interface and \u03B5eff \u2192 (\u03B5r+1)/2, the arithmetic mean of the two half-spaces. As w/h \u2192 \u221E the field is squeezed entirely into the substrate and \u03B5eff \u2192 \u03B5r \u2014 the parallel-plate limit, where the microstrip becomes a stripline in behaviour.",
+      "Delay follows directly: tpd = \u221A\u03B5eff / c. On FR-4 microstrip a typical \u03B5eff \u2248 3.2 gives about 6.0 ps/mm (153 ps/inch), against 7.0 ps/mm for a fully-buried stripline on the same laminate. That difference is why outer-layer routing is faster.",
+      "Getsinger models dispersion as \u03B5eff(f) = \u03B5r \u2212 (\u03B5r \u2212 \u03B5eff)/(1 + G(f/fp)\xB2) with fp = Z\u2080/(2\xB5\u2080h) and G = 0.6 + 0.009Z\u2080. The field concentrates in the substrate as frequency rises, so \u03B5eff climbs monotonically toward \u03B5r."
+    ],
+    reference: 'E. Hammerstad & \xD8. Jensen, "Accurate Models for Microstrip Computer-Aided Design", IEEE MTT-S 1980; W. J. Getsinger, "Microstrip Dispersion Model", IEEE Trans. MTT-21, 1973'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "microstrip-impedance",
+    "controlled-impedance",
+    "critical-trace-length",
+    "pcb-trace-inductance"
+  ],
+  faqs: [
+    {
+      question: "Why is \u03B5eff lower than the laminate \u03B5r?",
+      answer: "Because a microstrip is only half-buried. Part of the field travels through the air above the trace, where the permittivity is 1, which pulls the average down. A stripline is fully surrounded by dielectric, so its \u03B5eff equals \u03B5r exactly \u2014 and it is correspondingly slower."
+    },
+    {
+      question: "What is a typical \u03B5eff for FR-4?",
+      answer: "A 50 \u03A9 microstrip on 4.3 \u03B5r FR-4 usually lands between 3.0 and 3.4 depending on the width-to-height ratio. Wider traces push more field into the substrate and raise \u03B5eff; narrow traces let more field into the air and lower it."
+    },
+    {
+      question: "How does \u03B5eff change the length of a quarter-wave stub?",
+      answer: "Physical length scales as 1/\u221A\u03B5eff. At 2.4 GHz in free space a quarter wave is 31.2 mm; on FR-4 microstrip with \u03B5eff \u2248 3.2 it shrinks to about 17.5 mm. Using \u03B5r = 4.3 instead of \u03B5eff would give 15.1 mm \u2014 a 14 % error, enough to move a filter edge by hundreds of MHz."
+    },
+    {
+      question: "When does dispersion actually matter?",
+      answer: "The correction scales with (f\xB7h)\xB2. On 0.2 mm substrate it is well under 1 % up to 10 GHz and can be ignored. On 1.6 mm substrate, or above roughly 15 GHz on any stack-up, \u03B5eff can climb several percent toward \u03B5r and must be used for wavelength-critical structures. The calculator flags the shift when it exceeds 2 %."
+    },
+    {
+      question: "What is the filling factor q used for?",
+      answer: "q = (\u03B5eff\u22121)/(\u03B5r\u22121) states directly what fraction of the field energy is inside the substrate. It is convenient for sensitivity work: a change \u0394\u03B5r in the laminate moves \u03B5eff by roughly q\xB7\u0394\u03B5r, so a line with q = 0.7 passes 70 % of any laminate tolerance straight through into your delay and impedance budget."
+    },
+    {
+      question: "Does soldermask change \u03B5eff?",
+      answer: "Yes \u2014 soldermask is roughly \u03B5r 3.5 and replaces some of the air above the trace, raising \u03B5eff by about 2\u20135 % on a typical 50 \u03A9 line and lowering Z\u2080 by a similar amount. This calculator models bare microstrip. For a masked line use the embedded-microstrip mode of the controlled impedance calculator."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/via-step-response.ts
+function calculateViaStepResponse(inputs) {
+  const {
+    viaLength,
+    // mm
+    drillDiameter,
+    // mm
+    padDiameter,
+    // mm
+    antipadDiameter,
+    // mm
+    dielectricConst,
+    lineImpedance,
+    // Ω
+    riseTime
+    // ps
+  } = inputs;
+  const h = viaLength;
+  const d = drillDiameter;
+  const d1 = padDiameter;
+  const d2 = antipadDiameter;
+  const er = dielectricConst;
+  const z0 = lineImpedance;
+  if (!(d > 0) || !(h > 0)) {
+    return {
+      values: {},
+      errors: ["Via length and drill diameter must be positive"]
+    };
+  }
+  if (d2 <= d1) {
+    return {
+      values: {},
+      errors: ["Antipad diameter must be larger than the pad diameter"]
+    };
+  }
+  if (!(z0 > 0) || !(riseTime > 0)) {
+    return {
+      values: {},
+      errors: ["Line impedance and input rise time must be positive"]
+    };
+  }
+  const inductanceNH = 0.2 * h * (Math.log(4 * h / d) + 0.5);
+  const capacitancePF = 0.0554 * er * h * d1 / (d2 - d1);
+  const L = inductanceNH * 1e-9;
+  const C = capacitancePF * 1e-12;
+  const zViaOhm = Math.sqrt(L / C);
+  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C)) / 1e9;
+  const excessC = C - L / (z0 * z0);
+  const excessL = L - C * z0 * z0;
+  const excessCapacitancePF = excessC * 1e12;
+  const excessInductanceNH = excessL * 1e9;
+  const trIn = riseTime * 1e-12;
+  let degradation;
+  if (excessC > 0) {
+    degradation = 2.2 * (z0 / 2) * excessC;
+  } else if (excessL > 0) {
+    degradation = 2.2 * excessL / (2 * z0);
+  } else {
+    degradation = 0;
+  }
+  const riseTimeDegradationPs = degradation * 1e12;
+  const riseTimeOutPs = Math.sqrt(trIn * trIn + degradation * degradation) * 1e12;
+  const reflection = excessC > 0 ? z0 * excessC / (2 * trIn) : excessL > 0 ? excessL / (2 * z0 * trIn) : 0;
+  const reflectionPercent = reflection * 100;
+  const kneeFrequencyGHz = 0.5 / riseTime * 1e3;
+  const degradationPercent = (riseTimeOutPs / riseTime - 1) * 100;
+  const warnings = [];
+  if (reflectionPercent > 5) {
+    warnings.push(
+      `Peak reflection ${reflectionPercent.toFixed(1)} % \u2014 back-drill, shrink the pad, or enlarge the antipad`
+    );
+  }
+  if (reflectionPercent > 30) {
+    warnings.push(
+      "Reflection exceeds 30 % \u2014 the lumped small-discontinuity approximation no longer holds; use a 3D solver"
+    );
+  }
+  if (fResonanceGHz < 3 * kneeFrequencyGHz) {
+    warnings.push(
+      `Via self-resonance ${fResonanceGHz.toFixed(2)} GHz is within 3\xD7 the ${kneeFrequencyGHz.toFixed(2)} GHz knee \u2014 the lumped model is optimistic here`
+    );
+  }
+  if (degradationPercent > 10) {
+    warnings.push(`Edge slows by ${degradationPercent.toFixed(1)} % through this via`);
+  }
+  return {
+    values: {
+      riseTimeOutPs,
+      riseTimeDegradationPs,
+      degradationPercent,
+      inductanceNH,
+      capacitancePF,
+      zViaOhm,
+      fResonanceGHz,
+      excessCapacitancePF,
+      excessInductanceNH,
+      reflectionPercent,
+      kneeFrequencyGHz
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var viaStepResponse = {
+  slug: "via-step-response",
+  title: "Via Step Response & Rise-Time Degradation Calculator",
+  shortTitle: "Via Step Response",
+  metaTitle: "Via Rise Time Degradation Calculator \u2014 Step Response & Reflection",
+  category: "pcb",
+  description: "Model a PCB via as a lumped LC discontinuity: excess capacitance and inductance, self-resonant frequency, 10\u201390 % rise-time degradation, and peak reflection for a given edge rate.",
+  keywords: [
+    "via rise time degradation",
+    "via step response",
+    "via discontinuity",
+    "via self resonance",
+    "signal integrity via",
+    "via reflection",
+    "excess capacitance"
+  ],
+  inputs: [
+    {
+      key: "viaLength",
+      label: "Via Length",
+      symbol: "h",
+      unit: "mm",
+      defaultValue: 1.6,
+      min: 0.05,
+      max: 6.5,
+      tooltip: "Barrel length the signal actually traverses. Back-drilled vias should use the remaining length, not the board thickness.",
+      presets: [
+        { label: "Full 1.6 mm board", values: { viaLength: 1.6 } },
+        { label: "Thick 3.2 mm backplane", values: { viaLength: 3.2 } },
+        { label: "Back-drilled to 0.4 mm", values: { viaLength: 0.4 } },
+        { label: "HDI 0.8 mm board", values: { viaLength: 0.8 } }
+      ]
+    },
+    {
+      key: "drillDiameter",
+      label: "Drill Diameter",
+      symbol: "d",
+      unit: "mm",
+      defaultValue: 0.3,
+      min: 0.05,
+      max: 2
+    },
+    {
+      key: "padDiameter",
+      label: "Pad Diameter",
+      symbol: "D\u2081",
+      unit: "mm",
+      defaultValue: 0.6,
+      min: 0.1,
+      max: 3
+    },
+    {
+      key: "antipadDiameter",
+      label: "Antipad Diameter",
+      symbol: "D\u2082",
+      unit: "mm",
+      defaultValue: 1,
+      min: 0.15,
+      max: 6,
+      tooltip: "Plane clearance around the via. Enlarging it is the cheapest way to cut via capacitance."
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.3,
+      min: 1,
+      max: 20,
+      presets: [
+        { label: "FR-4 (4.3)", values: { dielectricConst: 4.3 } },
+        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
+        { label: "Megtron 6 (3.7)", values: { dielectricConst: 3.7 } }
+      ]
+    },
+    {
+      key: "lineImpedance",
+      label: "Line Impedance",
+      symbol: "Z\u2080",
+      unit: "\u03A9",
+      defaultValue: 50,
+      min: 10,
+      max: 200,
+      presets: [
+        { label: "50 \u03A9 single-ended", values: { lineImpedance: 50 } },
+        { label: "40 \u03A9 DDR", values: { lineImpedance: 40 } },
+        { label: "75 \u03A9 video", values: { lineImpedance: 75 } }
+      ]
+    },
+    {
+      key: "riseTime",
+      label: "Input Rise Time (10\u201390 %)",
+      symbol: "t\u1D63",
+      unit: "ps",
+      defaultValue: 400,
+      min: 1,
+      max: 1e4,
+      presets: [
+        { label: "Slow CMOS (2 ns)", values: { riseTime: 2e3 } },
+        { label: "LVDS (400 ps)", values: { riseTime: 400 } },
+        { label: "DDR4 (100 ps)", values: { riseTime: 100 } },
+        { label: "PCIe Gen4 (30 ps)", values: { riseTime: 30 } },
+        { label: "112G SerDes (10 ps)", values: { riseTime: 10 } }
+      ]
+    }
+  ],
+  outputs: [
+    { key: "riseTimeOutPs", label: "Output Rise Time", symbol: "t\u1D63,out", unit: "ps", primary: true },
+    { key: "riseTimeDegradationPs", label: "Rise-Time Degradation", symbol: "\u0394t\u1D63", unit: "ps" },
+    { key: "degradationPercent", label: "Edge Slowdown", symbol: "", unit: "%" },
+    { key: "reflectionPercent", label: "Peak Reflection", symbol: "|\u03C1|", unit: "%" },
+    { key: "inductanceNH", label: "Via Inductance", symbol: "L", unit: "nH" },
+    { key: "capacitancePF", label: "Via Capacitance", symbol: "C", unit: "pF" },
+    { key: "excessCapacitancePF", label: "Excess Capacitance", symbol: "C_exc", unit: "pF" },
+    { key: "excessInductanceNH", label: "Excess Inductance", symbol: "L_exc", unit: "nH" },
+    { key: "zViaOhm", label: "Via Impedance \u221A(L/C)", symbol: "Z_via", unit: "\u03A9" },
+    { key: "fResonanceGHz", label: "LC Self-Resonance", symbol: "f\u2080", unit: "GHz" },
+    { key: "kneeFrequencyGHz", label: "Signal Knee Frequency", symbol: "f_knee", unit: "GHz" }
+  ],
+  calculate: calculateViaStepResponse,
+  formula: {
+    primary: "\u0394t\u1D63 = 2.2\xB7(Z\u2080/2)\xB7C_exc, t\u1D63,out = \u221A(t\u1D63,in\xB2 + \u0394t\u1D63\xB2), C_exc = C \u2212 L/Z\u2080\xB2",
+    latex: "\\Delta t_r = 2.2\\,\\frac{Z_0}{2}\\left(C - \\frac{L}{Z_0^{2}}\\right), \\qquad t_{r,\\text{out}} = \\sqrt{t_{r,\\text{in}}^{2} + \\Delta t_r^{2}}, \\qquad f_0 = \\frac{1}{2\\pi\\sqrt{LC}}",
+    variables: [
+      { symbol: "L", description: "Via barrel inductance", unit: "nH" },
+      { symbol: "C", description: "Pad-to-antipad capacitance", unit: "pF" },
+      { symbol: "C_exc", description: "Capacitance in excess of a matched section", unit: "pF" },
+      { symbol: "Z\u2080", description: "Impedance of the line the via sits in", unit: "\u03A9" },
+      { symbol: "t\u1D63", description: "10\u201390 % rise time", unit: "ps" },
+      { symbol: "f\u2080", description: "LC self-resonant frequency of the via", unit: "GHz" },
+      { symbol: "f_knee", description: "Knee frequency, 0.5/t\u1D63", unit: "GHz" }
+    ],
+    derivation: [
+      "The barrel behaves as a short round conductor over a return path: L = 0.2\xB7h\xB7[ln(4h/d) + 0.5] nH with h and d in mm. Inductance grows with length and only logarithmically with diameter, so a fatter drill barely helps \u2014 shortening the barrel does.",
+      "The pad, sitting in a hole in the plane, forms a small coaxial capacitor with the antipad edge: C = 0.0554\xB7\u03B5r\xB7h\xB7D\u2081/(D\u2082 \u2212 D\u2081) pF (IPC-2141A). Widening the antipad shrinks C fast, which is why high-speed stack-ups specify oversized clearances on signal vias.",
+      "Neither L nor C alone tells you whether the via hurts. A section of ordinary transmission line also has inductance and capacitance; what a receiver sees is the imbalance. Subtract what a matched section would have had: C_exc = C \u2212 L/Z\u2080\xB2 and L_exc = L \u2212 C\xB7Z\u2080\xB2. Only one of the two is positive, and it identifies whether the via looks capacitive (the common case, from large pads over small antipads) or inductive (long thin barrels with the stub removed).",
+      "A small shunt capacitance is charged by the source impedance in parallel with the load, Z\u2080/2, giving a first-order time constant \u03C4 = Z\u2080\xB7C_exc/2. Converting to a 10\u201390 % edge multiplies by ln 9 \u2248 2.2. For a series inductance the same argument with 2Z\u2080 in the denominator gives \u03C4 = L_exc/2Z\u2080.",
+      "Cascaded first-order edges add approximately in quadrature, so t\u1D63,out = \u221A(t\u1D63,in\xB2 + \u0394t\u1D63\xB2). The consequence is reassuring: a 6 ps via degradation on a 100 ps edge costs only 0.2 ps, but on a 10 ps edge it dominates completely.",
+      "The peak reflection from a small discontinuity is \u03C1 \u2248 Z\u2080\xB7C_exc/(2\xB7t\u1D63) \u2014 proportional to the excess and inversely proportional to the edge rate. The same via that is invisible to a 2 ns CMOS edge reflects heavily off a 30 ps PCIe edge.",
+      "Finally, L and C resonate at f\u2080 = 1/(2\u03C0\u221A(LC)). This is the via structure resonance, distinct from the \u03BB/4 stub resonance of an unused barrel section. Once the signal knee frequency 0.5/t\u1D63 approaches f\u2080 the lumped model is optimistic and a 3D field solver is warranted."
+    ],
+    reference: 'H. Johnson & M. Graham, "High-Speed Digital Design", Prentice Hall 1993; IPC-2141A (via capacitance)'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "via-calculator",
+    "via-stub-resonance",
+    "via-voltage-drop",
+    "critical-trace-length"
+  ],
+  faqs: [
+    {
+      question: "Why does the via barely matter at 100 ps but dominate at 20 ps?",
+      answer: "Rise times combine in quadrature. A 6 ps degradation on a 100 ps edge gives \u221A(100\xB2 + 6\xB2) = 100.2 ps \u2014 a 0.2 % effect. The same 6 ps on a 20 ps edge gives \u221A(20\xB2 + 6\xB2) = 20.9 ps, a 4.5 % effect, and the reflection term grows in direct proportion to 1/t\u1D63 on top of that. Via design becomes critical exactly where edge rates get fast, not where clock frequencies get high."
+    },
+    {
+      question: "What is excess capacitance and why not just use C?",
+      answer: "A matched transmission line of the same physical length also has capacitance, and that portion costs nothing \u2014 it is part of a properly terminated line. Only the amount beyond L/Z\u2080\xB2 is a discontinuity. A via with \u221A(L/C) = 50 \u03A9 has zero excess and is electrically invisible in a 50 \u03A9 system regardless of how big L and C are individually."
+    },
+    {
+      question: "How do I make a via less capacitive?",
+      answer: "Enlarge the antipad (C falls roughly as 1/(D\u2082\u2212D\u2081)), remove non-functional pads on layers the via does not connect to, and shrink the pad to the minimum annular ring the fab allows. But do not simply maximise the clearance: the target is C = L/Z\u2080\xB2, not C = 0. Push C below that and the via flips to inductive-dominant and the reflection climbs again. In the default 1.6 mm via, growing the antipad from 1.0 mm to 2.0 mm cuts C from 0.57 pF to 0.16 pF and makes the reflection *worse* \u2014 2.9 % to 7.3 %. Watch the excess-capacitance output cross zero and stop there."
+    },
+    {
+      question: "Is this the same as the via stub \u03BB/4 resonance?",
+      answer: "No, they are different mechanisms. The \u03BB/4 stub resonance comes from an unused length of barrel acting as an open transmission line and produces a deep, narrow insertion-loss null. The f\u2080 reported here is the lumped LC self-resonance of the via structure itself. Both should be kept well above your knee frequency; the stub resonance is usually the lower and more damaging of the two."
+    },
+    {
+      question: "When does the lumped model stop being valid?",
+      answer: "Once the via is no longer electrically short compared to the signal \u2014 practically, when the knee frequency reaches roughly a third of the LC self-resonance, or when the computed reflection exceeds about 30 %. Past that point L and C interact as a distributed structure and only a 3D field solver gives a trustworthy answer. The calculator warns in both cases."
+    },
+    {
+      question: "Why does the pad-to-antipad formula use the full barrel length?",
+      answer: "IPC-2141A treats the via as a coaxial section spanning the layers it passes through, so the barrel length sets the plate area. If your via only crosses two planes rather than a full stack-up, use the length between those planes instead of the board thickness \u2014 the result scales linearly with it."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/microvia-current-capacity.ts
+var RHO_20 = 1724e-11;
+var ALPHA_CU = 393e-5;
+var K_CU = 385;
+var MIL2_IN_M2 = 254e-7 * 254e-7;
+function calculateMicroviaCurrentCapacity(inputs) {
+  const {
+    viaDiameter,
+    // mm
+    platingThickness,
+    // µm
+    viaDepth,
+    // mm
+    tempRise,
+    // °C
+    current,
+    // A (through the whole array)
+    numVias,
+    temperature
+    // °C
+  } = inputs;
+  const D = viaDiameter / 1e3;
+  const t = platingThickness / 1e6;
+  const L = viaDepth / 1e3;
+  if (!(D > 0) || !(t > 0) || !(L > 0)) {
+    return {
+      values: {},
+      errors: ["Diameter, plating thickness, and depth must be positive"]
+    };
+  }
+  if (2 * t >= D) {
+    return {
+      values: {},
+      errors: ["Plating thickness is at least half the diameter \u2014 the barrel would be fully closed"]
+    };
+  }
+  const areaM2 = Math.PI * t * (D - t);
+  const barrelAreaMm2 = areaM2 * 1e6;
+  const areaMil2 = areaM2 / MIL2_IN_M2;
+  const ipcFactor = Math.pow(tempRise, 0.44) * Math.pow(areaMil2, 0.725);
+  const currentIpcInternalA = 0.024 * ipcFactor;
+  const currentIpcExternalA = 0.048 * ipcFactor;
+  const n = Math.round(numVias);
+  const arrayCapacityA = currentIpcInternalA * n;
+  const rho = RHO_20 * (1 + ALPHA_CU * (temperature - 20));
+  const rSingle = rho * L / areaM2;
+  const rTotal = rSingle / n;
+  const resistanceMOhm = rSingle * 1e3;
+  const resistanceArrayMOhm = rTotal * 1e3;
+  const voltageDropMV = current * rTotal * 1e3;
+  const powerDissipationMW = current * current * rTotal * 1e3;
+  const thetaVia = L / (K_CU * areaM2 * n);
+  const deltaTSelfHeat = current * current * rTotal * thetaVia;
+  const currentDensityAPerMm2 = current / (n * barrelAreaMm2);
+  const aspectRatio = viaDepth / viaDiameter;
+  const warnings = [];
+  if (viaDiameter > 0.15) {
+    warnings.push(
+      `${viaDiameter} mm exceeds the 0.15 mm IPC-2226 microvia limit \u2014 use the through-hole via calculator instead`
+    );
+  }
+  if (aspectRatio > 1) {
+    warnings.push(
+      `Aspect ratio ${aspectRatio.toFixed(2)}:1 exceeds the 1:1 IPC-2226 limit \u2014 plating coverage at the target pad becomes unreliable`
+    );
+  } else if (aspectRatio > 0.75) {
+    warnings.push("Aspect ratio above 0.75:1 \u2014 many fabricators charge a premium or require a capability review");
+  }
+  if (platingThickness < 12) {
+    warnings.push("Below the 12 \xB5m IPC-6012 Class 2 minimum wrap plating for microvias");
+  }
+  if (current > arrayCapacityA) {
+    warnings.push(
+      `${current} A exceeds the conservative ${arrayCapacityA.toFixed(2)} A internal-conductor capacity of ${n} via(s) at ${tempRise} \xB0C rise`
+    );
+  }
+  if (currentDensityAPerMm2 > 100) {
+    warnings.push(
+      `Current density ${currentDensityAPerMm2.toFixed(0)} A/mm\xB2 \u2014 electromigration and plating-void risk; add parallel vias`
+    );
+  }
+  return {
+    values: {
+      currentIpcInternalA,
+      currentIpcExternalA,
+      arrayCapacityA,
+      barrelAreaMm2,
+      resistanceMOhm,
+      resistanceArrayMOhm,
+      voltageDropMV,
+      powerDissipationMW,
+      deltaTSelfHeat,
+      currentDensityAPerMm2,
+      aspectRatio
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var microviaCurrentCapacity = {
+  slug: "microvia-current-capacity",
+  title: "Microvia Current Capacity Calculator",
+  shortTitle: "Microvia Current",
+  metaTitle: "Microvia Current Capacity Calculator \u2014 IPC-2221 & IPC-2226 HDI",
+  category: "pcb",
+  description: "Calculate laser-drilled microvia current capacity from barrel cross-section using IPC-2221, with DC resistance, voltage drop, current density, self-heating, and IPC-2226 aspect-ratio checks.",
+  keywords: [
+    "microvia current capacity",
+    "HDI via current",
+    "laser drilled via",
+    "IPC-2226 aspect ratio",
+    "microvia resistance",
+    "blind via current",
+    "stacked microvia"
+  ],
+  inputs: [
+    {
+      key: "viaDiameter",
+      label: "Microvia Diameter",
+      symbol: "D",
+      unit: "mm",
+      defaultValue: 0.1,
+      min: 0.05,
+      max: 0.25,
+      tooltip: "Laser-drilled capture diameter. IPC-2226 defines a microvia as \u2264 0.15 mm.",
+      presets: [
+        { label: "75 \xB5m advanced HDI", values: { viaDiameter: 0.075, viaDepth: 0.06, platingThickness: 15 } },
+        { label: "100 \xB5m standard HDI", values: { viaDiameter: 0.1, viaDepth: 0.075, platingThickness: 18 } },
+        { label: "125 \xB5m relaxed HDI", values: { viaDiameter: 0.125, viaDepth: 0.1, platingThickness: 20 } },
+        { label: "150 \xB5m max microvia", values: { viaDiameter: 0.15, viaDepth: 0.125, platingThickness: 25 } }
+      ]
+    },
+    {
+      key: "platingThickness",
+      label: "Barrel Plating Thickness",
+      symbol: "t",
+      unit: "\xB5m",
+      defaultValue: 18,
+      min: 5,
+      max: 40,
+      tooltip: "IPC-6012 Class 2 requires 20 \xB5m average / 18 \xB5m minimum; Class 3 requires 25 \xB5m average."
+    },
+    {
+      key: "viaDepth",
+      label: "Microvia Depth",
+      symbol: "L",
+      unit: "mm",
+      defaultValue: 0.075,
+      min: 0.02,
+      max: 0.25,
+      tooltip: "Dielectric thickness between the capture and target layers."
+    },
+    {
+      key: "tempRise",
+      label: "Allowed Temperature Rise",
+      symbol: "\u0394T",
+      unit: "\xB0C",
+      defaultValue: 10,
+      min: 1,
+      max: 100,
+      presets: [
+        { label: "Conservative (10 \xB0C)", values: { tempRise: 10 } },
+        { label: "Typical (20 \xB0C)", values: { tempRise: 20 } },
+        { label: "Aggressive (30 \xB0C)", values: { tempRise: 30 } }
+      ]
+    },
+    {
+      key: "current",
+      label: "Design Current (total)",
+      symbol: "I",
+      unit: "A",
+      defaultValue: 0.25,
+      min: 1e-3,
+      max: 20,
+      tooltip: "Current through the whole array, split evenly between the parallel vias."
+    },
+    {
+      key: "numVias",
+      label: "Parallel Microvias",
+      symbol: "N",
+      unit: "",
+      defaultValue: 1,
+      min: 1,
+      max: 200,
+      step: 1
+    },
+    {
+      key: "temperature",
+      label: "Operating Temperature",
+      symbol: "T",
+      unit: "\xB0C",
+      defaultValue: 25,
+      min: -40,
+      max: 150,
+      tooltip: "Sets copper resistivity; does not change the IPC-2221 capacity, which is a rise above ambient."
+    }
+  ],
+  outputs: [
+    {
+      key: "currentIpcInternalA",
+      label: "Capacity per Via (internal, conservative)",
+      symbol: "I",
+      unit: "A",
+      primary: true
+    },
+    { key: "currentIpcExternalA", label: "Capacity per Via (external k)", symbol: "I", unit: "A" },
+    { key: "arrayCapacityA", label: "Array Capacity (N vias, conservative)", symbol: "I_N", unit: "A" },
+    { key: "barrelAreaMm2", label: "Barrel Cross-Section", symbol: "A", unit: "mm\xB2" },
+    { key: "resistanceMOhm", label: "Resistance per Via", symbol: "R", unit: "m\u03A9" },
+    { key: "resistanceArrayMOhm", label: "Array Resistance", symbol: "R_N", unit: "m\u03A9" },
+    { key: "voltageDropMV", label: "Voltage Drop", symbol: "V", unit: "mV" },
+    { key: "powerDissipationMW", label: "Power Dissipation", symbol: "P", unit: "mW" },
+    { key: "deltaTSelfHeat", label: "Barrel Self-Heating", symbol: "\u0394T", unit: "\xB0C" },
+    { key: "currentDensityAPerMm2", label: "Current Density", symbol: "J", unit: "A/mm\xB2" },
+    { key: "aspectRatio", label: "Aspect Ratio (depth : diameter)", symbol: "", unit: ":1" }
+  ],
+  calculate: calculateMicroviaCurrentCapacity,
+  formula: {
+    primary: "I = k\xB7\u0394T^0.44\xB7A^0.725 with A = \u03C0\xB7t\xB7(D \u2212 t) converted to mil\xB2",
+    latex: "A = \\pi\\, t\\,(D - t), \\qquad I = k\\,\\Delta T^{0.44} A_{\\text{mil}^2}^{0.725}, \\qquad k = \\begin{cases} 0.024 & \\text{internal} \\\\ 0.048 & \\text{external} \\end{cases}",
+    variables: [
+      { symbol: "A", description: "Plated barrel cross-section (thin-wall annulus)", unit: "mm\xB2 / mil\xB2" },
+      { symbol: "D", description: "Laser-drilled microvia diameter", unit: "mm" },
+      { symbol: "t", description: "Barrel plating thickness", unit: "\xB5m" },
+      { symbol: "L", description: "Microvia depth (dielectric thickness)", unit: "mm" },
+      { symbol: "\u0394T", description: "Allowed temperature rise above ambient", unit: "\xB0C" },
+      { symbol: "k", description: "IPC-2221 conductor-class constant", unit: "" },
+      { symbol: "J", description: "Current density in the barrel", unit: "A/mm\xB2" }
+    ],
+    derivation: [
+      "Plating deposits on the wall of the laser-drilled hole, so the copper occupies an annulus from radius D/2 \u2212 t out to D/2. Its area is \u03C0[(D/2)\xB2 \u2212 (D/2 \u2212 t)\xB2] = \u03C0\xB7t\xB7(D \u2212 t). A 100 \xB5m microvia with 18 \xB5m plating has about 0.00464 mm\xB2 of copper \u2014 roughly one fifth of a 0.3 mm through-hole via.",
+      "IPC-2221 gives conductor current capacity as I = k\xB7\u0394T^0.44\xB7A^0.725 with A in square mils. The exponents come from a fit to measured trace data: capacity rises sub-linearly with area because a wider conductor also has more of itself far from the cooling surface.",
+      "The constant k encodes how easily heat escapes. IPC specifies 0.024 for internal conductors and 0.048 for external ones \u2014 a 2\xD7 derating for being buried in laminate. A microvia is buried, but it is also very short and bonded at both ends to copper pads that conduct heat away far better than laminate does. Both bounds are reported because the honest answer lies between them.",
+      "DC resistance follows from the same area: R = \u03C1(T)\xB7L/A with \u03C1(T) = \u03C1\u2082\u2080[1 + \u03B1(T \u2212 20)]. Because a microvia is only 50\u2013100 \xB5m long, R is a fraction of a milliohm even at that small cross-section \u2014 a 100 \xB5m microvia is well under a milliohm, considerably less than a 1.6 mm through-hole via despite having far less copper.",
+      "That short length is also why steady-state self-heating is a red herring. Modelling the barrel as a conduction path of thermal resistance \u03B8 = L/(k_Cu\xB7A) gives tens of \xB0C/W, so at a few hundred milliwatts the rise is thousandths of a degree. The barrel is not what fails.",
+      "What does fail is the target-pad interface. Under thermal cycling the z-axis expansion of the dielectric pulls the plated barrel away from the target pad, and microvia reliability is qualified by thermal shock testing (IPC-TM-650 2.6.27), not by a current formula. Stacked microvias are worse than staggered ones for exactly this reason."
+    ],
+    reference: "IPC-2221B (conductor current capacity); IPC-2226 (HDI design, microvia definition and aspect ratio); IPC-6012 (plating thickness classes); IPC-TM-650 2.6.27 (microvia thermal shock)"
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "via-calculator",
+    "via-voltage-drop",
+    "via-thermal-resistance",
+    "trace-width-current"
+  ],
+  faqs: [
+    {
+      question: "How much current can a 100 \xB5m microvia carry?",
+      answer: "With 18 \xB5m plating and a 10 \xB0C rise, the conservative internal-conductor figure is about 0.28 A and the external-conductor bound about 0.55 A. Most HDI design rules budget 0.5\u20131 A per microvia, which sits at or slightly above the upper bound \u2014 reasonable given how well the pads sink heat, but worth verifying if you are near the limit."
+    },
+    {
+      question: "Why is a microvia lower resistance than a through-hole via?",
+      answer: "Because resistance is \u03C1L/A and the length term wins. A microvia has roughly a fifth the copper area of a 0.3 mm through-hole via but is only about 5 % as long, so it ends up several times lower in resistance. Microvias are excellent for power delivery in HDI stack-ups precisely because of this."
+    },
+    {
+      question: "Why does the calculator show almost no temperature rise?",
+      answer: "Because the barrel is genuinely not the thermal bottleneck. At 0.5 A the dissipation is well under a milliwatt and the conduction path to the pads is short. The IPC-2221 capacity figure is an empirical trace rule applied to the barrel cross-section, and it is intentionally conservative \u2014 treat it as a plating and electromigration guardrail, not as a prediction of measured \u0394T."
+    },
+    {
+      question: "What aspect ratio can a microvia have?",
+      answer: "IPC-2226 sets 1:1 depth-to-diameter as the limit and most fabricators prefer 0.75:1 or lower. Beyond that the laser-drilled hole tapers too sharply for the plating chemistry to reach the target pad with uniform thickness, and the thin plating at the base becomes the reliability failure point."
+    },
+    {
+      question: "Should I stack or stagger microvias for high current?",
+      answer: "Stagger them where you can. Stacked microvias give a shorter, lower-resistance path and save routing area, but the stacked interfaces accumulate thermo-mechanical stress and are the most common HDI failure mode under thermal cycling. Staggered microvias with a solid pad between layers are substantially more robust, and IPC-6012 Class 3/A adds specific requirements for stacked structures."
+    },
+    {
+      question: "How many microvias do I need for a 2 A rail?",
+      answer: "Using the conservative 0.28 A per via at 10 \xB0C rise, 2 A needs eight vias, and rounding up to ten gives margin for plating variation and uneven current sharing. Placing them in a tight cluster under the pad is standard practice; the array resistance and voltage drop outputs let you check the delivered rail accuracy at the same time."
+    }
+  ]
+};
+
 // src/lib/calculators/registry.ts
 var ALL_CALCULATORS = [
   microstripImpedance,
@@ -29736,7 +30879,13 @@ var ALL_CALCULATORS = [
   minimumConductorSpacing,
   planarSpiralInductor,
   embeddedResistor,
-  viaVoltageDrop
+  viaVoltageDrop,
+  // Saturn PCB Toolkit parity — tier 3
+  rectangularPolar,
+  frequencyPpmTolerance,
+  effectiveDielectricConstant,
+  viaStepResponse,
+  microviaCurrentCapacity
 ];
 function getAllCalculators() {
   return ALL_CALCULATORS;
@@ -29987,7 +31136,7 @@ function pollInterval(elapsedMs) {
 }
 var server = new import_mcp.McpServer({
   name: "rftools",
-  version: "1.7.0"
+  version: "1.7.1"
 });
 server.registerTool(
   "list_calculators",
