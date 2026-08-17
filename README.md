@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
-**MCP server for [rftools.io](https://rftools.io) — 221 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
+**MCP server for [rftools.io](https://rftools.io) — 227 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
 
 Give Claude, Cursor, or any MCP-compatible AI assistant access to validated engineering calculators and heavy server-side simulations. Microstrip impedance, link budgets, filter design, converter sizing, antenna patterns, and 200+ more calculators — plus NEC2 antenna simulation, FDTD, Monte Carlo, SMPS analysis, EMI estimation, and more, all callable as MCP tools.
 
@@ -16,7 +16,7 @@ Calculators work with no API key. For simulation tools, sign up at [rftools.io](
 
 ### Without API key — calculators only
 
-All 221 calculators run locally with no sign-up required.
+All 227 calculators run locally with no sign-up required.
 
 ### With API key — calculators + simulation tools
 
@@ -204,12 +204,12 @@ Submit a simulation job and wait for the result. Returns the full result JSON al
 >
 > **AI:** *Calls `run_calculation` with buck-converter* → Duty cycle: 20.8%, inductor: 17.4 μH, output cap: 22 μF. [View on rftools.io →](https://rftools.io/calculators/power/buck-converter)
 
-## All 221 Calculators
+## All 227 Calculators
 
 | Category | Count | Examples |
 |----------|------:|---------|
 | **RF & Microwave** | 29 | Microstrip impedance, coplanar waveguide (CPW/GCPW), VSWR/return loss, Smith chart, link budget, noise figure cascade, radar range, free-space path loss, mixer spur |
-| **PCB Design** | 18 | Trace width for current, controlled impedance, asymmetric (offset) stripline, dual stripline, broadside-coupled pair, differential pair, via calculator, crosstalk, critical trace length, fusing current, decoupling capacitor |
+| **PCB Design** | 24 | Trace width for current, controlled impedance, asymmetric (offset) stripline, dual stripline, broadside-coupled pair, differential pair, via calculator, crosstalk, critical trace length, fusing current, decoupling capacitor, padstack/annular ring, BGA land pad, conductor spacing, planar spiral inductor, embedded resistor, via voltage drop |
 | **Power Electronics** | 21 | Buck converter, boost converter, flyback, LDO thermal, battery life, MOSFET dissipation, solar panel sizing |
 | **Signal Processing** | 14 | Filter designer, ADC SNR, FFT bin resolution, PLL loop filter, BER/SNR, Johnson noise, rise time to bandwidth |
 | **Antenna Design** | 8 | Dipole, patch, Yagi-Uda, horn, parabolic dish, loop, EIRP, beamwidth |
