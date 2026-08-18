@@ -29163,7 +29163,12 @@ var planarSpiralInductor = {
     { key: "dAvg", label: "Average Diameter", unit: "mm" },
     { key: "totalTraceLength", label: "Total Trace Length", unit: "mm" },
     { key: "dcResistance", label: "DC Resistance (1 oz Cu)", unit: "\u03A9" },
-    { key: "qFactor", label: "Q at 100 MHz (est.)", unit: "" },
+    {
+      key: "qFactor",
+      label: "Q at 100 MHz (DC-R only \u2014 valid well below SRF)",
+      unit: "",
+      tooltip: "X_L/R_DC evaluated at a fixed 100 MHz. It ignores skin effect, proximity effect, and substrate loss, so it overstates real Q by roughly an order of magnitude \u2014 practical PCB spirals reach 20\u201350. It is meaningless at or above the self-resonant frequency, where the reactance is no longer inductive: check SRF first."
+    },
     { key: "srf", label: "Self-Resonant Freq (est.)", unit: "GHz" }
   ],
   calculate: calculateSpiralInductor,
