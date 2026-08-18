@@ -28724,6 +28724,7 @@ var padstackAnnularRing = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["via-calculator", "via-thermal-resistance", "bga-land-pad", "controlled-impedance"],
+  relatedBlogPosts: ["annular-ring-drill-tolerance"],
   faqs: [
     {
       question: "What is annular ring?",
@@ -28868,6 +28869,7 @@ var bgaLandPad = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["padstack-annular-ring", "via-calculator", "minimum-conductor-spacing", "controlled-impedance"],
+  relatedBlogPosts: ["bga-escape-routing-land-pads"],
   faqs: [
     {
       question: "What is the difference between NSMD and SMD pads?",
@@ -29005,6 +29007,7 @@ var minimumConductorSpacing = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["padstack-annular-ring", "trace-width-current", "controlled-impedance", "via-calculator"],
+  relatedBlogPosts: ["ipc-2221b-conductor-spacing"],
   faqs: [
     {
       question: "What is the difference between clearance and creepage?",
@@ -29180,6 +29183,7 @@ var planarSpiralInductor = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["lc-resonance", "pcb-trace-inductance", "skin-depth", "controlled-impedance"],
+  relatedBlogPosts: ["planar-spiral-inductor-design"],
   faqs: [
     {
       question: "Which formula is more accurate \u2014 Wheeler or Mohan?",
@@ -29332,6 +29336,7 @@ var embeddedResistor = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["trace-resistance", "voltage-divider", "attenuator-designer", "skin-depth"],
+  relatedBlogPosts: ["embedded-resistors-pcb"],
   faqs: [
     {
       question: 'What is a "square" in sheet resistance?',
@@ -29490,6 +29495,7 @@ var viaVoltageDrop = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["via-calculator", "via-thermal-resistance", "padstack-annular-ring", "trace-resistance"],
+  relatedBlogPosts: ["via-resistance-power-delivery"],
   faqs: [
     {
       question: "How much current can a single via carry?",
@@ -29630,6 +29636,7 @@ var rectangularPolar = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["angle-units", "vswr-return-loss", "reactance-calculator", "db-converter"],
+  relatedBlogPosts: ["atan2-impedance-quadrant-errors"],
   faqs: [
     {
       question: "Why is atan2 required instead of arctan(b/a)?",
@@ -29839,6 +29846,7 @@ var frequencyPpmTolerance = {
     "rc-time-constant",
     "lc-resonance"
   ],
+  relatedBlogPosts: ["crystal-tolerance-ppm-budget"],
   faqs: [
     {
       question: "How many Hz is 1 ppm?",
@@ -30057,6 +30065,7 @@ var effectiveDielectricConstant = {
     "critical-trace-length",
     "pcb-trace-inductance"
   ],
+  relatedBlogPosts: ["effective-dielectric-constant-stub-length"],
   faqs: [
     {
       question: "Why is \u03B5eff lower than the laminate \u03B5r?",
@@ -30068,7 +30077,7 @@ var effectiveDielectricConstant = {
     },
     {
       question: "How does \u03B5eff change the length of a quarter-wave stub?",
-      answer: "Physical length scales as 1/\u221A\u03B5eff. At 2.4 GHz in free space a quarter wave is 31.2 mm; on FR-4 microstrip with \u03B5eff \u2248 3.2 it shrinks to about 17.5 mm. Using \u03B5r = 4.3 instead of \u03B5eff would give 15.1 mm \u2014 a 14 % error, enough to move a filter edge by hundreds of MHz."
+      answer: "Physical length scales as 1/\u221A\u03B5eff. At 2.4 GHz in free space a quarter wave is 31.2 mm; on FR-4 microstrip with \u03B5eff = 3.23 it shrinks to 17.38 mm. Using \u03B5r = 4.3 instead of \u03B5eff would give 15.06 mm \u2014 a 13.3 % error, enough to move a filter edge by hundreds of MHz."
     },
     {
       question: "When does dispersion actually matter?",
@@ -30337,6 +30346,7 @@ var viaStepResponse = {
     "via-voltage-drop",
     "critical-trace-length"
   ],
+  relatedBlogPosts: ["via-excess-capacitance-rise-time"],
   faqs: [
     {
       question: "Why does the via barely matter at 100 ps but dominate at 20 ps?",
@@ -30610,6 +30620,7 @@ var microviaCurrentCapacity = {
     "via-thermal-resistance",
     "trace-width-current"
   ],
+  relatedBlogPosts: ["microvia-current-capacity-hdi"],
   faqs: [
     {
       question: "How much current can a 100 \xB5m microvia carry?",
