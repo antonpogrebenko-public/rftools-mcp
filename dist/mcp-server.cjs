@@ -2706,16 +2706,29 @@ function calculateVia(inputs) {
   const {
     viaDiameter: d,
     padDiameter: D,
+    antipadDiameter: Da,
     boardThickness: T,
     dielectricConstant: er,
     copperThickness
     // μm (plating thickness)
     // signalLayer is accepted but does not affect current formulas in this approximation
   } = inputs;
+  if (![d, D, Da, T, er, copperThickness].every(Number.isFinite)) {
+    return {
+      values: {},
+      errors: ["All via dimensions, dielectric constant, and plating thickness are required"]
+    };
+  }
   if (d <= 0 || D <= d) {
     return {
       values: {},
       errors: ["Pad diameter must be greater than via drill diameter"]
+    };
+  }
+  if (Da <= D) {
+    return {
+      values: {},
+      errors: ["Antipad diameter must be greater than pad diameter"]
     };
   }
   if (T <= 0 || er < 1 || copperThickness <= 0) {
@@ -2724,16 +2737,21 @@ function calculateVia(inputs) {
       errors: ["Board thickness, dielectric constant, and copper thickness must be positive"]
     };
   }
+  if (copperThickness / 500 >= d) {
+    return {
+      values: {},
+      errors: ["Plating thickness is at least half the drill diameter - the barrel would be fully closed"]
+    };
+  }
   const warnings = [];
-  const impedance = 60 / Math.sqrt(er) * Math.log(D / d);
-  const capacitancePF = 0.0554 * er * T * d / (D - d);
+  const impedance = 60 / Math.sqrt(er) * Math.log(Da / d);
+  const capacitancePF = 0.0554 * er * T * D / (Da - D);
   const inductanceNH = 0.2 * T * (Math.log(4 * T / d) + 0.5);
   const aspectRatio = T / d;
-  const dMil = d / 0.0254;
-  const copperThicknessMil = copperThickness / 25.4;
-  const rInnerMil = dMil / 2;
-  const rOuterMil = rInnerMil + copperThicknessMil;
-  const viaAreaMil2 = Math.PI * (rOuterMil * rOuterMil - rInnerMil * rInnerMil);
+  const tMm = copperThickness / 1e3;
+  const viaAreaMm2 = Math.PI * tMm * (d - tMm);
+  const MM2_PER_MIL2 = 0.0254 * 0.0254;
+  const viaAreaMil2 = viaAreaMm2 / MM2_PER_MIL2;
   const currentCapacityA = 0.048 * Math.pow(10, 0.44) * Math.pow(viaAreaMil2, 0.725);
   if (aspectRatio > 10) {
     warnings.push("Aspect ratio > 10 may cause plating issues");
@@ -2743,6 +2761,9 @@ function calculateVia(inputs) {
   }
   if (D < d + 0.15) {
     warnings.push("Annular ring < 0.075mm each side");
+  }
+  if ((Da - D) / 2 < 0.1) {
+    warnings.push("Plane clearance < 0.1mm per side - raises via capacitance sharply");
   }
   return {
     values: {
@@ -2792,6 +2813,22 @@ var viaCalculator = {
       max: 10,
       step: 0.05,
       tooltip: "Copper pad diameter surrounding the via"
+    },
+    {
+      key: "antipadDiameter",
+      label: "Antipad Diameter",
+      symbol: "D_a",
+      unit: "mm",
+      defaultValue: 1,
+      min: 0.25,
+      max: 12,
+      step: 0.05,
+      tooltip: "Plane clearance around the via. Sets both the coaxial outer conductor and the far plate of the via capacitance - enlarging it is the cheapest way to cut via capacitance.",
+      presets: [
+        { label: "Tight (0.8mm)", values: { antipadDiameter: 0.8 } },
+        { label: "Standard (1.0mm)", values: { antipadDiameter: 1 } },
+        { label: "High-speed (1.4mm)", values: { antipadDiameter: 1.4 } }
+      ]
     },
     {
       key: "boardThickness",
@@ -2858,7 +2895,7 @@ var viaCalculator = {
       unit: "\u03A9",
       precision: 2,
       format: "standard",
-      tooltip: "Characteristic impedance of the via (coaxial approximation)"
+      tooltip: "Coaxial approximation with the barrel as inner conductor and the antipad as outer conductor"
     },
     {
       key: "capacitancePF",
@@ -2867,7 +2904,7 @@ var viaCalculator = {
       unit: "pF",
       precision: 3,
       format: "standard",
-      tooltip: "Parasitic capacitance of the via (IPC-2141A)"
+      tooltip: "Pad-to-antipad capacitance (IPC-2141A). Grows sharply as the plane clearance closes in on the pad."
     },
     {
       key: "inductanceNH",
@@ -2899,20 +2936,26 @@ var viaCalculator = {
       unit: "A",
       precision: 2,
       format: "standard",
-      tooltip: "Estimated maximum current at 10\xB0C temperature rise (IPC-2221)"
+      tooltip: "IPC-2221 at 10\xB0C rise on the plated annulus A = pi*t*(d-t). Uses the external-conductor constant k = 0.048."
     }
   ],
   calculate: calculateVia,
   formula: {
-    primary: "C_{via} \\approx \\frac{0.0554\\,\\varepsilon_r\\,T\\,d}{D-d}\\ \\text{pF},\\quad L_{via} \\approx 0.2h\\left(\\ln\\frac{4h}{d}+0.5\\right)\\ \\text{nH}",
+    primary: "C_{via} \\approx \\frac{0.0554\\,\\varepsilon_r\\,T\\,D}{D_a-D}\\ \\text{pF},\\quad Z_{via} \\approx \\frac{60}{\\sqrt{\\varepsilon_r}}\\ln\\frac{D_a}{d},\\quad L_{via} \\approx 0.2h\\left(\\ln\\frac{4h}{d}+0.5\\right)\\ \\text{nH}",
     variables: [
       { symbol: "T", description: "Board thickness", unit: "mm" },
       { symbol: "d", description: "Via drill diameter", unit: "mm" },
       { symbol: "D", description: "Pad diameter", unit: "mm" },
+      { symbol: "D_a", description: "Antipad (plane clearance) diameter", unit: "mm" },
       { symbol: "\u03B5\u1D63", description: "Dielectric constant", unit: "" },
       { symbol: "h", description: "Via height (= board thickness)", unit: "mm" }
     ],
-    reference: 'IPC-2141A; Howard Johnson "High-Speed Signal Propagation"'
+    derivation: [
+      "The via behaves as a short section of coaxial line: the plated barrel is the inner conductor and the plane clearance - the antipad - is the outer one. Z = (60/sqrt(er))*ln(D_a/d) follows directly, so the plane clearance sets the impedance and the pad does not enter it at all.",
+      "IPC-2141A gives the pad-to-antipad capacitance as C = 0.0554*er*T*D/(D_a - D) pF with dimensions in mm. Both plates appear: the pad is one, the antipad edge is the other, and the gap between them is the denominator. Widening the clearance is the cheapest way to cut via capacitance, which is why high-speed stack-ups specify oversized antipads.",
+      "Current capacity uses the plated annulus. Copper deposits on the wall of the drilled hole, so it occupies radius d/2 - t out to d/2, giving A = pi*t*(d - t). Growing the plating outward from the drill radius instead overstates the area by roughly 18 percent on a 0.3 mm via with 25 um plating, and overstates the current by about 13 percent."
+    ],
+    reference: 'IPC-2141A; IPC-2221B; Howard Johnson "High-Speed Signal Propagation"'
   },
   visualization: { type: "none" },
   relatedCalculators: ["trace-width-current", "microstrip-impedance"],
@@ -2922,6 +2965,7 @@ var viaCalculator = {
       inputs: {
         viaDiameter: 0.3,
         padDiameter: 0.6,
+        antipadDiameter: 1,
         boardThickness: 1.6,
         dielectricConstant: 4.2,
         copperThickness: 25,
