@@ -1078,7 +1078,11 @@ var skinDepth = {
     reference: 'Griffiths, "Introduction to Electrodynamics" 4th ed., Chapter 9'
   },
   visualization: { type: "none" },
-  relatedCalculators: ["microstrip-impedance", "trace-resistance"],
+  relatedCalculators: [
+    "skin-depth-percentage",
+    "microstrip-impedance",
+    "trace-resistance"
+  ],
   relatedBlogPosts: ["cable-shield-effectiveness", "loop-antenna", "wavelength-frequency"],
   verificationData: [
     {
@@ -2493,6 +2497,322 @@ var traceResistance = {
   ]
 };
 
+// src/lib/pcb/impedance.ts
+function hammerstadJensen(w, h, er, t) {
+  const dw = t / Math.PI * (1 + Math.log(2 * h / Math.max(t, 1e-6)));
+  const wEff = w + dw;
+  const u = wEff / h;
+  const a = 1 + 1 / 49 * Math.log((Math.pow(u, 4) + Math.pow(u / 52, 2)) / (Math.pow(u, 4) + 0.432)) + 1 / 18.7 * Math.log(1 + Math.pow(u / 18.1, 3));
+  const b = 0.564 * Math.pow((er - 0.9) / (er + 3), 0.053);
+  const erEff = (er + 1) / 2 + (er - 1) / 2 * Math.pow(1 + 10 / u, -a * b);
+  const F = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
+  const Z0 = 60 / Math.sqrt(erEff) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
+  return { Z0, erEff };
+}
+var COVER_SINGLE = [1.484592, -0.354664, 0.758396, 9776e-6];
+function coverCapture(c2, u, hcOverH, gOverH) {
+  if (!(hcOverH > 0)) return 0;
+  const lu = Math.log(u);
+  let rate;
+  let power;
+  if (gOverH === void 0) {
+    rate = c2[0] * Math.pow(u, c2[1]);
+    power = c2[2] + c2[3] * lu;
+  } else {
+    const lg = Math.log(gOverH);
+    rate = c2[0] * Math.pow(u, c2[1]) * Math.pow(gOverH, c2[2]);
+    power = c2[3] + c2[4] * lu + c2[5] * lg;
+  }
+  const q = 1 - Math.exp(-rate * Math.pow(hcOverH, Math.max(power, 0.1)));
+  return Math.min(Math.max(q, 0), 1);
+}
+function substrateFilling(w, h, er, t) {
+  if (er <= 1 + 1e-9) {
+    const probe = 1.001;
+    return (hammerstadJensen(w, h, probe, t).erEff - 1) / (probe - 1);
+  }
+  return (hammerstadJensen(w, h, er, t).erEff - 1) / (er - 1);
+}
+function embeddedMicrostrip(w, h, er, t, hc, erc) {
+  const airZ0 = hammerstadJensen(w, h, 1, t).Z0;
+  const qf = Math.min(Math.max(substrateFilling(w, h, er, t), 0), 1);
+  const qc = coverCapture(COVER_SINGLE, w / h, hc / h);
+  const erEff = 1 + qf * (er - 1) + (1 - qf) * qc * (erc - 1);
+  return { Z0: airZ0 / Math.sqrt(erEff), erEff };
+}
+var ETA_0 = 376.730313412;
+var FRINGE_PEAK_T_OVER_B = 1 / 3;
+function stripFringeFactor(tOverB) {
+  const x = Math.min(Math.max(tOverB, 0), FRINGE_PEAK_T_OVER_B);
+  const a = 1 / (1 - x);
+  const second = a - 1 > 0 ? (a - 1) * Math.log(a * a - 1) : 0;
+  return 2 / Math.PI * (a * Math.log(a + 1) - second);
+}
+var FRINGE_ZERO_T = 2 / Math.PI * Math.LN2;
+function centredStripNormC(w, b) {
+  if (!(w > 0) || !(b > 0)) return 0;
+  const x = Math.PI * w / (2 * b);
+  if (x > 20) {
+    return 8 * (Math.LN2 + x + Math.log1p(Math.exp(-2 * x))) / Math.PI;
+  }
+  return 4 * ellipticK(Math.tanh(x)) / ellipticK(1 / Math.cosh(x));
+}
+var OFFSET_A = 0.245266;
+var OFFSET_P = 0.718328;
+var OFFSET_C = 3.038156;
+var OFFSET_Q = 0.578186;
+function striplineNormC(w, h1, h2, t) {
+  if (!(w > 0) || !(h1 > 0) || !(h2 > 0)) return 0;
+  const b0 = h1 + h2;
+  let c2 = 0.5 * (centredStripNormC(w, 2 * h1) + centredStripNormC(w, 2 * h2));
+  const u = Math.min(h1, h2) / b0;
+  if (u < 0.5) {
+    const excess = OFFSET_A * (Math.pow(0.5 / u, OFFSET_P) - 1);
+    const rolloff = 1 - Math.exp(-OFFSET_C * Math.pow(w / b0, OFFSET_Q));
+    c2 += excess * rolloff;
+  }
+  if (t > 0) {
+    const b = b0 + t;
+    c2 += 4 * (stripFringeFactor(t / b) - FRINGE_ZERO_T);
+  }
+  return c2;
+}
+function symmetricStripline(w, b, er, t) {
+  if (!(b > t) || !(w > 0)) return { Z0: 0, erEff: er };
+  const gap = (b - t) / 2;
+  const c2 = striplineNormC(w, gap, gap, t);
+  return { Z0: c2 > 0 ? ETA_0 / (Math.sqrt(er) * c2) : 0, erEff: er };
+}
+function asymmetricStripline(w, h1, h2, er, t) {
+  const c2 = striplineNormC(w, h1, h2, t);
+  return { Z0: c2 > 0 ? ETA_0 / (Math.sqrt(er) * c2) : 0, erEff: er };
+}
+function homogeneousStripZ0(w, h, er) {
+  const u = w / h;
+  if (!(u > 0) || !Number.isFinite(u)) return NaN;
+  if (u <= 1) {
+    return ETA_0 / (2 * Math.PI * Math.sqrt(er)) * Math.log(8 / u + u / 4);
+  }
+  return ETA_0 / Math.sqrt(er) / (u + 1.393 + 0.667 * Math.log(u + 1.444));
+}
+function coupledStriplineNormC(w, s, b, t) {
+  if (!(w > 0) || !(b > 0) || !(s > 0)) return { even: 0, odd: 0 };
+  const kw = Math.tanh(Math.PI * w / (2 * b));
+  const kws = Math.tanh(Math.PI * (w + s) / (2 * b));
+  const modulusEven = kw * kws;
+  const modulusOdd = kws > 0 ? kw / kws : kw;
+  const norm = (k) => {
+    const kk = Math.min(Math.max(k, 0), 1 - 1e-15);
+    return 4 * (ellipticK(kk) / ellipticK(Math.sqrt(Math.max(1 - kk * kk, 0))));
+  };
+  const increment = t > 0 ? 4 * (stripFringeFactor(t / (b + t)) - FRINGE_ZERO_T) : 0;
+  return { even: norm(modulusEven) + increment, odd: norm(modulusOdd) + increment };
+}
+function coupledStripline(w, s, b, er, t) {
+  const gap = (b - t) / 2;
+  if (!(gap > 0) || !(w > 0)) {
+    return { Z0: 0, erEff: er, Zodd: 0, Zeven: 0, Zdiff: 0, Zcommon: 0, erEffOdd: er, erEffEven: er };
+  }
+  const { Z0 } = symmetricStripline(w, b, er, t);
+  const { even, odd } = coupledStriplineNormC(w, s, b - t, t);
+  const Zodd = odd > 0 ? ETA_0 / (Math.sqrt(er) * odd) : 0;
+  const Zeven = even > 0 ? ETA_0 / (Math.sqrt(er) * even) : 0;
+  return {
+    Z0,
+    erEff: er,
+    Zodd,
+    Zeven,
+    Zdiff: 2 * Zodd,
+    Zcommon: Zeven / 2,
+    erEffOdd: er,
+    erEffEven: er
+  };
+}
+var OFFSET_COUPLED_ODD = [1.104095, 2.193833, -0.906962, 0.245485, 1.175407, 1.396674, 3.298642, 1.039723];
+var OFFSET_COUPLED_EVEN = [0.725767, 2.700093, -1.581169, 0.293423, 1.228106, 2.065153, 2.977705, 1.755071];
+function offsetCoupledExcess(c2, wb, sb, m) {
+  if (!(m > 0)) return 0;
+  const [A, p0, p1, alpha, beta, gamma, decay, q] = c2;
+  const power = Math.max(p0 + p1 * sb, 0.3);
+  return A * Math.pow(m, power) * (Math.pow(wb, alpha) / Math.pow(1 + beta * wb, gamma)) * Math.exp(-decay * Math.pow(sb, q));
+}
+var OFFSET_COUPLED_RANGE = {
+  description: "w/b 0.05\u20130.8, s/b 0.05\u20131.0, nearer gap 0.125\u20130.5 of the plane spacing",
+  worstCase: 0.019,
+  contains: ({ wb, sb, nearRatio }) => wb >= 0.05 && wb <= 0.8 && sb >= 0.05 && sb <= 1 && nearRatio >= 0.125 && nearRatio <= 0.5
+};
+function offsetCoupledStripline(w, s, h1, h2, er, t) {
+  const b = h1 + h2;
+  const fallback = {
+    Z0: 0,
+    erEff: er,
+    Zodd: 0,
+    Zeven: 0,
+    Zdiff: 0,
+    Zcommon: 0,
+    erEffOdd: er,
+    erEffEven: er,
+    inRange: false
+  };
+  if (!(w > 0) || !(s > 0) || !(h1 > 0) || !(h2 > 0)) return fallback;
+  const { Z0 } = asymmetricStripline(w, h1, h2, er, t);
+  const singleOffset = striplineNormC(w, h1, h2, 0);
+  const singleCentred = centredStripNormC(w, b);
+  const centred = coupledStriplineNormC(w, s, b, 0);
+  if (!(singleCentred > 0) || !(singleOffset > 0)) return fallback;
+  const nearRatio = Math.min(h1, h2) / b;
+  const m = 1 - 2 * nearRatio;
+  const wb = w / b;
+  const sb = s / b;
+  const scale = singleOffset / singleCentred;
+  const thickness = t > 0 ? 4 * (stripFringeFactor(t / (b + t)) - FRINGE_ZERO_T) : 0;
+  const odd = centred.odd * scale * (1 - offsetCoupledExcess(OFFSET_COUPLED_ODD, wb, sb, m)) + thickness;
+  const even = centred.even * scale * (1 + offsetCoupledExcess(OFFSET_COUPLED_EVEN, wb, sb, m)) + thickness;
+  const Zodd = odd > 0 ? ETA_0 / (Math.sqrt(er) * odd) : 0;
+  const Zeven = even > 0 ? ETA_0 / (Math.sqrt(er) * even) : 0;
+  return {
+    Z0,
+    erEff: er,
+    Zodd,
+    Zeven,
+    Zdiff: 2 * Zodd,
+    Zcommon: Zeven / 2,
+    erEffOdd: er,
+    erEffEven: er,
+    inRange: OFFSET_COUPLED_RANGE.contains({ wb, sb, nearRatio })
+  };
+}
+var MICRO_COUPLED_ODD = [0.839575, 0.228752, -0.941128, 1.314575, -0.069681, 0.607266, 79e-5];
+var MICRO_COUPLED_EVEN = [0.818296, 1.594079, -0.675897, 0.876135, -0.262306, 0.782936, 0.048219];
+var FILL_RATIO_EVEN = [0.124128, 1849e-6, -7476e-6, 0.024277, 3714e-6, -6844e-6, -1.565159, -0.068818, 1.422211];
+var FILL_RATIO_ODD = [0.176154, 129e-6, -0.012558, -7893e-6, -613e-6, -9416e-6, -1.18994, -0.098742, 1.114352];
+var COVER_EVEN = [1.288077, -0.353144, 0.086395, 0.702757, -0.010504, -0.020194];
+var COVER_ODD = [1.909038, -0.43372, -0.225079, 0.82866, -0.024221, 0.036554];
+function microCouplingTerm(c2, u, g) {
+  const [a0, a1, a2, b0, b2, p0, p1] = c2;
+  const amplitude = a0 * Math.pow(1 + a1 * u, a2);
+  const rate = b0 * Math.pow(u, b2);
+  const power = Math.max(p0 + p1 * Math.log(u), 0.15);
+  return amplitude * Math.exp(-rate * Math.pow(g, power));
+}
+function fillRatioTerm(c2, u, g) {
+  const lu = Math.log(u);
+  const lg = Math.log(g);
+  const amplitude = c2[0] + c2[1] * lu + c2[2] * lu * lu + c2[3] * lg + c2[4] * lg * lg + c2[5] * lu * lg;
+  const rate = Math.exp(c2[6] + c2[7] * lu);
+  return amplitude * Math.exp(-rate * Math.pow(g, c2[8]));
+}
+var MICRO_COUPLED_RANGE = {
+  description: "trace width 0.2\u20134\xD7 and spacing 0.1\u20133\xD7 the substrate height",
+  worstCase: 0.02,
+  contains: ({ u, g }) => u >= 0.2 && u <= 4 && g >= 0.1 && g <= 3
+};
+function coupledMicrostripCore(w, s, h, er, t, cover) {
+  const u = w / h;
+  const g = s / h;
+  const airSingle = hammerstadJensen(w, h, 1, t).Z0;
+  const rhoOdd = 1 - microCouplingTerm(MICRO_COUPLED_ODD, u, g);
+  const rhoEven = 1 + microCouplingTerm(MICRO_COUPLED_EVEN, u, g);
+  const airOdd = rhoOdd * airSingle;
+  const airEven = rhoEven * airSingle;
+  const clamp01 = (x) => Math.min(Math.max(x, 0), 1);
+  const qSingle = clamp01(substrateFilling(w, h, er, t));
+  const qEven = clamp01(qSingle * (1 + fillRatioTerm(FILL_RATIO_EVEN, u, g)));
+  const qOdd = clamp01(qSingle * (1 - fillRatioTerm(FILL_RATIO_ODD, u, g)));
+  const covered = cover !== void 0 && cover.hc > 0;
+  const qcEven = covered ? coverCapture(COVER_EVEN, u, cover.hc / h, g) : 0;
+  const qcOdd = covered ? coverCapture(COVER_ODD, u, cover.hc / h, g) : 0;
+  const erc = covered ? cover.erc : 1;
+  const erEffEven = 1 + qEven * (er - 1) + (1 - qEven) * qcEven * (erc - 1);
+  const erEffOdd = 1 + qOdd * (er - 1) + (1 - qOdd) * qcOdd * (erc - 1);
+  const Zodd = airOdd / Math.sqrt(erEffOdd);
+  const Zeven = airEven / Math.sqrt(erEffEven);
+  const single = covered ? embeddedMicrostrip(w, h, er, t, cover.hc, cover.erc) : hammerstadJensen(w, h, er, t);
+  return {
+    Z0: single.Z0,
+    erEff: single.erEff,
+    Zodd,
+    Zeven,
+    Zdiff: 2 * Zodd,
+    Zcommon: Zeven / 2,
+    erEffOdd,
+    erEffEven,
+    inRange: MICRO_COUPLED_RANGE.contains({ u, g })
+  };
+}
+function diffMicrostrip(w, s, h, er, t) {
+  return coupledMicrostripCore(w, s, h, er, t);
+}
+function embeddedCoupledMicrostrip(w, s, h, er, t, hc, erc) {
+  return coupledMicrostripCore(w, s, h, er, t, { hc, erc });
+}
+var EVEN_A = 0.518109;
+var EVEN_P = -0.356102;
+var EVEN_C = 1.484632;
+var EVEN_Q = 0.690292;
+function broadsideEvenNormC(w, h, s, t) {
+  if (!(h > 0) || !(w > 0)) return 0;
+  const half = 0.5 * centredStripNormC(w, 2 * h);
+  const excess = EVEN_A * Math.pow(w / h, EVEN_P) * (1 - Math.exp(-EVEN_C * Math.pow(s / h, EVEN_Q)));
+  let c2 = half * (1 + excess);
+  if (t > 0) c2 += 2 * (stripFringeFactor(t / (2 * h + t)) - FRINGE_ZERO_T);
+  return c2;
+}
+function broadsideStripline(w, b, d, er, t) {
+  const h = (b - d - 2 * t) / 2;
+  if (!(h > 0)) return { Z0: 0, erEff: er, Zodd: 0, Zeven: 0, Zdiff: 0, Zcommon: 0 };
+  const { Z0 } = asymmetricStripline(w, h, h + d + t, er, t);
+  const { Z0: Zodd } = asymmetricStripline(w, d / 2, h, er, t);
+  const cEven = broadsideEvenNormC(w, h, d / 2, t);
+  const Zeven = cEven > 0 ? ETA_0 / (Math.sqrt(er) * cEven) : 0;
+  return { Z0, erEff: er, Zodd, Zeven, Zdiff: 2 * Zodd, Zcommon: Zeven / 2 };
+}
+function broadsideUnshielded(w, d, er, t = 0) {
+  const h = d / 2;
+  const dw = t > 0 && h > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
+  const Zodd = homogeneousStripZ0(w + dw, h, er);
+  return { Z0: Zodd, erEff: er, Zdiff: 2 * Zodd };
+}
+function ellipticRatio(k) {
+  return ellipticK(k) / ellipticK(Math.sqrt(Math.max(1 - k * k, 0)));
+}
+var CPW_SIDEWALL_A = 0.195008;
+function cpwg(w, g, h, er, t) {
+  const k0i = w / (w + 2 * g);
+  const k1i = Math.tanh(Math.PI * w / (4 * h)) / Math.tanh(Math.PI * (w + 2 * g) / (4 * h));
+  const r0i = ellipticRatio(k0i);
+  const r1i = ellipticRatio(k1i);
+  const erEff0 = 1 + r1i / (r0i + r1i) * (er - 1);
+  const dg = t > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
+  const we = w + dg;
+  const ge = Math.max(g - dg / 2, 1e-4);
+  const k0 = we / (we + 2 * ge);
+  const k1 = Math.tanh(Math.PI * we / (4 * h)) / Math.tanh(Math.PI * (we + 2 * ge) / (4 * h));
+  const sum = ellipticRatio(k0) + ellipticRatio(k1);
+  let erEff = erEff0;
+  if (t > 0 && g > 0) {
+    const tg = t / g;
+    const dC = 2 * (tg + 2 / Math.PI * Math.log1p(CPW_SIDEWALL_A * tg));
+    const cAir = 2 * (r0i + r1i);
+    erEff = (erEff0 * cAir + dC) / (cAir + dC);
+  }
+  const Z0 = ETA_0 / 2 / (Math.sqrt(erEff) * sum);
+  return { Z0, erEff };
+}
+function ellipticK(k) {
+  if (k <= 0) return Math.PI / 2;
+  if (k >= 1) return Infinity;
+  let a = 1, b = Math.sqrt(1 - k * k);
+  for (let i = 0; i < 16; i++) {
+    const aNext = (a + b) / 2;
+    const bNext = Math.sqrt(a * b);
+    a = aNext;
+    b = bNext;
+    if (Math.abs(a - b) < 1e-12) break;
+  }
+  return Math.PI / (2 * a);
+}
+
 // src/lib/calculators/pcb/differential-pair.ts
 function calculateDifferentialPair(inputs) {
   const {
@@ -2509,28 +2829,25 @@ function calculateDifferentialPair(inputs) {
   if (t >= h) {
     return { values: {}, errors: ["Copper thickness must be less than substrate height"] };
   }
-  const dw = t / Math.PI * (1 + Math.log(2 * h / t));
-  const wEff = w + dw;
-  const u = wEff / h;
-  const a = 1 + 1 / 49 * Math.log((Math.pow(u, 4) + Math.pow(u / 52, 2)) / (Math.pow(u, 4) + 0.432)) + 1 / 18.7 * Math.log(1 + Math.pow(u / 18.1, 3));
-  const b = 0.564 * Math.pow((er - 0.9) / (er + 3), 0.053);
-  const erEff = (er + 1) / 2 + (er - 1) / 2 * Math.pow(1 + 10 / u, -a * b);
-  const F = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
-  const z0Single = 60 / Math.sqrt(erEff) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
-  const Q = 2 * s / w;
-  const Qe = Math.exp(-Q * 0.347);
-  const zodd = z0Single * (1 - Qe);
-  const zeven = z0Single * (1 + Qe);
-  const zdiff = 2 * zodd;
-  const zcom = zeven / 2;
+  const result = diffMicrostrip(w, s, h, er, t);
+  const warnings = [];
+  if (!result.inRange) {
+    warnings.push(
+      `Geometry is outside the range the model was validated over (${MICRO_COUPLED_RANGE.description}); the result is extrapolated.`
+    );
+  }
   return {
     values: {
-      zdiff,
-      zcom,
-      z0single: z0Single,
-      zodd,
-      zeven
-    }
+      zdiff: result.Zdiff,
+      zcom: result.Zcommon,
+      z0single: result.Z0,
+      zodd: result.Zodd,
+      zeven: result.Zeven,
+      erEffOdd: result.erEffOdd,
+      erEffEven: result.erEffEven,
+      inValidatedRange: result.inRange ? 1 : 0
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
   };
 }
 var differentialPair = {
@@ -2664,6 +2981,30 @@ var differentialPair = {
       precision: 2,
       format: "standard",
       tooltip: "Even-mode impedance (2 \xD7 Zcom)"
+    },
+    {
+      key: "erEffOdd",
+      label: "Odd-Mode Effective Er",
+      symbol: "\u03B5eff,odd",
+      unit: "",
+      precision: 3,
+      tooltip: "Effective permittivity seen by the odd (differential) mode"
+    },
+    {
+      key: "erEffEven",
+      label: "Even-Mode Effective Er",
+      symbol: "\u03B5eff,even",
+      unit: "",
+      precision: 3,
+      tooltip: "Effective permittivity seen by the even (common) mode \u2014 higher, because the odd mode routes field through the air gap"
+    },
+    {
+      key: "inValidatedRange",
+      label: "Within Validated Range",
+      unit: "",
+      precision: 0,
+      tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
+      thresholds: { danger: { max: 0.5 } }
     }
   ],
   calculate: calculateDifferentialPair,
@@ -2682,7 +3023,12 @@ var differentialPair = {
     type: "cross-section",
     layers: ["trace1", "gap", "trace2", "substrate", "ground"]
   },
-  relatedCalculators: ["microstrip-impedance", "trace-width-current"],
+  relatedCalculators: [
+    "edge-coupled-internal-symmetric",
+    "edge-coupled-embedded",
+    "microstrip-impedance",
+    "trace-width-current"
+  ],
   relatedTools: ["eye-diagram", "fdtd-sparam"],
   relatedBlogPosts: ["eye-diagram-signal-integrity-10gbps", "microstrip-impedance-design-guide", "opamp-gain"],
   verificationData: [
@@ -2979,7 +3325,7 @@ var viaCalculator = {
 };
 
 // src/lib/calculators/pcb/stackup-builder.ts
-function hammerstadJensen(w, h, er, tMm) {
+function hammerstadJensen2(w, h, er, tMm) {
   const dw = tMm / Math.PI * (1 + Math.log(2 * h / tMm));
   const wEff = w + dw;
   const u = wEff / h;
@@ -3022,8 +3368,8 @@ function calculateStackup(inputs) {
   const whRatioL3 = inverseWheeler(z0, er);
   const traceWidthL3mm = whRatioL3 * dielectricH2;
   const safeTMm = Math.min(tMm, dielectricH1 * 0.5, dielectricH2 * 0.5);
-  const achievedImpedanceL1 = hammerstadJensen(traceWidthL1mm, dielectricH1, er, safeTMm);
-  const achievedImpedanceL3 = hammerstadJensen(traceWidthL3mm, dielectricH2, er, safeTMm);
+  const achievedImpedanceL1 = hammerstadJensen2(traceWidthL1mm, dielectricH1, er, safeTMm);
+  const achievedImpedanceL3 = hammerstadJensen2(traceWidthL3mm, dielectricH2, er, safeTMm);
   if (totalThicknessMm < 0.5) {
     warnings.push("Very thin board: warping risk");
   }
@@ -7907,8 +8253,8 @@ function calculateQFactor(inputs) {
     const L = value * 1e-6;
     reactance = omega * L;
   } else {
-    const C = value * 1e-9;
-    reactance = 1 / (omega * C);
+    const C2 = value * 1e-9;
+    reactance = 1 / (omega * C2);
   }
   const qFactor2 = reactance / esr;
   const bandwidth = frequency * 1e3 / qFactor2;
@@ -9081,30 +9427,20 @@ function calculateControlledImpedance(inputs) {
     substrateHeight,
     dielectricConst,
     copperThickness,
-    coverHeight
+    coverHeight,
+    coverDielectric
   } = inputs;
   const warnings = [];
   const t_mm = copperThickness / 1e3;
   function computeZ0(W) {
-    if (traceType === 0) {
-      const u = W / substrateHeight;
-      const f = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
-      const er = (dielectricConst + 1) / 2 + (dielectricConst - 1) / 2 * Math.pow(1 + 12 / u, -0.5);
-      const z2 = 60 / Math.sqrt(er) * Math.log(f / u + Math.sqrt(1 + 4 / (u * u)));
-      return { Z0: z2, erEff: er };
-    } else if (traceType === 1) {
-      const er = dielectricConst * (1 - Math.exp(-1.55 * coverHeight / substrateHeight));
-      const arg = 5.98 * substrateHeight / (0.8 * W + t_mm);
-      if (arg <= 1) return { Z0: 0, erEff: er };
-      const Z0_air = 60 * Math.log(arg);
-      return { Z0: Z0_air / Math.sqrt(er), erEff: er };
-    } else {
-      const b = 2 * substrateHeight;
-      const arg = 4 * b / (0.67 * Math.PI * (0.8 * W + t_mm));
-      if (arg <= 1) return { Z0: 0, erEff: dielectricConst };
-      const z2 = 60 / Math.sqrt(dielectricConst) * Math.log(arg);
-      return { Z0: z2, erEff: dielectricConst };
+    if (traceType === 1) {
+      return embeddedMicrostrip(W, substrateHeight, dielectricConst, t_mm, coverHeight, coverDielectric);
     }
+    if (traceType === 2) {
+      const { Z0, erEff } = symmetricStripline(W, 2 * substrateHeight, dielectricConst, t_mm);
+      return { Z0, erEff };
+    }
+    return hammerstadJensen(W, substrateHeight, dielectricConst, t_mm);
   }
   const { Z0: impedance, erEff: effectiveDielectric } = computeZ0(traceWidth);
   const propagationDelay = Math.sqrt(effectiveDielectric) / 0.3;
@@ -9208,6 +9544,20 @@ var controlledImpedance = {
       defaultValue: 0.1,
       min: 0.01,
       tooltip: "Cover layer height (for embedded microstrip only)"
+    },
+    {
+      key: "coverDielectric",
+      label: "Cover Dielectric Constant",
+      symbol: "\u03B5rc",
+      unit: "",
+      defaultValue: 3.5,
+      min: 1,
+      tooltip: "Permittivity of the covering layer (for embedded microstrip only)",
+      presets: [
+        { label: "Soldermask (3.5)", values: { coverDielectric: 3.5 } },
+        { label: "Prepreg FR4 (4.2)", values: { coverDielectric: 4.2 } },
+        { label: "Conformal coating (3.0)", values: { coverDielectric: 3 } }
+      ]
     }
   ],
   outputs: [
@@ -9247,18 +9597,30 @@ var controlledImpedance = {
   ],
   calculate: calculateControlledImpedance,
   formula: {
-    primary: "Surface: Z\u2080 = (87/\u221A(\u03B5r+1.41)) \xD7 ln(5.98h/(0.8W+t))",
+    primary: "Surface: Hammerstad\u2013Jensen.  Covered: \u03B5eff = 1 + q_f(\u03B5r\u22121) + (1\u2212q_f)q_c(\u03B5rc\u22121).  Stripline: C/(\u03B5\u2080\u03B5r) = 4K(k)/K(k\u2032), k = tanh(\u03C0W/2b)",
+    latex: "Z_0 = \\frac{Z_0^{air}}{\\sqrt{\\varepsilon_{eff}}},\\qquad \\varepsilon_{eff}^{covered} = 1 + q_f(\\varepsilon_r - 1) + (1-q_f)\\,q_c(\\varepsilon_{rc} - 1),\\qquad \\frac{C_{stripline}}{\\varepsilon_0\\varepsilon_r} = \\frac{4K(k)}{K(k')}",
     variables: [
       { symbol: "Z\u2080", description: "Characteristic impedance", unit: "\u03A9" },
-      { symbol: "\u03B5r", description: "Dielectric constant", unit: "" },
-      { symbol: "W", description: "Trace width", unit: "m" },
-      { symbol: "h", description: "Substrate height", unit: "m" },
-      { symbol: "t", description: "Copper thickness", unit: "m" }
+      { symbol: "\u03B5r", description: "Substrate dielectric constant", unit: "" },
+      { symbol: "\u03B5rc", description: "Cover dielectric constant (embedded microstrip)", unit: "" },
+      { symbol: "q_f", description: "Share of the energy already in the substrate", unit: "" },
+      { symbol: "q_c", description: "Share of the remaining energy the cover captures", unit: "" },
+      { symbol: "W", description: "Trace width", unit: "mm" },
+      { symbol: "h", description: "Substrate height", unit: "mm" },
+      { symbol: "b", description: "Plane-to-plane spacing, 2h for the stripline mode", unit: "mm" },
+      { symbol: "t", description: "Copper thickness", unit: "mm" },
+      { symbol: "K", description: "Complete elliptic integral of the first kind", unit: "" }
     ],
-    reference: "IPC-2141 Controlled Impedance Circuit Boards"
+    derivation: [
+      "Surface microstrip uses Hammerstad\u2013Jensen (1980), including the effective widening that copper thickness produces \u2014 the older two-term form ignores thickness and puts the 50 \u03A9 width about 15% out.",
+      "The covered case splits the energy: whatever is already in the substrate, plus the share of the rest that the cover captures. Because the second term is bounded by the energy not already in the substrate, \u03B5eff can never exceed the largest permittivity present.",
+      "Stripline uses the exact conformal-mapping result rather than the narrow-trace logarithm, which was only valid for thin traces and returned zero for wide ones.",
+      "The 50 \u03A9 width is found by bisection on the same model the main result uses, so the two always agree."
+    ],
+    reference: "Hammerstad & Jensen, IEEE MTT-S 1980; stripline core verified against the field solver committed in src/lib/pcb/__tests__/solver. The covered-microstrip filling factors are fitted to a layered solve."
   },
   visualization: { type: "none" },
-  relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-resistance"],
+  relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-resistance", "edge-coupled-internal-symmetric", "edge-coupled-embedded"],
   relatedTools: ["pdn-impedance"],
   relatedBlogPosts: ["decoupling-capacitor", "ethernet-cable", "eye-diagram-signal-integrity-10gbps"]
 };
@@ -17685,12 +18047,12 @@ function calculatePt100Resistance(inputs) {
   const { temperature, r0 } = inputs;
   const A = 39083e-7;
   const B = -5775e-10;
-  const C = -42735e-16;
+  const C2 = -42735e-16;
   let resistance;
   if (temperature >= 0) {
     resistance = r0 * (1 + A * temperature + B * temperature ** 2);
   } else {
-    resistance = r0 * (1 + A * temperature + B * temperature ** 2 + C * (temperature - 100) * temperature ** 3);
+    resistance = r0 * (1 + A * temperature + B * temperature ** 2 + C2 * (temperature - 100) * temperature ** 3);
   }
   const sensitivityOhmPerDeg = r0 * (A + 2 * B * temperature);
   return { values: { resistance, sensitivityOhmPerDeg } };
@@ -23636,7 +23998,12 @@ var viaStubResonance = {
     reference: 'Eric Bogatin, "Signal and Power Integrity Simplified" 3rd ed.'
   },
   visualization: { type: "none" },
-  relatedCalculators: ["via-calculator", "power-plane-impedance", "controlled-impedance"],
+  relatedCalculators: [
+    "differential-via",
+    "via-calculator",
+    "power-plane-impedance",
+    "controlled-impedance"
+  ],
   relatedTools: ["fdtd-sparam"],
   relatedBlogPosts: ["eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"]
 };
@@ -23914,13 +24281,13 @@ var emiFilterLc = {
     const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)}\u03BCF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)}nF` : `${+(uf * 1e6).toPrecision(3)}pF`;
     const fmtL = (uh) => uh >= 1 ? `${+uh.toPrecision(3)}\u03BCH` : `${+(uh * 1e3).toPrecision(3)}nH`;
     const L = fmtL(outputs.inductance);
-    const C = fmtC(outputs.capacitance);
+    const C2 = fmtC(outputs.capacitance);
     return [{
       label: "Pi LC EMI Filter",
       elements: [
-        { type: "C", placement: "shunt", label: `C1 ${C}` },
+        { type: "C", placement: "shunt", label: `C1 ${C2}` },
         { type: "L", placement: "series", label: `L ${L}` },
-        { type: "C", placement: "shunt", label: `C2 ${C}` }
+        { type: "C", placement: "shunt", label: `C2 ${C2}` }
       ]
     }];
   },
@@ -26783,140 +27150,6 @@ var voltageDrop = {
   relatedCalculators: ["led-resistor", "voltage-divider", "trace-width-current", "solar-panel-sizing"]
 };
 
-// src/lib/pcb/impedance.ts
-function hammerstadJensen2(w, h, er, t) {
-  const dw = t / Math.PI * (1 + Math.log(2 * h / Math.max(t, 1e-6)));
-  const wEff = w + dw;
-  const u = wEff / h;
-  const a = 1 + 1 / 49 * Math.log((Math.pow(u, 4) + Math.pow(u / 52, 2)) / (Math.pow(u, 4) + 0.432)) + 1 / 18.7 * Math.log(1 + Math.pow(u / 18.1, 3));
-  const b = 0.564 * Math.pow((er - 0.9) / (er + 3), 0.053);
-  const erEff = (er + 1) / 2 + (er - 1) / 2 * Math.pow(1 + 10 / u, -a * b);
-  const F = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
-  const Z0 = 60 / Math.sqrt(erEff) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
-  return { Z0, erEff };
-}
-var ETA_0 = 376.730313412;
-var FRINGE_PEAK_T_OVER_B = 1 / 3;
-function stripFringeFactor(tOverB) {
-  const x = Math.min(Math.max(tOverB, 0), FRINGE_PEAK_T_OVER_B);
-  const a = 1 / (1 - x);
-  const second = a - 1 > 0 ? (a - 1) * Math.log(a * a - 1) : 0;
-  return 2 / Math.PI * (a * Math.log(a + 1) - second);
-}
-var FRINGE_ZERO_T = 2 / Math.PI * Math.LN2;
-function centredStripNormC(w, b) {
-  if (!(w > 0) || !(b > 0)) return 0;
-  const x = Math.PI * w / (2 * b);
-  if (x > 20) {
-    return 8 * (Math.LN2 + x + Math.log1p(Math.exp(-2 * x))) / Math.PI;
-  }
-  return 4 * ellipticK(Math.tanh(x)) / ellipticK(1 / Math.cosh(x));
-}
-var OFFSET_A = 0.245266;
-var OFFSET_P = 0.718328;
-var OFFSET_C = 3.038156;
-var OFFSET_Q = 0.578186;
-function striplineNormC(w, h1, h2, t) {
-  if (!(w > 0) || !(h1 > 0) || !(h2 > 0)) return 0;
-  const b0 = h1 + h2;
-  let c2 = 0.5 * (centredStripNormC(w, 2 * h1) + centredStripNormC(w, 2 * h2));
-  const u = Math.min(h1, h2) / b0;
-  if (u < 0.5) {
-    const excess = OFFSET_A * (Math.pow(0.5 / u, OFFSET_P) - 1);
-    const rolloff = 1 - Math.exp(-OFFSET_C * Math.pow(w / b0, OFFSET_Q));
-    c2 += excess * rolloff;
-  }
-  if (t > 0) {
-    const b = b0 + t;
-    c2 += 4 * (stripFringeFactor(t / b) - FRINGE_ZERO_T);
-  }
-  return c2;
-}
-function symmetricStripline(w, b, er, t) {
-  if (!(b > t) || !(w > 0)) return { Z0: 0, erEff: er };
-  const gap = (b - t) / 2;
-  const c2 = striplineNormC(w, gap, gap, t);
-  return { Z0: c2 > 0 ? ETA_0 / (Math.sqrt(er) * c2) : 0, erEff: er };
-}
-function asymmetricStripline(w, h1, h2, er, t) {
-  const c2 = striplineNormC(w, h1, h2, t);
-  return { Z0: c2 > 0 ? ETA_0 / (Math.sqrt(er) * c2) : 0, erEff: er };
-}
-function homogeneousStripZ0(w, h, er) {
-  const u = w / h;
-  if (!(u > 0) || !Number.isFinite(u)) return NaN;
-  if (u <= 1) {
-    return ETA_0 / (2 * Math.PI * Math.sqrt(er)) * Math.log(8 / u + u / 4);
-  }
-  return ETA_0 / Math.sqrt(er) / (u + 1.393 + 0.667 * Math.log(u + 1.444));
-}
-var EVEN_A = 0.518109;
-var EVEN_P = -0.356102;
-var EVEN_C = 1.484632;
-var EVEN_Q = 0.690292;
-function broadsideEvenNormC(w, h, s, t) {
-  if (!(h > 0) || !(w > 0)) return 0;
-  const half = 0.5 * centredStripNormC(w, 2 * h);
-  const excess = EVEN_A * Math.pow(w / h, EVEN_P) * (1 - Math.exp(-EVEN_C * Math.pow(s / h, EVEN_Q)));
-  let c2 = half * (1 + excess);
-  if (t > 0) c2 += 2 * (stripFringeFactor(t / (2 * h + t)) - FRINGE_ZERO_T);
-  return c2;
-}
-function broadsideStripline(w, b, d, er, t) {
-  const h = (b - d - 2 * t) / 2;
-  if (!(h > 0)) return { Z0: 0, erEff: er, Zodd: 0, Zeven: 0, Zdiff: 0, Zcommon: 0 };
-  const { Z0 } = asymmetricStripline(w, h, h + d + t, er, t);
-  const { Z0: Zodd } = asymmetricStripline(w, d / 2, h, er, t);
-  const cEven = broadsideEvenNormC(w, h, d / 2, t);
-  const Zeven = cEven > 0 ? ETA_0 / (Math.sqrt(er) * cEven) : 0;
-  return { Z0, erEff: er, Zodd, Zeven, Zdiff: 2 * Zodd, Zcommon: Zeven / 2 };
-}
-function broadsideUnshielded(w, d, er, t = 0) {
-  const h = d / 2;
-  const dw = t > 0 && h > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
-  const Zodd = homogeneousStripZ0(w + dw, h, er);
-  return { Z0: Zodd, erEff: er, Zdiff: 2 * Zodd };
-}
-function ellipticRatio(k) {
-  return ellipticK(k) / ellipticK(Math.sqrt(Math.max(1 - k * k, 0)));
-}
-var CPW_SIDEWALL_A = 0.195008;
-function cpwg(w, g, h, er, t) {
-  const k0i = w / (w + 2 * g);
-  const k1i = Math.tanh(Math.PI * w / (4 * h)) / Math.tanh(Math.PI * (w + 2 * g) / (4 * h));
-  const r0i = ellipticRatio(k0i);
-  const r1i = ellipticRatio(k1i);
-  const erEff0 = 1 + r1i / (r0i + r1i) * (er - 1);
-  const dg = t > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
-  const we = w + dg;
-  const ge = Math.max(g - dg / 2, 1e-4);
-  const k0 = we / (we + 2 * ge);
-  const k1 = Math.tanh(Math.PI * we / (4 * h)) / Math.tanh(Math.PI * (we + 2 * ge) / (4 * h));
-  const sum = ellipticRatio(k0) + ellipticRatio(k1);
-  let erEff = erEff0;
-  if (t > 0 && g > 0) {
-    const tg = t / g;
-    const dC = 2 * (tg + 2 / Math.PI * Math.log1p(CPW_SIDEWALL_A * tg));
-    const cAir = 2 * (r0i + r1i);
-    erEff = (erEff0 * cAir + dC) / (cAir + dC);
-  }
-  const Z0 = ETA_0 / 2 / (Math.sqrt(erEff) * sum);
-  return { Z0, erEff };
-}
-function ellipticK(k) {
-  if (k <= 0) return Math.PI / 2;
-  if (k >= 1) return Infinity;
-  let a = 1, b = Math.sqrt(1 - k * k);
-  for (let i = 0; i < 16; i++) {
-    const aNext = (a + b) / 2;
-    const bNext = Math.sqrt(a * b);
-    a = aNext;
-    b = bNext;
-    if (Math.abs(a - b) < 1e-12) break;
-  }
-  return Math.PI / (2 * a);
-}
-
 // src/lib/calculators/rf/coplanar-waveguide.ts
 var C_MM_PER_PS = 0.299792458;
 var ETA_02 = 376.730313412;
@@ -27879,6 +28112,8 @@ var broadsideCoupledPair = {
   },
   visualization: { type: "none" },
   relatedCalculators: [
+    "edge-coupled-internal-symmetric",
+    "edge-coupled-internal-asymmetric",
     "differential-pair",
     "asymmetric-stripline",
     "dual-stripline",
@@ -28767,7 +29002,15 @@ var padstackAnnularRing = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["via-calculator", "via-thermal-resistance", "bga-land-pad", "controlled-impedance"],
+  relatedCalculators: [
+    "conductor-to-pad-width",
+    "maximum-pad-diameter",
+    "aperture-diagonal",
+    "via-calculator",
+    "via-thermal-resistance",
+    "bga-land-pad",
+    "controlled-impedance"
+  ],
   relatedBlogPosts: ["annular-ring-drill-tolerance"],
   faqs: [
     {
@@ -28912,7 +29155,14 @@ var bgaLandPad = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["padstack-annular-ring", "via-calculator", "minimum-conductor-spacing", "controlled-impedance"],
+  relatedCalculators: [
+    "bga-breakout-width",
+    "maximum-pad-diameter",
+    "padstack-annular-ring",
+    "via-calculator",
+    "minimum-conductor-spacing",
+    "controlled-impedance"
+  ],
   relatedBlogPosts: ["bga-escape-routing-land-pads"],
   faqs: [
     {
@@ -29939,7 +30189,7 @@ function calculateEffectiveDielectricConstant(inputs) {
       errors: ["Trace width and dielectric height must be positive and \u03B5r must be \u2265 1"]
     };
   }
-  const { Z0, erEff } = hammerstadJensen2(w, h, er, t);
+  const { Z0, erEff } = hammerstadJensen(w, h, er, t);
   const fillingFactor = er > 1 ? (erEff - 1) / (er - 1) : 1;
   const hMetres = h / 1e3;
   const fpHz = Z0 / (2 * MU_0 * hMetres);
@@ -30187,11 +30437,11 @@ function calculateViaStepResponse(inputs) {
   const inductanceNH = 0.2 * h * (Math.log(4 * h / d) + 0.5);
   const capacitancePF = 0.0554 * er * h * d1 / (d2 - d1);
   const L = inductanceNH * 1e-9;
-  const C = capacitancePF * 1e-12;
-  const zViaOhm = Math.sqrt(L / C);
-  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C)) / 1e9;
-  const excessC = C - L / (z0 * z0);
-  const excessL = L - C * z0 * z0;
+  const C2 = capacitancePF * 1e-12;
+  const zViaOhm = Math.sqrt(L / C2);
+  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C2)) / 1e9;
+  const excessC = C2 - L / (z0 * z0);
+  const excessL = L - C2 * z0 * z0;
   const excessCapacitancePF = excessC * 1e12;
   const excessInductanceNH = excessL * 1e9;
   const trIn = riseTime * 1e-12;
@@ -30698,6 +30948,1992 @@ var microviaCurrentCapacity = {
   ]
 };
 
+// src/lib/calculators/pcb/edge-coupled-internal-symmetric.ts
+var C_MM_PER_PS7 = 0.299792458;
+function calculateEdgeCoupledInternalSymmetric(inputs) {
+  const { traceWidth, traceSpacing, planeSpacing, copperThickness, dielectricConst } = inputs;
+  const t = copperThickness / 1e3;
+  if (planeSpacing <= t) {
+    return {
+      values: {},
+      errors: ["Copper thickness must be less than the plane-to-plane spacing"]
+    };
+  }
+  const pair = coupledStripline(traceWidth, traceSpacing, planeSpacing, dielectricConst, t);
+  const single = symmetricStripline(traceWidth, planeSpacing, dielectricConst, t);
+  const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS7;
+  const warnings = [];
+  const couplingLoss = 1 - pair.Zdiff / (2 * single.Z0);
+  if (couplingLoss < 0.02) {
+    warnings.push(
+      "Traces are far enough apart that they are barely coupled \u2014 the pair behaves as two independent striplines"
+    );
+  }
+  if (pair.Zdiff < 70 || pair.Zdiff > 130) {
+    warnings.push(
+      `Z_diff is ${pair.Zdiff.toFixed(1)} \u03A9 \u2014 typical targets are 90 \u03A9 (USB), 100 \u03A9 (Ethernet/LVDS) or 85 \u03A9 (PCIe)`
+    );
+  }
+  return {
+    values: {
+      diffImpedance: pair.Zdiff,
+      commonImpedance: pair.Zcommon,
+      oddImpedance: pair.Zodd,
+      evenImpedance: pair.Zeven,
+      uncoupledImpedance: single.Z0,
+      couplingCoefficient: (pair.Zeven - pair.Zodd) / (pair.Zeven + pair.Zodd),
+      propagationDelay
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var edgeCoupledInternalSymmetric = {
+  slug: "edge-coupled-internal-symmetric",
+  title: "Edge-Coupled Internal Symmetric Stripline Calculator",
+  shortTitle: "Edge-Coupled Stripline",
+  metaTitle: "Edge-Coupled Stripline Differential Pair Calculator \u2014 Exact Zdiff",
+  category: "pcb",
+  description: "Calculate differential, common-mode, odd- and even-mode impedance for an edge-coupled differential pair centred between two reference planes. Exact conformal-mapping solution, not an empirical fit.",
+  keywords: [
+    "edge coupled stripline",
+    "internal differential pair impedance",
+    "symmetric stripline differential",
+    "odd mode even mode impedance",
+    "buried differential pair",
+    "Cohn coupled stripline"
+  ],
+  inputs: [
+    {
+      key: "traceWidth",
+      label: "Trace Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 0.15,
+      min: 0.02,
+      step: 0.01
+    },
+    {
+      key: "traceSpacing",
+      label: "Trace Spacing (edge to edge)",
+      symbol: "S",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.02,
+      step: 0.01,
+      tooltip: "Gap between the facing edges of the two traces"
+    },
+    {
+      key: "planeSpacing",
+      label: "Plane-to-Plane Spacing",
+      symbol: "b",
+      unit: "mm",
+      defaultValue: 0.6,
+      min: 0.05,
+      step: 0.01,
+      tooltip: "Total dielectric height between the two reference planes"
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Thickness",
+      symbol: "t",
+      unit: "\u03BCm",
+      defaultValue: 35,
+      min: 5,
+      step: 1,
+      presets: [
+        { label: "\xBD oz (17.5 \u03BCm)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } },
+        { label: "2 oz (70 \u03BCm)", values: { copperThickness: 70 } }
+      ]
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.2,
+      min: 1,
+      step: 0.01,
+      presets: [
+        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
+        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
+        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "diffImpedance",
+      label: "Differential Impedance",
+      symbol: "Z_diff",
+      unit: "\u03A9",
+      precision: 2,
+      primary: true,
+      thresholds: { good: { min: 90, max: 110 }, warning: { min: 80, max: 120 } }
+    },
+    {
+      key: "commonImpedance",
+      label: "Common-Mode Impedance",
+      symbol: "Z_common",
+      unit: "\u03A9",
+      precision: 2
+    },
+    { key: "oddImpedance", label: "Odd-Mode Impedance", symbol: "Z_odd", unit: "\u03A9", precision: 2 },
+    { key: "evenImpedance", label: "Even-Mode Impedance", symbol: "Z_even", unit: "\u03A9", precision: 2 },
+    {
+      key: "uncoupledImpedance",
+      label: "Single Trace Without Its Partner",
+      symbol: "Z\u2080",
+      unit: "\u03A9",
+      precision: 2,
+      tooltip: "Reference value \u2014 the same trace with the other one removed"
+    },
+    {
+      key: "couplingCoefficient",
+      label: "Coupling Coefficient",
+      symbol: "k",
+      unit: "",
+      precision: 4,
+      tooltip: "(Z_even \u2212 Z_odd)/(Z_even + Z_odd); zero when the traces are uncoupled"
+    },
+    {
+      key: "propagationDelay",
+      label: "Propagation Delay",
+      symbol: "t_pd",
+      unit: "ps/mm",
+      precision: 3,
+      tooltip: "Both modes travel at the same speed in a stripline \u2014 the dielectric is homogeneous"
+    }
+  ],
+  calculate: calculateEdgeCoupledInternalSymmetric,
+  formula: {
+    primary: "Z_0e,0o = (\u03B7\u2080/4)/\u221A\u03B5r \xB7 K(k\u2032)/K(k),  k_e = tanh(\u03C0W/2b)\xB7tanh(\u03C0(W+S)/2b),  k_o = tanh(\u03C0W/2b)/tanh(\u03C0(W+S)/2b)",
+    latex: "Z_{0e,0o} = \\frac{\\eta_0/4}{\\sqrt{\\varepsilon_r}}\\cdot\\frac{K(k')}{K(k)},\\qquad k_e = \\tanh\\!\\frac{\\pi W}{2b}\\tanh\\!\\frac{\\pi (W+S)}{2b},\\qquad k_o = \\frac{\\tanh\\frac{\\pi W}{2b}}{\\tanh\\frac{\\pi (W+S)}{2b}}",
+    variables: [
+      { symbol: "Z_diff", description: "Differential impedance, 2\xB7Z_odd", unit: "\u03A9" },
+      { symbol: "Z_common", description: "Common-mode impedance, Z_even/2", unit: "\u03A9" },
+      { symbol: "W", description: "Trace width", unit: "mm" },
+      { symbol: "S", description: "Edge-to-edge spacing", unit: "mm" },
+      { symbol: "b", description: "Plane-to-plane spacing", unit: "mm" },
+      { symbol: "K", description: "Complete elliptic integral of the first kind", unit: "" },
+      { symbol: "\u03B7\u2080", description: "Impedance of free space, 376.730313412 \u03A9 (exact SI)", unit: "\u03A9" }
+    ],
+    derivation: [
+      "Two coplanar strips centred between grounded planes map conformally onto a parallel-plate region, so the even- and odd-mode capacitances have closed forms with no fitting.",
+      "The even mode places a magnetic wall on the symmetry plane and the odd mode an electric wall, which is what makes the two moduli differ only by tanh versus its reciprocal.",
+      "As the spacing grows both moduli tend to tanh(\u03C0W/2b), so both modes collapse onto the single centred stripline \u2014 exactly, not approximately.",
+      "The scale is \u03B7\u2080/4 = 94.1826 \u03A9, derived from Z\u2080 = \u03B7\u2080/(\u221A\u03B5r\xB7C). The 30\u03C0 = 94.2478 that appears in older literature assumes \u03B5\u2080 = 0.0885 pF/cm and is 0.07% high."
+    ],
+    reference: 'S. B. Cohn, "Shielded Coupled-Strip Transmission Line", IRE Trans. MTT-3 (1955), pp. 29\u201338. Verified against a 2-D method-of-moments solve to 0.008%.'
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "edge-coupled-internal-asymmetric",
+    "edge-coupled-embedded",
+    "differential-pair",
+    "broadside-coupled-pair",
+    "controlled-impedance"
+  ],
+  relatedTools: ["sparam-pipeline", "eye-diagram"],
+  faqs: [
+    {
+      question: "Why is this exact when most impedance calculators are approximations?",
+      answer: "Because the geometry admits a conformal map. Two zero-thickness coplanar strips centred between two ground planes transform into a parallel-plate capacitor, and the transformation is exact, so the even- and odd-mode capacitances come out as elliptic integrals rather than as a curve fit. Only the copper-thickness correction is approximate."
+    },
+    {
+      question: "How does this differ from an edge-coupled pair on an outer layer?",
+      answer: "A stripline pair is surrounded by one dielectric, so both modes travel at the same speed and there is no mode-conversion skew. A surface pair has air above it, the odd mode runs faster than the even mode, and the pair converts differential energy into common mode over length."
+    },
+    {
+      question: "What spacing should I use for 100 \u03A9 differential?",
+      answer: "Set the width for the single-ended impedance you want first, then open the spacing until Z_diff reaches the target. Coupling falls off quickly: past roughly three trace widths of gap the pair is nearly uncoupled and Z_diff is simply twice the single-ended value."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/edge-coupled-internal-asymmetric.ts
+var C_MM_PER_PS8 = 0.299792458;
+function calculateEdgeCoupledInternalAsymmetric(inputs) {
+  const { traceWidth, traceSpacing, heightBelow, heightAbove, copperThickness, dielectricConst } = inputs;
+  const t = copperThickness / 1e3;
+  if (heightBelow <= 0 || heightAbove <= 0) {
+    return {
+      values: {},
+      errors: ["Both dielectric heights must be greater than zero"]
+    };
+  }
+  const pair = offsetCoupledStripline(
+    traceWidth,
+    traceSpacing,
+    heightBelow,
+    heightAbove,
+    dielectricConst,
+    t
+  );
+  const single = asymmetricStripline(traceWidth, heightBelow, heightAbove, dielectricConst, t);
+  const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS8;
+  const warnings = [];
+  if (!pair.inRange) {
+    warnings.push(
+      `Geometry is outside the range the model was validated over (${OFFSET_COUPLED_RANGE.description}); the result is extrapolated.`
+    );
+  }
+  if (pair.Zdiff < 70 || pair.Zdiff > 130) {
+    warnings.push(
+      `Z_diff is ${pair.Zdiff.toFixed(1)} \u03A9 \u2014 typical targets are 90 \u03A9 (USB), 100 \u03A9 (Ethernet/LVDS) or 85 \u03A9 (PCIe)`
+    );
+  }
+  const asymmetry = Math.abs(heightBelow - heightAbove) / (heightBelow + heightAbove);
+  if (asymmetry < 0.01) {
+    warnings.push(
+      "The two dielectric heights are nearly equal \u2014 use the symmetric calculator, whose solution is exact"
+    );
+  }
+  return {
+    values: {
+      diffImpedance: pair.Zdiff,
+      commonImpedance: pair.Zcommon,
+      oddImpedance: pair.Zodd,
+      evenImpedance: pair.Zeven,
+      uncoupledImpedance: single.Z0,
+      offsetRatio: asymmetry,
+      propagationDelay,
+      inValidatedRange: pair.inRange ? 1 : 0
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var edgeCoupledInternalAsymmetric = {
+  slug: "edge-coupled-internal-asymmetric",
+  title: "Edge-Coupled Asymmetric (Offset) Stripline Calculator",
+  shortTitle: "Offset Coupled Stripline",
+  metaTitle: "Edge-Coupled Offset Stripline Calculator \u2014 Asymmetric Zdiff",
+  category: "pcb",
+  description: "Calculate differential and common-mode impedance for an edge-coupled pair sitting off-centre between two reference planes \u2014 the usual case in an asymmetric stack-up.",
+  keywords: [
+    "edge coupled offset stripline",
+    "asymmetric stripline differential pair",
+    "offset differential impedance",
+    "unbalanced stripline pair",
+    "dual stripline differential"
+  ],
+  inputs: [
+    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.13, min: 0.02, step: 0.01 },
+    {
+      key: "traceSpacing",
+      label: "Trace Spacing (edge to edge)",
+      symbol: "S",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.02,
+      step: 0.01
+    },
+    {
+      key: "heightBelow",
+      label: "Dielectric Below the Traces",
+      symbol: "h\u2081",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.02,
+      step: 0.01,
+      tooltip: "Distance from the trace layer down to the nearer reference plane"
+    },
+    {
+      key: "heightAbove",
+      label: "Dielectric Above the Traces",
+      symbol: "h\u2082",
+      unit: "mm",
+      defaultValue: 0.5,
+      min: 0.02,
+      step: 0.01,
+      tooltip: "Distance from the trace layer up to the other reference plane"
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Thickness",
+      symbol: "t",
+      unit: "\u03BCm",
+      defaultValue: 35,
+      min: 5,
+      step: 1,
+      presets: [
+        { label: "\xBD oz (17.5 \u03BCm)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } }
+      ]
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.2,
+      min: 1,
+      step: 0.01,
+      presets: [
+        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
+        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "diffImpedance",
+      label: "Differential Impedance",
+      symbol: "Z_diff",
+      unit: "\u03A9",
+      precision: 2,
+      primary: true,
+      thresholds: { good: { min: 90, max: 110 }, warning: { min: 80, max: 120 } }
+    },
+    { key: "commonImpedance", label: "Common-Mode Impedance", symbol: "Z_common", unit: "\u03A9", precision: 2 },
+    { key: "oddImpedance", label: "Odd-Mode Impedance", symbol: "Z_odd", unit: "\u03A9", precision: 2 },
+    { key: "evenImpedance", label: "Even-Mode Impedance", symbol: "Z_even", unit: "\u03A9", precision: 2 },
+    {
+      key: "uncoupledImpedance",
+      label: "Single Trace Without Its Partner",
+      symbol: "Z\u2080",
+      unit: "\u03A9",
+      precision: 2
+    },
+    {
+      key: "offsetRatio",
+      label: "Offset From Centre",
+      symbol: "m",
+      unit: "",
+      precision: 4,
+      tooltip: "|h\u2081 \u2212 h\u2082|/(h\u2081 + h\u2082); zero when the pair is centred"
+    },
+    { key: "propagationDelay", label: "Propagation Delay", symbol: "t_pd", unit: "ps/mm", precision: 3 },
+    {
+      key: "inValidatedRange",
+      label: "Within Validated Range",
+      unit: "",
+      precision: 0,
+      tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
+      thresholds: { danger: { max: 0.5 } }
+    }
+  ],
+  calculate: calculateEdgeCoupledInternalAsymmetric,
+  formula: {
+    primary: "C_mode(offset) = C_single(offset) \xB7 [C_mode(centred)/C_single(centred)] \xB7 \u03BA,  \u03BA \u2192 1 at h\u2081 = h\u2082",
+    latex: "C_{mode}^{offset} = C_{single}^{offset}\\cdot\\frac{C_{mode}^{centred}}{C_{single}^{centred}}\\cdot\\kappa,\\qquad \\kappa\\big|_{h_1=h_2}\\equiv 1",
+    variables: [
+      { symbol: "Z_diff", description: "Differential impedance, 2\xB7Z_odd", unit: "\u03A9" },
+      { symbol: "W", description: "Trace width", unit: "mm" },
+      { symbol: "S", description: "Edge-to-edge spacing", unit: "mm" },
+      { symbol: "h\u2081", description: "Dielectric below the traces", unit: "mm" },
+      { symbol: "h\u2082", description: "Dielectric above the traces", unit: "mm" },
+      { symbol: "\u03BA", description: "Offset correction, identically 1 at h\u2081 = h\u2082", unit: "" }
+    ],
+    derivation: [
+      "An offset pair is written as the exact centred coupling ratio applied to the offset single line, both of which are already known quantities.",
+      "What that decomposition misses is a correction \u03BA, fitted to a 2-D method-of-moments solver committed alongside the calculator.",
+      "\u03BA is built to vanish identically when the two dielectric heights are equal, so the reduction to the exact symmetric case holds by construction rather than by fitting.",
+      "Residual against the solver over W/b 0.05\u20130.8, S/b 0.05\u20131.0 and nearer gap 0.125\u20130.5 of the plane spacing: 1.85% worst case on a mode impedance, 0.44% rms."
+    ],
+    reference: "S. B. Cohn, IRE Trans. MTT-3 (1955) for the centred case; offset correction fitted to the committed solver in src/lib/pcb/__tests__/solver."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "edge-coupled-internal-symmetric",
+    "edge-coupled-embedded",
+    "asymmetric-stripline",
+    "dual-stripline",
+    "differential-pair"
+  ],
+  relatedTools: ["sparam-pipeline", "eye-diagram"],
+  faqs: [
+    {
+      question: "When does a differential pair end up off-centre?",
+      answer: "Almost always, on any stack-up that is not deliberately symmetric. A pair routed on an inner signal layer usually has a thin prepreg to one plane and a thicker core to the other, and the resulting offset moves the differential impedance by more than the fabricator tolerance you were trying to hold."
+    },
+    {
+      question: "How much does the offset actually change Z_diff?",
+      answer: "Moving the pair from centred to a quarter of the plane spacing typically drops Z_diff by 10\u201320%. Treating an offset pair as if it were centred is one of the more common ways a controlled-impedance board comes back out of spec."
+    },
+    {
+      question: "Why does this calculator report whether the result is extrapolated?",
+      answer: "Because the offset correction is fitted, and a fit outside the geometry it was fitted over has no stated accuracy. Inside the published range the worst case is 1.85%; outside it, the number is still returned but flagged, so you know to check it against a field solve."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/edge-coupled-embedded.ts
+var C_MM_PER_PS9 = 0.299792458;
+function calculateEdgeCoupledEmbedded(inputs) {
+  const {
+    traceWidth,
+    traceSpacing,
+    substrateHeight,
+    coverThickness,
+    coverDielectric,
+    copperThickness,
+    dielectricConst
+  } = inputs;
+  const t = copperThickness / 1e3;
+  if (t >= substrateHeight) {
+    return {
+      values: {},
+      errors: ["Copper thickness must be less than the substrate height"]
+    };
+  }
+  const pair = embeddedCoupledMicrostrip(
+    traceWidth,
+    traceSpacing,
+    substrateHeight,
+    dielectricConst,
+    t,
+    coverThickness,
+    coverDielectric
+  );
+  const single = embeddedMicrostrip(
+    traceWidth,
+    substrateHeight,
+    dielectricConst,
+    t,
+    coverThickness,
+    coverDielectric
+  );
+  const delayOdd = Math.sqrt(pair.erEffOdd) / C_MM_PER_PS9;
+  const delayEven = Math.sqrt(pair.erEffEven) / C_MM_PER_PS9;
+  const warnings = [];
+  if (!pair.inRange) {
+    warnings.push(
+      `Geometry is outside the range the model was validated over (${MICRO_COUPLED_RANGE.description}); the result is extrapolated.`
+    );
+  }
+  if (pair.Zdiff < 70 || pair.Zdiff > 130) {
+    warnings.push(
+      `Z_diff is ${pair.Zdiff.toFixed(1)} \u03A9 \u2014 typical targets are 90 \u03A9 (USB), 100 \u03A9 (Ethernet/LVDS) or 85 \u03A9 (PCIe)`
+    );
+  }
+  const skew = Math.abs(delayEven - delayOdd);
+  if (skew > 0.02) {
+    warnings.push(
+      `The two modes travel at different speeds (${skew.toFixed(3)} ps/mm apart), so this pair converts differential energy into common mode over length \u2014 a stripline pair does not`
+    );
+  }
+  return {
+    values: {
+      diffImpedance: pair.Zdiff,
+      commonImpedance: pair.Zcommon,
+      oddImpedance: pair.Zodd,
+      evenImpedance: pair.Zeven,
+      uncoupledImpedance: single.Z0,
+      erEffOdd: pair.erEffOdd,
+      erEffEven: pair.erEffEven,
+      propagationDelay: delayOdd,
+      propagationDelayEven: delayEven,
+      inValidatedRange: pair.inRange ? 1 : 0
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var edgeCoupledEmbedded = {
+  slug: "edge-coupled-embedded",
+  title: "Edge-Coupled Embedded Microstrip Calculator",
+  shortTitle: "Coupled Embedded Microstrip",
+  metaTitle: "Edge-Coupled Embedded Microstrip Calculator \u2014 Covered Pair Zdiff",
+  category: "pcb",
+  description: "Calculate differential and common-mode impedance for an edge-coupled pair under soldermask, coating or prepreg \u2014 with a separate effective permittivity per mode, so the skew the cover introduces is visible.",
+  keywords: [
+    "edge coupled embedded microstrip",
+    "covered differential pair impedance",
+    "soldermask differential impedance",
+    "coated microstrip pair",
+    "differential pair under prepreg",
+    "mode skew microstrip"
+  ],
+  inputs: [
+    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.2, min: 0.02, step: 0.01 },
+    {
+      key: "traceSpacing",
+      label: "Trace Spacing (edge to edge)",
+      symbol: "S",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.02,
+      step: 0.01
+    },
+    {
+      key: "substrateHeight",
+      label: "Substrate Height",
+      symbol: "h",
+      unit: "mm",
+      defaultValue: 0.2,
+      min: 0.02,
+      step: 0.01,
+      tooltip: "Dielectric between the traces and the reference plane below"
+    },
+    {
+      key: "coverThickness",
+      label: "Cover Thickness",
+      symbol: "h_c",
+      unit: "mm",
+      defaultValue: 0.025,
+      min: 0,
+      step: 5e-3,
+      tooltip: "Soldermask, coating or prepreg over the traces. Zero gives a bare surface pair.",
+      presets: [
+        { label: "No cover", values: { coverThickness: 0 } },
+        { label: "Soldermask (25 \u03BCm)", values: { coverThickness: 0.025 } },
+        { label: "Conformal coating (75 \u03BCm)", values: { coverThickness: 0.075 } },
+        { label: "Prepreg (100 \u03BCm)", values: { coverThickness: 0.1 } }
+      ]
+    },
+    {
+      key: "coverDielectric",
+      label: "Cover Dielectric Constant",
+      symbol: "\u03B5rc",
+      unit: "",
+      defaultValue: 3.5,
+      min: 1,
+      step: 0.01,
+      presets: [
+        { label: "Soldermask (3.5)", values: { coverDielectric: 3.5 } },
+        { label: "Conformal coating (3.0)", values: { coverDielectric: 3 } },
+        { label: "Prepreg FR4 (4.2)", values: { coverDielectric: 4.2 } },
+        { label: "Air \u2014 no cover (1.0)", values: { coverDielectric: 1 } }
+      ]
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Thickness",
+      symbol: "t",
+      unit: "\u03BCm",
+      defaultValue: 35,
+      min: 5,
+      step: 1,
+      presets: [
+        { label: "\xBD oz (17.5 \u03BCm)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } }
+      ]
+    },
+    {
+      key: "dielectricConst",
+      label: "Substrate Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.2,
+      min: 1,
+      step: 0.01,
+      presets: [
+        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
+        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "diffImpedance",
+      label: "Differential Impedance",
+      symbol: "Z_diff",
+      unit: "\u03A9",
+      precision: 2,
+      primary: true,
+      thresholds: { good: { min: 90, max: 110 }, warning: { min: 80, max: 120 } }
+    },
+    { key: "commonImpedance", label: "Common-Mode Impedance", symbol: "Z_common", unit: "\u03A9", precision: 2 },
+    { key: "oddImpedance", label: "Odd-Mode Impedance", symbol: "Z_odd", unit: "\u03A9", precision: 2 },
+    { key: "evenImpedance", label: "Even-Mode Impedance", symbol: "Z_even", unit: "\u03A9", precision: 2 },
+    {
+      key: "uncoupledImpedance",
+      label: "Single Trace Without Its Partner",
+      symbol: "Z\u2080",
+      unit: "\u03A9",
+      precision: 2
+    },
+    {
+      key: "erEffOdd",
+      label: "Odd-Mode Effective Er",
+      symbol: "\u03B5eff,odd",
+      unit: "",
+      precision: 3
+    },
+    {
+      key: "erEffEven",
+      label: "Even-Mode Effective Er",
+      symbol: "\u03B5eff,even",
+      unit: "",
+      precision: 3,
+      tooltip: "Differs from the odd mode because the two modes put different amounts of field in the air above the cover"
+    },
+    {
+      key: "propagationDelay",
+      label: "Propagation Delay (odd mode)",
+      symbol: "t_pd,odd",
+      unit: "ps/mm",
+      precision: 3
+    },
+    {
+      key: "propagationDelayEven",
+      label: "Propagation Delay (even mode)",
+      symbol: "t_pd,even",
+      unit: "ps/mm",
+      precision: 3,
+      tooltip: "The gap between the two is the mode skew that converts differential signal into common mode"
+    },
+    {
+      key: "inValidatedRange",
+      label: "Within Validated Range",
+      unit: "",
+      precision: 0,
+      tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
+      thresholds: { danger: { max: 0.5 } }
+    }
+  ],
+  calculate: calculateEdgeCoupledEmbedded,
+  formula: {
+    primary: "Z_mode = Z_mode,air/\u221A\u03B5eff,mode,  \u03B5eff,mode = 1 + q_mode(\u03B5r \u2212 1) + (1 \u2212 q_mode)\xB7q_c,mode(\u03B5rc \u2212 1)",
+    latex: "Z_{mode} = \\frac{Z_{mode}^{air}}{\\sqrt{\\varepsilon_{eff,mode}}},\\qquad \\varepsilon_{eff,mode} = 1 + q_{mode}(\\varepsilon_r - 1) + (1-q_{mode})\\,q_{c,mode}(\\varepsilon_{rc} - 1)",
+    variables: [
+      { symbol: "Z_diff", description: "Differential impedance, 2\xB7Z_odd", unit: "\u03A9" },
+      { symbol: "W", description: "Trace width", unit: "mm" },
+      { symbol: "S", description: "Edge-to-edge spacing", unit: "mm" },
+      { symbol: "h", description: "Substrate height", unit: "mm" },
+      { symbol: "h_c", description: "Cover thickness", unit: "mm" },
+      { symbol: "q_mode", description: "Share of that mode\u2019s energy in the substrate", unit: "" },
+      { symbol: "q_c,mode", description: "Share of the remaining energy the cover captures", unit: "" }
+    ],
+    derivation: [
+      "Geometry and dielectric are separated. The air-mode impedances depend only on W/h and S/h and are fitted as ratios to the single line, so an uncoupled pair recovers the single-line result exactly.",
+      "Each mode then gets its own filling factor: the share of its energy already in the substrate, plus the share of the rest that the cover captures.",
+      "Because the second term is bounded by the energy that is not already in the substrate, the effective permittivity can never exceed the largest permittivity present \u2014 a bound the previous covered-microstrip model in this codebase violated, returning 5.49 where \u03B5r was 4.30.",
+      "On a bare pair the even mode carries the higher permittivity, since the odd mode drives field through an air gap. Cover a tight gap and that ordering can invert, which the model reproduces because it was fitted to a layered field solve rather than assumed."
+    ],
+    reference: "Filling factors fitted to the layered method-of-moments solver committed in src/lib/pcb/__tests__/solver, which reproduces Hammerstad\u2013Jensen to 0.1% and the fully-embedded limit to 0.005%."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "differential-pair",
+    "edge-coupled-internal-symmetric",
+    "edge-coupled-internal-asymmetric",
+    "controlled-impedance",
+    "broadside-coupled-pair"
+  ],
+  relatedTools: ["sparam-pipeline", "eye-diagram"],
+  faqs: [
+    {
+      question: "Does soldermask really change differential impedance?",
+      answer: "Yes, and by more than most people expect for something 25 \u03BCm thick. The field between two closely spaced traces is concentrated exactly where the mask sits, so the odd mode feels it strongly. Set the cover thickness to zero to see the bare-pair value and compare."
+    },
+    {
+      question: "Why are there two propagation delays?",
+      answer: "Because the dielectric is not homogeneous. The odd and even modes put different fractions of their field in the air above the board, so they travel at different speeds. That difference is real skew: a long covered pair converts part of its differential signal into common mode, which a stripline pair does not do."
+    },
+    {
+      question: "Is a thicker cover always better for impedance control?",
+      answer: "It is more predictable once the cover is thick enough to contain the field, because further thickness stops mattering. The awkward region is a thin mask, where impedance is most sensitive to a thickness the fabricator does not control tightly."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/differential-via.ts
+var C = 299792458;
+var ETA_03 = 376.730313412;
+var MU_02 = 4e-7 * Math.PI;
+var SIGMA_CU = 58e6;
+var NEPER_TO_DB = 8.685889638065035;
+function calculateDifferentialVia(inputs) {
+  const {
+    barrelDiameter,
+    antipadDiameter,
+    viaPitch,
+    boardThickness,
+    exitDepth,
+    dielectricConst,
+    lossTangent,
+    startFrequency,
+    stopFrequency
+  } = inputs;
+  const errors = [];
+  if (antipadDiameter <= barrelDiameter) {
+    errors.push("Antipad diameter must be larger than the barrel diameter");
+  }
+  if (viaPitch <= barrelDiameter) {
+    errors.push("Via pitch must be larger than the barrel diameter \u2014 the barrels would intersect");
+  }
+  if (exitDepth > boardThickness) {
+    errors.push("Exit depth cannot be greater than the board thickness");
+  }
+  if (stopFrequency <= startFrequency) {
+    errors.push("Stop frequency must be above the start frequency");
+  }
+  if (errors.length > 0) return { values: {}, errors };
+  const sqrtEr = Math.sqrt(dielectricConst);
+  const selfC = 2 * Math.PI / Math.log(antipadDiameter / barrelDiameter);
+  const mutualC = Math.PI / Math.acosh(viaPitch / barrelDiameter);
+  const evenImpedance = ETA_03 / (sqrtEr * selfC);
+  const oddImpedance = ETA_03 / (sqrtEr * (selfC + 2 * mutualC));
+  const diffImpedance = 2 * oddImpedance;
+  const commonImpedance = evenImpedance / 2;
+  const singleEnded = evenImpedance;
+  const stubLength = Math.max(boardThickness - exitDepth, 0);
+  const vp = C / sqrtEr;
+  const stubResonance = stubLength > 0 ? vp / (4 * stubLength * 1e-3) / 1e9 : 0;
+  const lossPerMm = (fHz) => {
+    const dielectric2 = Math.PI * fHz * sqrtEr * lossTangent / C * NEPER_TO_DB * 1e-3;
+    const surfaceR = Math.sqrt(Math.PI * fHz * MU_02 / SIGMA_CU);
+    const perimeter = Math.PI * barrelDiameter * 1e-3;
+    const conductor2 = 2 * surfaceR / (diffImpedance * perimeter) * NEPER_TO_DB * 1e-3;
+    return { dielectric: dielectric2, conductor: conductor2 };
+  };
+  const stubLossDb = (fHz) => {
+    if (stubLength <= 0) return 0;
+    const beta = 2 * Math.PI * fHz / vp;
+    const electrical = beta * stubLength * 1e-3;
+    const tangent = Math.tan(electrical);
+    if (!Number.isFinite(tangent)) return 60;
+    const damping = Math.max(lossTangent, 1e-4) * electrical;
+    const magnitude = Math.hypot(2, tangent) / 2;
+    const db = 20 * Math.log10(magnitude / (1 + damping));
+    return Math.min(Math.max(db, 0), 60);
+  };
+  const totalLossDb = (fGHz) => {
+    const fHz = fGHz * 1e9;
+    const { dielectric: dielectric2, conductor: conductor2 } = lossPerMm(fHz);
+    return (dielectric2 + conductor2) * boardThickness + stubLossDb(fHz);
+  };
+  const SAMPLES = 401;
+  let worstLoss = 0;
+  let worstFrequency = startFrequency;
+  for (let i = 0; i < SAMPLES; i++) {
+    const f = startFrequency + (stopFrequency - startFrequency) * i / (SAMPLES - 1);
+    const loss = totalLossDb(f);
+    if (loss > worstLoss) {
+      worstLoss = loss;
+      worstFrequency = f;
+    }
+  }
+  const atStop = stopFrequency * 1e9;
+  const { dielectric, conductor } = lossPerMm(atStop);
+  const warnings = [];
+  const antipadsOverlap = viaPitch < antipadDiameter;
+  if (!antipadsOverlap) {
+    warnings.push(
+      `The antipads do not overlap at a ${viaPitch} mm pitch, so there is plane copper between the two barrels. That copper screens them from each other, which this model does not account for \u2014 it will overstate the coupling, and therefore understate the differential impedance.`
+    );
+  } else if (viaPitch + barrelDiameter > antipadDiameter) {
+    warnings.push(
+      "The antipads overlap into a single opening, so each barrel sees less plane copper than the coaxial model assumes \u2014 the common-mode figure is optimistic"
+    );
+  }
+  if (stubResonance > 0 && stubResonance < stopFrequency) {
+    warnings.push(
+      `The stub resonates at ${stubResonance.toFixed(2)} GHz, inside the band \u2014 backdrill or move the transition to a deeper layer`
+    );
+  }
+  if (stubLength === 0) {
+    warnings.push("No stub: the signal exits at the end of the barrel, so only conductor and dielectric loss remain");
+  }
+  return {
+    values: {
+      diffImpedance,
+      commonImpedance,
+      oddImpedance,
+      evenImpedance,
+      singleEndedImpedance: singleEnded,
+      stubLength,
+      stubResonance,
+      antipadsOverlap: antipadsOverlap ? 1 : 0,
+      insertionLossAtStop: totalLossDb(stopFrequency),
+      worstInsertionLoss: worstLoss,
+      worstLossFrequency: worstFrequency,
+      dielectricLoss: dielectric * boardThickness,
+      conductorLoss: conductor * boardThickness
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var differentialVia = {
+  slug: "differential-via",
+  title: "Differential Via Calculator",
+  shortTitle: "Differential Via",
+  metaTitle: "Differential Via Calculator \u2014 Zdiff and Stub Insertion Loss",
+  category: "pcb",
+  description: "Calculate differential impedance and insertion loss for a via pair, including the stub resonance that dominates a via transition long before conductor and dielectric loss matter.",
+  keywords: [
+    "differential via calculator",
+    "via pair impedance",
+    "via insertion loss",
+    "via stub resonance",
+    "backdrill calculator",
+    "high speed via transition"
+  ],
+  inputs: [
+    {
+      key: "barrelDiameter",
+      label: "Finished Barrel Diameter",
+      symbol: "d",
+      unit: "mm",
+      defaultValue: 0.25,
+      min: 0.05,
+      step: 0.01
+    },
+    {
+      key: "antipadDiameter",
+      label: "Antipad Diameter",
+      symbol: "D",
+      unit: "mm",
+      defaultValue: 0.9,
+      min: 0.1,
+      step: 0.05,
+      tooltip: "Clearance opening in the reference planes around the via"
+    },
+    {
+      key: "viaPitch",
+      label: "Via Pitch (centre to centre)",
+      symbol: "p",
+      unit: "mm",
+      defaultValue: 0.8,
+      min: 0.1,
+      step: 0.05
+    },
+    {
+      key: "boardThickness",
+      label: "Board Thickness",
+      symbol: "H",
+      unit: "mm",
+      defaultValue: 1.6,
+      min: 0.1,
+      step: 0.1
+    },
+    {
+      key: "exitDepth",
+      label: "Signal Exit Depth",
+      symbol: "L_use",
+      unit: "mm",
+      defaultValue: 0.4,
+      min: 0,
+      step: 0.05,
+      tooltip: "Depth from the entry surface at which the signal leaves the via. The rest of the barrel is stub."
+    },
+    {
+      key: "dielectricConst",
+      label: "Dielectric Constant",
+      symbol: "\u03B5r",
+      unit: "",
+      defaultValue: 4.2,
+      min: 1,
+      step: 0.01,
+      presets: [
+        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
+        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
+        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
+      ]
+    },
+    {
+      key: "lossTangent",
+      label: "Loss Tangent",
+      symbol: "tan \u03B4",
+      unit: "",
+      defaultValue: 0.02,
+      min: 1e-4,
+      step: 1e-3,
+      presets: [
+        { label: "FR4 (0.02)", values: { lossTangent: 0.02 } },
+        { label: "Megtron 6 (0.004)", values: { lossTangent: 4e-3 } },
+        { label: "Rogers RO4350B (0.0037)", values: { lossTangent: 37e-4 } }
+      ]
+    },
+    {
+      key: "startFrequency",
+      label: "Band Start",
+      symbol: "f\u2081",
+      unit: "GHz",
+      defaultValue: 0.1,
+      min: 1e-3,
+      step: 0.1
+    },
+    {
+      key: "stopFrequency",
+      label: "Band Stop",
+      symbol: "f\u2082",
+      unit: "GHz",
+      defaultValue: 20,
+      min: 0.01,
+      step: 1
+    }
+  ],
+  outputs: [
+    {
+      key: "diffImpedance",
+      label: "Differential Impedance",
+      symbol: "Z_diff",
+      unit: "\u03A9",
+      precision: 2,
+      primary: true,
+      thresholds: { good: { min: 85, max: 115 }, warning: { min: 70, max: 130 } }
+    },
+    { key: "commonImpedance", label: "Common-Mode Impedance", symbol: "Z_common", unit: "\u03A9", precision: 2 },
+    { key: "oddImpedance", label: "Odd-Mode Impedance", symbol: "Z_odd", unit: "\u03A9", precision: 2 },
+    { key: "evenImpedance", label: "Even-Mode Impedance", symbol: "Z_even", unit: "\u03A9", precision: 2 },
+    {
+      key: "singleEndedImpedance",
+      label: "Single Via to Its Antipad",
+      symbol: "Z\u2080",
+      unit: "\u03A9",
+      precision: 2,
+      tooltip: "Coaxial impedance of one barrel inside its clearance opening"
+    },
+    {
+      key: "antipadsOverlap",
+      label: "Antipads Overlap",
+      unit: "",
+      precision: 0,
+      tooltip: "1 when the two clearance openings merge. With plane copper between the barrels the coupling is screened and this model overstates it.",
+      thresholds: { danger: { max: 0.5 } }
+    },
+    { key: "stubLength", label: "Stub Length", symbol: "L_stub", unit: "mm", precision: 3 },
+    {
+      key: "stubResonance",
+      label: "First Stub Resonance",
+      symbol: "f_res",
+      unit: "GHz",
+      precision: 3,
+      tooltip: "Quarter-wave resonance of the unused barrel. Zero when there is no stub."
+    },
+    {
+      key: "worstInsertionLoss",
+      label: "Worst Insertion Loss in Band",
+      symbol: "IL_max",
+      unit: "dB",
+      precision: 3,
+      thresholds: { warning: { min: 1 }, danger: { min: 3 } }
+    },
+    {
+      key: "worstLossFrequency",
+      label: "Frequency of Worst Loss",
+      symbol: "f_worst",
+      unit: "GHz",
+      precision: 3
+    },
+    { key: "insertionLossAtStop", label: "Insertion Loss at Band Stop", symbol: "IL(f\u2082)", unit: "dB", precision: 3 },
+    { key: "dielectricLoss", label: "Dielectric Loss at Band Stop", symbol: "\u03B1_d\xB7H", unit: "dB", precision: 4 },
+    { key: "conductorLoss", label: "Conductor Loss at Band Stop", symbol: "\u03B1_c\xB7H", unit: "dB", precision: 4 }
+  ],
+  calculate: calculateDifferentialVia,
+  formula: {
+    primary: "C_self/\u03B5 = 2\u03C0/ln(D/d),  C_m/\u03B5 = \u03C0/arccosh(p/d),  Z_even = \u03B7\u2080/(\u221A\u03B5r\xB7C_self),  Z_odd = \u03B7\u2080/(\u221A\u03B5r\xB7(C_self + 2C_m))",
+    latex: "Z_{odd} = \\frac{\\eta_0}{\\sqrt{\\varepsilon_r}\\left(C_{self} + 2C_m\\right)},\\qquad \\frac{C_{self}}{\\varepsilon} = \\frac{2\\pi}{\\ln(D/d)},\\qquad \\frac{C_m}{\\varepsilon} = \\frac{\\pi}{\\mathrm{arccosh}(p/d)},\\qquad f_{res} = \\frac{c}{4 L_{stub}\\sqrt{\\varepsilon_r}}",
+    variables: [
+      { symbol: "Z_diff", description: "Differential impedance of the via pair", unit: "\u03A9" },
+      { symbol: "d", description: "Finished barrel diameter", unit: "mm" },
+      { symbol: "D", description: "Antipad diameter", unit: "mm" },
+      { symbol: "p", description: "Via pitch, centre to centre", unit: "mm" },
+      { symbol: "L_stub", description: "Unused barrel below the exit layer", unit: "mm" },
+      { symbol: "\u03B7\u2080", description: "Impedance of free space, 376.730313412 \u03A9 (exact SI)", unit: "\u03A9" }
+    ],
+    derivation: [
+      "Each barrel has a coaxial capacitance to its own antipad and a mutual capacitance to the other barrel, and the two modes differ only in whether the mutual capacitance is charged.",
+      "The even mode leaves it uncharged, so Z_even is the isolated coaxial impedance; the odd mode charges it, so Z_odd is always the lower of the two and both converge as the pitch opens.",
+      "Below the exit layer the barrel carries no signal but is still connected, so it loads the through path as an open-circuited stub of admittance jY\u2080tan(\u03B2l).",
+      "A shunt admittance Y across a line of impedance Z gives S\u2082\u2081 = 2/(2 + YZ), so the stub produces a notch when its length reaches a quarter wavelength \u2014 well below the frequency at which conductor or dielectric loss becomes significant.",
+      "The mutual term assumes the two barrels share one clearance opening, which is what a differential via pair is. Set the pitch wider than the antipad and plane copper comes between them and screens the coupling; the calculator says so rather than pretending the two-wire term still applies.",
+      "Loss in the stub keeps the notch finite. Without it the expression diverges at resonance, which no measurement does."
+    ],
+    reference: "Two-wire and coaxial impedances are standard results; the stub loading follows from S\u2082\u2081 of a shunt admittance. A via transition is three-dimensional, so this is a screening model \u2014 see the linked full-wave tool."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "via-stub-resonance",
+    "via-calculator",
+    "via-step-response",
+    "differential-pair",
+    "edge-coupled-internal-symmetric"
+  ],
+  relatedTools: ["fdtd-sparam", "sparam-pipeline", "eye-diagram"],
+  faqs: [
+    {
+      question: "Why does the stub matter more than the loss of the via itself?",
+      answer: "Because it is resonant. Conductor and dielectric loss in a 1.6 mm barrel are a small fraction of a decibel even at 20 GHz, while a quarter-wave stub puts a deep notch exactly where it resonates. A via that transitions on an upper layer of a thick board leaves a long stub and can notch inside the band you are trying to use."
+    },
+    {
+      question: "How accurate is this?",
+      answer: "It is a screening model. The impedances are the exact two-wire and coaxial results for the idealised geometry, but a real via transition includes pad capacitance, plane cavity effects and the launch discontinuity, none of which are here. Use it to decide whether a geometry is worth simulating, then simulate it."
+    },
+    {
+      question: "What does backdrilling actually buy?",
+      answer: "It removes the stub, which removes the notch. Set the exit depth equal to the board thickness to see the case with no stub at all \u2014 the remaining insertion loss is what the via itself costs, and it is usually small."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/skin-depth-percentage.ts
+var MU_03 = 4e-7 * Math.PI;
+var RHO_CU_20C = 1724e-11;
+var ALPHA_CU2 = 393e-5;
+function calculateSkinDepthPercentage(inputs) {
+  const { frequency, conductorThickness, resistivityRatio, temperature } = inputs;
+  if (frequency <= 0 || conductorThickness <= 0) {
+    return {
+      values: {},
+      errors: ["Frequency and conductor thickness must be greater than zero"]
+    };
+  }
+  const fHz = frequency * 1e6;
+  const thicknessM = conductorThickness * 1e-6;
+  const rho = RHO_CU_20C * resistivityRatio * (1 + ALPHA_CU2 * (temperature - 20));
+  const skinDepthM = Math.sqrt(rho / (Math.PI * fHz * MU_03));
+  const skinDepthUm = skinDepthM * 1e6;
+  const percentage = skinDepthM / thicknessM * 100;
+  const perFace = skinDepthM * (1 - Math.exp(-thicknessM / (2 * skinDepthM)));
+  const effectiveDepth = Math.min(2 * perFace, thicknessM);
+  const acDcRatio = thicknessM / effectiveDepth;
+  const sheetResistanceDc = rho / thicknessM;
+  const sheetResistanceAc = rho / effectiveDepth;
+  const warnings = [];
+  if (percentage >= 100) {
+    warnings.push(
+      "Skin depth exceeds the conductor thickness \u2014 current fills the whole cross-section and AC resistance is essentially the DC value"
+    );
+  } else if (percentage < 33) {
+    warnings.push(
+      "Skin depth is under a third of the thickness \u2014 most of the copper is carrying little current, and adding more will not reduce AC resistance"
+    );
+  }
+  return {
+    values: {
+      skinDepth: skinDepthUm,
+      skinDepthPercentage: percentage,
+      acDcRatio,
+      effectiveDepth: effectiveDepth * 1e6,
+      sheetResistanceDc: sheetResistanceDc * 1e3,
+      sheetResistanceAc: sheetResistanceAc * 1e3
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var skinDepthPercentage = {
+  slug: "skin-depth-percentage",
+  title: "Skin Depth Percentage Calculator",
+  shortTitle: "Skin Depth %",
+  metaTitle: "Skin Depth Percentage Calculator \u2014 Skin Depth vs Copper Thickness",
+  category: "pcb",
+  description: "Express skin depth as a percentage of trace thickness and get the AC/DC resistance ratio that follows, so you can tell whether a copper weight choice still matters at your frequency.",
+  keywords: [
+    "skin depth percentage",
+    "skin depth vs trace thickness",
+    "ac dc resistance ratio",
+    "copper weight high frequency",
+    "pcb skin effect"
+  ],
+  inputs: [
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "MHz",
+      defaultValue: 1e3,
+      min: 1e-3,
+      step: 1,
+      presets: [
+        { label: "1 MHz", values: { frequency: 1 } },
+        { label: "100 MHz", values: { frequency: 100 } },
+        { label: "1 GHz", values: { frequency: 1e3 } },
+        { label: "10 GHz", values: { frequency: 1e4 } }
+      ]
+    },
+    {
+      key: "conductorThickness",
+      label: "Conductor Thickness",
+      symbol: "t",
+      unit: "\u03BCm",
+      defaultValue: 35,
+      min: 0.1,
+      step: 1,
+      presets: [
+        { label: "\xBD oz (17.5 \u03BCm)", values: { conductorThickness: 17.5 } },
+        { label: "1 oz (35 \u03BCm)", values: { conductorThickness: 35 } },
+        { label: "2 oz (70 \u03BCm)", values: { conductorThickness: 70 } },
+        { label: "3 oz (105 \u03BCm)", values: { conductorThickness: 105 } }
+      ]
+    },
+    {
+      key: "resistivityRatio",
+      label: "Resistivity Relative to Copper",
+      symbol: "\u03C1/\u03C1_Cu",
+      unit: "",
+      defaultValue: 1,
+      min: 0.5,
+      step: 0.01,
+      tooltip: "Electrodeposited PCB copper runs a few percent above annealed bulk copper; 1.0 is bulk",
+      presets: [
+        { label: "Bulk copper (1.00)", values: { resistivityRatio: 1 } },
+        { label: "Electrodeposited (1.05)", values: { resistivityRatio: 1.05 } },
+        { label: "Aluminium (1.64)", values: { resistivityRatio: 1.64 } }
+      ]
+    },
+    {
+      key: "temperature",
+      label: "Temperature",
+      symbol: "T",
+      unit: "\xB0C",
+      defaultValue: 20,
+      min: -55,
+      step: 1
+    }
+  ],
+  outputs: [
+    {
+      key: "skinDepthPercentage",
+      label: "Skin Depth as % of Thickness",
+      symbol: "\u03B4/t",
+      unit: "%",
+      precision: 2,
+      primary: true,
+      thresholds: { good: { min: 50 }, warning: { min: 33, max: 50 }, danger: { max: 33 } }
+    },
+    { key: "skinDepth", label: "Skin Depth", symbol: "\u03B4", unit: "\u03BCm", precision: 3 },
+    {
+      key: "acDcRatio",
+      label: "AC / DC Resistance Ratio",
+      symbol: "R_ac/R_dc",
+      unit: "",
+      precision: 4,
+      tooltip: "Approaches 1 when the current fills the conductor"
+    },
+    {
+      key: "effectiveDepth",
+      label: "Effective Conduction Depth",
+      symbol: "t_eff",
+      unit: "\u03BCm",
+      precision: 3,
+      tooltip: "Thickness of an equivalent uniformly-conducting layer"
+    },
+    { key: "sheetResistanceDc", label: "DC Sheet Resistance", symbol: "R_\u25A1,dc", unit: "m\u03A9/\u25A1", precision: 4 },
+    { key: "sheetResistanceAc", label: "AC Sheet Resistance", symbol: "R_\u25A1,ac", unit: "m\u03A9/\u25A1", precision: 4 }
+  ],
+  calculate: calculateSkinDepthPercentage,
+  formula: {
+    primary: "\u03B4 = \u221A(\u03C1/(\u03C0 f \u03BC\u2080)),  \u03B4/t \xD7 100%,  R_ac/R_dc = t/t_eff",
+    latex: "\\delta = \\sqrt{\\frac{\\rho}{\\pi f \\mu_0}},\\qquad \\frac{\\delta}{t}\\times 100\\%,\\qquad t_{eff} = 2\\delta\\left(1 - e^{-t/2\\delta}\\right)",
+    variables: [
+      { symbol: "\u03B4", description: "Skin depth", unit: "\u03BCm" },
+      { symbol: "t", description: "Conductor thickness", unit: "\u03BCm" },
+      { symbol: "\u03C1", description: "Resistivity at temperature", unit: "\u03A9\xB7m" },
+      { symbol: "f", description: "Frequency", unit: "MHz" },
+      { symbol: "\u03BC\u2080", description: "Permeability of free space, 4\u03C0\xD710\u207B\u2077 H/m", unit: "H/m" }
+    ],
+    derivation: [
+      "Skin depth is the distance over which the current density falls to 1/e of its surface value; it depends on resistivity and frequency, not on the geometry.",
+      "A flat conductor conducts on both faces, so integrating the exponential profile over the thickness gives an effective depth of 2\u03B4(1 \u2212 e^(\u2212t/2\u03B4)), capped at the real thickness.",
+      "The AC to DC resistance ratio is then the thickness divided by that effective depth, which tends to 1 when the skin depth is large and grows as the square root of frequency when it is small.",
+      "Resistivity is corrected for temperature with \u03B1 = 0.00393/\xB0C for copper, so the ratio is meaningful at operating temperature and not only at 20 \xB0C."
+    ],
+    reference: "Standard skin-effect result; \u03C1\u2082\u2080(Cu) = 1.724\xD710\u207B\u2078 \u03A9\xB7m, \u03B1 = 0.00393/\xB0C."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["skin-depth", "trace-resistance", "trace-width-current", "coax-loss"],
+  faqs: [
+    {
+      question: "Why express skin depth as a percentage instead of just quoting it?",
+      answer: "Because the number that matters is the comparison. A skin depth of 2 \u03BCm means nothing until you know whether the copper is 17.5 \u03BCm or 105 \u03BCm thick. The percentage tells you directly whether the conductor is being used or whether most of it is idle."
+    },
+    {
+      question: "At what percentage should I stop paying for heavier copper?",
+      answer: "Once the skin depth is well under a third of the thickness, extra copper adds cross-section that carries almost no current at that frequency. It still helps thermally and at DC, so heavier copper is not wasted \u2014 it just stops helping AC resistance."
+    },
+    {
+      question: "Does surface roughness matter?",
+      answer: "Yes, and increasingly so as skin depth shrinks toward the roughness profile. This calculator models a smooth conductor, so at high frequencies on a rough foil the real AC resistance will be higher than the ratio here suggests."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/conductor-to-pad-width.ts
+function calculateConductorToPadWidth(inputs) {
+  const { padDiameter, neighbourPitch, minClearance, conductorCount } = inputs;
+  if (padDiameter <= 0 || neighbourPitch <= 0 || minClearance <= 0) {
+    return {
+      values: {},
+      errors: ["Pad diameter, neighbour pitch and minimum clearance must all be greater than zero"]
+    };
+  }
+  const count = Math.round(conductorCount);
+  if (count < 1) {
+    return { values: {}, errors: ["At least one conductor must be routed"] };
+  }
+  const channel = neighbourPitch - padDiameter;
+  if (channel <= 0) {
+    return {
+      values: { fits: 0, availableChannel: 0, maxTraceWidth: 0, clearanceDemand: 0, utilisation: 0 },
+      errors: [
+        `The pads themselves overlap: a ${padDiameter} mm pad on a ${neighbourPitch} mm pitch leaves no channel at all. Reduce the pad diameter or open the pitch.`
+      ]
+    };
+  }
+  const clearanceDemand = (count + 1) * minClearance;
+  const usable = channel - clearanceDemand;
+  if (usable <= 0) {
+    return {
+      values: { fits: 0, availableChannel: channel, maxTraceWidth: 0, clearanceDemand, utilisation: 0 },
+      errors: [
+        `Clearance alone needs ${clearanceDemand.toFixed(3)} mm but the channel between pads is only ${channel.toFixed(3)} mm. No conductor fits \u2014 the binding constraint is the minimum clearance, not the conductor width.`
+      ]
+    };
+  }
+  const maxTraceWidth = usable / count;
+  const warnings = [];
+  if (maxTraceWidth < 0.1) {
+    warnings.push(
+      `A ${maxTraceWidth.toFixed(3)} mm conductor is below what most fabricators quote as standard (0.1 mm); expect an advanced-technology surcharge`
+    );
+  }
+  return {
+    values: {
+      maxTraceWidth,
+      availableChannel: channel,
+      clearanceDemand,
+      utilisation: count * maxTraceWidth / channel,
+      fits: 1
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var conductorToPadWidth = {
+  slug: "conductor-to-pad-width",
+  title: "Conductor-to-Pad Maximum Width Calculator",
+  shortTitle: "Conductor to Pad",
+  metaTitle: "Conductor to Pad Width Calculator \u2014 Max Trace Into a Pad",
+  category: "pcb",
+  description: "Find the widest conductor that can reach a pad through the channel between its neighbours, from pad diameter, pitch and your fabricator\u2019s minimum clearance.",
+  keywords: [
+    "conductor to pad width",
+    "max trace width between pads",
+    "pcb clearance calculator",
+    "pad entry width",
+    "dfm trace width"
+  ],
+  inputs: [
+    { key: "padDiameter", label: "Pad Diameter", symbol: "D_pad", unit: "mm", defaultValue: 0.6, min: 0.05, step: 0.05 },
+    {
+      key: "neighbourPitch",
+      label: "Pitch to the Neighbouring Pad",
+      symbol: "P",
+      unit: "mm",
+      defaultValue: 1.27,
+      min: 0.1,
+      step: 0.01,
+      presets: [
+        { label: "0.5 mm", values: { neighbourPitch: 0.5 } },
+        { label: "0.8 mm", values: { neighbourPitch: 0.8 } },
+        { label: "1.00 mm", values: { neighbourPitch: 1 } },
+        { label: "1.27 mm (0.05 in)", values: { neighbourPitch: 1.27 } },
+        { label: "2.54 mm (0.1 in)", values: { neighbourPitch: 2.54 } }
+      ]
+    },
+    {
+      key: "minClearance",
+      label: "Minimum Clearance",
+      symbol: "C",
+      unit: "mm",
+      defaultValue: 0.15,
+      min: 0.01,
+      step: 0.01,
+      tooltip: "Your fabricator\u2019s copper-to-copper minimum. This is a shop rule, not a constant.",
+      presets: [
+        { label: "Standard (0.15 mm)", values: { minClearance: 0.15 } },
+        { label: "Fine (0.1 mm)", values: { minClearance: 0.1 } },
+        { label: "Advanced (0.075 mm)", values: { minClearance: 0.075 } }
+      ]
+    },
+    {
+      key: "conductorCount",
+      label: "Conductors Through the Channel",
+      symbol: "N",
+      unit: "",
+      defaultValue: 1,
+      min: 1,
+      max: 6,
+      step: 1
+    }
+  ],
+  outputs: [
+    {
+      key: "maxTraceWidth",
+      label: "Maximum Conductor Width",
+      symbol: "W_max",
+      unit: "mm",
+      precision: 4,
+      primary: true
+    },
+    { key: "availableChannel", label: "Channel Between Pads", symbol: "P \u2212 D_pad", unit: "mm", precision: 4 },
+    {
+      key: "clearanceDemand",
+      label: "Clearance Consumed",
+      symbol: "(N+1)\xB7C",
+      unit: "mm",
+      precision: 4,
+      tooltip: "One clearance to each pad plus one between each pair of conductors"
+    },
+    {
+      key: "utilisation",
+      label: "Channel Used by Copper",
+      symbol: "N\xB7W/channel",
+      unit: "",
+      precision: 4
+    },
+    {
+      key: "fits",
+      label: "Geometry Fits",
+      unit: "",
+      precision: 0,
+      tooltip: "1 when a conductor of non-zero width fits within the clearance rule",
+      thresholds: { danger: { max: 0.5 } }
+    }
+  ],
+  calculate: calculateConductorToPadWidth,
+  formula: {
+    primary: "W_max = (P \u2212 D_pad \u2212 (N+1)\xB7C)/N",
+    latex: "W_{max} = \\frac{P - D_{pad} - (N+1)\\,C}{N}",
+    variables: [
+      { symbol: "W_max", description: "Widest conductor that fits", unit: "mm" },
+      { symbol: "P", description: "Centre-to-centre pitch to the neighbouring pad", unit: "mm" },
+      { symbol: "D_pad", description: "Pad diameter", unit: "mm" },
+      { symbol: "C", description: "Minimum copper-to-copper clearance", unit: "mm" },
+      { symbol: "N", description: "Conductors routed through the channel", unit: "" }
+    ],
+    derivation: [
+      "The channel available between two pads on a given pitch is the pitch less one pad diameter, since each pad contributes half its diameter to the gap.",
+      "Routing N conductors through that channel needs one clearance to the pad on each side and one between each adjacent pair, so N+1 clearances in total.",
+      "Whatever is left divides equally between the conductors.",
+      "If the clearances alone exceed the channel the geometry has no solution, and the result says which constraint binds rather than reporting a negative width."
+    ],
+    reference: "IPC-2221B clearance practice; the clearance value itself is a fabricator rule and is an input here."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "bga-breakout-width",
+    "maximum-pad-diameter",
+    "minimum-conductor-spacing",
+    "padstack-annular-ring",
+    "bga-land-pad"
+  ],
+  faqs: [
+    {
+      question: "Why is the pad diameter subtracted once rather than twice?",
+      answer: "Because the channel runs between two pads and each contributes only its radius to the gap. Pitch minus one full diameter is the edge-to-edge distance between them."
+    },
+    {
+      question: "Should the clearance really be an input?",
+      answer: "Yes. Fabricators differ, and a house rule buried in a formula produces an answer your own shop will reject with nothing on the page explaining why. Put your fabricator\u2019s number in and the result is theirs."
+    },
+    {
+      question: "What if the result says the geometry does not fit?",
+      answer: "It tells you which constraint binds. Usually the fix is a smaller pad rather than a tighter clearance, since the clearance is what your shop can actually hold and the pad is what you chose."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/bga-breakout-width.ts
+function calculateBgaBreakoutWidth(inputs) {
+  const { ballPitch, landDiameter, minClearance, tracesPerChannel, diagonalRoute } = inputs;
+  if (ballPitch <= 0 || landDiameter <= 0 || minClearance <= 0) {
+    return {
+      values: {},
+      errors: ["Ball pitch, land diameter and minimum clearance must all be greater than zero"]
+    };
+  }
+  const traces = Math.round(tracesPerChannel);
+  if (traces < 1) {
+    return { values: {}, errors: ["At least one trace must be routed per channel"] };
+  }
+  const effectivePitch = diagonalRoute >= 0.5 ? ballPitch * Math.SQRT2 : ballPitch;
+  const channel = effectivePitch - landDiameter;
+  if (channel <= 0) {
+    return {
+      values: {
+        fits: 0,
+        channelWidth: 0,
+        maxTraceWidth: 0,
+        clearanceDemand: 0,
+        effectivePitch,
+        escapeRows: 0
+      },
+      errors: [
+        `A ${landDiameter} mm land on a ${effectivePitch.toFixed(3)} mm effective pitch leaves no channel \u2014 the lands touch. Reduce the land diameter.`
+      ]
+    };
+  }
+  const clearanceDemand = (traces + 1) * minClearance;
+  const usable = channel - clearanceDemand;
+  if (usable <= 0) {
+    return {
+      values: {
+        fits: 0,
+        channelWidth: channel,
+        maxTraceWidth: 0,
+        clearanceDemand,
+        effectivePitch,
+        escapeRows: 0
+      },
+      errors: [
+        `Routing ${traces} trace${traces > 1 ? "s" : ""} needs ${clearanceDemand.toFixed(3)} mm of clearance but the channel is only ${channel.toFixed(3)} mm. Nothing escapes here \u2014 the binding constraint is clearance, and the usual answer is dog-bone fanout to a lower layer.`
+      ]
+    };
+  }
+  const maxTraceWidth = usable / traces;
+  const escapeRows = traces;
+  const warnings = [];
+  if (maxTraceWidth < 0.075) {
+    warnings.push(
+      `A ${maxTraceWidth.toFixed(4)} mm trace is beyond standard fabrication; this geometry needs an advanced process or fewer traces per channel`
+    );
+  } else if (maxTraceWidth < 0.1) {
+    warnings.push(
+      `A ${maxTraceWidth.toFixed(4)} mm trace is below the 0.1 mm most shops quote as standard \u2014 expect a surcharge`
+    );
+  }
+  if (diagonalRoute >= 0.5) {
+    warnings.push("Diagonal escape assumed: the channel is the \u221A2 gap between lands set one pitch apart on each axis");
+  }
+  return {
+    values: {
+      maxTraceWidth,
+      channelWidth: channel,
+      clearanceDemand,
+      effectivePitch,
+      escapeRows,
+      fits: 1
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var bgaBreakoutWidth = {
+  slug: "bga-breakout-width",
+  title: "BGA Breakout Width Calculator",
+  shortTitle: "BGA Breakout",
+  metaTitle: "BGA Breakout Width Calculator \u2014 Escape Routing Between Lands",
+  category: "pcb",
+  description: "Find the widest escape trace that fits between BGA lands from ball pitch, land diameter, your fabricator\u2019s clearance and the number of traces per channel \u2014 and whether it fits at all.",
+  keywords: [
+    "bga breakout width",
+    "bga escape routing",
+    "trace between bga pads",
+    "bga fanout calculator",
+    "ball pitch escape trace",
+    "dog bone fanout"
+  ],
+  inputs: [
+    {
+      key: "ballPitch",
+      label: "Ball Pitch",
+      symbol: "p",
+      unit: "mm",
+      defaultValue: 0.8,
+      min: 0.1,
+      step: 0.05,
+      presets: [
+        { label: "0.4 mm", values: { ballPitch: 0.4 } },
+        { label: "0.5 mm", values: { ballPitch: 0.5 } },
+        { label: "0.65 mm", values: { ballPitch: 0.65 } },
+        { label: "0.8 mm", values: { ballPitch: 0.8 } },
+        { label: "1.0 mm", values: { ballPitch: 1 } }
+      ]
+    },
+    {
+      key: "landDiameter",
+      label: "Land Diameter",
+      symbol: "D_land",
+      unit: "mm",
+      defaultValue: 0.4,
+      min: 0.05,
+      step: 0.01,
+      tooltip: "Solder-mask-defined or non-solder-mask-defined land, whichever the footprint uses"
+    },
+    {
+      key: "minClearance",
+      label: "Minimum Clearance",
+      symbol: "C",
+      unit: "mm",
+      defaultValue: 0.1,
+      min: 0.01,
+      step: 5e-3,
+      presets: [
+        { label: "Standard (0.1 mm)", values: { minClearance: 0.1 } },
+        { label: "Fine (0.075 mm)", values: { minClearance: 0.075 } },
+        { label: "Advanced (0.05 mm)", values: { minClearance: 0.05 } }
+      ]
+    },
+    {
+      key: "tracesPerChannel",
+      label: "Traces per Channel",
+      symbol: "N",
+      unit: "",
+      defaultValue: 1,
+      min: 1,
+      max: 4,
+      step: 1,
+      tooltip: "How many conductors run between one pair of adjacent lands"
+    },
+    {
+      key: "diagonalRoute",
+      label: "Escape Direction",
+      symbol: "",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      presets: [
+        { label: "Orthogonal (between adjacent lands)", values: { diagonalRoute: 0 } },
+        { label: "Diagonal (through the \u221A2 gap)", values: { diagonalRoute: 1 } }
+      ]
+    }
+  ],
+  outputs: [
+    {
+      key: "maxTraceWidth",
+      label: "Maximum Escape Trace Width",
+      symbol: "W_max",
+      unit: "mm",
+      precision: 4,
+      primary: true
+    },
+    { key: "channelWidth", label: "Channel Between Lands", symbol: "p_eff \u2212 D_land", unit: "mm", precision: 4 },
+    { key: "clearanceDemand", label: "Clearance Consumed", symbol: "(N+1)\xB7C", unit: "mm", precision: 4 },
+    { key: "effectivePitch", label: "Effective Pitch", symbol: "p_eff", unit: "mm", precision: 4 },
+    {
+      key: "escapeRows",
+      label: "Rows Escapable per Layer",
+      symbol: "rows",
+      unit: "",
+      precision: 0,
+      tooltip: "With N traces per channel, N rows of the array can break out on one layer"
+    },
+    {
+      key: "fits",
+      label: "Geometry Fits",
+      unit: "",
+      precision: 0,
+      thresholds: { danger: { max: 0.5 } }
+    }
+  ],
+  calculate: calculateBgaBreakoutWidth,
+  formula: {
+    primary: "W_max = (p_eff \u2212 D_land \u2212 (N+1)\xB7C)/N,  p_eff = p or p\u221A2 for a diagonal escape",
+    latex: "W_{max} = \\frac{p_{eff} - D_{land} - (N+1)\\,C}{N},\\qquad p_{eff} = \\begin{cases} p & \\text{orthogonal}\\\\ p\\sqrt{2} & \\text{diagonal}\\end{cases}",
+    variables: [
+      { symbol: "W_max", description: "Widest escape trace", unit: "mm" },
+      { symbol: "p", description: "Ball pitch", unit: "mm" },
+      { symbol: "D_land", description: "Land diameter", unit: "mm" },
+      { symbol: "C", description: "Minimum copper-to-copper clearance", unit: "mm" },
+      { symbol: "N", description: "Traces routed between one pair of lands", unit: "" }
+    ],
+    derivation: [
+      "Two adjacent lands leave a channel of the pitch less one land diameter.",
+      "Escaping diagonally crosses the gap between lands separated by \u221A2 pitches, which is why a diagonal escape often fits where an orthogonal one does not.",
+      "N traces in the channel need one clearance to each land and one between each adjacent pair, so N+1 in total.",
+      "The number of array rows a single layer can break out equals the number of traces each channel carries, since every row inside the first must pass through every channel outside it."
+    ],
+    reference: "IPC-7351B land geometry; clearance is a fabricator rule and is supplied as an input."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "bga-land-pad",
+    "conductor-to-pad-width",
+    "maximum-pad-diameter",
+    "minimum-conductor-spacing",
+    "padstack-annular-ring"
+  ],
+  faqs: [
+    {
+      question: "Why does a 0.4 mm pitch BGA need microvias?",
+      answer: "Run the numbers: at 0.4 mm pitch with a 0.25 mm land, the channel is 0.15 mm. Two standard clearances consume it entirely, so nothing escapes between lands on that layer. The only way out is a via in the land itself, which means a microvia and a build-up stack."
+    },
+    {
+      question: "Does routing diagonally really help?",
+      answer: "It widens the channel by a factor of \u221A2, which is often the difference between fitting and not. The cost is that the diagonal path crosses more of the array, so it consumes routing space that other escapes wanted."
+    },
+    {
+      question: "How many layers will the fanout need?",
+      answer: "Roughly the number of array rows divided by the rows one layer can escape, which this calculator reports. A full array with one trace per channel breaks out one row per layer per side, which is why large fine-pitch parts drive layer count so hard."
+    }
+  ]
+};
+
+// src/lib/pcb/drill-sizes.ts
+var GRID_STEP_MM = 0.05;
+var SMALLEST_MM = 0.15;
+var LARGEST_MM = 6.5;
+var PCB_DRILL_SIZES = (() => {
+  const sizes = [];
+  const steps = Math.round((LARGEST_MM - SMALLEST_MM) / GRID_STEP_MM);
+  for (let i = 0; i <= steps; i++) {
+    const mm = Number((SMALLEST_MM + i * GRID_STEP_MM).toFixed(2));
+    sizes.push({ mm, designation: `${mm.toFixed(2)} mm` });
+  }
+  return sizes;
+})();
+function nextStandardDrill(mm) {
+  if (!(mm > 0)) return null;
+  return PCB_DRILL_SIZES.find((size) => size.mm >= mm - 1e-9) ?? null;
+}
+
+// src/lib/calculators/pcb/aperture-diagonal.ts
+function calculateApertureDiagonal(inputs) {
+  const { apertureLength, apertureWidth } = inputs;
+  if (apertureLength <= 0 || apertureWidth <= 0) {
+    return {
+      values: {},
+      errors: ["Both aperture dimensions must be greater than zero"]
+    };
+  }
+  const diagonal = Math.hypot(apertureLength, apertureWidth);
+  const shortSide = Math.min(apertureLength, apertureWidth);
+  const coveringDrill = nextStandardDrill(diagonal);
+  const routerCandidates = PCB_DRILL_SIZES.filter((size) => size.mm <= shortSide + 1e-9);
+  const routerBit = routerCandidates.length > 0 ? routerCandidates[routerCandidates.length - 1] : null;
+  const smallest = PCB_DRILL_SIZES[0];
+  const largest = PCB_DRILL_SIZES[PCB_DRILL_SIZES.length - 1];
+  const errors = [];
+  if (!coveringDrill) {
+    errors.push(
+      `A hole covering the ${diagonal.toFixed(3)} mm diagonal is larger than the biggest stocked tool (${largest.mm.toFixed(2)} mm) \u2014 this opening has to be routed, not drilled.`
+    );
+  }
+  if (!routerBit) {
+    errors.push(
+      `The short side is ${shortSide.toFixed(3)} mm, narrower than the smallest stocked cutter (${smallest.mm.toFixed(2)} mm) \u2014 this slot cannot be routed at all.`
+    );
+  }
+  if (errors.length === 2) {
+    return {
+      values: { diagonal, shortSide, coveringDrillSize: 0, routerBitSize: 0, cornerRadius: 0, drillOversize: 0 },
+      errors
+    };
+  }
+  const cornerRadius = routerBit ? routerBit.mm / 2 : 0;
+  const warnings = errors.slice();
+  if (routerBit && cornerRadius > shortSide / 4) {
+    warnings.push(
+      `The corner radius the cutter leaves (${cornerRadius.toFixed(3)} mm) is a large fraction of the short side \u2014 the routed opening will read as an oval rather than a rectangle`
+    );
+  }
+  return {
+    values: {
+      diagonal,
+      shortSide,
+      coveringDrillSize: coveringDrill ? coveringDrill.mm : 0,
+      drillOversize: coveringDrill ? coveringDrill.mm - diagonal : 0,
+      routerBitSize: routerBit ? routerBit.mm : 0,
+      cornerRadius
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var apertureDiagonal = {
+  slug: "aperture-diagonal",
+  title: "Aperture Diagonal & Drill Size Calculator",
+  shortTitle: "Aperture Diagonal",
+  metaTitle: "Aperture Diagonal Calculator \u2014 Corner-to-Corner and Drill Size",
+  category: "pcb",
+  description: "Get the corner-to-corner diagonal of a rectangular aperture plus the stocked tool that covers it \u2014 the drill that clears the diagonal, or the cutter that fits the short side and the corner radius it leaves.",
+  keywords: [
+    "aperture diagonal calculator",
+    "rectangular slot drill size",
+    "pcb slot routing",
+    "corner to corner diagonal",
+    "router bit corner radius"
+  ],
+  inputs: [
+    {
+      key: "apertureLength",
+      label: "Aperture Length",
+      symbol: "L",
+      unit: "mm",
+      defaultValue: 2,
+      min: 0.05,
+      step: 0.05
+    },
+    {
+      key: "apertureWidth",
+      label: "Aperture Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 1,
+      min: 0.05,
+      step: 0.05
+    }
+  ],
+  outputs: [
+    {
+      key: "diagonal",
+      label: "Corner-to-Corner Diagonal",
+      symbol: "\u221A(L\xB2 + W\xB2)",
+      unit: "mm",
+      precision: 4,
+      primary: true
+    },
+    {
+      key: "coveringDrillSize",
+      label: "Smallest Drill That Covers It",
+      symbol: "d_drill",
+      unit: "mm",
+      precision: 2,
+      tooltip: "Next stocked tool at or above the diagonal \u2014 never the one below"
+    },
+    {
+      key: "drillOversize",
+      label: "Drill Oversize",
+      symbol: "d \u2212 diagonal",
+      unit: "mm",
+      precision: 4,
+      tooltip: "How much larger the stocked tool is than the exact requirement"
+    },
+    { key: "shortSide", label: "Short Side", symbol: "min(L, W)", unit: "mm", precision: 4 },
+    {
+      key: "routerBitSize",
+      label: "Largest Cutter That Fits",
+      symbol: "d_rout",
+      unit: "mm",
+      precision: 2,
+      tooltip: "For routing the opening rather than drilling it"
+    },
+    {
+      key: "cornerRadius",
+      label: "Corner Radius Left by Routing",
+      symbol: "r",
+      unit: "mm",
+      precision: 4,
+      tooltip: "Half the cutter diameter \u2014 a routed rectangle never has sharp corners"
+    }
+  ],
+  calculate: calculateApertureDiagonal,
+  formula: {
+    primary: "diagonal = \u221A(L\xB2 + W\xB2),  d_drill = next stocked size \u2265 diagonal,  r = d_rout/2",
+    latex: "\\text{diagonal} = \\sqrt{L^2 + W^2},\\qquad r = \\frac{d_{rout}}{2}",
+    variables: [
+      { symbol: "L", description: "Aperture length", unit: "mm" },
+      { symbol: "W", description: "Aperture width", unit: "mm" },
+      { symbol: "d_drill", description: "Smallest stocked drill covering the diagonal", unit: "mm" },
+      { symbol: "d_rout", description: "Largest stocked cutter fitting the short side", unit: "mm" },
+      { symbol: "r", description: "Corner radius the cutter leaves", unit: "mm" }
+    ],
+    derivation: [
+      "A round hole covers a rectangle only if its diameter reaches corner to corner, which is the Pythagorean diagonal.",
+      "Tooling is stocked on a grid, so the answer is the next size at or above the requirement \u2014 rounding down would leave the corners uncut.",
+      "Routing instead of drilling reverses the constraint: the cutter has to fit inside the short side, so the largest tool at or below it is the one to use.",
+      "A routed corner can never be sharper than the cutter radius, so the opening comes back with corners of half the cutter diameter whatever the drawing says."
+    ],
+    reference: "Geometry; tooling grid is stocked metric PCB tooling in 0.05 mm steps. 1 in = 25.4 mm exactly."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "padstack-annular-ring",
+    "maximum-pad-diameter",
+    "conductor-to-pad-width",
+    "via-calculator"
+  ],
+  faqs: [
+    {
+      question: "Why would I drill a rectangular aperture instead of routing it?",
+      answer: "For small openings a single drill hit is far cheaper than a routed slot, and if the part clears the round hole the shape does not matter. The diagonal tells you the smallest round hole that fully contains the rectangle you drew."
+    },
+    {
+      question: "Why does the routed opening have rounded corners?",
+      answer: "Because the cutter is round. A router leaves a radius of exactly half its diameter in every internal corner, and no amount of programming removes it. If a square corner is functionally required, the opening has to be made another way."
+    },
+    {
+      question: "What if the drill needed is bigger than any stocked tool?",
+      answer: "Then the opening is a routed feature, not a drilled one, and the calculator says so rather than naming a tool that does not exist."
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/maximum-pad-diameter.ts
+function calculateMaximumPadDiameter(inputs) {
+  const { pitch, minClearance, tracesBetween, traceWidth } = inputs;
+  if (pitch <= 0 || minClearance <= 0) {
+    return {
+      values: {},
+      errors: ["Pitch and minimum clearance must be greater than zero"]
+    };
+  }
+  const traces = Math.round(tracesBetween);
+  if (traces < 0) {
+    return { values: {}, errors: ["Trace count cannot be negative"] };
+  }
+  if (traces > 0 && traceWidth <= 0) {
+    return {
+      values: {},
+      errors: ["Trace width must be greater than zero when traces pass between the pads"]
+    };
+  }
+  const copperBetween = traces * traceWidth;
+  const clearanceDemand = (traces + 1) * minClearance;
+  const maxPadDiameter = pitch - clearanceDemand - copperBetween;
+  if (maxPadDiameter <= 0) {
+    return {
+      values: {
+        maxPadDiameter: 0,
+        clearanceDemand,
+        copperBetween,
+        fits: 0,
+        remainingGap: 0,
+        padToPitchRatio: 0
+      },
+      errors: [
+        traces > 0 ? `Clearance (${clearanceDemand.toFixed(3)} mm) and ${traces} conductor${traces > 1 ? "s" : ""} (${copperBetween.toFixed(3)} mm) already exceed the ${pitch} mm pitch, so no pad fits. Route fewer conductors between the pads or open the pitch.` : `A clearance of ${minClearance} mm on each side already exceeds the ${pitch} mm pitch, so no pad fits.`
+      ]
+    };
+  }
+  const warnings = [];
+  const ratio = maxPadDiameter / pitch;
+  if (ratio > 0.85) {
+    warnings.push(
+      "The pad occupies most of the pitch \u2014 there is no room left to route between these pads on this layer"
+    );
+  }
+  return {
+    values: {
+      maxPadDiameter,
+      clearanceDemand,
+      copperBetween,
+      remainingGap: pitch - maxPadDiameter,
+      padToPitchRatio: ratio,
+      fits: 1
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
+  };
+}
+var maximumPadDiameter = {
+  slug: "maximum-pad-diameter",
+  title: "Maximum Pad Diameter Calculator",
+  shortTitle: "Max Pad Diameter",
+  metaTitle: "Maximum Pad Diameter Calculator \u2014 Largest Pad for a Given Pitch",
+  category: "pcb",
+  description: "Find the largest pad that fits a component pitch while holding your fabricator\u2019s clearance, with or without conductors routed between adjacent pads.",
+  keywords: [
+    "maximum pad diameter",
+    "pad size for pitch",
+    "pcb pad clearance calculator",
+    "largest pad calculator",
+    "padstack sizing"
+  ],
+  inputs: [
+    {
+      key: "pitch",
+      label: "Pitch (centre to centre)",
+      symbol: "P",
+      unit: "mm",
+      defaultValue: 1.27,
+      min: 0.1,
+      step: 0.01,
+      presets: [
+        { label: "0.5 mm", values: { pitch: 0.5 } },
+        { label: "0.65 mm", values: { pitch: 0.65 } },
+        { label: "0.8 mm", values: { pitch: 0.8 } },
+        { label: "1.27 mm (0.05 in)", values: { pitch: 1.27 } },
+        { label: "2.54 mm (0.1 in)", values: { pitch: 2.54 } }
+      ]
+    },
+    {
+      key: "minClearance",
+      label: "Minimum Clearance",
+      symbol: "C",
+      unit: "mm",
+      defaultValue: 0.15,
+      min: 0.01,
+      step: 5e-3,
+      presets: [
+        { label: "Standard (0.15 mm)", values: { minClearance: 0.15 } },
+        { label: "Fine (0.1 mm)", values: { minClearance: 0.1 } },
+        { label: "Advanced (0.075 mm)", values: { minClearance: 0.075 } }
+      ]
+    },
+    {
+      key: "tracesBetween",
+      label: "Conductors Routed Between Pads",
+      symbol: "N",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 4,
+      step: 1
+    },
+    {
+      key: "traceWidth",
+      label: "Width of Each Conductor",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 0.15,
+      min: 0.01,
+      step: 0.01,
+      tooltip: "Ignored when no conductors are routed between the pads"
+    }
+  ],
+  outputs: [
+    {
+      key: "maxPadDiameter",
+      label: "Maximum Pad Diameter",
+      symbol: "D_max",
+      unit: "mm",
+      precision: 4,
+      primary: true
+    },
+    { key: "clearanceDemand", label: "Clearance Consumed", symbol: "(N+1)\xB7C", unit: "mm", precision: 4 },
+    { key: "copperBetween", label: "Conductor Copper Between Pads", symbol: "N\xB7W", unit: "mm", precision: 4 },
+    { key: "remainingGap", label: "Gap Between Pad Edges", symbol: "P \u2212 D_max", unit: "mm", precision: 4 },
+    {
+      key: "padToPitchRatio",
+      label: "Pad as a Fraction of Pitch",
+      symbol: "D_max/P",
+      unit: "",
+      precision: 4
+    },
+    {
+      key: "fits",
+      label: "Geometry Fits",
+      unit: "",
+      precision: 0,
+      thresholds: { danger: { max: 0.5 } }
+    }
+  ],
+  calculate: calculateMaximumPadDiameter,
+  formula: {
+    primary: "D_max = P \u2212 (N+1)\xB7C \u2212 N\xB7W",
+    latex: "D_{max} = P - (N+1)\\,C - N\\,W",
+    variables: [
+      { symbol: "D_max", description: "Largest pad that fits", unit: "mm" },
+      { symbol: "P", description: "Centre-to-centre pitch", unit: "mm" },
+      { symbol: "C", description: "Minimum copper-to-copper clearance", unit: "mm" },
+      { symbol: "N", description: "Conductors routed between adjacent pads", unit: "" },
+      { symbol: "W", description: "Width of each conductor", unit: "mm" }
+    ],
+    derivation: [
+      "Two adjacent pads share the pitch, and each contributes half its diameter, so the pads together consume one full diameter of it.",
+      "With nothing routed between them a single clearance separates the pad edges, leaving D = P \u2212 C.",
+      "Every conductor added between the pads costs its own width plus one more clearance, since it must stand clear of what is on each side of it.",
+      "When the clearances and conductors already exceed the pitch there is no pad that fits, and the result says which of the two is responsible."
+    ],
+    reference: "IPC-2221B clearance practice; the clearance value is a fabricator rule supplied as an input."
+  },
+  visualization: { type: "none" },
+  relatedCalculators: [
+    "conductor-to-pad-width",
+    "bga-breakout-width",
+    "padstack-annular-ring",
+    "minimum-conductor-spacing",
+    "aperture-diagonal"
+  ],
+  faqs: [
+    {
+      question: "Why does routing one trace between pads cost so much pad diameter?",
+      answer: "Because it costs two clearances, not one. The trace has to stand clear of the pad on each side, so adding it consumes its own width plus an extra clearance \u2014 often more than the trace width itself on a fine-pitch part."
+    },
+    {
+      question: "Should I always use the maximum pad?",
+      answer: "No. This is the ceiling, not the recommendation. A larger pad improves solder joint reliability and pad adhesion, but it also removes routing room and can encourage bridging on fine-pitch parts. Use it to know how much headroom you have."
+    },
+    {
+      question: "Is the pitch the orthogonal or the diagonal neighbour?",
+      answer: "Use whichever neighbour is nearest, since that is the one that binds. On a square grid that is the orthogonal pitch; on a staggered array the diagonal can be closer."
+    }
+  ]
+};
+
 // src/lib/calculators/registry.ts
 var ALL_CALCULATORS = [
   microstripImpedance,
@@ -30929,6 +33165,15 @@ var ALL_CALCULATORS = [
   asymmetricStriplineCalc,
   dualStripline,
   broadsideCoupledPair,
+  edgeCoupledInternalSymmetric,
+  edgeCoupledInternalAsymmetric,
+  edgeCoupledEmbedded,
+  differentialVia,
+  skinDepthPercentage,
+  conductorToPadWidth,
+  bgaBreakoutWidth,
+  apertureDiagonal,
+  maximumPadDiameter,
   riseTimeBandwidth,
   criticalTraceLength,
   fusingCurrent,
@@ -31196,7 +33441,7 @@ function pollInterval(elapsedMs) {
 }
 var server = new import_mcp.McpServer({
   name: "rftools",
-  version: "1.7.1"
+  version: "1.7.2"
 });
 server.registerTool(
   "list_calculators",
