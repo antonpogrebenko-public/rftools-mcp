@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 "use strict";
 
-// ../rftools-mcp/mcp-server.ts
+// mcp-server.ts
 var import_mcp = require("@modelcontextprotocol/sdk/server/mcp.js");
 var import_stdio = require("@modelcontextprotocol/sdk/server/stdio.js");
 var import_zod = require("zod");
 
-// src/lib/calculators/rf/microstrip-impedance.ts
+// ../frontend/src/lib/calculators/rf/microstrip-impedance.ts
 function calculateMicrostrip(inputs) {
   const { traceWidth: w, substrateHeight: h, dielectricConstant: er, copperThickness } = inputs;
   const t = copperThickness / 1e3;
@@ -180,7 +180,7 @@ var microstripImpedance = {
   }
 };
 
-// src/lib/calculators/rf/rf-link-budget.ts
+// ../frontend/src/lib/calculators/rf/rf-link-budget.ts
 function calculateLinkBudget(inputs) {
   const {
     txPower,
@@ -330,7 +330,7 @@ var rfLinkBudget = {
   }
 };
 
-// src/lib/calculators/rf/vswr-return-loss.ts
+// ../frontend/src/lib/calculators/rf/vswr-return-loss.ts
 function calculateVSWR(inputs) {
   const { vswr } = inputs;
   if (vswr < 1) {
@@ -473,7 +473,7 @@ var vswrReturnLoss = {
   }
 };
 
-// src/lib/calculators/rf/db-converter.ts
+// ../frontend/src/lib/calculators/rf/db-converter.ts
 function calculateDB(inputs) {
   const { dbm, impedance } = inputs;
   const dbw = dbm - 30;
@@ -583,7 +583,7 @@ var dbConverter = {
   }
 };
 
-// src/lib/calculators/rf/noise-figure-cascade.ts
+// ../frontend/src/lib/calculators/rf/noise-figure-cascade.ts
 function calculateNoiseFigureCascade(inputs) {
   const {
     stage1NF,
@@ -944,7 +944,7 @@ var noiseFigureCascade = {
   }
 };
 
-// src/lib/calculators/rf/skin-depth.ts
+// ../frontend/src/lib/calculators/rf/skin-depth.ts
 function calculateSkinDepth(inputs) {
   const { frequency, conductivity, relativePermeability } = inputs;
   const f_Hz = frequency * 1e6;
@@ -1106,7 +1106,7 @@ var skinDepth = {
   }
 };
 
-// src/lib/calculators/rf/wavelength-frequency.ts
+// ../frontend/src/lib/calculators/rf/wavelength-frequency.ts
 function calculateWavelengthFrequency(inputs) {
   const { frequency, medium } = inputs;
   const f_Hz = frequency * 1e6;
@@ -1273,7 +1273,7 @@ var wavelengthFrequency = {
   }
 };
 
-// src/lib/calculators/rf/coax-impedance.ts
+// ../frontend/src/lib/calculators/rf/coax-impedance.ts
 function calculateCoaxImpedance(inputs) {
   const { innerDiameter: d, outerDiameter: D, dielectricConstant: er } = inputs;
   if (d <= 0 || D <= 0) {
@@ -1460,7 +1460,7 @@ var coaxImpedance = {
   }
 };
 
-// src/lib/calculators/rf/coax-loss.ts
+// ../frontend/src/lib/calculators/rf/coax-loss.ts
 var CABLES = [
   { name: "LMR-400", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [0.66, 1.5, 2.15, 3.08, 4.69, 6.73, 9.8, 11.5] },
   { name: "LMR-240", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [1.1, 2.5, 3.6, 5.1, 7.8, 11.2, 16.4, 19.4] },
@@ -1596,7 +1596,7 @@ var coaxLoss = {
   }
 };
 
-// src/lib/calculators/rf/ism-coexistence.ts
+// ../frontend/src/lib/calculators/rf/ism-coexistence.ts
 var BANDS = [
   { name: "2.4 GHz ISM (2400\u20132483.5 MHz)", bwMHz: 83.5 },
   { name: "868 MHz (Europe, 863\u2013870 MHz)", bwMHz: 7 },
@@ -1715,7 +1715,7 @@ var ismCoexistence = {
   }
 };
 
-// src/lib/calculators/rf/attenuator-designer.ts
+// ../frontend/src/lib/calculators/rf/attenuator-designer.ts
 var E24 = [10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56, 62, 68, 75, 82, 91];
 var DECADES = [1, 10, 100, 1e3, 1e4, 1e5];
 function nearestE24(value) {
@@ -1931,7 +1931,7 @@ var attenuatorDesigner = {
   }
 };
 
-// src/lib/calculators/rf/smith-chart.ts
+// ../frontend/src/lib/calculators/rf/smith-chart.ts
 function calculateSmithChart(inputs) {
   const { resistance: R, reactance: X, referenceImpedance: Z0 } = inputs;
   if (Z0 <= 0) {
@@ -2210,7 +2210,7 @@ var smithChart = {
   }
 };
 
-// src/lib/calculators/pcb/trace-width-current.ts
+// ../frontend/src/lib/calculators/pcb/trace-width-current.ts
 function calculateTraceWidth(inputs) {
   const { current, copperWeight, tempRise, traceLength, isExternal } = inputs;
   const copperMil = copperWeight * 1.37;
@@ -2386,7 +2386,7 @@ var traceWidthCurrent = {
   ]
 };
 
-// src/lib/calculators/pcb/trace-resistance.ts
+// ../frontend/src/lib/calculators/pcb/trace-resistance.ts
 function calculateTraceResistance(inputs) {
   const { traceWidth, traceLength, copperThickness, temperature } = inputs;
   const rho20 = 172e-10;
@@ -2497,7 +2497,7 @@ var traceResistance = {
   ]
 };
 
-// src/lib/pcb/impedance.ts
+// ../frontend/src/lib/pcb/impedance.ts
 function hammerstadJensen(w, h, er, t) {
   const dw = t / Math.PI * (1 + Math.log(2 * h / Math.max(t, 1e-6)));
   const wEff = w + dw;
@@ -2813,7 +2813,7 @@ function ellipticK(k) {
   return Math.PI / (2 * a);
 }
 
-// src/lib/calculators/pcb/differential-pair.ts
+// ../frontend/src/lib/calculators/pcb/differential-pair.ts
 function calculateDifferentialPair(inputs) {
   const {
     traceWidth: w,
@@ -3047,7 +3047,7 @@ var differentialPair = {
   ]
 };
 
-// src/lib/calculators/pcb/via-calculator.ts
+// ../frontend/src/lib/calculators/pcb/via-calculator.ts
 function calculateVia(inputs) {
   const {
     viaDiameter: d,
@@ -3324,7 +3324,7 @@ var viaCalculator = {
   ]
 };
 
-// src/lib/calculators/pcb/stackup-builder.ts
+// ../frontend/src/lib/calculators/pcb/stackup-builder.ts
 function hammerstadJensen2(w, h, er, tMm) {
   const dw = tMm / Math.PI * (1 + Math.log(2 * h / tMm));
   const wEff = w + dw;
@@ -3586,7 +3586,7 @@ var stackupBuilder = {
   ]
 };
 
-// src/lib/calculators/power/voltage-divider.ts
+// ../frontend/src/lib/calculators/power/voltage-divider.ts
 function calculateVoltageDivider(inputs) {
   const { vin, r1, r2 } = inputs;
   if (r1 + r2 === 0) return { values: {}, errors: ["R1 + R2 must be > 0"] };
@@ -3740,7 +3740,7 @@ var voltageDivider = {
   ]
 };
 
-// src/lib/calculators/power/led-resistor.ts
+// ../frontend/src/lib/calculators/power/led-resistor.ts
 function calculateLEDResistor(inputs) {
   const { vSupply, vForward, iForward } = inputs;
   const vDrop = vSupply - vForward;
@@ -3869,7 +3869,7 @@ var ledResistor = {
   ]
 };
 
-// src/lib/calculators/power/buck-converter.ts
+// ../frontend/src/lib/calculators/power/buck-converter.ts
 function calculateBuckConverter(inputs) {
   const { vin, vout, iout, fsw, deltaIL, deltaVout } = inputs;
   if (vout >= vin) {
@@ -4040,7 +4040,7 @@ var buckConverter = {
   ]
 };
 
-// src/lib/calculators/power/ldo-thermal.ts
+// ../frontend/src/lib/calculators/power/ldo-thermal.ts
 function calculateLdoThermal(inputs) {
   const { vin, vout, iload, thetaJA, tamb, tjMax } = inputs;
   if (vout >= vin) {
@@ -4227,7 +4227,7 @@ var ldoThermal = {
   ]
 };
 
-// src/lib/calculators/power/battery-life.ts
+// ../frontend/src/lib/calculators/power/battery-life.ts
 function calculateBatteryLife(inputs) {
   const { capacity, avgCurrent, dutyCycle, selfDischarge, cutoffSoc } = inputs;
   if (capacity <= 0) {
@@ -4404,7 +4404,7 @@ var batteryLife = {
   ]
 };
 
-// src/lib/e-series.ts
+// ../frontend/src/lib/e-series.ts
 var E12_BASE = [1, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2];
 var E24_BASE = [1, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.7, 3, 3.3, 3.6, 3.9, 4.3, 4.7, 5.1, 5.6, 6.2, 6.8, 7.5, 8.2, 9.1];
 var E48_BASE = [1, 1.05, 1.1, 1.15, 1.21, 1.27, 1.33, 1.4, 1.47, 1.54, 1.62, 1.69, 1.78, 1.87, 1.96, 2.05, 2.15, 2.26, 2.37, 2.49, 2.61, 2.74, 2.87, 3.01, 3.16, 3.32, 3.48, 3.65, 3.83, 4.02, 4.22, 4.42, 4.64, 4.87, 5.11, 5.36, 5.62, 5.9, 6.19, 6.49, 6.81, 7.15, 7.5, 7.87, 8.25, 8.66, 9.09, 9.53];
@@ -4440,7 +4440,7 @@ function snapToESeries(value, series) {
   return { snapped, error };
 }
 
-// src/lib/calculators/signal/filter-designer.ts
+// ../frontend/src/lib/calculators/signal/filter-designer.ts
 var BUTTERWORTH_G = {
   1: [1],
   2: [1.4142, 1.4142],
@@ -4943,7 +4943,7 @@ var filterDesigner = {
   ]
 };
 
-// src/lib/calculators/signal/sampling-nyquist.ts
+// ../frontend/src/lib/calculators/signal/sampling-nyquist.ts
 function calculateSamplingNyquist(inputs) {
   const { signalFreq, samplingRate, adcBits, channels } = inputs;
   if (signalFreq <= 0) {
@@ -5149,7 +5149,7 @@ var samplingNyquist = {
   ]
 };
 
-// src/lib/calculators/antenna/dipole-antenna.ts
+// ../frontend/src/lib/calculators/antenna/dipole-antenna.ts
 function calculateDipoleAntenna(inputs) {
   const { frequency, velocityFactor } = inputs;
   if (frequency <= 0) {
@@ -5344,7 +5344,7 @@ var dipoleAntenna = {
   }
 };
 
-// src/lib/calculators/antenna/patch-antenna.ts
+// ../frontend/src/lib/calculators/antenna/patch-antenna.ts
 function calculatePatchAntenna(inputs) {
   const { frequency, dielectricConstant, substrateHeight, feedOffset } = inputs;
   if (frequency <= 0) {
@@ -5561,7 +5561,7 @@ var patchAntenna = {
   }
 };
 
-// src/lib/calculators/antenna/eirp-calculator.ts
+// ../frontend/src/lib/calculators/antenna/eirp-calculator.ts
 function calculateEirp(inputs) {
   const {
     txPower_dbm,
@@ -5758,7 +5758,7 @@ var eirpCalculator = {
   }
 };
 
-// src/lib/calculators/general/ohms-law.ts
+// ../frontend/src/lib/calculators/general/ohms-law.ts
 function calculateOhmsLaw(inputs) {
   let { voltage: V, current: I, resistance: R, power: P } = inputs;
   const known = [V, I, R, P].filter((v) => v >= 0).length;
@@ -5838,7 +5838,7 @@ var ohmsLaw = {
   ]
 };
 
-// src/lib/calculators/general/resistor-color-code.ts
+// ../frontend/src/lib/calculators/general/resistor-color-code.ts
 var MULTIPLIERS = {
   0: 1,
   1: 10,
@@ -5989,7 +5989,7 @@ var resistorColorCode = {
   ]
 };
 
-// src/lib/calculators/general/rc-time-constant.ts
+// ../frontend/src/lib/calculators/general/rc-time-constant.ts
 function calculateRC(inputs) {
   const { resistance, capacitance } = inputs;
   const capF = capacitance * 1e-9;
@@ -6074,7 +6074,7 @@ var rcTimeConstant = {
   ]
 };
 
-// src/lib/calculators/general/series-parallel-resistor.ts
+// ../frontend/src/lib/calculators/general/series-parallel-resistor.ts
 function calculateSeriesParallel(inputs) {
   const { r1, r2, r3, r4, componentType } = inputs;
   const candidates = [r1, r2, r3, r4];
@@ -6224,7 +6224,7 @@ var seriesParallelResistor = {
   ]
 };
 
-// src/lib/calculators/general/lc-resonance.ts
+// ../frontend/src/lib/calculators/general/lc-resonance.ts
 function calculateLCResonance(inputs) {
   const { inductance, capacitance, resistance, circuitType } = inputs;
   if (inductance <= 0) {
@@ -6433,7 +6433,7 @@ var lcResonance = {
   ]
 };
 
-// src/lib/calculators/general/opamp-gain.ts
+// ../frontend/src/lib/calculators/general/opamp-gain.ts
 function calculateOpampGain(inputs) {
   const { configuration, r1, r2, gbwProduct, supplyVoltage } = inputs;
   if (r1 <= 0) {
@@ -6620,7 +6620,7 @@ var opampGain = {
   ]
 };
 
-// src/lib/calculators/protocol/uart-baud-rate.ts
+// ../frontend/src/lib/calculators/protocol/uart-baud-rate.ts
 function calculateUartBaudRate(inputs) {
   const { baudRate, dataBits, stopBits, parity, clockFreq } = inputs;
   if (baudRate <= 0) {
@@ -6863,7 +6863,7 @@ var uartBaudRate = {
   ]
 };
 
-// src/lib/calculators/protocol/i2c-pullup.ts
+// ../frontend/src/lib/calculators/protocol/i2c-pullup.ts
 function calculateI2cPullup(inputs) {
   const { vdd, speedMode, busCap, numDevices } = inputs;
   if (vdd <= 0) {
@@ -7090,7 +7090,7 @@ var i2cPullup = {
   ]
 };
 
-// src/lib/calculators/protocol/clock-jitter.ts
+// ../frontend/src/lib/calculators/protocol/clock-jitter.ts
 function calculateClockJitter(inputs) {
   const { refJitter_ps, pllJitter_ps, bufferJitter_ps, bufferStages, traceDelay_ps, setupTime_ps, holdTime_ps, clockFreqMHz } = inputs;
   if (clockFreqMHz <= 0) return { values: {}, errors: ["Clock frequency must be > 0"] };
@@ -7174,7 +7174,7 @@ var clockJitter = {
   relatedCalculators: ["phase-noise-to-jitter", "uart-baud-rate", "spi-timing"]
 };
 
-// src/lib/calculators/thermal/heatsink-calculator.ts
+// ../frontend/src/lib/calculators/thermal/heatsink-calculator.ts
 function calculateHeatsink(inputs) {
   const { powerDissipation, maxJunctionTemp, ambientTemp, thetaJC, thetaCS } = inputs;
   if (powerDissipation <= 0) {
@@ -7314,7 +7314,7 @@ var heatsinkCalculator = {
   relatedBlogPosts: ["class-d-efficiency", "motor-heat-dissipation", "motor-winding-resistance"]
 };
 
-// src/lib/calculators/thermal/pcb-trace-temp.ts
+// ../frontend/src/lib/calculators/thermal/pcb-trace-temp.ts
 function calculatePcbTraceTemp(inputs) {
   const { current, traceWidth, copperWeight, ambientTemp, traceLength } = inputs;
   if (current <= 0) {
@@ -7463,7 +7463,7 @@ var pcbTraceTemp = {
   relatedBlogPosts: ["pcb-trace-width-current-capacity", "trace-width-current"]
 };
 
-// src/lib/calculators/motor/dc-motor-speed.ts
+// ../frontend/src/lib/calculators/motor/dc-motor-speed.ts
 function calculateDcMotorSpeed(inputs) {
   const { voltage, resistance, backEmfConst, torqueConst, loadTorque, efficiency } = inputs;
   const noLoadSpeed = voltage / backEmfConst;
@@ -7631,7 +7631,7 @@ var dcMotorSpeed = {
   relatedBlogPosts: ["battery-runtime-motor", "dc-motor-control-pwm-drivers", "motor-driver-power"]
 };
 
-// src/lib/calculators/motor/stepper-motor.ts
+// ../frontend/src/lib/calculators/motor/stepper-motor.ts
 function calculateStepperMotor(inputs) {
   const { stepsPerRev, microstepping, targetRPM, leadScrewPitch } = inputs;
   const effectiveSteps = stepsPerRev * microstepping;
@@ -7743,7 +7743,7 @@ var stepperMotor = {
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "torque-unit-converter"]
 };
 
-// src/lib/calculators/emc/shielding-effectiveness.ts
+// ../frontend/src/lib/calculators/emc/shielding-effectiveness.ts
 function calculateShieldingEffectiveness(inputs) {
   const { frequency, thickness, conductivity, permeability } = inputs;
   const warnings = [];
@@ -7888,7 +7888,7 @@ var shieldingEffectiveness = {
   relatedBlogPosts: ["chassis-resonance", "emc-fcc-ce-testing-guide", "emi-radiated-emissions-pcb-fcc-compliance"]
 };
 
-// src/lib/calculators/general/wire-gauge.ts
+// ../frontend/src/lib/calculators/general/wire-gauge.ts
 function calculateWireGauge(inputs) {
   const { awg, current, length, resistivity } = inputs;
   const diameter = 0.127 * Math.pow(92, (36 - awg) / 39);
@@ -8011,7 +8011,7 @@ var wireGauge = {
   relatedCalculators: ["ohms-law", "pcb-trace-temp", "trace-resistance"]
 };
 
-// src/lib/calculators/general/capacitor-energy.ts
+// ../frontend/src/lib/calculators/general/capacitor-energy.ts
 function calculateCapacitorEnergy(inputs) {
   const { capacitance, voltage, chargeTime } = inputs;
   const C_F = capacitance * 1e-6;
@@ -8110,7 +8110,7 @@ var capacitorEnergy = {
   relatedBlogPosts: ["capacitive-proximity", "inrush-current-limiter"]
 };
 
-// src/lib/calculators/power/power-factor.ts
+// ../frontend/src/lib/calculators/power/power-factor.ts
 function calculatePowerFactor(inputs) {
   const { apparentPower, powerFactor: powerFactor2, voltage, frequency, targetPF } = inputs;
   const warnings = [];
@@ -8243,7 +8243,7 @@ var powerFactor = {
   relatedCalculators: ["capacitor-energy", "ldo-thermal", "buck-converter"]
 };
 
-// src/lib/calculators/rf/q-factor.ts
+// ../frontend/src/lib/calculators/rf/q-factor.ts
 function calculateQFactor(inputs) {
   const { componentType, value, esr, frequency } = inputs;
   const f_Hz = frequency * 1e6;
@@ -8392,7 +8392,7 @@ var qFactor = {
   }
 };
 
-// src/lib/calculators/rf/waveguide-cutoff.ts
+// ../frontend/src/lib/calculators/rf/waveguide-cutoff.ts
 function calculateWaveguideCutoff(inputs) {
   const { width, height, frequency, modeM, modeN } = inputs;
   if (modeM === 0 && modeN === 0) {
@@ -8560,7 +8560,7 @@ var waveguideCutoff = {
   }
 };
 
-// src/lib/calculators/general/zener-diode.ts
+// ../frontend/src/lib/calculators/general/zener-diode.ts
 function calculateZenerDiode(inputs) {
   const { inputVoltage, zenerVoltage, loadCurrent, zenerCurrentMin, zenerPowerMax } = inputs;
   const errors = [];
@@ -8722,7 +8722,7 @@ var zenerDiode = {
   relatedCalculators: ["voltage-divider", "led-resistor", "ldo-thermal"]
 };
 
-// src/lib/calculators/general/inductor-energy.ts
+// ../frontend/src/lib/calculators/general/inductor-energy.ts
 function calculateInductorEnergy(inputs) {
   const { inductance, current, resistance, targetCurrent } = inputs;
   if (targetCurrent >= 100) {
@@ -8852,7 +8852,7 @@ var inductorEnergy = {
   relatedBlogPosts: ["smps-control-loop-stability-buck-converter", "transformer-turns-ratio"]
 };
 
-// src/lib/calculators/power/boost-converter.ts
+// ../frontend/src/lib/calculators/power/boost-converter.ts
 function calculateBoostConverter(inputs) {
   const { inputVoltage, outputVoltage, outputCurrent, switchFreq, ripplePct, efficiency } = inputs;
   const errors = [];
@@ -9014,7 +9014,7 @@ var boostConverter = {
   relatedBlogPosts: ["switching-regulator-ripple"]
 };
 
-// src/lib/calculators/power/three-phase-power.ts
+// ../frontend/src/lib/calculators/power/three-phase-power.ts
 function calculateThreePhasePower(inputs) {
   const { connectionType, lineVoltage, current, powerFactor: powerFactor2 } = inputs;
   const phaseVoltage = connectionType === 0 ? lineVoltage / Math.sqrt(3) : lineVoltage;
@@ -9145,7 +9145,7 @@ var threePhasePower = {
   relatedCalculators: ["power-factor", "voltage-divider", "dc-motor-speed"]
 };
 
-// src/lib/calculators/antenna/antenna-beamwidth.ts
+// ../frontend/src/lib/calculators/antenna/antenna-beamwidth.ts
 function calculateAntennaBeamwidth(inputs) {
   const { gain, frequency, apertureDiameter, apertureEfficiency } = inputs;
   const lambda = 299792458 / (frequency * 1e9);
@@ -9284,7 +9284,7 @@ var antennaBeamwidth = {
   }
 };
 
-// src/lib/calculators/signal/snr-calculator.ts
+// ../frontend/src/lib/calculators/signal/snr-calculator.ts
 function calculateSNR(inputs) {
   const { bandwidth, noiseFigure, signalPower, temperature } = inputs;
   const k = 1380649e-29;
@@ -9419,7 +9419,7 @@ var snrCalculator = {
   relatedBlogPosts: ["am-modulation-index", "ber-snr", "ber-vs-snr-digital-communications"]
 };
 
-// src/lib/calculators/pcb/controlled-impedance.ts
+// ../frontend/src/lib/calculators/pcb/controlled-impedance.ts
 function calculateControlledImpedance(inputs) {
   const {
     traceType,
@@ -9625,7 +9625,7 @@ var controlledImpedance = {
   relatedBlogPosts: ["decoupling-capacitor", "ethernet-cable", "eye-diagram-signal-integrity-10gbps"]
 };
 
-// src/lib/calculators/emc/ferrite-bead.ts
+// ../frontend/src/lib/calculators/emc/ferrite-bead.ts
 function calculateFerriteBead(inputs) {
   const { impedance100MHz, dcResistance, loadImpedance, frequency } = inputs;
   const beadImpedance = impedance100MHz * Math.pow(frequency / 100, 0.5);
@@ -9749,7 +9749,7 @@ var ferriteBead = {
   relatedBlogPosts: ["emc-fcc-ce-testing-guide"]
 };
 
-// src/lib/calculators/rf/free-space-path-loss.ts
+// ../frontend/src/lib/calculators/rf/free-space-path-loss.ts
 function calculateFreeSpacePathLoss(inputs) {
   const { frequency, distance } = inputs;
   const f_Hz = frequency * 1e6;
@@ -9858,7 +9858,7 @@ var freeSpacePathLoss = {
   }
 };
 
-// src/lib/calculators/rf/radar-range-equation.ts
+// ../frontend/src/lib/calculators/rf/radar-range-equation.ts
 function calculateRadarRangeEquation(inputs) {
   const { peakPower, gain, frequency, rcs, noiseFigure, bandwidth } = inputs;
   const Pt = peakPower * 1e3;
@@ -10016,7 +10016,7 @@ var radarRangeEquation = {
   }
 };
 
-// src/lib/calculators/rf/power-amplifier-efficiency.ts
+// ../frontend/src/lib/calculators/rf/power-amplifier-efficiency.ts
 function calculatePowerAmplifierEfficiency(inputs) {
   const { outputPower, inputPower, dcVoltage, dcCurrent } = inputs;
   const Pout_mW = Math.pow(10, outputPower / 10);
@@ -10163,7 +10163,7 @@ var powerAmplifierEfficiency = {
   }
 };
 
-// src/lib/calculators/rf/intermodulation-distortion.ts
+// ../frontend/src/lib/calculators/rf/intermodulation-distortion.ts
 function calculateIntermodulationDistortion(inputs) {
   const { outputPower, inputPower, oip3, oip2, freq1, freq2 } = inputs;
   const gain = outputPower - inputPower;
@@ -10404,7 +10404,7 @@ var intermodulationDistortion = {
   }
 };
 
-// src/lib/calculators/rf/phase-noise-to-jitter.ts
+// ../frontend/src/lib/calculators/rf/phase-noise-to-jitter.ts
 function calculatePhaseNoiseToJitter(inputs) {
   const {
     carrierFreq,
@@ -10667,7 +10667,7 @@ var phaseNoiseToJitter = {
   }
 };
 
-// src/lib/calculators/rf/vibration-phase-noise.ts
+// ../frontend/src/lib/calculators/rf/vibration-phase-noise.ts
 function calculateVibrationPhaseNoise(inputs) {
   const { carrierFreq, vibSensitivity, vibAccel, vibFreq } = inputs;
   const f0 = carrierFreq * 1e9;
@@ -10839,7 +10839,7 @@ var vibrationPhaseNoise = {
   }
 };
 
-// src/lib/calculators/rf/return-loss-error.ts
+// ../frontend/src/lib/calculators/rf/return-loss-error.ts
 function calculateReturnLossError(inputs) {
   const { dutReturnLoss, directivity, sourceMatch } = inputs;
   const rho_dut = Math.pow(10, -dutReturnLoss / 20);
@@ -11024,7 +11024,7 @@ var returnLossError = {
   }
 };
 
-// src/lib/calculators/signal/adc-snr.ts
+// ../frontend/src/lib/calculators/signal/adc-snr.ts
 function calculateAdcSnr(inputs) {
   const { bits, inputFreq, samplingFreq, jitter } = inputs;
   const theoreticalSnr = 20 * Math.log10(2) * bits + 10 * Math.log10(1.5);
@@ -11169,7 +11169,7 @@ var adcSnr = {
   relatedBlogPosts: ["accelerometer-sensitivity", "ber-snr", "pressure-bridge-output"]
 };
 
-// src/lib/calculators/signal/fft-bin-resolution.ts
+// ../frontend/src/lib/calculators/signal/fft-bin-resolution.ts
 function calculateFftBinResolution(inputs) {
   const { sampleRate, fftSize, windowType } = inputs;
   const fs_Hz = sampleRate * 1e3;
@@ -11311,7 +11311,7 @@ var fftBinResolution = {
   relatedCalculators: ["sampling-nyquist", "snr-calculator", "adc-snr"]
 };
 
-// src/lib/calculators/signal/johnson-noise.ts
+// ../frontend/src/lib/calculators/signal/johnson-noise.ts
 function calculateJohnsonNoise(inputs) {
   const { resistance, temperature, bandwidth } = inputs;
   const k = 1380649e-29;
@@ -11431,7 +11431,7 @@ var johnsonNoise = {
   relatedCalculators: ["noise-figure-cascade", "snr-calculator", "adc-snr"]
 };
 
-// src/lib/calculators/signal/am-modulation-index.ts
+// ../frontend/src/lib/calculators/signal/am-modulation-index.ts
 function calculateAmModulationIndex(inputs) {
   const { carrierAmplitude, messageAmplitude, carrierFreq, messageFreq } = inputs;
   const Ac = Math.max(carrierAmplitude, 1e-9);
@@ -11574,7 +11574,7 @@ var amModulationIndex = {
   relatedCalculators: ["fm-modulation-index", "snr-calculator", "db-converter"]
 };
 
-// src/lib/calculators/signal/fm-modulation-index.ts
+// ../frontend/src/lib/calculators/signal/fm-modulation-index.ts
 function calculateFmModulationIndex(inputs) {
   const { frequencyDeviation, messageFreq, carrierFreq } = inputs;
   const deltaF = Math.max(frequencyDeviation, 1e-9);
@@ -11688,7 +11688,7 @@ var fmModulationIndex = {
   relatedBlogPosts: ["am-modulation-index"]
 };
 
-// src/lib/calculators/signal/oversampling-snr.ts
+// ../frontend/src/lib/calculators/signal/oversampling-snr.ts
 function calculateOversamplingSnr(inputs) {
   const { bits, oversamplingRatio, noiseShapingOrder } = inputs;
   const OSR = Math.max(oversamplingRatio, 1);
@@ -11820,7 +11820,7 @@ var oversamplingSnr = {
   relatedCalculators: ["adc-snr", "sampling-nyquist", "snr-calculator"]
 };
 
-// src/lib/calculators/signal/digital-filter-order.ts
+// ../frontend/src/lib/calculators/signal/digital-filter-order.ts
 function calculateDigitalFilterOrder(inputs) {
   const { passbandFreq, stopbandFreq, passbandRipple, stopbandAttenuation } = inputs;
   const Ap = passbandRipple;
@@ -11949,7 +11949,7 @@ var digitalFilterOrder = {
   relatedBlogPosts: ["rf-filter-tolerance-analysis"]
 };
 
-// src/lib/calculators/antenna/yagi-antenna.ts
+// ../frontend/src/lib/calculators/antenna/yagi-antenna.ts
 function calculateYagiAntenna(inputs) {
   const { frequency, numElements, boomLength } = inputs;
   const c2 = 299792458;
@@ -12096,7 +12096,7 @@ var yagiAntenna = {
   }
 };
 
-// src/lib/calculators/antenna/horn-antenna.ts
+// ../frontend/src/lib/calculators/antenna/horn-antenna.ts
 function calculateHornAntenna(inputs) {
   const { frequency, apertureWidth, apertureHeight } = inputs;
   const f_Hz = frequency * 1e9;
@@ -12238,7 +12238,7 @@ var hornAntenna = {
   }
 };
 
-// src/lib/calculators/antenna/parabolic-dish-antenna.ts
+// ../frontend/src/lib/calculators/antenna/parabolic-dish-antenna.ts
 function calculateParabolicDishAntenna(inputs) {
   const { frequency, diameter, efficiency } = inputs;
   const lambda_m = 299792458 / (Math.max(frequency, 1e-6) * 1e9);
@@ -12367,7 +12367,7 @@ var parabolicDishAntenna = {
   }
 };
 
-// src/lib/calculators/antenna/loop-antenna.ts
+// ../frontend/src/lib/calculators/antenna/loop-antenna.ts
 function calculateLoopAntenna(inputs) {
   const { frequency, diameter, conductorDiam } = inputs;
   const c0 = 299792458;
@@ -12513,7 +12513,7 @@ var loopAntenna = {
   }
 };
 
-// src/lib/calculators/protocol/spi-timing.ts
+// ../frontend/src/lib/calculators/protocol/spi-timing.ts
 function calculateSpiTiming(inputs) {
   const { clockFreq, dataWidth, traceCapacitance, driveStrength } = inputs;
   const f_MHz = Math.max(clockFreq, 1e-3);
@@ -12661,7 +12661,7 @@ var spiTiming = {
   relatedBlogPosts: ["can-bus-timing", "data-rate-units"]
 };
 
-// src/lib/calculators/protocol/can-bus-timing.ts
+// ../frontend/src/lib/calculators/protocol/can-bus-timing.ts
 function calculateCanBusTiming(inputs) {
   const { clockFreq, baudRate, samplePoint } = inputs;
   const f_Hz = clockFreq * 1e6;
@@ -12816,7 +12816,7 @@ var canBusTiming = {
   relatedBlogPosts: ["data-rate-units", "lin-bus-timing"]
 };
 
-// src/lib/calculators/protocol/usb-termination.ts
+// ../frontend/src/lib/calculators/protocol/usb-termination.ts
 function calculateUsbTermination(inputs) {
   const { usbVersion, lineImpedance, cableLength } = inputs;
   const terminationResistor = lineImpedance;
@@ -12948,7 +12948,7 @@ var usbTermination = {
   relatedCalculators: ["rs485-termination", "spi-timing", "can-bus-timing"]
 };
 
-// src/lib/calculators/protocol/rs485-termination.ts
+// ../frontend/src/lib/calculators/protocol/rs485-termination.ts
 function calculateRs485Termination(inputs) {
   const { baudRate, cableLength, numNodes, supplyVoltage } = inputs;
   const terminationResistor = 120;
@@ -13102,7 +13102,7 @@ var rs485Termination = {
   }
 };
 
-// src/lib/calculators/power/pwm-duty-cycle.ts
+// ../frontend/src/lib/calculators/power/pwm-duty-cycle.ts
 function calculatePwmDutyCycle(inputs) {
   const { onTime, period, supplyVoltage } = inputs;
   const safePeriod = Math.max(period, 1e-3);
@@ -13225,7 +13225,7 @@ var pwmDutyCycle = {
   relatedCalculators: ["555-timer", "switching-regulator-ripple", "buck-converter"]
 };
 
-// src/lib/calculators/power/mosfet-power-dissipation.ts
+// ../frontend/src/lib/calculators/power/mosfet-power-dissipation.ts
 function calculateMosfetPowerDissipation(inputs) {
   const { drainCurrent, rdson, vds, frequency, riseTime, fallTime, rthJA, tAmbient } = inputs;
   const rdson_Ohm = rdson / 1e3;
@@ -13416,7 +13416,7 @@ var mosfetPowerDissipation = {
   relatedBlogPosts: ["buck-converter-design-guide", "class-d-efficiency", "led-resistor"]
 };
 
-// src/lib/calculators/power/solar-panel-sizing.ts
+// ../frontend/src/lib/calculators/power/solar-panel-sizing.ts
 function calculateSolarPanelSizing(inputs) {
   const { loadPower, peakSunHours, systemVoltage, batteryCapacity, daysAutonomy } = inputs;
   const safeVoltage = Math.max(systemVoltage, 0.1);
@@ -13563,7 +13563,7 @@ var solarPanelSizing = {
   relatedCalculators: ["battery-charge-time", "pwm-duty-cycle", "linear-regulator-dropout"]
 };
 
-// src/lib/calculators/power/battery-charge-time.ts
+// ../frontend/src/lib/calculators/power/battery-charge-time.ts
 function calculateBatteryChargeTime(inputs) {
   const { capacity, chargeCurrentC, initialSoc, targetSoc, chargingVoltage, battVoltage } = inputs;
   const safeCapacity = Math.max(capacity, 1);
@@ -13724,7 +13724,7 @@ var batteryChargeTime = {
   relatedBlogPosts: ["battery-internal-resistance"]
 };
 
-// src/lib/calculators/power/inrush-current-limiter.ts
+// ../frontend/src/lib/calculators/power/inrush-current-limiter.ts
 function calculateInrushCurrentLimiter(inputs) {
   const { supplyVoltage, filterCapacitance, targetInrush, ntcResistanceHot } = inputs;
   const safeTargetInrush = Math.max(targetInrush, 1e-3);
@@ -13855,7 +13855,7 @@ var inrushCurrentLimiter = {
   relatedCalculators: ["mosfet-power-dissipation", "linear-regulator-dropout", "pwm-duty-cycle"]
 };
 
-// src/lib/calculators/power/charge-pump-voltage.ts
+// ../frontend/src/lib/calculators/power/charge-pump-voltage.ts
 function calculateChargePump(inputs) {
   const { inputVoltage, stages, pumpCurrent, frequency, capacitance } = inputs;
   const safeFreq = Math.max(frequency, 1e-3);
@@ -14003,7 +14003,7 @@ var chargePumpVoltage = {
   relatedCalculators: ["pwm-duty-cycle", "switching-regulator-ripple", "boost-converter"]
 };
 
-// src/lib/calculators/power/switching-regulator-ripple.ts
+// ../frontend/src/lib/calculators/power/switching-regulator-ripple.ts
 function calculateSwitchingRegulatorRipple(inputs) {
   const { inductance, capacitance, esr, inputVoltage, outputVoltage, frequency } = inputs;
   const safeFreq = Math.max(frequency, 1e-3);
@@ -14154,7 +14154,7 @@ var switchingRegulatorRipple = {
   relatedBlogPosts: ["power-supply-ripple-filter"]
 };
 
-// src/lib/calculators/power/linear-regulator-dropout.ts
+// ../frontend/src/lib/calculators/power/linear-regulator-dropout.ts
 function calculateLinearRegulatorDropout(inputs) {
   const { inputVoltage, outputVoltage, loadCurrent, dropoutVoltage, thetaJA } = inputs;
   const vDiff = inputVoltage - outputVoltage;
@@ -14306,7 +14306,7 @@ var linearRegulatorDropout = {
   relatedCalculators: ["mosfet-power-dissipation", "thermal-resistance-network", "switching-regulator-ripple"]
 };
 
-// src/lib/calculators/pcb/pcb-crosstalk.ts
+// ../frontend/src/lib/calculators/pcb/pcb-crosstalk.ts
 function calculatePcbCrosstalk(inputs) {
   const { traceWidth, traceSpacing, dielectricHeight, frequency, traceLength } = inputs;
   const W = Math.max(traceWidth, 1e-3);
@@ -14460,7 +14460,7 @@ var pcbCrosstalk = {
   relatedBlogPosts: ["stackup-builder"]
 };
 
-// src/lib/calculators/pcb/decoupling-capacitor.ts
+// ../frontend/src/lib/calculators/pcb/decoupling-capacitor.ts
 function calculateDecouplingCapacitor(inputs) {
   const { capacitance, esr, esl, targetFreq, supplyImpedance } = inputs;
   const cap_F = Math.max(capacitance, 1e-3) * 1e-9;
@@ -14623,7 +14623,7 @@ var decouplingCapacitor = {
   relatedBlogPosts: ["pdn-impedance-analyzer", "pdn-impedance-plane-resonances-decoupling", "power-supply-ripple-filter"]
 };
 
-// src/lib/calculators/pcb/pcb-trace-inductance.ts
+// ../frontend/src/lib/calculators/pcb/pcb-trace-inductance.ts
 function calculatePcbTraceInductance(inputs) {
   const { traceLength, traceWidth, thickness } = inputs;
   const l = Math.max(traceLength, 1e-3) * 1e-3;
@@ -14738,7 +14738,7 @@ var pcbTraceInductance = {
   relatedBlogPosts: ["magnetics-optimizer-transformer-design"]
 };
 
-// src/lib/calculators/pcb/via-thermal-resistance.ts
+// ../frontend/src/lib/calculators/pcb/via-thermal-resistance.ts
 function calculateViaThermalResistance(inputs) {
   const { viaDiameter, platingThickness, boardThickness, numVias, viaFill } = inputs;
   const safeDia = Math.max(viaDiameter, 0.01) * 1e-3;
@@ -14892,7 +14892,7 @@ var viaThermalResistance = {
   relatedBlogPosts: ["pcb-trace-width-current-capacity", "thermal-resistance-network"]
 };
 
-// src/lib/calculators/general/bjt-bias-point.ts
+// ../frontend/src/lib/calculators/general/bjt-bias-point.ts
 function calculateBjtBiasPoint(inputs) {
   const { vcc, r1, r2, rc, re, beta, vbe } = inputs;
   const r1_Ohm = r1 * 1e3;
@@ -15081,7 +15081,7 @@ var bjtBiasPoint = {
   relatedBlogPosts: ["current-mirror"]
 };
 
-// src/lib/calculators/general/mosfet-operating-point.ts
+// ../frontend/src/lib/calculators/general/mosfet-operating-point.ts
 function calculateMosfetOperatingPoint(inputs) {
   const { vgs, vth, kn, vds, vdd, rdLoad } = inputs;
   const vgsEff = Math.max(0, vgs - vth);
@@ -15231,7 +15231,7 @@ var mosfetOperatingPoint = {
   relatedCalculators: ["bjt-bias-point", "mosfet-power-dissipation", "transistor-switch"]
 };
 
-// src/lib/calculators/general/comparator-hysteresis.ts
+// ../frontend/src/lib/calculators/general/comparator-hysteresis.ts
 function calculateComparatorHysteresis(inputs) {
   const { vref, supplyVoltage, r1, r2, hystPercent } = inputs;
   const divisor = Math.max(r1 + r2, 1e-3);
@@ -15367,7 +15367,7 @@ var comparatorHysteresis = {
   relatedCalculators: ["opamp-gain", "bjt-bias-point", "voltage-divider"]
 };
 
-// src/lib/calculators/general/555-timer.ts
+// ../frontend/src/lib/calculators/general/555-timer.ts
 function calculate555Timer(inputs) {
   const { mode, ra, rb, c: c2, vcc } = inputs;
   const ra_Ohm = Math.max(ra, 1e-3) * 1e3;
@@ -15532,7 +15532,7 @@ var timer555 = {
   relatedCalculators: ["pwm-duty-cycle", "rc-time-constant", "comparator-hysteresis"]
 };
 
-// src/lib/calculators/general/transistor-switch.ts
+// ../frontend/src/lib/calculators/general/transistor-switch.ts
 function calculateTransistorSwitch(inputs) {
   const { vcc, loadResistor, inputVoltage, beta, vbe, vce_sat, overdriveFactor } = inputs;
   const safeLoadR = Math.max(loadResistor, 1e-3);
@@ -15702,7 +15702,7 @@ var transistorSwitch = {
   relatedBlogPosts: ["bjt-bias-point", "current-mirror"]
 };
 
-// src/lib/calculators/general/current-mirror.ts
+// ../frontend/src/lib/calculators/general/current-mirror.ts
 function calculateCurrentMirror(inputs) {
   const { refCurrent, ratio, vcc, beta, vt } = inputs;
   const safeRef = Math.max(refCurrent, 1e-3);
@@ -15857,7 +15857,7 @@ var currentMirror = {
   relatedBlogPosts: ["bjt-bias-point"]
 };
 
-// src/lib/calculators/thermal/thermal-resistance-network.ts
+// ../frontend/src/lib/calculators/thermal/thermal-resistance-network.ts
 function calculateThermalResistanceNetwork(inputs) {
   const { powerDissipation, thetaJC, thetaCS, thetaSA, ambientTemp } = inputs;
   const totalThetaJA = thetaJC + thetaCS + thetaSA;
@@ -16010,7 +16010,7 @@ var thermalResistanceNetwork = {
   relatedBlogPosts: ["heatsink-selection", "motor-driver-power", "motor-heat-dissipation"]
 };
 
-// src/lib/calculators/motor/bldc-motor.ts
+// ../frontend/src/lib/calculators/motor/bldc-motor.ts
 function calculateBldcMotor(inputs) {
   const { kvRating, voltage, motorResistance, noLoadCurrent, propDiameter } = inputs;
   const safeKv = Math.max(kvRating, 1);
@@ -16189,7 +16189,7 @@ var bldcMotor = {
   relatedBlogPosts: ["bldc-efficiency", "bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"]
 };
 
-// src/lib/calculators/motor/bldc-winding.ts
+// ../frontend/src/lib/calculators/motor/bldc-winding.ts
 var AWG_TABLE = [
   { awg: 10, diameterMm: 2.588, areaMm2: 5.261 },
   { awg: 12, diameterMm: 2.053, areaMm2: 3.309 },
@@ -16463,7 +16463,7 @@ var bldcWinding = {
   ]
 };
 
-// src/lib/calculators/motor/bldc-efficiency.ts
+// ../frontend/src/lib/calculators/motor/bldc-efficiency.ts
 function calculateBldcEfficiency(inputs) {
   const { kvRating, phaseResistance, noLoadCurrent, supplyVoltage, operatingCurrent, polePairs } = inputs;
   const safeKv = Math.max(kvRating, 1);
@@ -16585,7 +16585,7 @@ var bldcEfficiency = {
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-motor", "bldc-winding-turns-wire-gauge-patterns"]
 };
 
-// src/lib/calculators/motor/bldc-thermal.ts
+// ../frontend/src/lib/calculators/motor/bldc-thermal.ts
 var COPPER_TEMP_COEFF = 393e-5;
 var INSULATION_CLASSES = [
   { label: "Class B (130\xB0C)", values: { maxWindingTemp: 130 } },
@@ -16705,7 +16705,7 @@ var bldcThermal = {
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"]
 };
 
-// src/lib/calculators/motor/servo-motor.ts
+// ../frontend/src/lib/calculators/motor/servo-motor.ts
 function calculateServoMotor(inputs) {
   const { voltage, current, speed, armRes } = inputs;
   const inputPower = voltage * current;
@@ -16751,7 +16751,7 @@ var servoMotor = {
   relatedCalculators: ["dc-motor-speed", "bldc-motor", "gear-ratio"]
 };
 
-// src/lib/calculators/motor/gear-ratio.ts
+// ../frontend/src/lib/calculators/motor/gear-ratio.ts
 function calculateGearRatio(inputs) {
   const { driverTeeth, drivenTeeth, inputSpeed, inputTorque, efficiency } = inputs;
   const gearRatio2 = drivenTeeth / driverTeeth;
@@ -16797,7 +16797,7 @@ var gearRatio = {
   relatedBlogPosts: ["torque-unit-converter"]
 };
 
-// src/lib/calculators/motor/pwm-duty-cycle-motor.ts
+// ../frontend/src/lib/calculators/motor/pwm-duty-cycle-motor.ts
 function calculatePwmDutyCycleMotor(inputs) {
   const { supplyVoltage, dutyCycle, motorKv, motorResistance } = inputs;
   const effectiveVoltage = supplyVoltage * (dutyCycle / 100);
@@ -16841,7 +16841,7 @@ var pwmDutyCycleMotor = {
   relatedBlogPosts: ["dc-motor-control-pwm-drivers", "motor-driver-power", "pid-tuning"]
 };
 
-// src/lib/calculators/motor/torque-unit-converter.ts
+// ../frontend/src/lib/calculators/motor/torque-unit-converter.ts
 function calculateTorqueUnitConverter(inputs) {
   const { nm } = inputs;
   const lbFt = nm * 0.7375621493;
@@ -16894,7 +16894,7 @@ var torqueUnitConverter = {
   relatedCalculators: ["gear-ratio", "servo-motor", "dc-motor-speed"]
 };
 
-// src/lib/calculators/motor/motor-efficiency.ts
+// ../frontend/src/lib/calculators/motor/motor-efficiency.ts
 function calculateMotorEfficiency(inputs) {
   const { inputVoltage, inputCurrent, outputPowerW } = inputs;
   const inputPower = inputVoltage * inputCurrent;
@@ -16939,7 +16939,7 @@ var motorEfficiency = {
   relatedBlogPosts: ["motor-heat-dissipation"]
 };
 
-// src/lib/calculators/motor/induction-motor-slip.ts
+// ../frontend/src/lib/calculators/motor/induction-motor-slip.ts
 function calculateInductionMotorSlip(inputs) {
   const { syncSpeed, rotorSpeed, poles, frequency } = inputs;
   const calculatedSyncSpeed = 120 * frequency / poles;
@@ -16999,7 +16999,7 @@ var inductionMotorSlip = {
   relatedCalculators: ["dc-motor-speed", "motor-efficiency", "three-phase-power"]
 };
 
-// src/lib/calculators/motor/motor-inrush-current.ts
+// ../frontend/src/lib/calculators/motor/motor-inrush-current.ts
 function calculateMotorInrushCurrent(inputs) {
   const { ratedCurrent, inrushMultiplier, startupDuration, supplyVoltage, lineResistance } = inputs;
   const inrushCurrent = ratedCurrent * inrushMultiplier;
@@ -17043,7 +17043,7 @@ var motorInrushCurrent = {
   relatedCalculators: ["motor-efficiency", "induction-motor-slip", "dc-motor-speed"]
 };
 
-// src/lib/calculators/motor/motor-heat-dissipation.ts
+// ../frontend/src/lib/calculators/motor/motor-heat-dissipation.ts
 function calculateMotorHeatDissipation(inputs) {
   const { inputPower, efficiency, ambientTemp, thermalResistance } = inputs;
   const losses = inputPower * (1 - efficiency / 100);
@@ -17084,7 +17084,7 @@ var motorHeatDissipation = {
   relatedCalculators: ["motor-efficiency", "junction-temperature", "heatsink-calculator"]
 };
 
-// src/lib/calculators/motor/encoder-resolution.ts
+// ../frontend/src/lib/calculators/motor/encoder-resolution.ts
 function calculateEncoderResolution(inputs) {
   const { ppr, quadrature, gearRatio: gearRatio2, motorMaxRpm } = inputs;
   const countsMechanicalRev = quadrature > 0 ? ppr * 4 : ppr;
@@ -17139,7 +17139,7 @@ var encoderResolution = {
   relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
 };
 
-// src/lib/calculators/motor/motor-starting-torque.ts
+// ../frontend/src/lib/calculators/motor/motor-starting-torque.ts
 function calculateMotorStartingTorque(inputs) {
   const { voltage, resistance, torqueConst, backEmfConst } = inputs;
   const stallCurrent = voltage / resistance;
@@ -17181,7 +17181,7 @@ var motorStartingTorque = {
   relatedBlogPosts: ["torque-units"]
 };
 
-// src/lib/calculators/motor/battery-runtime-motor.ts
+// ../frontend/src/lib/calculators/motor/battery-runtime-motor.ts
 function calculateBatteryRuntimeMotor(inputs) {
   const { batteryCapacityMah, batteryVoltage, motorCurrentA, efficiency, depthOfDischarge } = inputs;
   const usableCapacityMah = batteryCapacityMah * (depthOfDischarge / 100);
@@ -17230,7 +17230,7 @@ var batteryRuntimeMotor = {
   relatedBlogPosts: ["battery-internal-resistance"]
 };
 
-// src/lib/calculators/motor/motor-winding-resistance.ts
+// ../frontend/src/lib/calculators/motor/motor-winding-resistance.ts
 function calculateMotorWindingResistance(inputs) {
   const { resistance25, tempCoeff, temperature } = inputs;
   const deltaT = temperature - 25;
@@ -17270,7 +17270,7 @@ var motorWindingResistance = {
   relatedBlogPosts: ["bldc-motor"]
 };
 
-// src/lib/calculators/motor/h-bridge-selection.ts
+// ../frontend/src/lib/calculators/motor/h-bridge-selection.ts
 function calculateHBridgeSelection(inputs) {
   const { motorCurrent, motorVoltage, inrushMultiplier, pwmFrequency, mosfetRdson } = inputs;
   const peakCurrent = motorCurrent * inrushMultiplier;
@@ -17326,7 +17326,7 @@ var hBridgeSelection = {
   relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
 };
 
-// src/lib/calculators/motor/motor-driver-power.ts
+// ../frontend/src/lib/calculators/motor/motor-driver-power.ts
 function calculateMotorDriverPower(inputs) {
   const { motorCurrent, rdson, dutyCycle, switchingFreq, gateCharge, supplyVoltage } = inputs;
   const conductionLoss = motorCurrent * motorCurrent * rdson * (dutyCycle / 100);
@@ -17372,7 +17372,7 @@ var motorDriverPower = {
   relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
 };
 
-// src/lib/calculators/motor/pid-tuning.ts
+// ../frontend/src/lib/calculators/motor/pid-tuning.ts
 function calculatePidTuning(inputs) {
   const { processGain, deadTime, timeConstant } = inputs;
   const kpPID = 1.2 * timeConstant / (processGain * deadTime);
@@ -17421,7 +17421,7 @@ var pidTuning = {
   relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
 };
 
-// src/lib/calculators/sensor/ntc-thermistor.ts
+// ../frontend/src/lib/calculators/sensor/ntc-thermistor.ts
 function calculateNtcThermistor(inputs) {
   const { resistance, beta, T0, R0 } = inputs;
   if (resistance <= 0 || R0 <= 0 || beta <= 0) {
@@ -17537,7 +17537,7 @@ var ntcThermistor = {
   relatedBlogPosts: ["inrush-current-limiter", "temperature-converter"]
 };
 
-// src/lib/calculators/sensor/rtd-temperature.ts
+// ../frontend/src/lib/calculators/sensor/rtd-temperature.ts
 function calculateRtdTemperature(inputs) {
   const { resistance, r0, alpha } = inputs;
   if (r0 <= 0 || alpha <= 0) {
@@ -17647,7 +17647,7 @@ var rtdTemperature = {
   relatedBlogPosts: ["pt100-resistance"]
 };
 
-// src/lib/calculators/sensor/wheatstone-bridge.ts
+// ../frontend/src/lib/calculators/sensor/wheatstone-bridge.ts
 function calculateWheatstoneBridge(inputs) {
   const { vin, r1, r2, r3, r4 } = inputs;
   if (r1 <= 0 || r2 <= 0 || r3 <= 0 || r4 <= 0) {
@@ -17779,7 +17779,7 @@ var wheatstoneBridge = {
   relatedBlogPosts: ["pressure-bridge-output", "sensor-signal-conditioning"]
 };
 
-// src/lib/calculators/sensor/hall-effect-sensor.ts
+// ../frontend/src/lib/calculators/sensor/hall-effect-sensor.ts
 function calculateHallEffectSensor(inputs) {
   const { current, Bfield, thickness, carrierDensity } = inputs;
   const e = 1602176634e-28;
@@ -17912,7 +17912,7 @@ var hallEffectSensor = {
   relatedCalculators: ["wheatstone-bridge", "strain-gauge-bridge", "snr-calculator"]
 };
 
-// src/lib/calculators/sensor/strain-gauge-bridge.ts
+// ../frontend/src/lib/calculators/sensor/strain-gauge-bridge.ts
 function calculateStrainGaugeBridge(inputs) {
   const { vin, gaugeFactor, strain, bridgeConfig } = inputs;
   if (gaugeFactor <= 0 || vin <= 0) {
@@ -18042,7 +18042,7 @@ var strainGaugeBridge = {
   relatedBlogPosts: ["4-20ma-transmitter"]
 };
 
-// src/lib/calculators/sensor/pt100-resistance.ts
+// ../frontend/src/lib/calculators/sensor/pt100-resistance.ts
 function calculatePt100Resistance(inputs) {
   const { temperature, r0 } = inputs;
   const A = 39083e-7;
@@ -18113,7 +18113,7 @@ var pt100Resistance = {
   relatedBlogPosts: ["rtd-temperature", "sensor-signal-conditioning"]
 };
 
-// src/lib/calculators/sensor/thermocouple-voltage.ts
+// ../frontend/src/lib/calculators/sensor/thermocouple-voltage.ts
 function calculateThermocoupleVoltage(inputs) {
   const { temperature, coldJunctionTemp, type } = inputs;
   const seebeckCoefficients = {
@@ -18191,7 +18191,7 @@ var thermocoupleVoltage = {
   relatedBlogPosts: ["pt100-resistance", "rtd-temperature", "sensor-signal-conditioning"]
 };
 
-// src/lib/calculators/sensor/load-cell-amplifier.ts
+// ../frontend/src/lib/calculators/sensor/load-cell-amplifier.ts
 function calculateLoadCellAmplifier(inputs) {
   const { excitationVoltage, sensitivity, fullScaleLoad, gain } = inputs;
   if (fullScaleLoad <= 0) {
@@ -18266,7 +18266,7 @@ var loadCellAmplifier = {
   relatedBlogPosts: ["sensor-signal-conditioning"]
 };
 
-// src/lib/calculators/sensor/photodiode-transimpedance.ts
+// ../frontend/src/lib/calculators/sensor/photodiode-transimpedance.ts
 var photodiodeTransimpedance = {
   slug: "photodiode-transimpedance",
   title: "Photodiode Transimpedance Amplifier",
@@ -18329,7 +18329,7 @@ var photodiodeTransimpedance = {
   relatedBlogPosts: ["sensor-signal-conditioning"]
 };
 
-// src/lib/calculators/sensor/capacitive-proximity.ts
+// ../frontend/src/lib/calculators/sensor/capacitive-proximity.ts
 function calculateCapacitiveProximity(inputs) {
   const { plateArea, gapDistance, permittivity } = inputs;
   if (gapDistance <= 0) {
@@ -18393,7 +18393,7 @@ var capacitiveProximity = {
   relatedCalculators: ["hall-effect-sensor", "sensor-accuracy-budget", "photodiode-transimpedance"]
 };
 
-// src/lib/calculators/sensor/current-shunt.ts
+// ../frontend/src/lib/calculators/sensor/current-shunt.ts
 var currentShunt = {
   slug: "current-shunt",
   title: "Current Shunt Resistor",
@@ -18465,7 +18465,7 @@ var currentShunt = {
   relatedBlogPosts: ["sensor-signal-conditioning"]
 };
 
-// src/lib/calculators/sensor/accelerometer-sensitivity.ts
+// ../frontend/src/lib/calculators/sensor/accelerometer-sensitivity.ts
 function calculateAccelerometerSensitivity(inputs) {
   const { sensitivity, fullScaleRange, supplyVoltage, adcBits } = inputs;
   const fullScaleVoltage = sensitivity * fullScaleRange * 2;
@@ -18542,7 +18542,7 @@ var accelerometerSensitivity = {
   relatedCalculators: ["hall-effect-sensor", "sensor-accuracy-budget", "strain-gauge-bridge"]
 };
 
-// src/lib/calculators/sensor/pressure-bridge-output.ts
+// ../frontend/src/lib/calculators/sensor/pressure-bridge-output.ts
 var pressureBridgeOutput = {
   slug: "pressure-bridge-output",
   title: "Pressure Sensor Bridge Output",
@@ -18612,7 +18612,7 @@ var pressureBridgeOutput = {
   relatedCalculators: ["wheatstone-bridge", "load-cell-amplifier", "strain-gauge-bridge"]
 };
 
-// src/lib/calculators/sensor/sensor-accuracy-budget.ts
+// ../frontend/src/lib/calculators/sensor/sensor-accuracy-budget.ts
 function calculateSensorAccuracyBudget(inputs) {
   const { offsetError, gainError, nonlinearity, resolution, tempDrift, tempRange } = inputs;
   const tempError = tempDrift * tempRange;
@@ -18698,7 +18698,7 @@ var sensorAccuracyBudget = {
   relatedBlogPosts: ["4-20ma-transmitter", "capacitive-proximity", "pt100-resistance"]
 };
 
-// src/lib/calculators/sensor/optical-sensor-range.ts
+// ../frontend/src/lib/calculators/sensor/optical-sensor-range.ts
 function calculateOpticalSensorRange(inputs) {
   const { emitterPower, detectorSensitivity, targetReflectivity, safetyFactor } = inputs;
   if (safetyFactor <= 0) {
@@ -18776,7 +18776,7 @@ var opticalSensorRange = {
   relatedCalculators: ["photodiode-transimpedance", "sensor-accuracy-budget", "hall-effect-sensor"]
 };
 
-// src/lib/calculators/sensor/lvdt-sensitivity.ts
+// ../frontend/src/lib/calculators/sensor/lvdt-sensitivity.ts
 function calculateLvdtSensitivity(inputs) {
   const { sensitivity, excitationVoltage, coreDisplacement, fullScaleRange } = inputs;
   if (fullScaleRange <= 0) {
@@ -18849,7 +18849,7 @@ var lvdtSensitivity = {
   relatedCalculators: ["sensor-accuracy-budget", "capacitive-proximity", "hall-effect-sensor"]
 };
 
-// src/lib/calculators/sensor/loop-transmitter-4-20ma.ts
+// ../frontend/src/lib/calculators/sensor/loop-transmitter-4-20ma.ts
 function calculateLoopTransmitter4to20ma(inputs) {
   const { loopCurrent, loopResistance, supplyVoltage, sensorRangeMin, sensorRangeMax } = inputs;
   const voltageAtLoad = loopCurrent * 1e-3 * loopResistance;
@@ -18933,7 +18933,7 @@ var loopTransmitter420ma = {
   relatedBlogPosts: ["sensor-signal-conditioning"]
 };
 
-// src/lib/calculators/unit-conversion/frequency-wavelength.ts
+// ../frontend/src/lib/calculators/unit-conversion/frequency-wavelength.ts
 function calculateFrequencyWavelength(inputs) {
   const { frequency, velocityFactor } = inputs;
   if (frequency <= 0 || velocityFactor <= 0) {
@@ -19068,7 +19068,7 @@ var frequencyWavelength = {
   ]
 };
 
-// src/lib/calculators/unit-conversion/dbm-watts.ts
+// ../frontend/src/lib/calculators/unit-conversion/dbm-watts.ts
 function calculateDbmWatts(inputs) {
   const { dbm } = inputs;
   const watts = Math.pow(10, dbm / 10) * 1e-3;
@@ -19185,7 +19185,7 @@ var dbmWatts = {
   relatedBlogPosts: ["am-modulation-index", "decibels-explained-db-dbm-dbi", "vswr-return-loss"]
 };
 
-// src/lib/calculators/unit-conversion/temperature-converter.ts
+// ../frontend/src/lib/calculators/unit-conversion/temperature-converter.ts
 function calculateTemperatureConverter(inputs) {
   const { celsius } = inputs;
   const fahrenheit = celsius * 9 / 5 + 32;
@@ -19287,7 +19287,7 @@ var temperatureConverter = {
   relatedBlogPosts: ["rtd-temperature"]
 };
 
-// src/lib/calculators/unit-conversion/awg-wire.ts
+// ../frontend/src/lib/calculators/unit-conversion/awg-wire.ts
 function calculateAwgWire(inputs) {
   const { awg } = inputs;
   if (awg < 0 || awg > 40) {
@@ -19404,7 +19404,7 @@ var awgWire = {
   relatedCalculators: ["trace-width-current", "trace-resistance", "ohms-law"]
 };
 
-// src/lib/calculators/unit-conversion/capacitor-code.ts
+// ../frontend/src/lib/calculators/unit-conversion/capacitor-code.ts
 function calculateCapacitorCode(inputs) {
   const { code } = inputs;
   const codeInt = Math.round(code);
@@ -19524,7 +19524,7 @@ var capacitorCode = {
   relatedCalculators: ["capacitor-energy", "rc-time-constant", "lc-resonance"]
 };
 
-// src/lib/calculators/unit-conversion/inductance-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/inductance-units.ts
 function calculateInductanceUnits(inputs) {
   const { henry } = inputs;
   return {
@@ -19578,7 +19578,7 @@ var inductanceUnits = {
   relatedCalculators: ["capacitance-units", "lc-resonance", "frequency-wavelength"]
 };
 
-// src/lib/calculators/unit-conversion/capacitance-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/capacitance-units.ts
 function calculateCapacitanceUnits(inputs) {
   const { farad } = inputs;
   return {
@@ -19633,7 +19633,7 @@ var capacitanceUnits = {
   relatedBlogPosts: ["capacitor-code"]
 };
 
-// src/lib/calculators/unit-conversion/resistance-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/resistance-units.ts
 function calculateResistanceUnits(inputs) {
   const { ohm } = inputs;
   return {
@@ -19687,7 +19687,7 @@ var resistanceUnits = {
   relatedBlogPosts: ["delta-wye-conversion"]
 };
 
-// src/lib/calculators/unit-conversion/current-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/current-units.ts
 function calculateCurrentUnits(inputs) {
   const { ampere } = inputs;
   return {
@@ -19742,7 +19742,7 @@ var currentUnits = {
   relatedBlogPosts: ["4-20ma-transmitter"]
 };
 
-// src/lib/calculators/unit-conversion/voltage-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/voltage-units.ts
 function calculateVoltageUnits(inputs) {
   const { volt } = inputs;
   return {
@@ -19795,7 +19795,7 @@ var voltageUnits = {
   relatedCalculators: ["current-units", "resistance-units", "ohms-law"]
 };
 
-// src/lib/calculators/unit-conversion/time-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/time-units.ts
 function calculateTimeUnits(inputs) {
   const { second } = inputs;
   return {
@@ -19851,7 +19851,7 @@ var timeUnits = {
   relatedCalculators: ["frequency-wavelength", "current-units", "rc-time-constant"]
 };
 
-// src/lib/calculators/unit-conversion/magnetic-flux-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/magnetic-flux-units.ts
 function calculateMagneticFluxUnits(inputs) {
   const { tesla } = inputs;
   return {
@@ -19903,7 +19903,7 @@ var magneticFluxUnits = {
   relatedCalculators: ["hall-effect-sensor", "inductance-units", "current-units"]
 };
 
-// src/lib/calculators/unit-conversion/data-rate-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/data-rate-units.ts
 function calculateDataRateUnits(inputs) {
   const { bps } = inputs;
   return {
@@ -19959,7 +19959,7 @@ var dataRateUnits = {
   relatedCalculators: ["time-units", "uart-baud-rate", "frequency-wavelength"]
 };
 
-// src/lib/calculators/unit-conversion/angle-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/angle-units.ts
 function calculateAngleUnits(inputs) {
   const { degree } = inputs;
   const radian = degree * Math.PI / 180;
@@ -20010,7 +20010,7 @@ var angleUnits = {
   relatedCalculators: ["encoder-resolution", "gear-ratio", "antenna-beamwidth"]
 };
 
-// src/lib/calculators/unit-conversion/energy-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/energy-units.ts
 function calculateEnergyUnits(inputs) {
   const { joule } = inputs;
   return {
@@ -20066,7 +20066,7 @@ var energyUnits = {
   relatedCalculators: ["capacitor-energy", "inductor-energy", "battery-life"]
 };
 
-// src/lib/calculators/unit-conversion/torque-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/torque-units.ts
 function calculateTorqueUnitsConv(inputs) {
   const { nm } = inputs;
   return {
@@ -20123,7 +20123,7 @@ var torqueUnitsConv = {
   relatedCalculators: ["torque-unit-converter", "gear-ratio", "dc-motor-speed"]
 };
 
-// src/lib/calculators/unit-conversion/illuminance-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/illuminance-units.ts
 function calculateIlluminanceUnits(inputs) {
   const { lux } = inputs;
   return {
@@ -20175,7 +20175,7 @@ var illuminanceUnits = {
   relatedCalculators: ["photodiode-transimpedance", "optical-sensor-range", "energy-units"]
 };
 
-// src/lib/calculators/thermal/junction-temperature.ts
+// ../frontend/src/lib/calculators/thermal/junction-temperature.ts
 function calculateJunctionTemperature(inputs) {
   const { pd, ta, thetaJC, thetaCS, thetaSA } = inputs;
   if (pd < 0) {
@@ -20350,7 +20350,7 @@ var junctionTemperature = {
   relatedBlogPosts: ["linear-regulator-dropout", "motor-winding-resistance", "pt100-resistance"]
 };
 
-// src/lib/calculators/thermal/heatsink-selection.ts
+// ../frontend/src/lib/calculators/thermal/heatsink-selection.ts
 function calculateHeatsinkSelection(inputs) {
   const { pd, ta, tjMax, thetaJC, thetaCS } = inputs;
   if (pd <= 0) {
@@ -20488,7 +20488,7 @@ var heatsinkSelection = {
   relatedBlogPosts: ["linear-regulator-dropout"]
 };
 
-// src/lib/calculators/thermal/thermal-via-array.ts
+// ../frontend/src/lib/calculators/thermal/thermal-via-array.ts
 function calculateThermalViaArray(inputs) {
   const { numVias, viaDiameter, platingThickness, pcbThickness, copperThermal, drillFill } = inputs;
   if (numVias <= 0 || viaDiameter <= 0 || pcbThickness <= 0 || copperThermal <= 0) {
@@ -20667,7 +20667,7 @@ var thermalViaArray = {
   relatedCalculators: ["junction-temperature", "heatsink-selection", "via-thermal-resistance"]
 };
 
-// src/lib/calculators/signal/pll-loop-filter.ts
+// ../frontend/src/lib/calculators/signal/pll-loop-filter.ts
 function calculatePllLoopFilter(inputs) {
   const { fRef, loopBW, phaseMargin, kvco, n, icp } = inputs;
   if (loopBW <= 0 || phaseMargin <= 0 || phaseMargin >= 90 || kvco <= 0 || n < 1 || icp <= 0) {
@@ -20871,7 +20871,7 @@ var pllLoopFilter = {
   }
 };
 
-// src/lib/calculators/signal/ber-snr.ts
+// ../frontend/src/lib/calculators/signal/ber-snr.ts
 function erfc(x) {
   if (x < 0) return 2 - erfc(-x);
   if (x === 0) return 1;
@@ -21042,7 +21042,7 @@ var berSnr = {
   relatedBlogPosts: ["am-modulation-index", "ber-vs-snr-digital-communications"]
 };
 
-// src/lib/calculators/signal/quantization-noise.ts
+// ../frontend/src/lib/calculators/signal/quantization-noise.ts
 function calculateQuantizationNoise(inputs) {
   const { bits, vref, sampleRate } = inputs;
   if (bits < 1 || vref <= 0 || sampleRate <= 0) {
@@ -21203,7 +21203,7 @@ var quantizationNoise = {
   relatedBlogPosts: ["ber-snr", "ber-vs-snr-digital-communications"]
 };
 
-// src/lib/calculators/rf/fresnel-zone.ts
+// ../frontend/src/lib/calculators/rf/fresnel-zone.ts
 function calculateFresnelZone(inputs) {
   const { frequency, distance, n } = inputs;
   if (frequency <= 0 || distance <= 0 || n < 1) {
@@ -21333,7 +21333,7 @@ var fresnelZone = {
   }
 };
 
-// src/lib/calculators/rf/power-density.ts
+// ../frontend/src/lib/calculators/rf/power-density.ts
 function calculatePowerDensity(inputs) {
   const { eirp, distance } = inputs;
   if (distance <= 0) {
@@ -21472,7 +21472,7 @@ var powerDensity = {
   }
 };
 
-// src/lib/calculators/rf/balun-transformer.ts
+// ../frontend/src/lib/calculators/rf/balun-transformer.ts
 function calculateBalunTransformer(inputs) {
   const { zSource, zLoad } = inputs;
   if (zSource <= 0 || zLoad <= 0) {
@@ -21617,7 +21617,7 @@ var balunTransformer = {
   }
 };
 
-// src/lib/calculators/rf/link-margin.ts
+// ../frontend/src/lib/calculators/rf/link-margin.ts
 function calculateLinkMargin(inputs) {
   const { txPower, txGain, rxGain, distance, frequency, sensitivity, cableLoss } = inputs;
   if (distance <= 0 || frequency <= 0) {
@@ -21803,7 +21803,7 @@ var linkMargin = {
   }
 };
 
-// src/lib/calculators/rf/mixer-spur-calculator.ts
+// ../frontend/src/lib/calculators/rf/mixer-spur-calculator.ts
 function calculateMixerSpurs(inputs) {
   const { rfFreq, loFreq, maxOrder } = inputs;
   const ifLow = Math.abs(loFreq - rfFreq);
@@ -21994,7 +21994,7 @@ var mixerSpurCalculator = {
   }
 };
 
-// src/lib/calculators/general/schmitt-trigger.ts
+// ../frontend/src/lib/calculators/general/schmitt-trigger.ts
 function calculateSchmittTrigger(inputs) {
   const { vcc, r1, r2, r3 } = inputs;
   if (vcc <= 0) {
@@ -22126,7 +22126,7 @@ var schmittTrigger = {
   ]
 };
 
-// src/lib/calculators/general/crystal-load-capacitance.ts
+// ../frontend/src/lib/calculators/general/crystal-load-capacitance.ts
 function calculateCrystalLoadCapacitance(inputs) {
   const { cl, cstray, c1, c2 } = inputs;
   if (c1 <= 0 || c2 <= 0) {
@@ -22250,7 +22250,7 @@ var crystalLoadCapacitance = {
   ]
 };
 
-// src/lib/calculators/general/opamp-bandwidth.ts
+// ../frontend/src/lib/calculators/general/opamp-bandwidth.ts
 function calculateOpampBandwidth(inputs) {
   const { gbw, gain, phase_margin } = inputs;
   if (gbw <= 0) {
@@ -22363,7 +22363,7 @@ var opampBandwidth = {
   relatedBlogPosts: ["filter-design-butterworth-chebyshev"]
 };
 
-// src/lib/calculators/general/lm317-resistors.ts
+// ../frontend/src/lib/calculators/general/lm317-resistors.ts
 function calculateLm317Resistors(inputs) {
   const { vout, r1, iadj } = inputs;
   const VREF = 1.25;
@@ -22494,7 +22494,7 @@ var lm317Resistors = {
   ]
 };
 
-// src/lib/calculators/general/voltage-regulator-dropout.ts
+// ../frontend/src/lib/calculators/general/voltage-regulator-dropout.ts
 function calculateVoltageRegulatorDropout(inputs) {
   const { vout, iload, vdropout, rds_on, vin } = inputs;
   if (vout <= 0) {
@@ -22634,7 +22634,7 @@ var voltageRegulatorDropout = {
   relatedBlogPosts: ["linear-regulator-dropout", "solar-panel-sizing"]
 };
 
-// src/lib/calculators/power/transformer-turns-ratio.ts
+// ../frontend/src/lib/calculators/power/transformer-turns-ratio.ts
 function calculateTransformerTurnsRatio(inputs) {
   const { vPrimary, vSecondary, iPrimary, efficiency } = inputs;
   if (vPrimary <= 0 || vSecondary <= 0) {
@@ -22768,7 +22768,7 @@ var transformerTurnsRatio = {
   relatedBlogPosts: ["audio-transformer", "magnetics-optimizer-transformer-design"]
 };
 
-// src/lib/calculators/power/flyback-converter.ts
+// ../frontend/src/lib/calculators/power/flyback-converter.ts
 function calculateFlybackConverter(inputs) {
   const { vin, vout, iout, efficiency, fsw, dutyCycle } = inputs;
   if (vin <= 0 || vout <= 0) {
@@ -22928,7 +22928,7 @@ var flybackConverter = {
   relatedBlogPosts: ["magnetics-optimizer-transformer-design"]
 };
 
-// src/lib/calculators/power/supercapacitor-backup.ts
+// ../frontend/src/lib/calculators/power/supercapacitor-backup.ts
 function calculateSupercapacitorBackup(inputs) {
   const { capacitance, vMax, vMin, iLoad } = inputs;
   if (capacitance <= 0) {
@@ -23065,7 +23065,7 @@ var supercapacitorBackup = {
   relatedCalculators: ["battery-life", "battery-internal-resistance", "capacitor-energy"]
 };
 
-// src/lib/calculators/power/battery-internal-resistance.ts
+// ../frontend/src/lib/calculators/power/battery-internal-resistance.ts
 function calculateBatteryInternalResistance(inputs) {
   const { vocv, vLoad, iLoad, temperature } = inputs;
   if (vocv <= 0) {
@@ -23198,7 +23198,7 @@ var batteryInternalResistance = {
   relatedBlogPosts: ["battery-runtime-motor"]
 };
 
-// src/lib/calculators/protocol/i2s-timing.ts
+// ../frontend/src/lib/calculators/protocol/i2s-timing.ts
 function calculateI2sTiming(inputs) {
   const { sampleRate, bitDepth, channels } = inputs;
   if (sampleRate <= 0) {
@@ -23323,7 +23323,7 @@ var i2sTiming = {
   relatedCalculators: ["spi-timing", "uart-baud-rate", "adc-snr"]
 };
 
-// src/lib/calculators/protocol/lin-bus-timing.ts
+// ../frontend/src/lib/calculators/protocol/lin-bus-timing.ts
 function calculateLinBusTiming(inputs) {
   const { baudRate, dataBytes } = inputs;
   if (baudRate <= 0) {
@@ -23442,7 +23442,7 @@ var linBusTiming = {
   relatedCalculators: ["can-bus-timing", "uart-baud-rate", "modbus-frame-timing"]
 };
 
-// src/lib/calculators/protocol/modbus-frame-timing.ts
+// ../frontend/src/lib/calculators/protocol/modbus-frame-timing.ts
 function calculateModbusFrameTiming(inputs) {
   const { baudRate, dataBytes, parityBits, stopBits } = inputs;
   if (baudRate <= 0) {
@@ -23573,7 +23573,7 @@ var modbusFrameTiming = {
   relatedCalculators: ["uart-baud-rate", "lin-bus-timing", "rs485-termination"]
 };
 
-// src/lib/calculators/protocol/ethernet-cable.ts
+// ../frontend/src/lib/calculators/protocol/ethernet-cable.ts
 function calculateEthernetCable(inputs) {
   const { cableType, length, speed } = inputs;
   const attTable = {
@@ -23718,7 +23718,7 @@ var ethernetCable = {
   relatedCalculators: ["rs485-termination", "usb-termination", "can-bus-timing"]
 };
 
-// src/lib/calculators/pcb/power-plane-impedance.ts
+// ../frontend/src/lib/calculators/pcb/power-plane-impedance.ts
 function calculatePowerPlaneImpedance(inputs) {
   const { length, width, dielectric, er, frequency } = inputs;
   if (length <= 0 || width <= 0) {
@@ -23858,7 +23858,7 @@ var powerPlaneImpedance = {
   relatedBlogPosts: ["pdn-impedance-analyzer", "trace-width-current"]
 };
 
-// src/lib/calculators/pcb/via-stub-resonance.ts
+// ../frontend/src/lib/calculators/pcb/via-stub-resonance.ts
 function calculateViaStubResonance(inputs) {
   const { pcbThickness, layer, totalLayers, er } = inputs;
   if (pcbThickness <= 0) {
@@ -23881,7 +23881,7 @@ function calculateViaStubResonance(inputs) {
       }
     };
   }
-  const c0 = 3e8;
+  const c0 = 299792458;
   const vp = c0 / Math.sqrt(er);
   const resonantFreq = vp / (4 * stubLength * 1e-3) / 1e9;
   const notchDepth = -20;
@@ -24008,7 +24008,7 @@ var viaStubResonance = {
   relatedBlogPosts: ["eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"]
 };
 
-// src/lib/calculators/pcb/solder-paste-volume.ts
+// ../frontend/src/lib/calculators/pcb/solder-paste-volume.ts
 function calculateSolderPasteVolume(inputs) {
   const { padLength, padWidth, stencilThickness, apertureReduction } = inputs;
   if (padLength <= 0 || padWidth <= 0) {
@@ -24148,7 +24148,7 @@ var solderPasteVolume = {
   relatedBlogPosts: ["pcb-trace-width-current-capacity", "pcb-stackup-controlled-impedance"]
 };
 
-// src/lib/calculators/emc/emi-filter-lc.ts
+// ../frontend/src/lib/calculators/emc/emi-filter-lc.ts
 function calculateEmiFilterLc(inputs) {
   const { fc, attenuationNeeded, zSource, zLoad } = inputs;
   if (fc <= 0) {
@@ -24307,7 +24307,7 @@ var emiFilterLc = {
   relatedBlogPosts: ["cable-shield-effectiveness", "emc-fcc-ce-testing-guide", "emi-filter-design-cispr-compliance"]
 };
 
-// src/lib/calculators/emc/esd-tvs-diode.ts
+// ../frontend/src/lib/calculators/emc/esd-tvs-diode.ts
 function calculateEsdTvsDiode(inputs) {
   const { vwm, esd_level, clampMultiplier } = inputs;
   if (vwm <= 0) {
@@ -24462,7 +24462,7 @@ var esdTvsDiode = {
   relatedBlogPosts: ["esd-clamp-selection"]
 };
 
-// src/lib/calculators/emc/common-mode-choke.ts
+// ../frontend/src/lib/calculators/emc/common-mode-choke.ts
 function calculateCommonModeChoke(inputs) {
   const { inductance, frequency, dcr } = inputs;
   const inductanceH = inductance * 1e-6;
@@ -24502,7 +24502,7 @@ var commonModeChoke = {
   relatedBlogPosts: ["emi-radiated-emissions-pcb-fcc-compliance"]
 };
 
-// src/lib/calculators/emc/decoupling-capacitor-emc.ts
+// ../frontend/src/lib/calculators/emc/decoupling-capacitor-emc.ts
 var decouplingCapacitorEmc = {
   slug: "decoupling-capacitor-emc",
   title: "Decoupling Capacitor EMC Selection",
@@ -24559,7 +24559,7 @@ var decouplingCapacitorEmc = {
   relatedBlogPosts: ["emi-radiated-emissions-pcb-fcc-compliance"]
 };
 
-// src/lib/calculators/emc/esd-clamp-selection.ts
+// ../frontend/src/lib/calculators/emc/esd-clamp-selection.ts
 function calculateEsdClampSelection(inputs) {
   const { esdVoltage, clampVoltage, lineImpedance } = inputs;
   if (lineImpedance <= 0) {
@@ -24605,7 +24605,7 @@ var esdClampSelection = {
   relatedCalculators: ["esd-tvs-diode", "shielding-effectiveness", "emi-margin-budget"]
 };
 
-// src/lib/calculators/emc/radiated-emission-estimate.ts
+// ../frontend/src/lib/calculators/emc/radiated-emission-estimate.ts
 var radiatedEmissionEstimate = {
   slug: "radiated-emission-estimate",
   title: "Radiated Emission Estimate",
@@ -24654,7 +24654,7 @@ var radiatedEmissionEstimate = {
   relatedBlogPosts: ["chassis-resonance", "emc-fcc-ce-testing-guide", "emi-radiated-emissions-pcb-fcc-compliance"]
 };
 
-// src/lib/calculators/emc/ground-plane-impedance.ts
+// ../frontend/src/lib/calculators/emc/ground-plane-impedance.ts
 function calculateGroundPlaneImpedance(inputs) {
   const { length, width, thickness, frequency, conductivity } = inputs;
   const resistivity = 1 / (conductivity * 1e6);
@@ -24727,7 +24727,7 @@ var groundPlaneImpedance = {
   relatedCalculators: ["radiated-emission-estimate", "shielding-effectiveness", "emi-margin-budget"]
 };
 
-// src/lib/calculators/emc/pcb-crosstalk-emc.ts
+// ../frontend/src/lib/calculators/emc/pcb-crosstalk-emc.ts
 function calculatePcbCrosstalkEmc(inputs) {
   const { aggressorVoltage, mutualCapacitance, mutualInductance, frequency, lineImpedance } = inputs;
   const freqHz = frequency * 1e6;
@@ -24774,7 +24774,7 @@ var pcbCrosstalkEmc = {
   relatedCalculators: ["ground-plane-impedance", "radiated-emission-estimate", "shielding-effectiveness"]
 };
 
-// src/lib/calculators/emc/power-supply-ripple-filter.ts
+// ../frontend/src/lib/calculators/emc/power-supply-ripple-filter.ts
 var powerSupplyRippleFilter = {
   slug: "power-supply-ripple-filter",
   title: "Power Supply Ripple Filter",
@@ -24814,7 +24814,7 @@ var powerSupplyRippleFilter = {
   relatedBlogPosts: ["linear-regulator-dropout", "ohms-law", "solar-panel-sizing"]
 };
 
-// src/lib/calculators/emc/cable-shield-effectiveness.ts
+// ../frontend/src/lib/calculators/emc/cable-shield-effectiveness.ts
 var cableShieldEffectiveness = {
   slug: "cable-shield-effectiveness",
   title: "Cable Shield Effectiveness",
@@ -24849,7 +24849,7 @@ var cableShieldEffectiveness = {
   relatedBlogPosts: ["emi-filter-design-cispr-compliance"]
 };
 
-// src/lib/calculators/emc/chassis-resonance.ts
+// ../frontend/src/lib/calculators/emc/chassis-resonance.ts
 var chassisResonance = {
   slug: "chassis-resonance",
   title: "Chassis Resonant Frequency",
@@ -24889,7 +24889,7 @@ var chassisResonance = {
   relatedCalculators: ["shielding-effectiveness", "radiated-emission-estimate", "ground-plane-impedance"]
 };
 
-// src/lib/calculators/emc/emi-margin-budget.ts
+// ../frontend/src/lib/calculators/emc/emi-margin-budget.ts
 function calculateEmiMarginBudget(inputs) {
   const { measuredLevel, limitLevel, measurementUncertainty, safetyMargin } = inputs;
   const rawMargin = limitLevel - measuredLevel;
@@ -24929,7 +24929,7 @@ var emiMarginBudget = {
   relatedBlogPosts: ["emc-fcc-ce-testing-guide"]
 };
 
-// src/lib/calculators/emc/conducted-emissions-filter.ts
+// ../frontend/src/lib/calculators/emc/conducted-emissions-filter.ts
 function calculateConductedEmissionsFilter(inputs) {
   const { emissionLevel, frequency, targetAttenuation, loadImpedance } = inputs;
   if (targetAttenuation <= 0) {
@@ -24984,7 +24984,7 @@ var conductedEmissionsFilter = {
   }
 };
 
-// src/lib/calculators/emc/differential-mode-filter.ts
+// ../frontend/src/lib/calculators/emc/differential-mode-filter.ts
 function calculateDifferentialModeFilter(inputs) {
   const { inductance, capacitance, frequency } = inputs;
   const lH = inductance * 1e-6;
@@ -25023,7 +25023,7 @@ var differentialModeFilter = {
   relatedCalculators: ["common-mode-choke", "conducted-emissions-filter", "emi-filter-lc"]
 };
 
-// src/lib/calculators/audio/audio-power-amplifier.ts
+// ../frontend/src/lib/calculators/audio/audio-power-amplifier.ts
 function calculateAudioPowerAmplifier(inputs) {
   const { vcc, rl, efficiency, gain } = inputs;
   if (vcc <= 0) {
@@ -25178,7 +25178,7 @@ var audioPowerAmplifier = {
   relatedBlogPosts: ["audio-amplifier-design-guide", "class-d-efficiency", "room-modes"]
 };
 
-// src/lib/calculators/audio/speaker-crossover.ts
+// ../frontend/src/lib/calculators/audio/speaker-crossover.ts
 function calculateSpeakerCrossover(inputs) {
   const { crossoverFreq, wooferImpedance, tweeterImpedance, order } = inputs;
   if (crossoverFreq <= 0) {
@@ -25350,7 +25350,7 @@ var speakerCrossover = {
   }
 };
 
-// src/lib/calculators/audio/room-modes.ts
+// ../frontend/src/lib/calculators/audio/room-modes.ts
 function calculateRoomModes(inputs) {
   const { length, width, height, speedOfSound, rt60 } = inputs;
   if (length <= 0 || width <= 0 || height <= 0) {
@@ -25399,7 +25399,7 @@ var roomModes = {
   relatedBlogPosts: ["speaker-crossover"]
 };
 
-// src/lib/calculators/audio/speaker-sensitivity.ts
+// ../frontend/src/lib/calculators/audio/speaker-sensitivity.ts
 function calculateSpeakerSensitivity(inputs) {
   const { sensitivity, power, distance } = inputs;
   if (power <= 0) {
@@ -25443,7 +25443,7 @@ var speakerSensitivity = {
   relatedBlogPosts: ["audio-amplifier-design-guide", "decibels-explained-db-dbm-dbi"]
 };
 
-// src/lib/calculators/audio/headphone-power.ts
+// ../frontend/src/lib/calculators/audio/headphone-power.ts
 function calculateHeadphonePower(inputs) {
   const { impedance, sensitivity, targetSpl } = inputs;
   if (impedance <= 0) {
@@ -25500,7 +25500,7 @@ var headphonePower = {
   relatedBlogPosts: ["audio-amplifier-design-guide"]
 };
 
-// src/lib/calculators/audio/audio-snr.ts
+// ../frontend/src/lib/calculators/audio/audio-snr.ts
 function calculateAudioSnr(inputs) {
   const { signalLevel, noiseFloor } = inputs;
   const snr = signalLevel - noiseFloor;
@@ -25540,7 +25540,7 @@ var audioSnr = {
   relatedBlogPosts: ["audio-amplifier-design-guide", "decibels-explained-db-dbm-dbi"]
 };
 
-// src/lib/calculators/audio/op-amp-slew-rate.ts
+// ../frontend/src/lib/calculators/audio/op-amp-slew-rate.ts
 function calculateOpAmpSlewRate(inputs) {
   const { slewRate, amplitude, frequency } = inputs;
   if (slewRate <= 0 || amplitude <= 0 || frequency <= 0) {
@@ -25581,7 +25581,7 @@ var opAmpSlewRate = {
   relatedBlogPosts: ["opamp-gain"]
 };
 
-// src/lib/calculators/audio/audio-transformer.ts
+// ../frontend/src/lib/calculators/audio/audio-transformer.ts
 function calculateAudioTransformer(inputs) {
   const { primaryImpedance, secondaryImpedance, primaryVoltage, primaryCurrent } = inputs;
   if (primaryImpedance <= 0 || secondaryImpedance <= 0) {
@@ -25626,7 +25626,7 @@ var audioTransformer = {
   relatedBlogPosts: ["transformer-turns-ratio"]
 };
 
-// src/lib/calculators/audio/cable-capacitance-rolloff.ts
+// ../frontend/src/lib/calculators/audio/cable-capacitance-rolloff.ts
 function calculateCableCapacitanceRolloff(inputs) {
   const { sourceImpedance, cableCapacitancePf, cableLengthM } = inputs;
   if (sourceImpedance <= 0 || cableCapacitancePf <= 0 || cableLengthM <= 0) {
@@ -25680,7 +25680,7 @@ var cableCapacitanceRolloff = {
   relatedBlogPosts: ["capacitive-proximity"]
 };
 
-// src/lib/calculators/audio/subwoofer-box.ts
+// ../frontend/src/lib/calculators/audio/subwoofer-box.ts
 function calculateSubwooferBox(inputs) {
   const { vas, qts, fs } = inputs;
   if (vas <= 0 || qts <= 0 || fs <= 0) {
@@ -25735,7 +25735,7 @@ var subwooferBox = {
   relatedBlogPosts: ["room-modes"]
 };
 
-// src/lib/calculators/audio/tweeter-capacitor.ts
+// ../frontend/src/lib/calculators/audio/tweeter-capacitor.ts
 function calculateTweeterCapacitor(inputs) {
   const { tweetImpedance, crossoverFreq } = inputs;
   if (tweetImpedance <= 0 || crossoverFreq <= 0) {
@@ -25794,7 +25794,7 @@ var tweeterCapacitor = {
   }
 };
 
-// src/lib/calculators/audio/class-d-efficiency.ts
+// ../frontend/src/lib/calculators/audio/class-d-efficiency.ts
 function calculateClassDEfficiency(inputs) {
   const { outputPower, supplyVoltage, loadImpedance, rdson, mosfetCount, quiescentCurrent } = inputs;
   if (outputPower <= 0 || supplyVoltage <= 0) {
@@ -25847,7 +25847,7 @@ var classDEfficiency = {
   relatedBlogPosts: ["audio-amplifier-design-guide"]
 };
 
-// src/lib/calculators/audio/audio-adc-snr.ts
+// ../frontend/src/lib/calculators/audio/audio-adc-snr.ts
 function calculateAudioAdcSnr(inputs) {
   const { bitDepth, oversamplingRatio } = inputs;
   if (bitDepth < 1 || oversamplingRatio < 1) {
@@ -25915,7 +25915,7 @@ var audioAdcSnr = {
   relatedCalculators: ["audio-snr", "amplifier-clipping"]
 };
 
-// src/lib/calculators/audio/equalizer-q-factor.ts
+// ../frontend/src/lib/calculators/audio/equalizer-q-factor.ts
 function calculateEqualizerQFactor(inputs) {
   const { centerFreq, bandwidth } = inputs;
   if (centerFreq <= 0 || bandwidth <= 0) {
@@ -25958,7 +25958,7 @@ var equalizerQFactor = {
   relatedCalculators: ["audio-snr", "op-amp-slew-rate", "cable-capacitance-rolloff"]
 };
 
-// src/lib/calculators/audio/amplifier-clipping.ts
+// ../frontend/src/lib/calculators/audio/amplifier-clipping.ts
 function calculateAmplifierClipping(inputs) {
   const { supplyVoltage, loadImpedance, headroom } = inputs;
   if (supplyVoltage <= 0 || loadImpedance <= 0) {
@@ -26012,7 +26012,7 @@ var amplifierClipping = {
   relatedBlogPosts: ["audio-amplifier-design-guide", "db-converter", "opamp-gain"]
 };
 
-// src/lib/calculators/audio/audio-delay-time.ts
+// ../frontend/src/lib/calculators/audio/audio-delay-time.ts
 function calculateAudioDelayTime(inputs) {
   const { bpm, noteValue, speedOfSound, distance } = inputs;
   if (bpm <= 0 || noteValue <= 0 || speedOfSound <= 0) {
@@ -26067,7 +26067,7 @@ var audioDelayTime = {
   relatedCalculators: ["room-modes", "speaker-sensitivity", "audio-snr"]
 };
 
-// src/lib/calculators/audio/power-amplifier-gain.ts
+// ../frontend/src/lib/calculators/audio/power-amplifier-gain.ts
 function calculatePowerAmplifierGain(inputs) {
   const { inputVoltage, outputVoltage, inputPower, outputPower } = inputs;
   if (inputVoltage <= 0 || outputVoltage <= 0) {
@@ -26115,7 +26115,7 @@ var powerAmplifierGain = {
   relatedBlogPosts: ["audio-amplifier-design-guide", "rf-cascade-noise-figure-yield-analysis"]
 };
 
-// src/lib/calculators/rf/reactance-calculator.ts
+// ../frontend/src/lib/calculators/rf/reactance-calculator.ts
 function calculateReactance(inputs) {
   const { frequency, inductance, capacitance } = inputs;
   if (frequency <= 0) {
@@ -26289,7 +26289,7 @@ var reactanceCalculator = {
   }
 };
 
-// src/lib/calculators/general/current-divider.ts
+// ../frontend/src/lib/calculators/general/current-divider.ts
 function calculateCurrentDivider(inputs) {
   const { totalCurrent, r1, r2 } = inputs;
   if (r1 <= 0 || r2 <= 0) {
@@ -26481,7 +26481,7 @@ var currentDivider = {
   ]
 };
 
-// src/lib/calculators/general/delta-wye-conversion.ts
+// ../frontend/src/lib/calculators/general/delta-wye-conversion.ts
 function calculateDeltaWye(inputs) {
   const { ra, rb, rc, conversionDir } = inputs;
   if (ra <= 0 || rb <= 0 || rc <= 0) {
@@ -26708,7 +26708,7 @@ var deltaWyeConversion = {
   ]
 };
 
-// src/lib/calculators/rf/doppler-shift.ts
+// ../frontend/src/lib/calculators/rf/doppler-shift.ts
 var c = 299792458;
 function calculateDopplerShift(inputs) {
   const { frequency, velocity, angle, velocityUnit } = inputs;
@@ -26909,7 +26909,7 @@ var dopplerShift = {
   }
 };
 
-// src/lib/calculators/audio/rt60-reverberation.ts
+// ../frontend/src/lib/calculators/audio/rt60-reverberation.ts
 function calculateRT60(inputs) {
   const { length, width, height, avgAbsorption } = inputs;
   if (length <= 0 || width <= 0 || height <= 0) {
@@ -26983,7 +26983,7 @@ var rt60Reverberation = {
   relatedBlogPosts: ["speaker-crossover"]
 };
 
-// src/lib/calculators/motor/vfd-motor-speed.ts
+// ../frontend/src/lib/calculators/motor/vfd-motor-speed.ts
 function calculateVfdMotorSpeed(inputs) {
   const { poles, lineFrequency, driveFrequency, ratedSlip } = inputs;
   if (poles < 2 || poles % 2 !== 0) {
@@ -27060,7 +27060,7 @@ var vfdMotorSpeed = {
   relatedCalculators: ["induction-motor-slip", "motor-efficiency", "dc-motor-speed", "bldc-motor"]
 };
 
-// src/lib/calculators/power/voltage-drop.ts
+// ../frontend/src/lib/calculators/power/voltage-drop.ts
 var AWG_RESISTANCE = {
   0: 0.3224,
   // 0 AWG
@@ -27150,7 +27150,7 @@ var voltageDrop = {
   relatedCalculators: ["led-resistor", "voltage-divider", "trace-width-current", "solar-panel-sizing"]
 };
 
-// src/lib/calculators/rf/coplanar-waveguide.ts
+// ../frontend/src/lib/calculators/rf/coplanar-waveguide.ts
 var C_MM_PER_PS = 0.299792458;
 var ETA_02 = 376.730313412;
 var CPW_SIDEWALL_A2 = 0.195008;
@@ -27408,7 +27408,7 @@ var coplanarWaveguide = {
   ]
 };
 
-// src/lib/calculators/pcb/asymmetric-stripline.ts
+// ../frontend/src/lib/calculators/pcb/asymmetric-stripline.ts
 var C_MM_PER_PS2 = 0.299792458;
 function calculateAsymmetricStripline(inputs) {
   const { traceWidth, heightToNearPlane, heightToFarPlane, copperThickness, dielectricConst } = inputs;
@@ -27619,7 +27619,7 @@ var asymmetricStriplineCalc = {
   ]
 };
 
-// src/lib/calculators/pcb/dual-stripline.ts
+// ../frontend/src/lib/calculators/pcb/dual-stripline.ts
 var C_MM_PER_PS3 = 0.299792458;
 function calculateDualStripline(inputs) {
   const {
@@ -27870,7 +27870,7 @@ var dualStripline = {
   ]
 };
 
-// src/lib/calculators/pcb/broadside-coupled-pair.ts
+// ../frontend/src/lib/calculators/pcb/broadside-coupled-pair.ts
 var C_MM_PER_PS4 = 0.299792458;
 function calculateBroadsideCoupledPair(inputs) {
   const { shielded, traceWidth, traceSeparation, planeSpacing, copperThickness, dielectricConst } = inputs;
@@ -28137,7 +28137,7 @@ var broadsideCoupledPair = {
   ]
 };
 
-// src/lib/calculators/signal/rise-time-bandwidth.ts
+// ../frontend/src/lib/calculators/signal/rise-time-bandwidth.ts
 var LN9_OVER_2PI = Math.log(9) / (2 * Math.PI);
 var RATIO_20_80_TO_10_90 = Math.log(9) / Math.log(4);
 function calculateRiseTimeBandwidth(inputs) {
@@ -28331,7 +28331,7 @@ var riseTimeBandwidth = {
   ]
 };
 
-// src/lib/calculators/pcb/critical-trace-length.ts
+// ../frontend/src/lib/calculators/pcb/critical-trace-length.ts
 var C_MM_PER_PS5 = 0.299792458;
 function calculateCriticalTraceLength(inputs) {
   const { riseTime, dielectricConst, traceLength, criterion, traceType } = inputs;
@@ -28546,7 +28546,7 @@ var criticalTraceLength = {
   ]
 };
 
-// src/lib/calculators/pcb/fusing-current.ts
+// ../frontend/src/lib/calculators/pcb/fusing-current.ts
 var COPPER_MELTING_C = 1083;
 var COPPER_INFERRED_ZERO_C = 234;
 var ONDERDONK_CONSTANT = 33;
@@ -28780,7 +28780,7 @@ var fusingCurrent = {
   ]
 };
 
-// src/lib/calculators/unit-conversion/length-units.ts
+// ../frontend/src/lib/calculators/unit-conversion/length-units.ts
 var MM_PER_INCH = 25.4;
 var MM_PER_MIL = MM_PER_INCH / 1e3;
 var MM_PER_OZ_COPPER = 0.0348;
@@ -28876,7 +28876,7 @@ var lengthUnits = {
   ]
 };
 
-// src/lib/calculators/pcb/padstack-annular-ring.ts
+// ../frontend/src/lib/calculators/pcb/padstack-annular-ring.ts
 function calculatePadstack(inputs) {
   const { drillDiameter, platingThickness, fabricationAllowance, ipcClass, boardThickness } = inputs;
   const platingMm = platingThickness / 1e3;
@@ -29028,7 +29028,7 @@ var padstackAnnularRing = {
   ]
 };
 
-// src/lib/calculators/pcb/bga-land-pad.ts
+// ../frontend/src/lib/calculators/pcb/bga-land-pad.ts
 function calculateBgaLand(inputs) {
   const { ballPitch, ballDiameter, densityLevel, solderMaskDefined, viaInPad } = inputs;
   const factor = densityLevel === 0 ? 1 : densityLevel === 1 ? 0.9 : 0.8;
@@ -29180,7 +29180,7 @@ var bgaLandPad = {
   ]
 };
 
-// src/lib/calculators/pcb/minimum-conductor-spacing.ts
+// ../frontend/src/lib/calculators/pcb/minimum-conductor-spacing.ts
 var VOLTAGE_BP = [15, 30, 50, 100, 150, 170, 250, 300, 500];
 var SPACING_TABLE = {
   B1: [0.05, 0.05, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.25],
@@ -29318,7 +29318,7 @@ var minimumConductorSpacing = {
   ]
 };
 
-// src/lib/calculators/pcb/planar-spiral-inductor.ts
+// ../frontend/src/lib/calculators/pcb/planar-spiral-inductor.ts
 var WHEELER_K = {
   square: [2.34, 2.75],
   hexagonal: [2.33, 3.82],
@@ -29499,7 +29499,7 @@ var planarSpiralInductor = {
   ]
 };
 
-// src/lib/calculators/pcb/embedded-resistor.ts
+// ../frontend/src/lib/calculators/pcb/embedded-resistor.ts
 var MATERIALS = {
   0: { name: "NiP (Ohmega-Ply)", sheetR: 25, tolerance: 10, powerDensity: 25 },
   1: { name: "NiP 100\u03A9", sheetR: 100, tolerance: 10, powerDensity: 25 },
@@ -29652,7 +29652,7 @@ var embeddedResistor = {
   ]
 };
 
-// src/lib/calculators/pcb/via-voltage-drop.ts
+// ../frontend/src/lib/calculators/pcb/via-voltage-drop.ts
 function calculateViaVoltageDrop(inputs) {
   const { drillDiameter, platingThickness, viaLength, current, temperature, numVias } = inputs;
   const rho20 = 1724e-11;
@@ -29811,7 +29811,7 @@ var viaVoltageDrop = {
   ]
 };
 
-// src/lib/calculators/unit-conversion/rectangular-polar.ts
+// ../frontend/src/lib/calculators/unit-conversion/rectangular-polar.ts
 var DEG_PER_RAD = 180 / Math.PI;
 function calculateRectangularPolar(inputs) {
   const { real, imaginary, magnitude, angleDeg } = inputs;
@@ -29960,7 +29960,7 @@ var rectangularPolar = {
   ]
 };
 
-// src/lib/calculators/general/frequency-ppm-tolerance.ts
+// ../frontend/src/lib/calculators/general/frequency-ppm-tolerance.ts
 var SECONDS_PER_DAY = 86400;
 var MINUTES_PER_YEAR = 525600;
 function calculateFrequencyPpmTolerance(inputs) {
@@ -30174,7 +30174,7 @@ var frequencyPpmTolerance = {
   ]
 };
 
-// src/lib/calculators/pcb/effective-dielectric-constant.ts
+// ../frontend/src/lib/calculators/pcb/effective-dielectric-constant.ts
 var C_MM_PER_PS6 = 0.299792458;
 var MU_0 = 4 * Math.PI * 1e-7;
 function calculateEffectiveDielectricConstant(inputs) {
@@ -30393,7 +30393,7 @@ var effectiveDielectricConstant = {
   ]
 };
 
-// src/lib/calculators/pcb/via-step-response.ts
+// ../frontend/src/lib/calculators/pcb/via-step-response.ts
 function calculateViaStepResponse(inputs) {
   const {
     viaLength,
@@ -30674,7 +30674,7 @@ var viaStepResponse = {
   ]
 };
 
-// src/lib/calculators/pcb/microvia-current-capacity.ts
+// ../frontend/src/lib/calculators/pcb/microvia-current-capacity.ts
 var RHO_20 = 1724e-11;
 var ALPHA_CU = 393e-5;
 var K_CU = 385;
@@ -30948,7 +30948,7 @@ var microviaCurrentCapacity = {
   ]
 };
 
-// src/lib/calculators/pcb/edge-coupled-internal-symmetric.ts
+// ../frontend/src/lib/calculators/pcb/edge-coupled-internal-symmetric.ts
 var C_MM_PER_PS7 = 0.299792458;
 function calculateEdgeCoupledInternalSymmetric(inputs) {
   const { traceWidth, traceSpacing, planeSpacing, copperThickness, dielectricConst } = inputs;
@@ -31151,7 +31151,7 @@ var edgeCoupledInternalSymmetric = {
   ]
 };
 
-// src/lib/calculators/pcb/edge-coupled-internal-asymmetric.ts
+// ../frontend/src/lib/calculators/pcb/edge-coupled-internal-asymmetric.ts
 var C_MM_PER_PS8 = 0.299792458;
 function calculateEdgeCoupledInternalAsymmetric(inputs) {
   const { traceWidth, traceSpacing, heightBelow, heightAbove, copperThickness, dielectricConst } = inputs;
@@ -31358,7 +31358,7 @@ var edgeCoupledInternalAsymmetric = {
   ]
 };
 
-// src/lib/calculators/pcb/edge-coupled-embedded.ts
+// ../frontend/src/lib/calculators/pcb/edge-coupled-embedded.ts
 var C_MM_PER_PS9 = 0.299792458;
 function calculateEdgeCoupledEmbedded(inputs) {
   const {
@@ -31628,7 +31628,7 @@ var edgeCoupledEmbedded = {
   ]
 };
 
-// src/lib/calculators/pcb/differential-via.ts
+// ../frontend/src/lib/calculators/pcb/differential-via.ts
 var C = 299792458;
 var ETA_03 = 376.730313412;
 var MU_02 = 4e-7 * Math.PI;
@@ -31959,7 +31959,7 @@ var differentialVia = {
   ]
 };
 
-// src/lib/calculators/pcb/skin-depth-percentage.ts
+// ../frontend/src/lib/calculators/pcb/skin-depth-percentage.ts
 var MU_03 = 4e-7 * Math.PI;
 var RHO_CU_20C = 1724e-11;
 var ALPHA_CU2 = 393e-5;
@@ -32141,7 +32141,7 @@ var skinDepthPercentage = {
   ]
 };
 
-// src/lib/calculators/pcb/conductor-to-pad-width.ts
+// ../frontend/src/lib/calculators/pcb/conductor-to-pad-width.ts
 function calculateConductorToPadWidth(inputs) {
   const { padDiameter, neighbourPitch, minClearance, conductorCount } = inputs;
   if (padDiameter <= 0 || neighbourPitch <= 0 || minClearance <= 0) {
@@ -32326,7 +32326,7 @@ var conductorToPadWidth = {
   ]
 };
 
-// src/lib/calculators/pcb/bga-breakout-width.ts
+// ../frontend/src/lib/calculators/pcb/bga-breakout-width.ts
 function calculateBgaBreakoutWidth(inputs) {
   const { ballPitch, landDiameter, minClearance, tracesPerChannel, diagonalRoute } = inputs;
   if (ballPitch <= 0 || landDiameter <= 0 || minClearance <= 0) {
@@ -32553,7 +32553,7 @@ var bgaBreakoutWidth = {
   ]
 };
 
-// src/lib/pcb/drill-sizes.ts
+// ../frontend/src/lib/pcb/drill-sizes.ts
 var GRID_STEP_MM = 0.05;
 var SMALLEST_MM = 0.15;
 var LARGEST_MM = 6.5;
@@ -32571,7 +32571,7 @@ function nextStandardDrill(mm) {
   return PCB_DRILL_SIZES.find((size) => size.mm >= mm - 1e-9) ?? null;
 }
 
-// src/lib/calculators/pcb/aperture-diagonal.ts
+// ../frontend/src/lib/calculators/pcb/aperture-diagonal.ts
 function calculateApertureDiagonal(inputs) {
   const { apertureLength, apertureWidth } = inputs;
   if (apertureLength <= 0 || apertureWidth <= 0) {
@@ -32742,7 +32742,7 @@ var apertureDiagonal = {
   ]
 };
 
-// src/lib/calculators/pcb/maximum-pad-diameter.ts
+// ../frontend/src/lib/calculators/pcb/maximum-pad-diameter.ts
 function calculateMaximumPadDiameter(inputs) {
   const { pitch, minClearance, tracesBetween, traceWidth } = inputs;
   if (pitch <= 0 || minClearance <= 0) {
@@ -32934,7 +32934,7 @@ var maximumPadDiameter = {
   ]
 };
 
-// src/lib/calculators/registry.ts
+// ../frontend/src/lib/calculators/registry.ts
 var ALL_CALCULATORS = [
   microstripImpedance,
   rfLinkBudget,
@@ -33202,7 +33202,7 @@ function getCalculatorsByCategory(category) {
   return ALL_CALCULATORS.filter((c2) => c2.category === category);
 }
 
-// src/lib/calculators/types.ts
+// ../frontend/src/lib/calculators/types.ts
 var CATEGORIES = {
   rf: {
     slug: "rf",
@@ -33310,7 +33310,7 @@ var CATEGORIES = {
   }
 };
 
-// ../rftools-mcp/mcp-server.ts
+// mcp-server.ts
 var VALID_CATEGORIES = Object.keys(CATEGORIES);
 var API_BASE = process.env.RFTOOLS_API_BASE ?? "https://rftools.io/api/py";
 var API_KEY = process.env.RFTOOLS_API_KEY ?? "";
@@ -33441,7 +33441,7 @@ function pollInterval(elapsedMs) {
 }
 var server = new import_mcp.McpServer({
   name: "rftools",
-  version: "1.7.2"
+  version: "1.7.3"
 });
 server.registerTool(
   "list_calculators",
