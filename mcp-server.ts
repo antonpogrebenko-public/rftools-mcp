@@ -26,15 +26,15 @@ const SIMULATION_TOOLS = [
     slug: 'filter-monte-carlo',
     jobType: 'filter_monte_carlo',
     title: 'RF Filter Monte Carlo Tolerance Analysis',
-    description: 'Monte Carlo yield analysis for RF filters — passband ripple, stopband degradation, worst-case sensitivity.',
-    params: 'filterType (butterworth|chebyshev|bessel|elliptic), order (int), frequency (Hz), ripple (dB), topology (lowpass|highpass|bandpass|bandstop), componentTolerance (%), monteCarloIterations (50–10000)',
+    description: 'Monte Carlo yield analysis for LC ladder filters: passband ripple, cutoff shift and stopband rejection across component tolerances. An even-order Chebyshev is designed into its required load impedance, which the result reports.',
+    params: 'filterType (butterworth|chebyshev1), bandType (lowpass|highpass), order (1–9), freqCutoff (Hz; -3 dB for Butterworth, ripple edge for Chebyshev), ripple (dB, Chebyshev), impedance (Ω), componentTolerance (%), toleranceDistribution (uniform|gaussian, 3σ = tolerance), monteCarloIterations (50–10000)',
   },
   {
     slug: 'eye-diagram',
     jobType: 'eye_diagram',
     title: 'Eye Diagram Generator',
-    description: 'Generate eye diagrams from Touchstone S-parameter files with PRBS patterns, jitter, and ISI analysis.',
-    params: 'inputFileKeys (uploaded .s2p/.s4p keys), dataRate (bps), prbs (PRBS-7|PRBS-15|PRBS-31), samplesPerUI (int)',
+    description: 'Eye diagram from a Touchstone S21: one full ITU-T O.150 PRBS period through the channel, with eye height, width and jitter measured over every bit. Width and jitter are null, with a reason, when the waveform has no crossings.',
+    params: 'inputFileKeys (uploaded .s2p/.s4p keys), dataRate (bps), prbs (prbs7|prbs15|prbs31; prbs31 simulates 32768 bits), samplesPerUI (16–128)',
   },
   {
     slug: 'antenna-sim',
@@ -47,8 +47,8 @@ const SIMULATION_TOOLS = [
     slug: 'sparam-pipeline',
     jobType: 'sparam_pipeline',
     title: 'S-Parameter Analysis Pipeline',
-    description: 'Automated S-parameter analysis from Touchstone files: IL, RL, group delay, TDR, ripple.',
-    params: 'inputFileKeys (uploaded .s2p/.s4p keys), analysisTypes (array: il|rl|group_delay|tdr|ripple)',
+    description: 'Fixed S-parameter pipeline on up to 4 Touchstone files: view, passivity check (violations ≤ 1.02 corrected, larger ones labelled active and left unmodified), ripple, TDR, time gating, mixed-mode (4-port), S→Z/Y/ABCD with undefined points reported, and cascade of 2-ports.',
+    params: 'inputFileKeys (uploaded .s1p–.s4p keys), refImpedance (Ω), freqStart (Hz, 0 = file range), freqStop (Hz, 0 = file range)',
   },
   {
     slug: 'fdtd-sparam',
@@ -61,29 +61,29 @@ const SIMULATION_TOOLS = [
     slug: 'smps-control-loop',
     jobType: 'smps_control_loop',
     title: 'SMPS Control Loop Stability Analyzer',
-    description: 'Buck/boost/flyback control loop analysis: Bode plot, phase margin, gain margin, loop bandwidth.',
-    params: 'topology (buck|boost|flyback), vin (V), vout (V), iout (A), fsw (Hz), l (H), cout (F), rload (Ω), compensationType (type2|type3)',
+    description: 'Buck/boost/buck-boost/flyback loop stability: state-space-averaged plant in voltage mode, exact sampled-data model in peak-current mode, Bode plot, phase and gain margin, and Monte Carlo yield. Margins are reported only below Fsw/2; a subharmonic current loop is reported as such.',
+    params: 'topology (buck|boost|buck_boost|flyback), controlMode (voltage_mode|peak_current), Vin (V), Vout (V), Iout (A), L (H), C (F), ESR (Ω), Fsw (Hz), Vramp (V, voltage mode), Rsense (Ω, peak current), externalRamp (Se/Sn, peak current, default 0), compensatorType (type1|type2|type3), compK, compFz1, compFz2, compFp1, compFp2 (Hz), monteCarloTrials, tolL, tolC, tolESR, tolLoad, tolRsense (%), toleranceDistribution (uniform|gaussian)',
   },
   {
     slug: 'emi-radiated',
     jobType: 'emi_radiated',
     title: 'EMI Radiated Emissions Estimator',
-    description: 'PCB radiated emissions vs FCC Part 15 / CISPR 32 limits with Monte Carlo confidence intervals.',
-    params: 'traceLength (m), traceHeight (m), current (A), frequency (Hz), distance (m), numHarmonics (int), monteCarloRuns (int)',
+    description: 'PCB radiated emissions (Paul\'s DM loop and CM cable models, trapezoidal clock harmonics) vs FCC Part 15 and CISPR 32 limits in dBµV/m, with Monte Carlo confidence intervals.',
+    params: 'standard (fcc_b|fcc_a|cispr32_b|cispr32_a), measDist (m), dmCurrent_mA, loopArea_cm2, cmCurrent_uA, cableLen_m, fClk_MHz, dutyCycle (%), tRise_ns, nTrials',
   },
   {
     slug: 'magnetics-optimizer',
     jobType: 'magnetics_optimizer',
     title: 'Magnetics Optimizer (NSGA-II)',
-    description: 'NSGA-II Pareto-optimal transformer/inductor design across 113 cores from TDK, Ferroxcube, Magnetics Inc., Micrometals.',
-    params: 'designType (transformer|inductor), frequency (Hz), power (W), vin (V), vout (V, transformer), turns_ratio (float, transformer), inductance (H, inductor), population (int), generations (int)',
+    description: 'NSGA-II Pareto-optimal transformer/inductor design across 40 cores (104 core/material combinations) with core loss fitted to TDK, Ferroxcube and Micrometals data at the AC flux amplitude; designs on materials without traceable loss data are marked lossModel: unverified.',
+    params: 'topology (flyback_xfmr|forward_xfmr|power_inductor), Vin (V), Vout (V), Iout (A), fSw (Hz), dutyCycle (0.05–0.9), Tamb (°C), Tmax (°C), inductance_uH and iPeak_A (forward_xfmr only; flyback and inductor derive them from the power), objectiveWeight (0 = min loss … 1 = min volume), population, generations',
   },
   {
     slug: 'radar-detection',
     jobType: 'radar_detection',
     title: 'Radar Detection Probability Calculator',
-    description: 'All five Swerling models, non-coherent pulse integration, ITU-R P.838 rain attenuation, Monte Carlo uncertainty bands, ROC curves.',
-    params: 'pt (W), gt (dB), gr (dB), frequency (Hz), rcs (m²), range (m), noiseFigure (dB), bandwidth (Hz), numPulses (int), swerlingModel (0–4), rainRate (mm/hr)',
+    description: 'All five Swerling models, non-coherent pulse integration, ITU-R P.838-3 rain attenuation, Monte Carlo uncertainty bands, ROC curves.',
+    params: 'frequency_hz, peakPower_w, antGainTx_dbi, antGainRx_dbi, noiseFig_db, lossesTx_db, lossesRx_db, pulseWidth_s, nPulses, pfa, swerlingModel (0–4), targetRcs_dbsm, rangeMax_km, rainRate_mmhr',
   },
   {
     slug: 'pdn-impedance',
@@ -96,15 +96,15 @@ const SIMULATION_TOOLS = [
     slug: 'sat-link-budget',
     jobType: 'sat_link_budget',
     title: 'Satellite Link Budget (ITU-R)',
-    description: 'Satellite/terrestrial link budget with ITU-R P.618 rain, P.676 gaseous, P.840 cloud models and Monte Carlo confidence intervals.',
-    params: 'eirp (dBW), frequency (Hz), distance (m), gt (dB/K), bandwidth (Hz), elevation (deg), latitude (deg), availability (%), mcTrials (int)',
+    description: 'Satellite/terrestrial link budget with ITU-R P.618-13 rain, P.676-12 gas and P.840-8 cloud, climate read from the ITU-R maps at the site (latitude and longitude required), P.530-17 for terrestrial paths, and Monte Carlo confidence intervals.',
+    params: 'linkType (satellite|terrestrial), frequency_ghz, eirp_dbw, gt_db_k, distance_km (slant range or path length), elevationAngle_deg (satellite, 5–90), latitude_deg (required, −90…90), longitude_deg (required, −180…180, east positive), stationHeight_km (optional, default ITU-R P.1511), polarization (horizontal|vertical|circular), modulation (bpsk|qpsk|8psk|16qam|64qam), reqEbN0_db, dataRate_bps, targetAvailability_pct (90 to <100)',
   },
   {
     slug: 'rf-cascade',
     jobType: 'rf_cascade',
     title: 'RF Cascade Budget with Monte Carlo',
-    description: 'Friis noise figure, cascaded IIP3, P1dB, SFDR, and Monte Carlo yield for multi-stage RF chains.',
-    params: 'stages (array of {type, gain, nf, iip3, p1db, tolerance}), frequency (Hz), temperature (K), mcTrials (int)',
+    description: 'Friis noise figure, cascaded IIP3 and P1dB (from each stage\'s own P1dB), SFDR, and Monte Carlo yield for multi-stage RF chains.',
+    params: 'stages (JSON array of {name, type: amp|filter|attenuator|mixer|switch, gain_db, nf_db, iip3_dbm, p1db_dbm}), inputPower_dbm, bandwidth_hz, analysisFreq_hz, nfSpec_db, gainSpec_db, iip3Spec_dbm, snrMin_db',
   },
 ] as const;
 
@@ -149,7 +149,7 @@ function pollInterval(elapsedMs: number): number {
 
 const server = new McpServer({
   name: 'rftools',
-  version: '1.7.4',
+  version: '1.8.0',
 });
 
 // --- list_calculators ---
