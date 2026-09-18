@@ -33362,9 +33362,9 @@ var SIMULATION_TOOLS = [
   {
     slug: "antenna-sim",
     jobType: "antenna_sim",
-    title: "NEC2 Wire Antenna Simulator",
-    description: "NEC2 antenna simulation: radiation patterns, gain, impedance for dipoles, Yagis, and loops.",
-    params: "antennaType (dipole|yagi|loop), frequency (Hz), numElements (int, Yagi only), boomLength (m, Yagi only), height (m)"
+    title: "NEC-2 Wire Antenna Simulator",
+    description: "NEC-2 method-of-moments solve of any thin-wire antenna: impedance, VSWR, gain, directivity, efficiency, beamwidths, full pattern and currents, at one frequency or across a sweep; NSGA-II optimiser on Pro/API.",
+    params: "solveMode (standard|sweep|optimize|instant; optimize needs a Pro/API key). standard/sweep/optimize: wires (array of {start:[x,y,z] m, end:[x,y,z] m, radius m, segments}), feed ({wire, segment}, 0-based), freq (Hz) \u2014 or for sweep freqStart, freqStop (Hz), freqPoints (2\u20132001), ground ({type: free_space|perfect|finite, epsilonR, conductivity S/m}), conductor ({material: copper|aluminium|perfect|custom, conductivity S/m}), referenceImpedance (\u03A9, default 50); optimize adds optimize ({populationSize: multiple of 4, 8\u2013200; generations: 1\u2013200}) and randomSeed. Segments must be \u2264 \u03BB/10 and \u2265 8 radii; a job over the lane budget is refused with what to cut. instant (closed-form presets): antennaType (dipole|yagi3|yagi5|loop), freq (Hz), groundType (free_space|perfect|real)"
   },
   {
     slug: "sparam-pipeline",
@@ -33377,8 +33377,8 @@ var SIMULATION_TOOLS = [
     slug: "fdtd-sparam",
     jobType: "fdtd_sparam",
     title: "FDTD S-Parameter Simulator",
-    description: "FDTD electromagnetic simulation for vias and PCB discontinuities \u2014 S-parameters across frequency.",
-    params: "structure (via_single|via_differential|stripline_bend|coax_transition), frequency (Hz), meshDensity (coarse|normal|fine)"
+    description: "PCB transmission-line structures \u2014 open stubs, coupled-line sections, via transitions, width steps \u2014 from a 2D cross-section in seconds to a 3D openEMS FDTD solve: S-parameters across frequency.",
+    params: "structureType (microstrip_open_stub|coupled_line_filter|through_via|step_discontinuity), solveMode (instant|express|normal|fine; normal and fine need a Pro/API key), substrateName (FR4|Rogers4350B|Rogers3003|custom), subEr, subH (mm), subTanD (custom substrate), traceW (mm), traceL (mm), stubL (mm, open stub), gapW (mm, coupled line), viaDia (mm), viaAR (through via), w2 (mm, step output width), freqCenter (Hz), freqSpan (Hz)"
   },
   {
     slug: "smps-control-loop",
@@ -33463,7 +33463,7 @@ function pollInterval(elapsedMs) {
 }
 var server = new import_mcp.McpServer({
   name: "rftools",
-  version: "1.7.3"
+  version: "1.7.4"
 });
 server.registerTool(
   "list_calculators",
