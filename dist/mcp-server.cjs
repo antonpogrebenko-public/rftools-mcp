@@ -33349,8 +33349,8 @@ var SIMULATION_TOOLS = [
     slug: "filter-monte-carlo",
     jobType: "filter_monte_carlo",
     title: "RF Filter Monte Carlo Tolerance Analysis",
-    description: "Monte Carlo yield analysis for LC ladder filters: passband ripple, cutoff shift and stopband rejection across component tolerances. An even-order Chebyshev is designed into its required load impedance, which the result reports.",
-    params: "filterType (butterworth|chebyshev1), bandType (lowpass|highpass), order (1\u20139), freqCutoff (Hz; -3 dB for Butterworth, ripple edge for Chebyshev), ripple (dB, Chebyshev), impedance (\u03A9), componentTolerance (%), toleranceDistribution (uniform|gaussian, 3\u03C3 = tolerance), monteCarloIterations (50\u201310000)"
+    description: "Monte Carlo yield for LC ladder filters against passband-variation and stopband-rejection limits that stay fixed as tolerance changes (yieldSpec reports them). An even-order Chebyshev is designed into its required load impedance, which the result reports.",
+    params: "filterType (butterworth|chebyshev1), bandType (lowpass|highpass), order (1\u20139), freqCutoff (Hz; -3 dB for Butterworth, ripple edge for Chebyshev), ripple (dB, Chebyshev), impedance (\u03A9), componentTolerance (%), toleranceDistribution (uniform|gaussian, 3\u03C3 = tolerance), rippleSpec_db (optional max passband variation; default: the standard-value design + 0.5 dB), rejectionSpec_db (optional min stopband rejection from 2\xB7fc, or below fc/2 for high-pass; default: the standard-value design \u2212 3 dB), monteCarloIterations (50\u201310000)"
   },
   {
     slug: "eye-diagram",
@@ -33398,7 +33398,7 @@ var SIMULATION_TOOLS = [
     slug: "magnetics-optimizer",
     jobType: "magnetics_optimizer",
     title: "Magnetics Optimizer (NSGA-II)",
-    description: "NSGA-II Pareto-optimal transformer/inductor design across 40 cores (104 core/material combinations) with core loss fitted to TDK, Ferroxcube and Micrometals data at the AC flux amplitude; designs on materials without traceable loss data are marked lossModel: unverified.",
+    description: "NSGA-II Pareto front (every core seeded, de-duplicated) of transformer/inductor designs across 40 cores (104 core/material combinations) with core loss fitted to TDK, Ferroxcube and Micrometals data at the AC flux amplitude; designs on materials without traceable loss data are marked lossModel: unverified.",
     params: "topology (flyback_xfmr|forward_xfmr|power_inductor), Vin (V), Vout (V), Iout (A), fSw (Hz), dutyCycle (0.05\u20130.9), Tamb (\xB0C), Tmax (\xB0C), inductance_uH and iPeak_A (forward_xfmr only; flyback and inductor derive them from the power), objectiveWeight (0 = min loss \u2026 1 = min volume), population, generations"
   },
   {
@@ -33463,7 +33463,7 @@ function pollInterval(elapsedMs) {
 }
 var server = new import_mcp.McpServer({
   name: "rftools",
-  version: "1.8.0"
+  version: "1.8.1"
 });
 server.registerTool(
   "list_calculators",

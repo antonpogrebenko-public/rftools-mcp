@@ -6,12 +6,12 @@
     "url": "https://github.com/antonpogrebenko-public/rftools-mcp",
     "source": "github"
   },
-  "version": "1.8.0",
+  "version": "1.8.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "rftools-mcp",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "transport": {
         "type": "stdio"
       }
