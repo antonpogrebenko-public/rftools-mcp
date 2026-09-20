@@ -65,6 +65,10 @@ jobs:
         run: |
           set -euo pipefail
           test -s dist/mcp-server.cjs
+          # The bundle leaves its two runtime dependencies external, so they
+          # have to be on disk for the smoke test (there is no lockfile: the
+          # package ships only dist/, and nothing here is built from source).
+          npm install --omit=dev --ignore-scripts --no-audit --no-fund
           init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
           printf '%s\n' "$init" | node dist/mcp-server.cjs | head -1 | grep -q '"serverInfo"'
 
