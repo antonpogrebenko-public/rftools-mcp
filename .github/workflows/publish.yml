@@ -1,0 +1,80 @@
+#  Publishing runs here, not from a laptop.
+#
+#  npm 2FA-bypass tokens lose the ability to publish directly around January
+#  2027, and a long-lived publish token on a developer machine is the thing
+#  trusted publishing exists to remove. Both registries authenticate with the
+#  workflow's OIDC identity, so this repo holds no publish secret.
+#
+#  One-time setup on npmjs.com: package settings -> Trusted Publisher ->
+#  GitHub Actions, with organization "antonpogrebenko-public", repository
+#  "rftools-mcp", workflow filename "publish.yml", and the allowed action set
+#  to permit `npm publish` (a configuration created now allows only
+#  `npm stage publish` unless direct publishing is ticked).
+#
+#  Release: bump the version in package.json, server.json (twice) and
+#  mcp-server.ts, rebuild dist/, commit, then push the tag:
+#      git tag v1.8.1 && git push origin v1.8.1
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # npm trusted publishing and MCP registry OIDC
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Ensure npm supports trusted publishing
+        run: |
+          set -euo pipefail
+          need=11.5.1
+          have=$(npm --version)
+          if [ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]; then
+            npm install -g npm@latest
+          fi
+          npm --version
+
+      - name: The version must agree everywhere, and with the tag
+        run: |
+          set -euo pipefail
+          pkg=$(node -p "require('./package.json').version")
+          top=$(node -p "require('./server.json').version")
+          inner=$(node -p "require('./server.json').packages[0].version")
+          reported=$(node -e "process.stdout.write((require('fs').readFileSync('mcp-server.ts','utf8').match(/version:\s*'([^']+)'/)||[])[1]||'')")
+          echo "package.json=$pkg server.json=$top packages[0]=$inner mcp-server.ts=$reported ref=${GITHUB_REF_NAME}"
+          for v in "$top" "$inner" "$reported"; do
+            [ "$v" = "$pkg" ] || { echo "version mismatch"; exit 1; }
+          done
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            [ "${GITHUB_REF_NAME#v}" = "$pkg" ] || { echo "tag does not match package.json"; exit 1; }
+          fi
+
+      - name: The bundle must be present and start
+        run: |
+          set -euo pipefail
+          test -s dist/mcp-server.cjs
+          init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          printf '%s\n' "$init" | node dist/mcp-server.cjs | head -1 | grep -q '"serverInfo"'
+
+      - name: Publish to npm
+        run: npm publish --access public
+
+      - name: Publish to the MCP registry
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
+            | tar -xz mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
