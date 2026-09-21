@@ -1,10 +1,42 @@
 #!/usr/bin/env node
 "use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // ../rftools-mcp/mcp-server.ts
+var mcp_server_exports = {};
+__export(mcp_server_exports, {
+  createServer: () => createServer
+});
+module.exports = __toCommonJS(mcp_server_exports);
 var import_mcp = require("@modelcontextprotocol/sdk/server/mcp.js");
 var import_stdio = require("@modelcontextprotocol/sdk/server/stdio.js");
-var import_zod = require("zod");
+var import_zod3 = require("zod");
 
 // src/lib/calculators/rf/microstrip-impedance.ts
 function calculateMicrostrip(inputs) {
@@ -5167,8 +5199,8 @@ function calculateDipoleAntenna(inputs) {
   const inputImpedance_ohm = 73.1;
   const radiationResistance_ohm = 73.1;
   const z0 = 50;
-  const z2 = inputImpedance_ohm;
-  const gamma = Math.abs((z2 - z0) / (z2 + z0));
+  const z4 = inputImpedance_ohm;
+  const gamma = Math.abs((z4 - z0) / (z4 + z0));
   const feedpointVswr_50 = (1 + gamma) / (1 - gamma);
   return {
     values: {
@@ -32588,7 +32620,7 @@ var PCB_DRILL_SIZES = (() => {
 })();
 function nextStandardDrill(mm) {
   if (!(mm > 0)) return null;
-  return PCB_DRILL_SIZES.find((size) => size.mm >= mm - 1e-9) ?? null;
+  return PCB_DRILL_SIZES.find((size2) => size2.mm >= mm - 1e-9) ?? null;
 }
 
 // src/lib/calculators/pcb/aperture-diagonal.ts
@@ -32603,7 +32635,7 @@ function calculateApertureDiagonal(inputs) {
   const diagonal = Math.hypot(apertureLength, apertureWidth);
   const shortSide = Math.min(apertureLength, apertureWidth);
   const coveringDrill = nextStandardDrill(diagonal);
-  const routerCandidates = PCB_DRILL_SIZES.filter((size) => size.mm <= shortSide + 1e-9);
+  const routerCandidates = PCB_DRILL_SIZES.filter((size2) => size2.mm <= shortSide + 1e-9);
   const routerBit = routerCandidates.length > 0 ? routerCandidates[routerCandidates.length - 1] : null;
   const smallest = PCB_DRILL_SIZES[0];
   const largest = PCB_DRILL_SIZES[PCB_DRILL_SIZES.length - 1];
@@ -33332,443 +33364,3139 @@ var CATEGORIES = {
   }
 };
 
+// ../shared/job-schemas/index.json
+var job_schemas_default = {
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  checks: [
+    "converter_duty_in_ccm_range",
+    "converter_load_nonzero",
+    "port_within_board",
+    "probability_in_open_unit_interval",
+    "sweep_span_within_center",
+    "sweep_stop_after_start"
+  ],
+  jobTypes: {
+    antenna_sim: {
+      slug: "antenna-sim",
+      title: "Wire Antenna Simulator (NEC-2)",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 1200,
+      files: false
+    },
+    emi_radiated: {
+      slug: "emi-radiated",
+      title: "EMI Radiated Emissions Estimator",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 240,
+      files: false
+    },
+    eye_diagram: {
+      slug: "eye-diagram",
+      title: "Eye Diagram from S-Parameters",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 120,
+      files: true
+    },
+    fdtd_sparam: {
+      slug: "fdtd-sparam",
+      title: "FDTD Transmission Line Simulator",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 32400,
+      files: false
+    },
+    filter_monte_carlo: {
+      slug: "filter-monte-carlo",
+      title: "RF Filter Monte Carlo Analysis",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 120,
+      files: false
+    },
+    impedance_match: {
+      slug: "impedance-matching",
+      title: "Broadband Impedance Matching Synthesizer",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 120,
+      files: true
+    },
+    magnetics_optimizer: {
+      slug: "magnetics-optimizer",
+      title: "Magnetics & Transformer Design Optimizer",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 360,
+      files: false
+    },
+    pdn_impedance: {
+      slug: "pdn-impedance",
+      title: "PDN Impedance Analyzer & Decoupling Capacitor Optimizer",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 360,
+      files: false
+    },
+    radar_detection: {
+      slug: "radar-detection",
+      title: "Radar Detection Performance Monte Carlo",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 300,
+      files: false
+    },
+    rf_cascade: {
+      slug: "rf-cascade",
+      title: "RF Cascade Budget Analyzer",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 180,
+      files: true
+    },
+    sat_link_budget: {
+      slug: "sat-link-budget",
+      title: "Satellite & Terrestrial Link Budget",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 240,
+      files: false
+    },
+    smps_control_loop: {
+      slug: "smps-control-loop",
+      title: "SMPS Control Loop Stability Analyzer",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 300,
+      files: false
+    },
+    sparam_pipeline: {
+      slug: "sparam-pipeline",
+      title: "S-Parameter Analysis Pipeline",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 120,
+      files: true
+    }
+  }
+};
+
+// ../shared/job-schemas/antenna_sim.json
+var antenna_sim_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "antenna_sim",
+  "x-slug": "antenna-sim",
+  "x-title": "Wire Antenna Simulator (NEC-2)",
+  "x-checks": [
+    "sweep_stop_after_start"
+  ],
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    solveMode: {
+      type: "string",
+      enum: [
+        "instant",
+        "standard",
+        "sweep",
+        "optimize"
+      ],
+      default: "standard",
+      "x-label": "Solve Mode",
+      "x-tooltip": "Instant is a closed-form textbook model of a preset. Standard solves your geometry with NEC-2 at one frequency; Sweep solves it across a band; Optimize searches element lengths and spacings.",
+      "x-paidOnly": [
+        "optimize"
+      ]
+    },
+    freq: {
+      type: "number",
+      minimum: 1e3,
+      default: 146e6,
+      "x-label": "Frequency",
+      "x-unit": "Hz"
+    },
+    referenceImpedance: {
+      type: "number",
+      minimum: 0.1,
+      default: 50,
+      "x-label": "Reference Impedance",
+      "x-unit": "\u03A9",
+      "x-hidden": true,
+      "x-tooltip": "Impedance the reported VSWR and reflection coefficient are referred to."
+    },
+    wires: {
+      type: "array",
+      "x-label": "Wire Geometry",
+      "x-hidden": true,
+      "x-tooltip": "Wire segments of the antenna. Required for every mode but Instant.",
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    feed: {
+      type: "object",
+      "x-label": "Feed Point",
+      "x-hidden": true,
+      "x-tooltip": "Which wire and segment the source drives. Required for every mode but Instant.",
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    ground: {
+      type: "object",
+      "x-label": "Ground",
+      "x-hidden": true,
+      "x-tooltip": "Ground model: { type: free_space | perfect | finite }, with epsilonR and conductivity when finite. Absent means free space.",
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    conductor: {
+      type: "object",
+      "x-label": "Conductor",
+      "x-hidden": true,
+      "x-tooltip": "Conductor model: { material: copper | aluminium | perfect | custom }, with conductivity when custom. Absent means copper.",
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    optimize: {
+      type: "object",
+      "x-label": "Search Settings",
+      "x-hidden": true,
+      "x-tooltip": "NSGA-II settings: { populationSize, generations, lengthRange, spacingRange }.",
+      "x-showWhen": {
+        key: "solveMode",
+        value: "optimize"
+      },
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    freqStart: {
+      type: "number",
+      minimum: 1e3,
+      "x-label": "Sweep Start",
+      "x-unit": "Hz",
+      "x-hidden": true,
+      "x-tooltip": "Lower bound of the sweep. Required in Sweep mode.",
+      "x-showWhen": {
+        key: "solveMode",
+        value: "sweep"
+      }
+    },
+    freqStop: {
+      type: "number",
+      minimum: 1e3,
+      "x-label": "Sweep Stop",
+      "x-unit": "Hz",
+      "x-hidden": true,
+      "x-tooltip": "Upper bound of the sweep. Required in Sweep mode.",
+      "x-showWhen": {
+        key: "solveMode",
+        value: "sweep"
+      }
+    },
+    freqPoints: {
+      type: "number",
+      minimum: 2,
+      maximum: 2001,
+      default: 51,
+      "x-label": "Sweep Points",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "How many frequencies the sweep solves.",
+      "x-showWhen": {
+        key: "solveMode",
+        value: "sweep"
+      }
+    },
+    antennaType: {
+      type: "string",
+      enum: [
+        "dipole",
+        "yagi3",
+        "yagi5",
+        "loop"
+      ],
+      default: "dipole",
+      "x-label": "Closed-Form Model",
+      "x-hidden": true,
+      "x-tooltip": "Which textbook model Instant evaluates. Instant has no model for other geometries.",
+      "x-showWhen": {
+        key: "solveMode",
+        value: "instant"
+      }
+    },
+    groundType: {
+      type: "string",
+      enum: [
+        "free_space",
+        "perfect",
+        "real"
+      ],
+      default: "free_space",
+      "x-label": "Closed-Form Ground",
+      "x-hidden": true,
+      "x-tooltip": "Ground the closed-form model assumes. Instant only.",
+      "x-showWhen": {
+        key: "solveMode",
+        value: "instant"
+      }
+    },
+    randomSeed: {
+      type: "number",
+      minimum: 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+};
+
+// ../shared/job-schemas/emi_radiated.json
+var emi_radiated_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "emi_radiated",
+  "x-slug": "emi-radiated",
+  "x-title": "EMI Radiated Emissions Estimator",
+  "x-checks": [],
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    standard: {
+      type: "string",
+      enum: [
+        "fcc_b",
+        "fcc_a",
+        "cispr32_b",
+        "cispr32_a"
+      ],
+      default: "fcc_b",
+      "x-label": "Regulatory Standard"
+    },
+    measDist: {
+      type: "number",
+      minimum: 1,
+      maximum: 30,
+      default: 3,
+      "x-label": "Measurement Distance",
+      "x-unit": "m",
+      "x-step": 0.5,
+      "x-tooltip": "FCC Class B: 3 m. FCC Class A / CISPR: 10 m. Limits scale automatically."
+    },
+    dmCurrent_mA: {
+      type: "number",
+      minimum: 1e-3,
+      maximum: 1e3,
+      default: 10,
+      "x-label": "DM Loop Current (peak)",
+      "x-unit": "mA",
+      "x-step": 0.1,
+      "x-tooltip": "Peak current circulating in the PCB loop (e.g., power rail decoupling current)."
+    },
+    loopArea_cm2: {
+      type: "number",
+      minimum: 1e-3,
+      maximum: 1e3,
+      default: 1,
+      "x-label": "Loop Area",
+      "x-unit": "cm\xB2",
+      "x-step": 0.1,
+      "x-tooltip": "Area of the current loop on the PCB. Smaller = less DM radiation."
+    },
+    cmCurrent_uA: {
+      type: "number",
+      minimum: 1e-3,
+      maximum: 1e4,
+      default: 1,
+      "x-label": "CM Cable Current (peak)",
+      "x-unit": "\xB5A",
+      "x-step": 0.1,
+      "x-tooltip": "Common-mode current on attached cables. Even \xB5A levels can dominate emissions."
+    },
+    cableLen_m: {
+      type: "number",
+      minimum: 0.01,
+      maximum: 10,
+      default: 0.5,
+      "x-label": "Cable Length",
+      "x-unit": "m",
+      "x-step": 0.05,
+      "x-tooltip": "Length of the longest unshielded cable attached to the PCB."
+    },
+    fClk_MHz: {
+      type: "number",
+      minimum: 1,
+      maximum: 2e3,
+      default: 100,
+      "x-label": "Clock Frequency",
+      "x-unit": "MHz",
+      "x-step": 1,
+      "x-tooltip": "Fundamental clock frequency. Harmonics are computed up to 1 GHz."
+    },
+    dutyCycle: {
+      type: "number",
+      minimum: 1,
+      maximum: 99,
+      default: 50,
+      "x-label": "Duty Cycle",
+      "x-unit": "%",
+      "x-step": 1,
+      "x-tooltip": "50% duty cycle suppresses even harmonics. Other values can excite them."
+    },
+    tRise_ns: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 100,
+      default: 1,
+      "x-label": "Rise Time",
+      "x-unit": "ns",
+      "x-step": 0.1,
+      "x-tooltip": "Signal 10%\u201390% rise time. Longer rise times reduce high-frequency harmonics."
+    },
+    nTrials: {
+      type: "number",
+      minimum: 1e3,
+      maximum: 5e5,
+      default: 1e5,
+      "x-label": "Monte Carlo Trials",
+      "x-dimensionless": true,
+      "x-step": 1e3,
+      "x-tooltip": "More trials = tighter confidence intervals. 100K is a good balance."
+    },
+    randomSeed: {
+      type: "number",
+      minimum: 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+};
+
+// ../shared/job-schemas/eye_diagram.json
+var eye_diagram_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "eye_diagram",
+  "x-slug": "eye-diagram",
+  "x-title": "Eye Diagram from S-Parameters",
+  "x-checks": [],
+  "x-files": {
+    min: 1,
+    max: 1,
+    extensions: [
+      ".s2p",
+      ".s4p"
+    ],
+    label: "Drop .s2p / .s4p Touchstone file here"
+  },
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    dataRate: {
+      type: "number",
+      minimum: 1e6,
+      default: 1e10,
+      "x-label": "Data Rate",
+      "x-unit": "bps",
+      "x-tooltip": "e.g. 10e9 for 10 Gbps"
+    },
+    prbs: {
+      type: "string",
+      enum: [
+        "prbs7",
+        "prbs15",
+        "prbs31"
+      ],
+      default: "prbs15",
+      "x-label": "PRBS Length"
+    },
+    samplesPerUI: {
+      type: "number",
+      minimum: 16,
+      maximum: 128,
+      default: 64,
+      "x-label": "Samples per UI",
+      "x-dimensionless": true,
+      "x-step": 16
+    }
+  }
+};
+
+// ../shared/job-schemas/fdtd_sparam.json
+var fdtd_sparam_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "fdtd_sparam",
+  "x-slug": "fdtd-sparam",
+  "x-title": "FDTD Transmission Line Simulator",
+  "x-checks": [
+    "sweep_span_within_center"
+  ],
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    structureType: {
+      type: "string",
+      enum: [
+        "microstrip_open_stub",
+        "coupled_line_filter",
+        "through_via",
+        "step_discontinuity"
+      ],
+      default: "microstrip_open_stub",
+      "x-label": "Structure"
+    },
+    substrateName: {
+      type: "string",
+      enum: [
+        "FR4",
+        "Rogers4350B",
+        "Rogers3003",
+        "custom"
+      ],
+      default: "FR4",
+      "x-label": "Substrate"
+    },
+    subEr: {
+      type: "number",
+      minimum: 1,
+      maximum: 20,
+      default: 4.4,
+      "x-label": "Dielectric Constant",
+      "x-dimensionless": true,
+      "x-step": 0.01,
+      "x-showWhen": {
+        key: "substrateName",
+        value: "custom"
+      }
+    },
+    subH: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 10,
+      default: 1.6,
+      "x-label": "Substrate Height",
+      "x-unit": "mm",
+      "x-step": 0.05,
+      "x-showWhen": {
+        key: "substrateName",
+        value: "custom"
+      }
+    },
+    subTanD: {
+      type: "number",
+      minimum: 0,
+      maximum: 0.1,
+      default: 0.02,
+      "x-label": "Loss Tangent",
+      "x-dimensionless": true,
+      "x-step": 1e-3,
+      "x-showWhen": {
+        key: "substrateName",
+        value: "custom"
+      }
+    },
+    traceW: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 20,
+      default: 3,
+      "x-label": "Trace Width",
+      "x-unit": "mm",
+      "x-step": 0.1
+    },
+    traceL: {
+      type: "number",
+      minimum: 1,
+      maximum: 200,
+      default: 30,
+      "x-label": "Trace Length",
+      "x-unit": "mm",
+      "x-step": 1
+    },
+    stubL: {
+      type: "number",
+      minimum: 1,
+      maximum: 100,
+      default: 15,
+      "x-label": "Stub Length",
+      "x-unit": "mm",
+      "x-step": 1,
+      "x-showWhen": {
+        key: "structureType",
+        value: "microstrip_open_stub"
+      }
+    },
+    gapW: {
+      type: "number",
+      minimum: 0.05,
+      maximum: 5,
+      default: 0.2,
+      "x-label": "Coupling Gap",
+      "x-unit": "mm",
+      "x-step": 0.05,
+      "x-showWhen": {
+        key: "structureType",
+        value: "coupled_line_filter"
+      }
+    },
+    viaDia: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 2,
+      default: 0.3,
+      "x-label": "Via Diameter",
+      "x-unit": "mm",
+      "x-step": 0.05,
+      "x-showWhen": {
+        key: "structureType",
+        value: "through_via"
+      }
+    },
+    viaAR: {
+      type: "number",
+      minimum: 1,
+      maximum: 20,
+      default: 5,
+      "x-label": "Via Aspect Ratio",
+      "x-dimensionless": true,
+      "x-step": 1,
+      "x-showWhen": {
+        key: "structureType",
+        value: "through_via"
+      }
+    },
+    w2: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 20,
+      default: 1.5,
+      "x-label": "Output Trace Width",
+      "x-unit": "mm",
+      "x-step": 0.1,
+      "x-showWhen": {
+        key: "structureType",
+        value: "step_discontinuity"
+      }
+    },
+    freqCenter: {
+      type: "number",
+      minimum: 1e8,
+      default: 24e8,
+      "x-label": "Center Frequency",
+      "x-unit": "Hz"
+    },
+    freqSpan: {
+      type: "number",
+      minimum: 1e8,
+      default: 4e9,
+      "x-label": "Frequency Span",
+      "x-unit": "Hz"
+    },
+    solveMode: {
+      type: "string",
+      enum: [
+        "instant",
+        "express",
+        "normal",
+        "fine"
+      ],
+      default: "instant",
+      "x-label": "Solve Mode",
+      "x-tooltip": "Instant solves a 2D cross-section and cascades published models \u2014 seconds, engineering accuracy. Express and above run a real 3D FDTD field solve on progressively finer meshes.",
+      "x-paidOnly": [
+        "normal",
+        "fine"
+      ]
+    },
+    copperT: {
+      type: "number",
+      minimum: 5e-3,
+      maximum: 0.5,
+      default: 0.035,
+      "x-label": "Copper Thickness",
+      "x-unit": "mm",
+      "x-hidden": true,
+      "x-step": 5e-3,
+      "x-tooltip": "0.035 mm is 1 oz copper."
+    },
+    roughness: {
+      type: "number",
+      minimum: 0,
+      maximum: 10,
+      default: 0.6,
+      "x-label": "Surface Roughness",
+      "x-unit": "\xB5m",
+      "x-hidden": true,
+      "x-step": 0.1,
+      "x-tooltip": "RMS copper roughness used by the Hammerstad/Huray correction."
+    }
+  }
+};
+
+// ../shared/job-schemas/filter_monte_carlo.json
+var filter_monte_carlo_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "filter_monte_carlo",
+  "x-slug": "filter-monte-carlo",
+  "x-title": "RF Filter Monte Carlo Analysis",
+  "x-checks": [],
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    filterType: {
+      type: "string",
+      enum: [
+        "butterworth",
+        "chebyshev1"
+      ],
+      default: "butterworth",
+      "x-label": "Filter Type"
+    },
+    bandType: {
+      type: "string",
+      enum: [
+        "lowpass",
+        "highpass"
+      ],
+      default: "lowpass",
+      "x-label": "Band Type"
+    },
+    order: {
+      type: "number",
+      minimum: 2,
+      maximum: 9,
+      default: 5,
+      "x-label": "Filter Order",
+      "x-dimensionless": true,
+      "x-step": 1
+    },
+    freqCutoff: {
+      type: "number",
+      minimum: 1e3,
+      default: 1e9,
+      "x-label": "Cutoff Frequency",
+      "x-unit": "Hz",
+      "x-tooltip": "-3 dB frequency for Butterworth; passband edge for Chebyshev"
+    },
+    ripple: {
+      type: "number",
+      minimum: 0.01,
+      maximum: 3,
+      default: 0.5,
+      "x-label": "Passband Ripple",
+      "x-unit": "dB",
+      "x-step": 0.1,
+      "x-tooltip": "Chebyshev only"
+    },
+    impedance: {
+      type: "number",
+      minimum: 1,
+      default: 50,
+      "x-label": "System Impedance",
+      "x-unit": "\u03A9"
+    },
+    componentTolerance: {
+      type: "number",
+      minimum: 0,
+      maximum: 50,
+      default: 5,
+      "x-label": "Component Tolerance",
+      "x-unit": "%",
+      "x-step": 0.5
+    },
+    toleranceDistribution: {
+      type: "string",
+      enum: [
+        "uniform",
+        "gaussian"
+      ],
+      default: "uniform",
+      "x-label": "Distribution"
+    },
+    rippleSpec_db: {
+      type: "number",
+      minimum: 0,
+      maximum: 20,
+      "x-label": "Passband Variation Limit (optional)",
+      "x-unit": "dB",
+      "x-step": 0.1,
+      "x-tooltip": "Largest peak-to-peak |S21| variation across the passband for a build to pass. Leave blank to allow 0.5 dB more than the standard-value design achieves."
+    },
+    rejectionSpec_db: {
+      type: "number",
+      minimum: 0,
+      maximum: 200,
+      "x-label": "Stopband Rejection Minimum (optional)",
+      "x-unit": "dB",
+      "x-step": 1,
+      "x-tooltip": "Smallest rejection a build must reach from 2\xD7 the cutoff upward (low-pass) or below half the cutoff (high-pass). Leave blank to allow 3 dB less than the standard-value design achieves."
+    },
+    monteCarloIterations: {
+      type: "number",
+      minimum: 50,
+      maximum: 1e4,
+      default: 500,
+      "x-label": "Monte Carlo Trials",
+      "x-dimensionless": true,
+      "x-step": 50,
+      "x-tooltip": "Free tier: max 500",
+      "x-tier": {
+        free: {
+          maximum: 500
+        }
+      }
+    },
+    randomSeed: {
+      type: "number",
+      minimum: 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+};
+
+// ../shared/job-schemas/impedance_match.json
+var impedance_match_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "impedance_match",
+  "x-slug": "impedance-matching",
+  "x-title": "Broadband Impedance Matching Synthesizer",
+  "x-checks": [
+    "sweep_stop_after_start"
+  ],
+  "x-files": {
+    min: 0,
+    max: 2,
+    extensions: [
+      ".s2p"
+    ]
+  },
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    sourceR: {
+      type: "number",
+      minimum: 0.1,
+      default: 50,
+      "x-label": "Source Resistance",
+      "x-unit": "\u03A9",
+      "x-tooltip": "Real part of source impedance"
+    },
+    sourceX: {
+      type: "number",
+      default: 0,
+      "x-label": "Source Reactance",
+      "x-unit": "\u03A9",
+      "x-tooltip": "Imaginary part of source impedance"
+    },
+    loadR: {
+      type: "number",
+      minimum: 0.1,
+      default: 200,
+      "x-label": "Load Resistance",
+      "x-unit": "\u03A9"
+    },
+    loadX: {
+      type: "number",
+      default: 0,
+      "x-label": "Load Reactance",
+      "x-unit": "\u03A9"
+    },
+    freqStart: {
+      type: "number",
+      minimum: 1e3,
+      default: 8e8,
+      "x-label": "Freq Start",
+      "x-unit": "Hz",
+      "x-tooltip": "Lower bound of matching band"
+    },
+    freqStop: {
+      type: "number",
+      minimum: 1e3,
+      default: 12e8,
+      "x-label": "Freq Stop",
+      "x-unit": "Hz"
+    },
+    topology: {
+      type: "string",
+      enum: [
+        "L",
+        "Pi",
+        "T",
+        "ladder_2",
+        "ladder_3"
+      ],
+      default: "L",
+      "x-label": "Topology"
+    },
+    targetRL: {
+      type: "number",
+      minimum: -60,
+      maximum: 0,
+      default: -15,
+      "x-label": "Target Return Loss",
+      "x-unit": "dB",
+      "x-hidden": true,
+      "x-step": 0.5,
+      "x-tooltip": "Return loss the synthesiser aims for across the band; a negative number of dB."
+    },
+    sourceFileRole: {
+      type: "string",
+      enum: [
+        "none",
+        "source",
+        "load",
+        "both"
+      ],
+      default: "none",
+      "x-label": "Touchstone File Role",
+      "x-hidden": true,
+      "x-tooltip": "What an uploaded .s2p describes. Ignored when no file is uploaded."
+    }
+  }
+};
+
+// ../shared/job-schemas/magnetics_optimizer.json
+var magnetics_optimizer_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "magnetics_optimizer",
+  "x-slug": "magnetics-optimizer",
+  "x-title": "Magnetics & Transformer Design Optimizer",
+  "x-checks": [
+    "converter_load_nonzero"
+  ],
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    topology: {
+      type: "string",
+      enum: [
+        "flyback_xfmr",
+        "forward_xfmr",
+        "power_inductor",
+        "coupled_inductor"
+      ],
+      default: "flyback_xfmr",
+      "x-label": "Topology"
+    },
+    Vin: {
+      type: "number",
+      minimum: 1,
+      maximum: 1e3,
+      default: 48,
+      "x-label": "Input Voltage",
+      "x-unit": "V",
+      "x-step": 1
+    },
+    Vout: {
+      type: "number",
+      minimum: 0.5,
+      maximum: 999,
+      default: 12,
+      "x-label": "Output Voltage",
+      "x-unit": "V",
+      "x-step": 0.5
+    },
+    Iout: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 100,
+      default: 3,
+      "x-label": "Output Current",
+      "x-unit": "A",
+      "x-step": 0.1
+    },
+    fSw: {
+      type: "number",
+      minimum: 1e3,
+      maximum: 1e7,
+      default: 1e5,
+      "x-label": "Switching Frequency",
+      "x-unit": "Hz",
+      "x-tooltip": "e.g. 100e3 for 100 kHz"
+    },
+    dutyCycle: {
+      type: "number",
+      minimum: 0.05,
+      maximum: 0.9,
+      default: 0.45,
+      "x-label": "Duty Cycle",
+      "x-dimensionless": true,
+      "x-step": 0.01,
+      "x-tooltip": "Primary on-time duty cycle (0.05\u20130.90)"
+    },
+    inductance_uH: {
+      type: "number",
+      minimum: 0.1,
+      default: 100,
+      "x-label": "Target Inductance",
+      "x-unit": "\xB5H",
+      "x-tooltip": "Target magnetizing inductance",
+      "x-showWhen": {
+        key: "topology",
+        value: "power_inductor"
+      }
+    },
+    iPeak_A: {
+      type: "number",
+      minimum: 0.01,
+      "x-derived": "1.2 x Iout",
+      "x-label": "Peak Current",
+      "x-unit": "A",
+      "x-tooltip": "Peak inductor current (sets B_peak constraint)",
+      "x-showWhen": {
+        key: "topology",
+        value: "power_inductor"
+      }
+    },
+    Tamb: {
+      type: "number",
+      minimum: -40,
+      maximum: 85,
+      default: 40,
+      "x-label": "Ambient Temperature",
+      "x-unit": "\xB0C",
+      "x-step": 5
+    },
+    Tmax: {
+      type: "number",
+      minimum: 60,
+      maximum: 200,
+      default: 100,
+      "x-label": "Max Junction Temp",
+      "x-unit": "\xB0C",
+      "x-step": 5
+    },
+    objectiveWeight: {
+      type: "number",
+      minimum: 0,
+      maximum: 1,
+      default: 0.3,
+      "x-label": "Objective: Loss \u2194 Volume",
+      "x-dimensionless": true,
+      "x-step": 0.05,
+      "x-tooltip": "0 = minimize loss, 1 = minimize volume, 0.3 = balanced (default)"
+    },
+    population: {
+      type: "number",
+      minimum: 20,
+      maximum: 500,
+      "x-label": "GA Population",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 4,
+      "x-tooltip": "Rounded up to a multiple of 4. Blank uses the lane default."
+    },
+    generations: {
+      type: "number",
+      minimum: 10,
+      maximum: 500,
+      "x-label": "GA Generations",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 10,
+      "x-tooltip": "Blank uses the lane default."
+    },
+    randomSeed: {
+      type: "number",
+      minimum: 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+};
+
+// ../shared/job-schemas/pdn_impedance.json
+var pdn_impedance_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "pdn_impedance",
+  "x-slug": "pdn-impedance",
+  "x-title": "PDN Impedance Analyzer & Decoupling Capacitor Optimizer",
+  "x-checks": [
+    "port_within_board",
+    "sweep_stop_after_start"
+  ],
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    boardWidth_mm: {
+      type: "number",
+      minimum: 10,
+      maximum: 500,
+      default: 100,
+      "x-label": "Board Width",
+      "x-unit": "mm"
+    },
+    boardLength_mm: {
+      type: "number",
+      minimum: 10,
+      maximum: 500,
+      default: 150,
+      "x-label": "Board Length",
+      "x-unit": "mm"
+    },
+    dielectricEr: {
+      type: "number",
+      minimum: 1,
+      maximum: 15,
+      default: 4.5,
+      "x-label": "Dielectric \u03B5_r",
+      "x-dimensionless": true,
+      "x-step": 0.1,
+      "x-tooltip": "FR4 \u2248 4.5; Rogers 4350B \u2248 3.66; Rogers 3003 \u2248 3.0"
+    },
+    lossTangent: {
+      type: "number",
+      minimum: 1e-3,
+      maximum: 0.1,
+      default: 0.02,
+      "x-label": "Loss Tangent",
+      "x-dimensionless": true,
+      "x-step": 1e-3,
+      "x-tooltip": "FR4 \u2248 0.020; Rogers materials \u2248 0.002\u20130.004"
+    },
+    boardThickness_mm: {
+      type: "number",
+      minimum: 0.05,
+      maximum: 5,
+      default: 1.6,
+      "x-label": "Plane-Pair Separation",
+      "x-unit": "mm"
+    },
+    portX_mm: {
+      type: "number",
+      minimum: 0,
+      maximum: 500,
+      "x-derived": "board centre (boardWidth_mm / 2)",
+      "x-label": "Port X location",
+      "x-unit": "mm",
+      "x-tooltip": "Location where PDN impedance is evaluated (e.g. IC power pin)"
+    },
+    portY_mm: {
+      type: "number",
+      minimum: 0,
+      maximum: 500,
+      "x-derived": "board centre (boardLength_mm / 2)",
+      "x-label": "Port Y location",
+      "x-unit": "mm"
+    },
+    vrmBandwidth_hz: {
+      type: "number",
+      minimum: 1e3,
+      maximum: 1e7,
+      default: 1e5,
+      "x-label": "VRM Bandwidth",
+      "x-unit": "Hz",
+      "x-tooltip": "VRM control loop bandwidth \u2014 the VRM provides low impedance only below this frequency"
+    },
+    vrmDcr_mohm: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 500,
+      default: 5,
+      "x-label": "VRM DC Resistance",
+      "x-unit": "m\u03A9"
+    },
+    targetImpedance_mohm: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 1e3,
+      default: 10,
+      "x-label": "Target Impedance",
+      "x-unit": "m\u03A9",
+      "x-tooltip": "Flat target impedance \u2014 keep Z_PDN below this across all frequencies"
+    },
+    freqMin_hz: {
+      type: "number",
+      minimum: 100,
+      maximum: 1e6,
+      default: 1e3,
+      "x-label": "Freq Min",
+      "x-unit": "Hz"
+    },
+    freqMax_hz: {
+      type: "number",
+      minimum: 1e6,
+      maximum: 1e10,
+      default: 1e9,
+      "x-label": "Freq Max",
+      "x-unit": "Hz"
+    },
+    maxCapCount: {
+      type: "number",
+      minimum: 1,
+      maximum: 200,
+      default: 30,
+      "x-label": "Max Decap Count",
+      "x-dimensionless": true,
+      "x-step": 1,
+      "x-tooltip": "Total decoupling capacitor budget the optimizer may place"
+    },
+    randomSeed: {
+      type: "number",
+      minimum: 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+};
+
+// ../shared/job-schemas/radar_detection.json
+var radar_detection_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "radar_detection",
+  "x-slug": "radar-detection",
+  "x-title": "Radar Detection Performance Monte Carlo",
+  "x-checks": [
+    "probability_in_open_unit_interval"
+  ],
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    frequency_hz: {
+      type: "number",
+      minimum: 1e8,
+      maximum: 3e11,
+      default: 1e10,
+      "x-label": "Carrier Frequency",
+      "x-unit": "Hz",
+      "x-tooltip": "e.g. 3e9 = S-band, 10e9 = X-band, 77e9 = automotive mmWave"
+    },
+    peakPower_w: {
+      type: "number",
+      minimum: 1e-3,
+      maximum: 1e6,
+      default: 1e3,
+      "x-label": "Peak Tx Power",
+      "x-unit": "W"
+    },
+    antGainTx_dbi: {
+      type: "number",
+      minimum: 0,
+      maximum: 60,
+      default: 30,
+      "x-label": "Tx Antenna Gain",
+      "x-unit": "dBi"
+    },
+    antGainRx_dbi: {
+      type: "number",
+      minimum: 0,
+      maximum: 60,
+      default: 30,
+      "x-label": "Rx Antenna Gain",
+      "x-unit": "dBi",
+      "x-tooltip": "Set equal to Tx for monostatic radar"
+    },
+    noiseFig_db: {
+      type: "number",
+      minimum: 0,
+      maximum: 30,
+      default: 5,
+      "x-label": "Receiver NF",
+      "x-unit": "dB"
+    },
+    lossesTx_db: {
+      type: "number",
+      minimum: 0,
+      maximum: 20,
+      default: 1.5,
+      "x-label": "Tx Losses",
+      "x-unit": "dB"
+    },
+    lossesRx_db: {
+      type: "number",
+      minimum: 0,
+      maximum: 20,
+      default: 1.5,
+      "x-label": "Rx Losses",
+      "x-unit": "dB"
+    },
+    pulseWidth_s: {
+      type: "number",
+      minimum: 1e-9,
+      maximum: 1e-3,
+      default: 1e-6,
+      "x-label": "Pulse Width",
+      "x-unit": "s",
+      "x-tooltip": "e.g. 1e-6 = 1 \xB5s"
+    },
+    nPulses: {
+      type: "number",
+      minimum: 1,
+      maximum: 512,
+      default: 10,
+      "x-label": "Integrated Pulses",
+      "x-dimensionless": true,
+      "x-step": 1,
+      "x-tooltip": "Non-coherent pulse integration count"
+    },
+    swerlingModel: {
+      type: "string",
+      enum: [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      default: "1",
+      "x-label": "Swerling Model",
+      "x-tooltip": "Target RCS fluctuation model"
+    },
+    pfa: {
+      type: "number",
+      minimum: 1e-12,
+      maximum: 0.1,
+      default: 1e-6,
+      "x-label": "Prob. False Alarm",
+      "x-dimensionless": true,
+      "x-tooltip": "e.g. 1e-6 for a CFAR detector"
+    },
+    targetRcs_dbsm: {
+      type: "number",
+      minimum: -40,
+      maximum: 60,
+      default: 0,
+      "x-label": "Target RCS (mean)",
+      "x-unit": "dBsm",
+      "x-tooltip": "0 dBsm = 1 m\xB2; fighter aircraft \u2248 0\u20135 dBsm"
+    },
+    rangeMax_km: {
+      type: "number",
+      minimum: 1,
+      maximum: 2e3,
+      default: 100,
+      "x-label": "Max Range",
+      "x-unit": "km"
+    },
+    rainRate_mmhr: {
+      type: "number",
+      minimum: 0,
+      maximum: 150,
+      default: 0,
+      "x-label": "Rain Rate",
+      "x-unit": "mm/hr",
+      "x-tooltip": "0 = no rain; 25 = heavy rain; 100 = extreme"
+    }
+  }
+};
+
+// ../shared/job-schemas/rf_cascade.json
+var rf_cascade_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "rf_cascade",
+  "x-slug": "rf-cascade",
+  "x-title": "RF Cascade Budget Analyzer",
+  "x-checks": [],
+  "x-files": {
+    min: 0,
+    max: 12,
+    extensions: [
+      ".s2p"
+    ],
+    label: 'Optional: upload .s2p files and add `"sparamFile": "filename.s2p"` to a stage in the JSON above to override its gain_db from |S21|\xB2.'
+  },
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "stages"
+  ],
+  properties: {
+    stages: {
+      type: "string",
+      "x-label": "Stage Definitions (JSON)",
+      "x-tooltip": 'Array of stage objects. type: "amp"|"filter"|"attenuator"|"mixer"|"switch". Passive stages (filter/attenuator/switch) automatically set NF = |gain|.'
+    },
+    nfSpec_db: {
+      type: "number",
+      minimum: 0,
+      maximum: 50,
+      default: 6,
+      "x-label": "NF Spec (max)",
+      "x-unit": "dB"
+    },
+    gainSpec_db: {
+      type: "number",
+      minimum: -30,
+      maximum: 100,
+      default: 28,
+      "x-label": "Gain Spec (min)",
+      "x-unit": "dB"
+    },
+    iip3Spec_dbm: {
+      type: "number",
+      minimum: -40,
+      maximum: 50,
+      default: -8,
+      "x-label": "IIP3 Spec (min)",
+      "x-unit": "dBm"
+    },
+    inputPower_dbm: {
+      type: "number",
+      minimum: -130,
+      maximum: 20,
+      default: -70,
+      "x-label": "Input Signal Power",
+      "x-unit": "dBm"
+    },
+    bandwidth_hz: {
+      type: "number",
+      minimum: 1e3,
+      maximum: 1e10,
+      default: 1e7,
+      "x-label": "Noise Bandwidth",
+      "x-unit": "Hz",
+      "x-tooltip": "e.g. 10e6 = 10 MHz IF bandwidth"
+    },
+    analysisFreq_hz: {
+      type: "number",
+      default: 0,
+      "x-label": "Analysis Freq (when using .s2p)",
+      "x-unit": "Hz",
+      "x-tooltip": "Frequency at which to sample |S21|\xB2 from uploaded Touchstone files. 0 = auto (mid-band of the file)."
+    },
+    snrMin_db: {
+      type: "number",
+      minimum: 0,
+      maximum: 40,
+      default: 0,
+      "x-label": "SFDR Min SNR",
+      "x-unit": "dB",
+      "x-tooltip": "SNR required at the detector, used as the SFDR reference floor. 0 = textbook SFDR referenced to the noise floor. Set e.g. 12 dB to reference SFDR to a usable-sensitivity floor instead."
+    }
+  }
+};
+
+// ../shared/job-schemas/sat_link_budget.json
+var sat_link_budget_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "sat_link_budget",
+  "x-slug": "sat-link-budget",
+  "x-title": "Satellite & Terrestrial Link Budget",
+  "x-checks": [],
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "latitude_deg",
+    "longitude_deg"
+  ],
+  properties: {
+    linkType: {
+      type: "string",
+      enum: [
+        "satellite",
+        "terrestrial"
+      ],
+      default: "satellite",
+      "x-label": "Link Type"
+    },
+    frequency_ghz: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 100,
+      default: 12,
+      "x-label": "Frequency",
+      "x-unit": "GHz",
+      "x-step": 0.1,
+      "x-tooltip": "e.g. 4 = C-band, 12 = Ku-band, 20 = Ka-band, 60 = mmWave"
+    },
+    eirp_dbw: {
+      type: "number",
+      minimum: -10,
+      maximum: 90,
+      default: 46,
+      "x-label": "EIRP",
+      "x-unit": "dBW"
+    },
+    gt_db_k: {
+      type: "number",
+      minimum: -30,
+      maximum: 50,
+      default: 0,
+      "x-label": "G/T",
+      "x-unit": "dB/K",
+      "x-tooltip": "Receive antenna gain minus system noise temperature (dB/K)"
+    },
+    distance_km: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 5e4,
+      default: 35786,
+      "x-label": "Path Distance",
+      "x-unit": "km",
+      "x-tooltip": "GEO orbit \u2248 35786 km; LEO \u2248 500\u20132000 km; terrestrial path in km"
+    },
+    elevationAngle_deg: {
+      type: "number",
+      minimum: 5,
+      maximum: 90,
+      default: 45,
+      "x-label": "Elevation Angle",
+      "x-unit": "\xB0",
+      "x-tooltip": "Satellite elevation angle from the earth station. Lower elevation = more atmosphere.",
+      "x-showWhen": {
+        key: "linkType",
+        value: "satellite"
+      }
+    },
+    latitude_deg: {
+      type: "number",
+      minimum: -90,
+      maximum: 90,
+      "x-label": "Site Latitude",
+      "x-unit": "\xB0",
+      "x-tooltip": "North positive. Rain rate, rain height, cloud water and water vapour are read from the ITU-R climate maps at this point."
+    },
+    longitude_deg: {
+      type: "number",
+      minimum: -180,
+      maximum: 180,
+      "x-label": "Site Longitude",
+      "x-unit": "\xB0",
+      "x-tooltip": "East positive, west negative (New York is \u221274.0). Required: the climate maps vary with longitude as much as latitude."
+    },
+    stationHeight_km: {
+      type: "number",
+      minimum: 0,
+      maximum: 8,
+      "x-label": "Station Height (optional)",
+      "x-unit": "km",
+      "x-step": 0.01,
+      "x-tooltip": "Height above mean sea level. Leave blank to use the ITU-R P.1511 topographic height at the site."
+    },
+    polarization: {
+      type: "string",
+      enum: [
+        "horizontal",
+        "vertical",
+        "circular"
+      ],
+      default: "horizontal",
+      "x-label": "Polarization"
+    },
+    modulation: {
+      type: "string",
+      enum: [
+        "bpsk",
+        "qpsk",
+        "8psk",
+        "16qam",
+        "64qam"
+      ],
+      default: "qpsk",
+      "x-label": "Modulation"
+    },
+    reqEbN0_db: {
+      type: "number",
+      minimum: 0,
+      maximum: 30,
+      default: 7,
+      "x-label": "Required Eb/N\u2080",
+      "x-unit": "dB",
+      "x-tooltip": "Required Eb/N\u2080 for target BER from modem spec sheet"
+    },
+    dataRate_bps: {
+      type: "number",
+      minimum: 1e3,
+      maximum: 1e10,
+      default: 1e7,
+      "x-label": "Data Rate",
+      "x-unit": "bps",
+      "x-tooltip": "e.g. 10e6 = 10 Mbps"
+    },
+    targetAvailability_pct: {
+      type: "number",
+      minimum: 90,
+      maximum: 99.999,
+      default: 99.5,
+      "x-label": "Target Availability",
+      "x-unit": "%",
+      "x-step": 0.1,
+      "x-tooltip": "99.5% = 43.8 h/yr outage; 99.9% = 8.8 h/yr; 99.99% = 0.88 h/yr"
+    }
+  }
+};
+
+// ../shared/job-schemas/smps_control_loop.json
+var smps_control_loop_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "smps_control_loop",
+  "x-slug": "smps-control-loop",
+  "x-title": "SMPS Control Loop Stability Analyzer",
+  "x-checks": [
+    "converter_duty_in_ccm_range",
+    "converter_load_nonzero"
+  ],
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    topology: {
+      type: "string",
+      enum: [
+        "buck",
+        "boost",
+        "buck_boost",
+        "flyback"
+      ],
+      default: "buck",
+      "x-label": "Topology"
+    },
+    controlMode: {
+      type: "string",
+      enum: [
+        "voltage_mode",
+        "peak_current"
+      ],
+      default: "voltage_mode",
+      "x-label": "Control Mode"
+    },
+    Vin: {
+      type: "number",
+      minimum: 1,
+      maximum: 1e3,
+      default: 12,
+      "x-label": "Input Voltage",
+      "x-unit": "V",
+      "x-step": 0.1
+    },
+    Vout: {
+      type: "number",
+      minimum: 0.5,
+      maximum: 999,
+      default: 5,
+      "x-label": "Output Voltage",
+      "x-unit": "V",
+      "x-step": 0.1
+    },
+    Iout: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 100,
+      default: 2,
+      "x-label": "Output Current",
+      "x-unit": "A",
+      "x-step": 0.1
+    },
+    L: {
+      type: "number",
+      minimum: 1e-9,
+      default: 47e-6,
+      "x-label": "Inductance",
+      "x-unit": "H",
+      "x-step": 1e-6,
+      "x-tooltip": "e.g. 47e-6 for 47 \xB5H"
+    },
+    C: {
+      type: "number",
+      minimum: 1e-12,
+      default: 22e-5,
+      "x-label": "Output Capacitance",
+      "x-unit": "F",
+      "x-step": 1e-6,
+      "x-tooltip": "e.g. 220e-6 for 220 \xB5F"
+    },
+    ESR: {
+      type: "number",
+      minimum: 0,
+      default: 0.05,
+      "x-label": "Capacitor ESR",
+      "x-unit": "\u03A9",
+      "x-step": 1e-3,
+      "x-tooltip": "Equivalent series resistance of output capacitor"
+    },
+    Fsw: {
+      type: "number",
+      minimum: 1e3,
+      maximum: 1e7,
+      default: 1e5,
+      "x-label": "Switching Frequency",
+      "x-unit": "Hz"
+    },
+    Vramp: {
+      type: "number",
+      minimum: 0.1,
+      default: 1,
+      "x-label": "Sawtooth Amplitude",
+      "x-unit": "V",
+      "x-tooltip": "Peak-to-peak sawtooth amplitude for the PWM comparator",
+      "x-showWhen": {
+        key: "controlMode",
+        value: "voltage_mode"
+      }
+    },
+    Rsense: {
+      type: "number",
+      minimum: 1e-3,
+      default: 0.1,
+      "x-label": "Sense Resistor",
+      "x-unit": "\u03A9",
+      "x-showWhen": {
+        key: "controlMode",
+        value: "peak_current"
+      }
+    },
+    externalRamp: {
+      type: "number",
+      minimum: 0,
+      maximum: 10,
+      default: 0,
+      "x-label": "External Ramp (Se/Sn)",
+      "x-dimensionless": true,
+      "x-step": 0.1,
+      "x-tooltip": "Slope compensation as a fraction of the sensed inductor up-slope; 0 applies none. Above 50 % duty cycle the inductor-current loop needs m_c\xB7D\u2032 > 0.5, where m_c = 1 + Se/Sn.",
+      "x-showWhen": {
+        key: "controlMode",
+        value: "peak_current"
+      }
+    },
+    compensatorType: {
+      type: "string",
+      enum: [
+        "type1",
+        "type2",
+        "type3"
+      ],
+      default: "type3",
+      "x-label": "Compensator"
+    },
+    compK: {
+      type: "number",
+      minimum: 1e-3,
+      default: 2e3,
+      "x-label": "Compensator Gain (K)",
+      "x-unit": "rad/s"
+    },
+    compFz1: {
+      type: "number",
+      minimum: 1,
+      default: 500,
+      "x-label": "Zero 1 Frequency",
+      "x-unit": "Hz"
+    },
+    compFz2: {
+      type: "number",
+      minimum: 1,
+      default: 1500,
+      "x-label": "Zero 2 Frequency",
+      "x-unit": "Hz",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: "type3"
+      }
+    },
+    compFp1: {
+      type: "number",
+      minimum: 1,
+      default: 2e4,
+      "x-label": "Pole 1 Frequency",
+      "x-unit": "Hz"
+    },
+    compFp2: {
+      type: "number",
+      minimum: 1,
+      default: 5e4,
+      "x-label": "Pole 2 Frequency",
+      "x-unit": "Hz",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: "type3"
+      }
+    },
+    monteCarloTrials: {
+      type: "number",
+      minimum: 1e3,
+      maximum: 5e5,
+      default: 2e5,
+      "x-label": "MC Trials",
+      "x-dimensionless": true,
+      "x-step": 1e3,
+      "x-tooltip": "Each trial re-evaluates T(s) with randomized component values."
+    },
+    tolL: {
+      type: "number",
+      minimum: 0,
+      maximum: 100,
+      default: 20,
+      "x-label": "Inductor Tolerance",
+      "x-unit": "%",
+      "x-step": 1
+    },
+    tolC: {
+      type: "number",
+      minimum: 0,
+      maximum: 100,
+      default: 20,
+      "x-label": "Capacitor Tolerance",
+      "x-unit": "%",
+      "x-step": 1
+    },
+    tolESR: {
+      type: "number",
+      minimum: 0,
+      maximum: 200,
+      default: 50,
+      "x-label": "ESR Tolerance",
+      "x-unit": "%",
+      "x-step": 5
+    },
+    tolRsense: {
+      type: "number",
+      minimum: 0,
+      maximum: 100,
+      default: 1,
+      "x-label": "Sense Resistor Tolerance",
+      "x-unit": "%",
+      "x-hidden": true,
+      "x-step": 0.5,
+      "x-showWhen": {
+        key: "controlMode",
+        value: "peak_current"
+      }
+    },
+    tolLoad: {
+      type: "number",
+      minimum: 0,
+      maximum: 100,
+      default: 30,
+      "x-label": "Load Tolerance",
+      "x-unit": "%",
+      "x-step": 5
+    },
+    toleranceDistribution: {
+      type: "string",
+      enum: [
+        "gaussian",
+        "uniform"
+      ],
+      default: "gaussian",
+      "x-label": "Distribution"
+    }
+  }
+};
+
+// ../shared/job-schemas/sparam_pipeline.json
+var sparam_pipeline_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "sparam_pipeline",
+  "x-slug": "sparam-pipeline",
+  "x-title": "S-Parameter Analysis Pipeline",
+  "x-checks": [
+    "sweep_stop_after_start"
+  ],
+  "x-files": {
+    min: 1,
+    max: 4,
+    extensions: [
+      ".s1p",
+      ".s2p",
+      ".s3p",
+      ".s4p"
+    ],
+    label: "Drop up to 4 Touchstone files here"
+  },
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {
+    refImpedance: {
+      type: "number",
+      minimum: 1,
+      default: 50,
+      "x-label": "Reference Impedance",
+      "x-unit": "\u03A9"
+    },
+    freqStart: {
+      type: "number",
+      default: 0,
+      "x-label": "Analysis Freq Start",
+      "x-unit": "Hz",
+      "x-tooltip": "0 = use file range"
+    },
+    freqStop: {
+      type: "number",
+      default: 0,
+      "x-label": "Analysis Freq Stop",
+      "x-unit": "Hz",
+      "x-tooltip": "0 = use file range"
+    }
+  }
+};
+
+// ../rftools-mcp/src/job-schemas.ts
+var RAW_SCHEMAS = [
+  antenna_sim_default,
+  emi_radiated_default,
+  eye_diagram_default,
+  fdtd_sparam_default,
+  filter_monte_carlo_default,
+  impedance_match_default,
+  magnetics_optimizer_default,
+  pdn_impedance_default,
+  radar_detection_default,
+  rf_cascade_default,
+  sat_link_budget_default,
+  smps_control_loop_default,
+  sparam_pipeline_default
+];
+var JOB_SCHEMAS = Object.fromEntries(
+  RAW_SCHEMAS.map((s) => [s["x-jobType"], s])
+);
+var JOB_INDEX = job_schemas_default.jobTypes;
+var JOB_CHECKS = job_schemas_default.checks;
+var JOB_TYPES = Object.keys(JOB_INDEX);
+function toolNameForJobType(jobType) {
+  const entry = JOB_INDEX[jobType];
+  if (!entry) throw new Error(`Unknown jobType "${jobType}"`);
+  return `simulate_${entry.slug.replace(/-/g, "_")}`;
+}
+function webUrlFor(jobType, jobId) {
+  const slug = JOB_INDEX[jobType]?.slug ?? jobType;
+  return `https://rftools.io/tools/${slug}/results?jobId=${jobId}`;
+}
+function fileSchemaFor(jobType) {
+  return JOB_SCHEMAS[jobType]?.["x-files"] ?? null;
+}
+function listJobTypes() {
+  return JOB_TYPES.map((jobType) => ({
+    jobType,
+    toolName: toolNameForJobType(jobType),
+    ...JOB_INDEX[jobType],
+    params: Object.keys(JOB_SCHEMAS[jobType]?.properties ?? {}),
+    files: fileSchemaFor(jobType)
+  }));
+}
+function assertContractConsistent() {
+  const schemaTypes = Object.keys(JOB_SCHEMAS).sort();
+  const indexTypes = [...JOB_TYPES].sort();
+  if (schemaTypes.join(",") !== indexTypes.join(",")) {
+    throw new Error(
+      `job-schema drift: index has [${indexTypes.join(", ")}] but the schema files have [${schemaTypes.join(", ")}]`
+    );
+  }
+  for (const jobType of indexTypes) {
+    const hasFiles = Boolean(JOB_SCHEMAS[jobType]["x-files"]);
+    if (hasFiles !== JOB_INDEX[jobType].files) {
+      throw new Error(`job-schema drift: ${jobType} disagrees about file inputs`);
+    }
+  }
+}
+
+// ../rftools-mcp/src/simulation-tools.ts
+var import_promises = require("node:fs/promises");
+var import_node_path = __toESM(require("node:path"), 1);
+var import_zod2 = require("zod");
+
+// ../rftools-mcp/src/api.ts
+var ApiError = class extends Error {
+  constructor(status, kind, detail, retryAfter) {
+    super(renderDetail(detail) || `API ${status}`);
+    this.name = "ApiError";
+    this.status = status;
+    this.kind = kind;
+    this.detail = detail;
+    this.retryAfter = retryAfter;
+  }
+};
+function kindForStatus(status) {
+  if (status === 401) return "auth";
+  if (status === 402) return "quota";
+  if (status === 403) return "forbidden";
+  if (status === 404) return "not_found";
+  if (status === 413) return "too_large";
+  if (status === 429) return "rate_limited";
+  if (status === 400 || status === 422) return "invalid_request";
+  if (status === 503) return "unavailable";
+  if (status >= 500) return "fault";
+  return "fault";
+}
+function renderDetail(detail) {
+  if (detail == null) return "";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((entry) => {
+      if (typeof entry === "string") return `- ${entry}`;
+      const p = entry;
+      const name = p.param ?? (Array.isArray(p.loc) ? p.loc.filter((x) => x !== "body").join(".") : void 0);
+      const reason = p.reason ?? p.msg ?? "";
+      const bits = [];
+      if (name) bits.push(String(name));
+      if (reason) bits.push(reason);
+      let line = `- ${bits.join(": ")}`;
+      if (p.value !== void 0) line += ` (given ${JSON.stringify(p.value)})`;
+      if (p.allowed !== void 0) line += `; allowed: ${renderAllowed(p.allowed)}`;
+      return line;
+    }).join("\n");
+  }
+  return JSON.stringify(detail);
+}
+function renderAllowed(allowed) {
+  if (Array.isArray(allowed)) return allowed.map((a) => String(a)).join(", ");
+  if (allowed && typeof allowed === "object") return JSON.stringify(allowed);
+  return String(allowed);
+}
+function describeApiError(err) {
+  const detail = renderDetail(err.detail);
+  switch (err.kind) {
+    case "auth":
+      return "The API key was refused, or its monthly allowance is spent. Check the key and its usage at https://rftools.io/dashboard." + (detail ? `
+Service said: ${detail}` : "");
+    case "quota":
+      return "The monthly simulation allowance is spent. Free: 5 runs/month, Pro: 100/month, API: 10 000/month. See https://rftools.io/dashboard." + (detail ? `
+Service said: ${detail}` : "");
+    case "rate_limited":
+      return "Too many requests." + (err.retryAfter !== void 0 ? ` Retry after ${err.retryAfter} s.` : " Retry shortly.") + (detail ? `
+Service said: ${detail}` : "");
+    case "invalid_request":
+      return `The service refused the request as invalid:
+${detail || "(no detail given)"}`;
+    case "too_large":
+      return `The request is larger than this lane will run:
+${detail || "(no detail given)"}`;
+    case "forbidden":
+      return `Not authorised for this job: ${detail || "the job belongs to another account."}`;
+    case "not_found":
+      return `Not found: ${detail || "no such job."}`;
+    case "unavailable":
+      return `The service is temporarily unavailable: ${detail || "try again shortly."}`;
+    case "transient":
+      return `The service could not be reached: ${detail || err.message}. Retry shortly.`;
+    case "fault":
+    default:
+      return `The service failed (HTTP ${err.status}): ${detail || err.message}`;
+  }
+}
+var JOB_ERROR_KINDS = {
+  invalid_request: "The job was refused as invalid \u2014 a parameter is outside what this job type accepts.",
+  too_large: "The job is larger than its lane will run. Reduce the mesh, the sweep, the population or the trial count, or use a paid lane.",
+  not_available: "That mode is not available on this tier. A paid key unlocks it.",
+  timeout: "The job ran past its time budget and was stopped. Reduce the size of the problem or use a paid lane.",
+  interrupted: "The job was interrupted before it finished. Resubmit it.",
+  result_expired: "The result is no longer stored. Results are kept for 30 days on the free tier; resubmit the job.",
+  rate_limited: "The job was refused because too many were submitted at once. Retry shortly.",
+  transient: "The job failed on something transient. Resubmit it.",
+  fault: "The job failed inside the service. This is a fault on our side, not a problem with the request."
+};
+function describeJobError(errorKind, errorMessage) {
+  const sentence = errorKind ? JOB_ERROR_KINDS[errorKind] : void 0;
+  if (sentence) return errorMessage ? `${sentence}
+${errorMessage}` : sentence;
+  if (errorKind) return errorMessage ? `${errorKind}: ${errorMessage}` : `The job failed (${errorKind}).`;
+  return errorMessage ?? "The job failed without a message.";
+}
+var DEFAULT_BASE = "https://rftools.io/api/py";
+var RftoolsApi = class {
+  constructor(opts = {}) {
+    this.baseUrl = opts.baseUrl ?? process.env.RFTOOLS_API_BASE ?? DEFAULT_BASE;
+    this.apiKey = opts.apiKey ?? process.env.RFTOOLS_API_KEY ?? "";
+    this.doFetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
+  }
+  /** True when a key is configured; false means the free lane. */
+  get hasKey() {
+    return Boolean(this.apiKey);
+  }
+  headers(extra = {}) {
+    return this.apiKey ? { ...extra, Authorization: `Bearer ${this.apiKey}` } : { ...extra };
+  }
+  async request(path2, init) {
+    let res;
+    try {
+      res = await this.doFetch(`${this.baseUrl}${path2}`, init);
+    } catch (err) {
+      throw new ApiError(0, "transient", err instanceof Error ? err.message : String(err));
+    }
+    if (!res.ok) throw await errorFromResponse(res);
+    if (res.status === 204) return null;
+    return await res.json();
+  }
+  async post(path2, body) {
+    return this.request(path2, {
+      method: "POST",
+      headers: this.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body)
+    });
+  }
+  async get(path2) {
+    return this.request(path2, { method: "GET", headers: this.headers() });
+  }
+  async submitJob(jobType, params, inputFileKeys = []) {
+    return await this.post("/v1/jobs", { jobType, params, inputFileKeys });
+  }
+  async jobStatus(jobId) {
+    return await this.get(`/v1/jobs/${encodeURIComponent(jobId)}`);
+  }
+  /**
+   * Upload one file: ask for a presigned POST, then send the form the way the
+   * browser does — the policy's fields first, the bytes under `file` last.
+   * Returns the key the job body carries.
+   */
+  async uploadFile(filename, content) {
+    const ticket = await this.post("/upload", {
+      filename,
+      contentType: "application/octet-stream"
+    });
+    const form = new FormData();
+    for (const [k, v] of Object.entries(ticket.fields ?? {})) form.append(k, v);
+    const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+    form.append("file", new Blob([bytes], { type: "application/octet-stream" }), filename);
+    let res;
+    try {
+      res = await this.doFetch(ticket.uploadUrl, { method: "POST", body: form });
+    } catch (err) {
+      throw new ApiError(0, "transient", `upload of ${filename} failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new ApiError(res.status, kindForStatus(res.status), `upload of ${filename} failed: ${text || res.statusText}`);
+    }
+    return ticket.key;
+  }
+  /** Fetch a finished job's result payload from its presigned URL. */
+  async fetchResult(resultUrl) {
+    let res;
+    try {
+      res = await this.doFetch(resultUrl, { method: "GET" });
+    } catch (err) {
+      throw new ApiError(0, "transient", err instanceof Error ? err.message : String(err));
+    }
+    if (!res.ok) {
+      const kind = res.status === 403 || res.status === 404 ? "not_found" : kindForStatus(res.status);
+      throw new ApiError(res.status, kind, `the result link is no longer valid (HTTP ${res.status}); ask for the status again to get a fresh one`);
+    }
+    return await res.json();
+  }
+};
+async function errorFromResponse(res) {
+  let detail;
+  const text = await res.text().catch(() => "");
+  if (text) {
+    try {
+      const parsed = JSON.parse(text);
+      detail = parsed && typeof parsed === "object" && "detail" in parsed ? parsed.detail : parsed;
+    } catch {
+      detail = text;
+    }
+  } else {
+    detail = res.statusText;
+  }
+  const header = res.headers?.get?.("Retry-After") ?? res.headers?.get?.("retry-after") ?? null;
+  const retryAfter = header != null && header !== "" && Number.isFinite(Number(header)) ? Number(header) : void 0;
+  return new ApiError(res.status, kindForStatus(res.status), detail, retryAfter);
+}
+
+// ../rftools-mcp/src/json-schema-to-zod.ts
+var import_zod = require("zod");
+function describeParam(name, prop) {
+  const parts = [];
+  const label = prop["x-label"] ?? name;
+  const unit = prop["x-unit"];
+  parts.push(unit ? `${label} (${unit})` : label);
+  if (prop["x-tooltip"]) parts.push(prop["x-tooltip"]);
+  if (prop["x-ref"]) {
+    parts.push(`Structure is not described by this schema; pass it as the service expects (see ${prop["x-ref"]}).`);
+  }
+  const range = [];
+  if (prop.minimum !== void 0) range.push(`min ${prop.minimum}`);
+  if (prop.maximum !== void 0) range.push(`max ${prop.maximum}`);
+  if (range.length) parts.push(range.join(", "));
+  if (prop.default !== void 0) parts.push(`default ${JSON.stringify(prop.default)}`);
+  if (prop["x-derived"]) {
+    parts.push(`Omit to let the service derive it: ${prop["x-derived"]}.`);
+  }
+  const tier = prop["x-tier"];
+  if (tier) {
+    for (const [tierName, bound] of Object.entries(tier)) {
+      const bounds = [];
+      if (bound.minimum !== void 0) bounds.push(`min ${bound.minimum}`);
+      if (bound.maximum !== void 0) bounds.push(`max ${bound.maximum}`);
+      if (bounds.length) parts.push(`bound on the ${tierName} tier: ${bounds.join(", ")}`);
+    }
+  }
+  if (prop["x-paidOnly"]?.length) {
+    parts.push(`Paid tier only: ${prop["x-paidOnly"].join(", ")}.`);
+  }
+  const showWhen = prop["x-showWhen"];
+  if (showWhen) {
+    parts.push(`Applies when ${showWhen.key} is "${showWhen.value}".`);
+  }
+  if (prop["x-hidden"]) {
+    parts.push("Advanced \u2014 most callers can leave it out.");
+  }
+  return parts.join(". ").replace(/\.\./g, ".");
+}
+function baseType(prop) {
+  if (prop["x-ref"]) return import_zod.z.unknown();
+  if (prop.enum?.length) {
+    return import_zod.z.enum(prop.enum);
+  }
+  switch (prop.type) {
+    case "integer": {
+      let n = import_zod.z.int();
+      if (prop.minimum !== void 0) n = n.min(prop.minimum);
+      if (prop.maximum !== void 0) n = n.max(prop.maximum);
+      return n;
+    }
+    case "number": {
+      let n = import_zod.z.number();
+      if (prop.minimum !== void 0) n = n.min(prop.minimum);
+      if (prop.maximum !== void 0) n = n.max(prop.maximum);
+      return n;
+    }
+    case "boolean":
+      return import_zod.z.boolean();
+    case "array":
+      return import_zod.z.array(import_zod.z.unknown());
+    case "object":
+      return import_zod.z.record(import_zod.z.string(), import_zod.z.unknown());
+    case "string":
+    default:
+      return import_zod.z.string();
+  }
+}
+function zodForParam(name, prop, required) {
+  let t = baseType(prop).describe(describeParam(name, prop));
+  if (prop.default !== void 0) {
+    t = t.default(prop.default);
+  } else if (!required) {
+    t = t.optional();
+  }
+  return t;
+}
+function shapeForJob(schema) {
+  const required = new Set(schema.required ?? []);
+  const shape = {};
+  for (const [name, prop] of Object.entries(schema.properties ?? {})) {
+    shape[name] = zodForParam(name, prop, required.has(name));
+  }
+  return shape;
+}
+function strictObject(shape, what) {
+  const accepted = Object.keys(shape);
+  return import_zod.z.strictObject(shape, {
+    error: (issue) => issue.code === "unrecognized_keys" ? `${what} does not accept ${issue.keys.map((k) => `"${k}"`).join(", ")}. Accepted keys: ${accepted.join(", ")}.` : void 0
+  });
+}
+function paramsSchemaForJob(schema) {
+  return strictObject(shapeForJob(schema), `${schema["x-jobType"]}`);
+}
+function validateParams(schema, params) {
+  const parsed = paramsSchemaForJob(schema).safeParse(params);
+  if (parsed.success) return { ok: true, value: parsed.data };
+  const problems = parsed.error.issues.map((issue) => {
+    const path2 = issue.path.join(".");
+    return path2 ? `${path2}: ${issue.message}` : issue.message;
+  });
+  return { ok: false, problems };
+}
+
+// ../rftools-mcp/src/summarize.ts
+var HEADLINE_KEYS = /* @__PURE__ */ new Set([
+  "summary",
+  "warnings",
+  "provenance",
+  "advisories",
+  "status",
+  "label",
+  "op",
+  "reason",
+  "decision",
+  "error"
+]);
+var DEFAULTS = {
+  maxSeries: 50,
+  maxSeriesChars: 2048,
+  budgetChars: 6e3
+};
+function isScalar(v) {
+  return v === null || typeof v !== "object" && typeof v !== "function";
+}
+function size(v) {
+  try {
+    return JSON.stringify(v)?.length ?? 0;
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+function elide(v) {
+  if (Array.isArray(v)) return { elided: "array", length: v.length };
+  const keys = Object.keys(v);
+  return { elided: "object", keys: keys.slice(0, 12), ...keys.length > 12 ? { more: keys.length - 12 } : {} };
+}
+function describeSeries(arr) {
+  const out = { length: arr.length };
+  const numbers = arr.filter((x) => typeof x === "number" && Number.isFinite(x));
+  if (numbers.length === arr.length && arr.length > 0) {
+    out.min = Math.min(...numbers);
+    out.max = Math.max(...numbers);
+  }
+  if (arr.length > 0) {
+    out.first = cap(arr[0]);
+    out.last = cap(arr[arr.length - 1]);
+  }
+  return out;
+}
+function cap(v, limit = 300) {
+  if (isScalar(v)) return v;
+  const reduced = reduce(v, DEFAULTS.maxSeries, DEFAULTS.maxSeriesChars);
+  return size(reduced) <= limit ? reduced : elide(v);
+}
+function reduce(value, maxSeries, maxSeriesChars) {
+  if (isScalar(value)) return value;
+  if (Array.isArray(value)) {
+    const allScalar = value.every(isScalar);
+    if (value.length > maxSeries || allScalar && size(value) > maxSeriesChars) {
+      return describeSeries(value);
+    }
+    return value.map((v) => reduce(v, maxSeries, maxSeriesChars));
+  }
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    out[k] = reduce(v, maxSeries, maxSeriesChars);
+  }
+  return out;
+}
+function collect(node, headlineAbove, depth, out) {
+  if (isScalar(node)) return;
+  const entries = Array.isArray(node) ? node.map((v, i) => [i, v]) : Object.entries(node);
+  for (const [key, value] of entries) {
+    if (isScalar(value)) continue;
+    const isElided = !Array.isArray(value) && "elided" in value;
+    const headline = headlineAbove || typeof key === "string" && HEADLINE_KEYS.has(key);
+    if (!isElided) {
+      out.push({
+        parent: node,
+        key,
+        value,
+        size: size(value),
+        depth,
+        headline
+      });
+    }
+    collect(value, headline, depth + 1, out);
+  }
+}
+function fitToBudget(root, budget) {
+  let elidedAny = false;
+  const bulky = Math.max(200, Math.floor(budget / 10));
+  for (let guard = 0; guard < 2e3; guard += 1) {
+    if (size(root) <= budget) break;
+    const candidates = [];
+    collect(root, false, 0, candidates);
+    if (candidates.length === 0) break;
+    const plain = candidates.filter((c2) => !c2.headline);
+    const pool = plain.length > 0 ? plain : candidates;
+    const large = pool.filter((c2) => c2.size > bulky);
+    const from = large.length > 0 ? large : pool;
+    let target = from[0];
+    for (const c2 of from) {
+      if (c2.depth > target.depth || c2.depth === target.depth && c2.size > target.size) target = c2;
+    }
+    target.parent[target.key] = elide(target.value);
+    elidedAny = true;
+  }
+  return elidedAny;
+}
+function summariseResult(payload, opts = {}) {
+  const maxSeries = opts.maxSeries ?? DEFAULTS.maxSeries;
+  const maxSeriesChars = opts.maxSeriesChars ?? DEFAULTS.maxSeriesChars;
+  const budget = opts.budgetChars ?? DEFAULTS.budgetChars;
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    const value2 = { result: reduce(payload, maxSeries, maxSeriesChars) };
+    const elided2 = fitToBudget(value2, budget);
+    return { value: value2, elided: elided2 };
+  }
+  const source = payload;
+  const value = {};
+  for (const key of ["summary", "warnings", "provenance"]) {
+    if (source[key] !== void 0) value[key] = reduce(source[key], maxSeries, maxSeriesChars);
+  }
+  for (const [k, v] of Object.entries(source)) {
+    if (k in value) continue;
+    value[k] = isScalar(v) ? v : reduce(v, maxSeries, maxSeriesChars);
+  }
+  const elided = fitToBudget(value, budget);
+  return { value, elided };
+}
+
+// ../rftools-mcp/src/simulation-tools.ts
+var WAIT_DEFAULT_SECONDS = 90;
+var WAIT_MAX_SECONDS = 600;
+var MAX_INLINE_BYTES = 5 * 1024 * 1024;
+var MAX_FILE_BYTES = 10 * 1024 * 1024;
+var TIER_LIMITS = "Free tier: 5 runs/month. Pro: 100/month. API tier: 10 000/month.";
+var RESULT_URL_LIFETIME = "15 minutes";
+var DEDUP_WINDOW_SECONDS = 60;
+var TERMINAL = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
+function makeDeps(opts = {}) {
+  return {
+    api: opts.api ?? new RftoolsApi({ apiKey: opts.apiKey, baseUrl: opts.baseUrl, fetchImpl: opts.fetchImpl }),
+    sleep: opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
+    now: opts.now ?? (() => Date.now()),
+    readLocalFile: opts.readLocalFile ?? (async (p) => ({ name: import_node_path.default.basename(p), bytes: new Uint8Array(await (0, import_promises.readFile)(p)) })),
+    waitDefaultSeconds: opts.waitDefaultSeconds ?? WAIT_DEFAULT_SECONDS,
+    waitMaxSeconds: opts.waitMaxSeconds ?? WAIT_MAX_SECONDS,
+    pollIntervalMs: opts.pollIntervalMs
+  };
+}
+function json(value) {
+  return JSON.stringify(value);
+}
+function ok(value, note) {
+  const text = note ? `${note}
+${json(value)}` : json(value);
+  return { content: [{ type: "text", text }] };
+}
+function fail(message) {
+  return { content: [{ type: "text", text: message }], isError: true };
+}
+function freeLaneNote(jobType) {
+  const parts = [
+    "No RFTOOLS_API_KEY is set, so this ran on the free lane (no account needed).",
+    TIER_LIMITS
+  ];
+  if (jobType) {
+    const bounds = freeLaneBounds(jobType);
+    if (bounds.length) parts.push(`On the free lane this job type is bounded: ${bounds.join("; ")}.`);
+  }
+  parts.push("A key raises the limits: https://rftools.io/dashboard");
+  return parts.join(" ");
+}
+function freeLaneBounds(jobType) {
+  const schema = JOB_SCHEMAS[jobType];
+  if (!schema) return [];
+  const bounds = [];
+  for (const [name, prop] of Object.entries(schema.properties ?? {})) {
+    const free = prop["x-tier"]?.free;
+    if (free) {
+      const bits = [];
+      if (free.minimum !== void 0) bits.push(`min ${free.minimum}`);
+      if (free.maximum !== void 0) bits.push(`max ${free.maximum}`);
+      if (bits.length) bounds.push(`${name} ${bits.join(", ")}`);
+    }
+    if (prop["x-paidOnly"]?.length) {
+      bounds.push(`${name} cannot be ${prop["x-paidOnly"].join(" or ")} without a paid key`);
+    }
+  }
+  return bounds;
+}
+function checkFiles(spec, files) {
+  const problems = [];
+  if (files.length < spec.min) {
+    problems.push(
+      `this job type needs at least ${spec.min} file${spec.min === 1 ? "" : "s"} (${spec.extensions.join(", ")}); pass inputFiles: [{name, content}] or inputPaths: ["/path/to/file"]`
+    );
+  }
+  if (files.length > spec.max) {
+    problems.push(`this job type takes at most ${spec.max} file${spec.max === 1 ? "" : "s"}, ${files.length} were given`);
+  }
+  let total = 0;
+  for (const f of files) {
+    const ext = f.name.includes(".") ? f.name.slice(f.name.lastIndexOf(".")).toLowerCase() : "";
+    if (!spec.extensions.includes(ext)) {
+      problems.push(`"${f.name}" has extension "${ext || "(none)"}"; accepted: ${spec.extensions.join(", ")}`);
+    }
+    if (f.bytes.byteLength > MAX_FILE_BYTES) {
+      problems.push(`"${f.name}" is ${Math.round(f.bytes.byteLength / 1024)} kB; the service accepts at most 10 MB per file`);
+    }
+    total += f.bytes.byteLength;
+  }
+  if (total > MAX_INLINE_BYTES) {
+    problems.push(
+      `the call carries ${Math.round(total / 1024)} kB of file content; at most ${MAX_INLINE_BYTES / (1024 * 1024)} MB may travel in one call`
+    );
+  }
+  return problems;
+}
+async function gatherFiles(deps, inputFiles, inputPaths) {
+  const files = [];
+  for (const f of inputFiles ?? []) {
+    files.push({ name: import_node_path.default.basename(f.name), bytes: new TextEncoder().encode(f.content) });
+  }
+  for (const p of inputPaths ?? []) {
+    files.push(await deps.readLocalFile(p));
+  }
+  return files;
+}
+function pollIntervalMs(elapsedMs) {
+  if (elapsedMs < 3e4) return 2e3;
+  if (elapsedMs < 12e4) return 5e3;
+  return 1e4;
+}
+async function waitForJob(deps, jobId, waitSeconds, onProgress, signal) {
+  const started = deps.now();
+  const deadline = started + waitSeconds * 1e3;
+  let failures = 0;
+  let last = { status: "unknown" };
+  for (; ; ) {
+    let status;
+    try {
+      status = await deps.api.jobStatus(jobId);
+      failures = 0;
+    } catch (err) {
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500) throw err;
+      failures += 1;
+      if (failures >= 5) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new ApiError(0, "transient", `five status checks in a row failed (${detail})`);
+      }
+      const elapsed2 = deps.now() - started;
+      if (deps.now() >= deadline || signal?.aborted) return { status: last, timedOut: true };
+      await deps.sleep(deps.pollIntervalMs ?? pollIntervalMs(elapsed2));
+      continue;
+    }
+    last = status;
+    const elapsed = deps.now() - started;
+    if (onProgress) {
+      await onProgress({
+        progress: status.progress,
+        status: status.status,
+        stage: status.stage,
+        queuePosition: status.queuePosition,
+        queueTotal: status.queueTotal,
+        elapsedSeconds: Math.round(elapsed / 1e3)
+      });
+    }
+    if (TERMINAL.has(status.status)) return { status, timedOut: false };
+    if (deps.now() >= deadline || signal?.aborted) return { status, timedOut: true };
+    await deps.sleep(deps.pollIntervalMs ?? pollIntervalMs(elapsed));
+  }
+}
+function shapeResult(jobType, jobId, status, payload, opts = {}) {
+  const head = {
+    jobId,
+    jobType,
+    tool: JOB_INDEX[jobType]?.title ?? jobType,
+    status: status.status,
+    webUrl: webUrlFor(jobType, jobId)
+  };
+  if (status.resultUrl) head.resultUrl = status.resultUrl;
+  if (status.resultUrlExpiresIn !== void 0) head.resultUrlExpiresIn = status.resultUrlExpiresIn;
+  if (status.resultExpiresAt) head.resultExpiresAt = status.resultExpiresAt;
+  if (status.finishedAt) head.finishedAt = status.finishedAt;
+  if (opts.full) return { ...head, full: true, result: payload };
+  const { value, elided } = summariseResult(payload);
+  return {
+    ...head,
+    summarised: true,
+    ...elided ? { elided: true } : {},
+    hint: "Series are described, not listed. Ask again with full: true for the whole payload.",
+    result: value
+  };
+}
+function unknownJobType(jobType) {
+  return fail(`Unknown jobType "${jobType}". The ${JOB_TYPES.length} job types are: ${JOB_TYPES.join(", ")}.`);
+}
+async function submitJob(deps, jobType, params, inputFiles, inputPaths) {
+  const schema = JOB_SCHEMAS[jobType];
+  const checked = validateParams(schema, params);
+  if (!checked.ok) {
+    throw new ApiError(0, "invalid_request", checked.problems.map((p) => `- ${p}`).join("\n"));
+  }
+  const spec = fileSchemaFor(jobType);
+  const files = await gatherFiles(deps, inputFiles, inputPaths);
+  if (!spec && files.length > 0) {
+    throw new ApiError(0, "invalid_request", `${jobType} takes no file input`);
+  }
+  if (spec) {
+    const problems = checkFiles(spec, files);
+    if (problems.length) throw new ApiError(0, "invalid_request", problems.map((p) => `- ${p}`).join("\n"));
+  }
+  const keys = [];
+  for (const f of files) {
+    keys.push(await deps.api.uploadFile(f.name, f.bytes));
+  }
+  const submit = await deps.api.submitJob(jobType, checked.value, keys);
+  return { jobId: submit.jobId, submit, keys };
+}
+async function payloadFor(deps, jobType, jobId, status) {
+  if (!status.resultUrl) {
+    throw new ApiError(
+      0,
+      "not_found",
+      status.errorKind ? describeJobError(status.errorKind, status.errorMessage) : `job ${jobId} is completed but carries no result link. Results are kept behind a link that lives ${RESULT_URL_LIFETIME}; open ${webUrlFor(jobType, jobId)} or resubmit the job.`
+    );
+  }
+  return await deps.api.fetchResult(status.resultUrl);
+}
+async function runAndWait(deps, jobType, params, opts) {
+  if (!JOB_SCHEMAS[jobType]) return unknownJobType(jobType);
+  const note = deps.api.hasKey ? void 0 : freeLaneNote(jobType);
+  let jobId;
+  let submit;
+  try {
+    ({ jobId, submit } = await submitJob(deps, jobType, params, opts.inputFiles, opts.inputPaths));
+  } catch (err) {
+    return fail(errorText(err));
+  }
+  const waitSeconds = Math.max(0, Math.min(opts.waitSeconds, deps.waitMaxSeconds));
+  if (waitSeconds === 0) {
+    return ok(submitted(jobType, submit), note);
+  }
+  let outcome;
+  try {
+    outcome = await waitForJob(deps, jobId, waitSeconds, opts.onProgress, opts.signal);
+  } catch (err) {
+    return fail(`${errorText(err)}
+The job may still be running. Job id: ${jobId}`);
+  }
+  const status = outcome.status;
+  if (outcome.timedOut) {
+    return ok(
+      {
+        jobId,
+        jobType,
+        status: status.status,
+        progress: status.progress ?? null,
+        stage: status.stage ?? null,
+        queuePosition: status.queuePosition ?? null,
+        queueTotal: status.queueTotal ?? null,
+        waitedSeconds: waitSeconds,
+        webUrl: webUrlFor(jobType, jobId),
+        note: `Still running after ${waitSeconds} s \u2014 the job continues. Call get_simulation_status or get_simulation_result with this jobId.`
+      },
+      note
+    );
+  }
+  if (status.status === "failed" || status.status === "cancelled") {
+    return fail(`${describeJobError(status.errorKind, status.errorMessage)}
+Job id: ${jobId}
+${webUrlFor(jobType, jobId)}`);
+  }
+  let payload;
+  try {
+    payload = await payloadFor(deps, jobType, jobId, status);
+  } catch (err) {
+    return fail(errorText(err));
+  }
+  return ok(shapeResult(jobType, jobId, status, payload, { full: opts.full }), note);
+}
+function submitted(jobType, submit) {
+  const entry = JOB_INDEX[jobType];
+  return {
+    jobId: submit.jobId,
+    jobType,
+    tool: entry?.title ?? jobType,
+    status: submit.status,
+    queuePosition: submit.queuePosition ?? null,
+    queueTotal: submit.queueTotal ?? null,
+    timeBudgetSeconds: entry?.timeoutSeconds ?? null,
+    suggestedWaitSeconds: Math.min(entry?.timeoutSeconds ?? WAIT_MAX_SECONDS, WAIT_MAX_SECONDS),
+    webUrl: webUrlFor(jobType, submit.jobId),
+    note: `An identical submission inside ${DEDUP_WINDOW_SECONDS} s returns this same job. Poll with get_simulation_status, then get_simulation_result.`
+  };
+}
+function errorText(err) {
+  if (err instanceof ApiError) return describeApiError(err);
+  return err instanceof Error ? err.message : String(err);
+}
+async function handleStatus(deps, jobId) {
+  let status;
+  try {
+    status = await deps.api.jobStatus(jobId);
+  } catch (err) {
+    return fail(errorText(err));
+  }
+  const jobType = status.jobType ?? "";
+  const body = {
+    jobId,
+    jobType: jobType || null,
+    status: status.status,
+    progress: status.progress ?? null,
+    stage: status.stage ?? null,
+    queuePosition: status.queuePosition ?? null,
+    queueTotal: status.queueTotal ?? null,
+    startedAt: status.startedAt ?? null,
+    finishedAt: status.finishedAt ?? null,
+    resultReady: Boolean(status.resultUrl),
+    expiresAt: status.expiresAt ?? null
+  };
+  if (status.resultExpiresAt) body.resultExpiresAt = status.resultExpiresAt;
+  if (jobType) body.webUrl = webUrlFor(jobType, jobId);
+  if (status.status === "failed" || status.status === "cancelled") {
+    body.error = describeJobError(status.errorKind, status.errorMessage);
+    body.errorKind = status.errorKind ?? null;
+  }
+  return ok(body);
+}
+async function handleResult(deps, jobId, full) {
+  let status;
+  try {
+    status = await deps.api.jobStatus(jobId);
+  } catch (err) {
+    return fail(errorText(err));
+  }
+  const jobType = status.jobType ?? "";
+  if (status.status === "failed" || status.status === "cancelled") {
+    return fail(`${describeJobError(status.errorKind, status.errorMessage)}
+Job id: ${jobId}`);
+  }
+  if (status.status !== "completed") {
+    return ok({
+      jobId,
+      jobType: jobType || null,
+      status: status.status,
+      progress: status.progress ?? null,
+      stage: status.stage ?? null,
+      queuePosition: status.queuePosition ?? null,
+      note: "The job has not finished. Ask again, or use run_simulation to wait for it."
+    });
+  }
+  let payload;
+  try {
+    payload = await payloadFor(deps, jobType, jobId, status);
+  } catch (err) {
+    return fail(errorText(err));
+  }
+  return ok(shapeResult(jobType, jobId, status, payload, { full }));
+}
+function handleListTools() {
+  return ok({
+    count: JOB_TYPES.length,
+    tiers: TIER_LIMITS,
+    keyless: "Without RFTOOLS_API_KEY a job still runs, on the free lane.",
+    resultLifetime: `A result link lives ${RESULT_URL_LIFETIME}; ask for the status again for a fresh one.`,
+    dedupWindowSeconds: DEDUP_WINDOW_SECONDS,
+    tools: listJobTypes().map((t) => ({
+      tool: t.toolName,
+      jobType: t.jobType,
+      title: t.title,
+      params: t.params,
+      timeBudgetSeconds: t.timeoutSeconds,
+      files: t.files ? { min: t.files.min, max: t.files.max, extensions: t.files.extensions } : null,
+      freeLaneBounds: freeLaneBounds(t.jobType)
+    }))
+  });
+}
+var inlineFileSchema = import_zod2.z.object({
+  name: import_zod2.z.string().describe('File name including its extension, e.g. "channel.s4p"'),
+  content: import_zod2.z.string().describe("The file's text content")
+});
+function fileFieldsFor(spec) {
+  const what = `${spec.min === 0 ? "Optional. " : ""}${spec.min}\u2013${spec.max} file(s), ${spec.extensions.join(", ")}.`;
+  return {
+    inputFiles: import_zod2.z.array(inlineFileSchema).optional().describe(`${what} Inline content; at most 5 MB in one call. The server uploads them and passes the keys.`),
+    inputPaths: import_zod2.z.array(import_zod2.z.string()).optional().describe(`${what} Paths on this machine, read by the server and uploaded.`)
+  };
+}
+function waitFields(deps) {
+  return {
+    waitSeconds: import_zod2.z.number().min(0).max(deps.waitMaxSeconds).default(deps.waitDefaultSeconds).describe(
+      `How long to wait for the result before returning the job id (0 = submit and return at once, max ${deps.waitMaxSeconds}).`
+    ),
+    full: import_zod2.z.boolean().default(false).describe("Return the whole result payload instead of the summary. Large.")
+  };
+}
+function toolDescriptionFor(jobType) {
+  const entry = JOB_INDEX[jobType];
+  const schema = JOB_SCHEMAS[jobType];
+  const parts = [`${entry.title}. Runs server-side on rftools.io as an async job.`];
+  const spec = schema["x-files"];
+  if (spec) {
+    parts.push(
+      `Takes ${spec.min === 0 ? "up to" : `${spec.min} to`} ${spec.max} ${spec.extensions.join("/")} file(s) via inputFiles (inline) or inputPaths (local paths); the server uploads them.`
+    );
+  }
+  const bounds = freeLaneBounds(jobType);
+  if (bounds.length) parts.push(`Free lane: ${bounds.join("; ")}.`);
+  parts.push(`Time budget ${entry.timeoutSeconds} s. Returns a summarised result; ask for full for everything.`);
+  if (schema["x-checks"]?.length) parts.push(`Cross-parameter checks: ${schema["x-checks"].join(", ")}.`);
+  return parts.join(" ");
+}
+function progressReporter(extra, waitSeconds) {
+  const token = extra?._meta?.progressToken;
+  if (token === void 0 || token === null || !extra?.sendNotification) return void 0;
+  return async (r) => {
+    const queue = r.queuePosition != null ? ` (queue ${r.queuePosition}/${r.queueTotal ?? "?"})` : "";
+    const stage = r.stage ? ` \u2014 ${r.stage}` : "";
+    try {
+      await extra.sendNotification({
+        method: "notifications/progress",
+        params: {
+          progressToken: token,
+          progress: r.progress != null ? r.progress : Math.min(r.elapsedSeconds / Math.max(waitSeconds, 1), 0.99),
+          total: 1,
+          message: `${r.status}${stage}${queue} \u2014 ${r.elapsedSeconds}s`
+        }
+      });
+    } catch {
+    }
+  };
+}
+function registerSimulationTools(server, options = {}) {
+  const deps = makeDeps(options);
+  const names = [];
+  for (const jobType of JOB_TYPES) {
+    const schema = JOB_SCHEMAS[jobType];
+    const spec = schema["x-files"];
+    const shape = {
+      ...shapeForJob(schema),
+      ...spec ? fileFieldsFor(spec) : {},
+      ...waitFields(deps)
+    };
+    const name = toolNameForJobType(jobType);
+    names.push(name);
+    server.registerTool(
+      name,
+      {
+        title: JOB_INDEX[jobType].title,
+        description: toolDescriptionFor(jobType),
+        inputSchema: strictObject(shape, name)
+      },
+      async (args, extra) => {
+        const { waitSeconds, full, inputFiles, inputPaths, ...params } = args;
+        const wait = waitSeconds ?? deps.waitDefaultSeconds;
+        return await runAndWait(deps, jobType, params, {
+          waitSeconds: wait,
+          full: Boolean(full),
+          inputFiles,
+          inputPaths,
+          onProgress: progressReporter(extra, wait),
+          signal: extra?.signal
+        });
+      }
+    );
+  }
+  server.registerTool(
+    "list_simulation_tools",
+    {
+      title: "List Simulation Tools",
+      description: `List the ${JOB_TYPES.length} server-side simulation job types, their tool names, parameters, file rules and time budgets. ${TIER_LIMITS} A job runs without a key on the free lane.`,
+      inputSchema: import_zod2.z.object({})
+    },
+    async () => handleListTools()
+  );
+  server.registerTool(
+    "submit_simulation",
+    {
+      title: "Submit Simulation",
+      description: "Submit a simulation job and return at once with its id, queue position and time budget. Use the per-job simulate_* tool when you know which job you want; this one takes the job type by name.",
+      inputSchema: strictObject(
+        {
+          jobType: import_zod2.z.enum(JOB_TYPES).describe("Which job type to run"),
+          params: import_zod2.z.record(import_zod2.z.string(), import_zod2.z.unknown()).default({}).describe("Parameters for that job type, validated locally against its contract"),
+          inputFiles: import_zod2.z.array(inlineFileSchema).optional().describe("Inline files for file-input job types"),
+          inputPaths: import_zod2.z.array(import_zod2.z.string()).optional().describe("Local file paths for file-input job types")
+        },
+        "submit_simulation"
+      )
+    },
+    async (args) => {
+      if (!JOB_SCHEMAS[args.jobType]) return unknownJobType(args.jobType);
+      const note = deps.api.hasKey ? void 0 : freeLaneNote(args.jobType);
+      try {
+        const { submit } = await submitJob(deps, args.jobType, args.params ?? {}, args.inputFiles, args.inputPaths);
+        return ok(submitted(args.jobType, submit), note);
+      } catch (err) {
+        return fail(errorText(err));
+      }
+    }
+  );
+  server.registerTool(
+    "get_simulation_status",
+    {
+      title: "Get Simulation Status",
+      description: "Progress, stage, queue position and elapsed time for a submitted job. Poll this rather than holding a call open.",
+      inputSchema: strictObject({ jobId: import_zod2.z.string().describe("The id submit_simulation returned") }, "get_simulation_status")
+    },
+    async (args) => await handleStatus(deps, args.jobId)
+  );
+  server.registerTool(
+    "get_simulation_result",
+    {
+      title: "Get Simulation Result",
+      description: "The result of a finished job: headline values, warnings and provenance, with every series described rather than listed, plus links to the full payload. Pass full: true for the whole payload.",
+      inputSchema: strictObject(
+        {
+          jobId: import_zod2.z.string().describe("The id submit_simulation returned"),
+          full: import_zod2.z.boolean().default(false).describe("Return the whole payload instead of the summary. Large.")
+        },
+        "get_simulation_result"
+      )
+    },
+    async (args) => await handleResult(deps, args.jobId, Boolean(args.full))
+  );
+  server.registerTool(
+    "run_simulation",
+    {
+      title: "Run Simulation",
+      description: `Submit a job by job type and wait up to waitSeconds (default ${deps.waitDefaultSeconds}, max ${deps.waitMaxSeconds}) for its result, reporting progress while it waits. On reaching the bound it returns the job id and current progress; the job keeps running. Prefer the typed simulate_* tool for the job you want.`,
+      inputSchema: strictObject(
+        {
+          jobType: import_zod2.z.enum(JOB_TYPES).describe("Which job type to run"),
+          params: import_zod2.z.record(import_zod2.z.string(), import_zod2.z.unknown()).default({}).describe("Parameters for that job type"),
+          inputFiles: import_zod2.z.array(inlineFileSchema).optional().describe("Inline files for file-input job types"),
+          inputPaths: import_zod2.z.array(import_zod2.z.string()).optional().describe("Local file paths for file-input job types"),
+          waitSeconds: import_zod2.z.number().min(0).max(deps.waitMaxSeconds).default(deps.waitDefaultSeconds).describe(`How long to wait before returning the job id (max ${deps.waitMaxSeconds})`),
+          full: import_zod2.z.boolean().default(false).describe("Return the whole result payload instead of the summary")
+        },
+        "run_simulation"
+      )
+    },
+    async (args, extra) => {
+      const wait = args.waitSeconds ?? deps.waitDefaultSeconds;
+      return await runAndWait(deps, args.jobType, args.params ?? {}, {
+        waitSeconds: wait,
+        full: Boolean(args.full),
+        inputFiles: args.inputFiles,
+        inputPaths: args.inputPaths,
+        onProgress: progressReporter(extra, wait),
+        signal: extra?.signal
+      });
+    }
+  );
+  names.push("list_simulation_tools", "submit_simulation", "get_simulation_status", "get_simulation_result", "run_simulation");
+  return names;
+}
+
 // ../rftools-mcp/mcp-server.ts
 var VALID_CATEGORIES = Object.keys(CATEGORIES);
-var API_BASE = process.env.RFTOOLS_API_BASE ?? "https://rftools.io/api/py";
-var API_KEY = process.env.RFTOOLS_API_KEY ?? "";
-var POLL_TIMEOUT_MS = 10 * 60 * 1e3;
-var SIMULATION_TOOLS = [
-  {
-    slug: "impedance-matching",
-    jobType: "impedance_match",
-    title: "Broadband Impedance Matching Synthesizer",
-    description: "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation.",
-    params: "sourceR (\u03A9), sourceX (\u03A9), loadR (\u03A9), loadX (\u03A9), freqStart (Hz), freqStop (Hz), topology (L|Pi|T|ladder_2|ladder_3)"
-  },
-  {
-    slug: "filter-monte-carlo",
-    jobType: "filter_monte_carlo",
-    title: "RF Filter Monte Carlo Tolerance Analysis",
-    description: "Monte Carlo yield for LC ladder filters against passband-variation and stopband-rejection limits that stay fixed as tolerance changes (yieldSpec reports them). An even-order Chebyshev is designed into its required load impedance, which the result reports.",
-    params: "filterType (butterworth|chebyshev1), bandType (lowpass|highpass), order (1\u20139), freqCutoff (Hz; -3 dB for Butterworth, ripple edge for Chebyshev), ripple (dB, Chebyshev), impedance (\u03A9), componentTolerance (%), toleranceDistribution (uniform|gaussian, 3\u03C3 = tolerance), rippleSpec_db (optional max passband variation; default: the standard-value design + 0.5 dB), rejectionSpec_db (optional min stopband rejection from 2\xB7fc, or below fc/2 for high-pass; default: the standard-value design \u2212 3 dB), monteCarloIterations (50\u201310000)"
-  },
-  {
-    slug: "eye-diagram",
-    jobType: "eye_diagram",
-    title: "Eye Diagram Generator",
-    description: "Eye diagram from a Touchstone S21: one full ITU-T O.150 PRBS period through the channel, with eye height, width and jitter measured over every bit. Width and jitter are null, with a reason, when the waveform has no crossings.",
-    params: "inputFileKeys (uploaded .s2p/.s4p keys), dataRate (bps), prbs (prbs7|prbs15|prbs31; prbs31 simulates 32768 bits), samplesPerUI (16\u2013128)"
-  },
-  {
-    slug: "antenna-sim",
-    jobType: "antenna_sim",
-    title: "NEC-2 Wire Antenna Simulator",
-    description: "NEC-2 method-of-moments solve of any thin-wire antenna: impedance, VSWR, gain, directivity, efficiency, beamwidths, full pattern and currents, at one frequency or across a sweep; NSGA-II optimiser on Pro/API.",
-    params: "solveMode (standard|sweep|optimize|instant; optimize needs a Pro/API key). standard/sweep/optimize: wires (array of {start:[x,y,z] m, end:[x,y,z] m, radius m, segments}), feed ({wire, segment}, 0-based), freq (Hz) \u2014 or for sweep freqStart, freqStop (Hz), freqPoints (2\u20132001), ground ({type: free_space|perfect|finite, epsilonR, conductivity S/m}), conductor ({material: copper|aluminium|perfect|custom, conductivity S/m}), referenceImpedance (\u03A9, default 50); optimize adds optimize ({populationSize: multiple of 4, 8\u2013200; generations: 1\u2013200}) and randomSeed. Segments must be \u2264 \u03BB/10 and \u2265 8 radii; a job over the lane budget is refused with what to cut. instant (closed-form presets): antennaType (dipole|yagi3|yagi5|loop), freq (Hz), groundType (free_space|perfect|real)"
-  },
-  {
-    slug: "sparam-pipeline",
-    jobType: "sparam_pipeline",
-    title: "S-Parameter Analysis Pipeline",
-    description: "Fixed S-parameter pipeline on up to 4 Touchstone files: view, passivity check (violations \u2264 1.02 corrected, larger ones labelled active and left unmodified), ripple, TDR, time gating, mixed-mode (4-port), S\u2192Z/Y/ABCD with undefined points reported, and cascade of 2-ports.",
-    params: "inputFileKeys (uploaded .s1p\u2013.s4p keys), refImpedance (\u03A9), freqStart (Hz, 0 = file range), freqStop (Hz, 0 = file range)"
-  },
-  {
-    slug: "fdtd-sparam",
-    jobType: "fdtd_sparam",
-    title: "FDTD S-Parameter Simulator",
-    description: "PCB transmission-line structures \u2014 open stubs, coupled-line sections, via transitions, width steps \u2014 from a 2D cross-section in seconds to a 3D openEMS FDTD solve: S-parameters across frequency.",
-    params: "structureType (microstrip_open_stub|coupled_line_filter|through_via|step_discontinuity), solveMode (instant|express|normal|fine; normal and fine need a Pro/API key), substrateName (FR4|Rogers4350B|Rogers3003|custom), subEr, subH (mm), subTanD (custom substrate), traceW (mm), traceL (mm), stubL (mm, open stub), gapW (mm, coupled line), viaDia (mm), viaAR (through via), w2 (mm, step output width), freqCenter (Hz), freqSpan (Hz)"
-  },
-  {
-    slug: "smps-control-loop",
-    jobType: "smps_control_loop",
-    title: "SMPS Control Loop Stability Analyzer",
-    description: "Buck/boost/buck-boost/flyback loop stability: state-space-averaged plant in voltage mode, exact sampled-data model in peak-current mode, Bode plot, phase and gain margin, and Monte Carlo yield. Margins are reported only below Fsw/2; a subharmonic current loop is reported as such.",
-    params: "topology (buck|boost|buck_boost|flyback), controlMode (voltage_mode|peak_current), Vin (V), Vout (V), Iout (A), L (H), C (F), ESR (\u03A9), Fsw (Hz), Vramp (V, voltage mode), Rsense (\u03A9, peak current), externalRamp (Se/Sn, peak current, default 0), compensatorType (type1|type2|type3), compK, compFz1, compFz2, compFp1, compFp2 (Hz), monteCarloTrials, tolL, tolC, tolESR, tolLoad, tolRsense (%), toleranceDistribution (uniform|gaussian)"
-  },
-  {
-    slug: "emi-radiated",
-    jobType: "emi_radiated",
-    title: "EMI Radiated Emissions Estimator",
-    description: "PCB radiated emissions (Paul's DM loop and CM cable models, trapezoidal clock harmonics) vs FCC Part 15 and CISPR 32 limits in dB\xB5V/m, with Monte Carlo confidence intervals.",
-    params: "standard (fcc_b|fcc_a|cispr32_b|cispr32_a), measDist (m), dmCurrent_mA, loopArea_cm2, cmCurrent_uA, cableLen_m, fClk_MHz, dutyCycle (%), tRise_ns, nTrials"
-  },
-  {
-    slug: "magnetics-optimizer",
-    jobType: "magnetics_optimizer",
-    title: "Magnetics Optimizer (NSGA-II)",
-    description: "NSGA-II Pareto front (every core seeded, de-duplicated) of transformer/inductor designs across 40 cores (104 core/material combinations) with core loss fitted to TDK, Ferroxcube and Micrometals data at the AC flux amplitude; designs on materials without traceable loss data are marked lossModel: unverified.",
-    params: "topology (flyback_xfmr|forward_xfmr|power_inductor), Vin (V), Vout (V), Iout (A), fSw (Hz), dutyCycle (0.05\u20130.9), Tamb (\xB0C), Tmax (\xB0C), inductance_uH and iPeak_A (forward_xfmr only; flyback and inductor derive them from the power), objectiveWeight (0 = min loss \u2026 1 = min volume), population, generations"
-  },
-  {
-    slug: "radar-detection",
-    jobType: "radar_detection",
-    title: "Radar Detection Probability Calculator",
-    description: "All five Swerling models, non-coherent pulse integration, ITU-R P.838-3 rain attenuation, Monte Carlo uncertainty bands, ROC curves.",
-    params: "frequency_hz, peakPower_w, antGainTx_dbi, antGainRx_dbi, noiseFig_db, lossesTx_db, lossesRx_db, pulseWidth_s, nPulses, pfa, swerlingModel (0\u20134), targetRcs_dbsm, rangeMax_km, rainRate_mmhr"
-  },
-  {
-    slug: "pdn-impedance",
-    jobType: "pdn_impedance",
-    title: "PDN Impedance Analyzer",
-    description: "Power delivery network impedance with plane-pair cavity resonance (Novak) and genetic algorithm decoupling optimizer.",
-    params: "planesX (m), planesY (m), planesSeparation (m), vrmR (\u03A9), vrmL (H), vrmC (F), targetImpedance (\u03A9), freqPoints (int), population (int), generations (int), capBudget (int)"
-  },
-  {
-    slug: "sat-link-budget",
-    jobType: "sat_link_budget",
-    title: "Satellite Link Budget (ITU-R)",
-    description: "Satellite/terrestrial link budget with ITU-R P.618-13 rain, P.676-12 gas and P.840-8 cloud, climate read from the ITU-R maps at the site (latitude and longitude required), P.530-17 for terrestrial paths, and Monte Carlo confidence intervals.",
-    params: "linkType (satellite|terrestrial), frequency_ghz, eirp_dbw, gt_db_k, distance_km (slant range or path length), elevationAngle_deg (satellite, 5\u201390), latitude_deg (required, \u221290\u202690), longitude_deg (required, \u2212180\u2026180, east positive), stationHeight_km (optional, default ITU-R P.1511), polarization (horizontal|vertical|circular), modulation (bpsk|qpsk|8psk|16qam|64qam), reqEbN0_db, dataRate_bps, targetAvailability_pct (90 to <100)"
-  },
-  {
-    slug: "rf-cascade",
-    jobType: "rf_cascade",
-    title: "RF Cascade Budget with Monte Carlo",
-    description: "Friis noise figure, cascaded IIP3 and P1dB (from each stage's own P1dB), SFDR, and Monte Carlo yield for multi-stage RF chains.",
-    params: "stages (JSON array of {name, type: amp|filter|attenuator|mixer|switch, gain_db, nf_db, iip3_dbm, p1db_dbm}), inputPower_dbm, bandwidth_hz, analysisFreq_hz, nfSpec_db, gainSpec_db, iip3Spec_dbm, snrMin_db"
-  }
-];
-async function apiPost(path, body) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}
+function createServer() {
+  assertContractConsistent();
+  const server = new import_mcp.McpServer({
+    name: "rftools",
+    version: "2.0.0"
+  });
+  server.registerTool(
+    "list_calculators",
+    {
+      title: "List Calculators",
+      description: "List available RF & electronics calculators. Optionally filter by category: rf, pcb, power, signal, antenna, general, motor, protocol, emc, thermal, sensor, unit-conversion, audio.",
+      inputSchema: import_zod3.z.object({
+        category: import_zod3.z.string().optional().describe("Calculator category to filter by (e.g. rf, pcb, power)")
+      })
     },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`API ${res.status}: ${text}`);
-  }
-  return res.json();
-}
-async function apiGet(path) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`API ${res.status}: ${text}`);
-  }
-  return res.json();
-}
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-function pollInterval(elapsedMs) {
-  return elapsedMs < 12e4 ? 5e3 : 1e4;
-}
-var server = new import_mcp.McpServer({
-  name: "rftools",
-  version: "1.8.1"
-});
-server.registerTool(
-  "list_calculators",
-  {
-    title: "List Calculators",
-    description: "List available RF & electronics calculators. Optionally filter by category: rf, pcb, power, signal, antenna, general, motor, protocol, emc, thermal, sensor, unit-conversion, audio.",
-    inputSchema: import_zod.z.object({
-      category: import_zod.z.string().optional().describe("Calculator category to filter by (e.g. rf, pcb, power)")
-    })
-  },
-  async ({ category }) => {
-    const calcs = category ? getCalculatorsByCategory(category) : getAllCalculators();
-    if (category && !VALID_CATEGORIES.includes(category)) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Unknown category "${category}". Valid categories: ${VALID_CATEGORIES.join(", ")}`
-          }
-        ],
-        isError: true
-      };
-    }
-    const listing = calcs.map((c2) => ({
-      slug: c2.slug,
-      title: c2.title,
-      category: c2.category,
-      description: c2.description
-    }));
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(listing, null, 2)
-        }
-      ]
-    };
-  }
-);
-server.registerTool(
-  "get_calculator_info",
-  {
-    title: "Get Calculator Info",
-    description: "Get detailed information about a specific calculator including its inputs, outputs, and formula. Use this to understand what parameters a calculator needs before running it.",
-    inputSchema: import_zod.z.object({
-      slug: import_zod.z.string().describe('Calculator slug (e.g. "microstrip-impedance")')
-    })
-  },
-  async ({ slug }) => {
-    const calc = getCalculator(slug);
-    if (!calc) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Calculator "${slug}" not found. Use list_calculators to see available calculators.`
-          }
-        ],
-        isError: true
-      };
-    }
-    const info = {
-      slug: calc.slug,
-      title: calc.title,
-      category: calc.category,
-      description: calc.description,
-      inputs: calc.inputs.map((i) => ({
-        key: i.key,
-        label: i.label,
-        unit: i.unit,
-        defaultValue: i.defaultValue,
-        min: i.min,
-        max: i.max,
-        tooltip: i.tooltip
-      })),
-      outputs: calc.outputs.map((o) => ({
-        key: o.key,
-        label: o.label,
-        unit: o.unit,
-        tooltip: o.tooltip
-      })),
-      formula: calc.formula.primary,
-      keywords: calc.keywords
-    };
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(info, null, 2)
-        }
-      ]
-    };
-  }
-);
-server.registerTool(
-  "run_calculation",
-  {
-    title: "Run Calculation",
-    description: "Run an RF/electronics calculator with the given inputs. Use get_calculator_info first to see required inputs.",
-    inputSchema: import_zod.z.object({
-      slug: import_zod.z.string().describe('Calculator slug (e.g. "microstrip-impedance")'),
-      inputs: import_zod.z.record(import_zod.z.string(), import_zod.z.number()).describe('Input values keyed by input name (e.g. {"traceWidth": 1.2, "substrateHeight": 1.6})')
-    })
-  },
-  async ({ slug, inputs }) => {
-    const calc = getCalculator(slug);
-    if (!calc) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Calculator "${slug}" not found. Use list_calculators to see available calculators.`
-          }
-        ],
-        isError: true
-      };
-    }
-    try {
-      const result = calc.calculate(inputs);
-      const results = calc.outputs.map((o) => ({
-        key: o.key,
-        label: o.label,
-        value: result.values[o.key],
-        unit: o.unit
+    async ({ category }) => {
+      if (category && !VALID_CATEGORIES.includes(category)) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Unknown category "${category}". Valid categories: ${VALID_CATEGORIES.join(", ")}`
+            }
+          ],
+          isError: true
+        };
+      }
+      const calcs = category ? getCalculatorsByCategory(category) : getAllCalculators();
+      const listing = calcs.map((c2) => ({
+        slug: c2.slug,
+        title: c2.title,
+        category: c2.category,
+        description: c2.description
       }));
-      const webUrl = `https://rftools.io/calculators/${calc.category}/${calc.slug}`;
-      const response = {
-        slug: calc.slug,
-        results,
-        webUrl
-      };
-      if (result.warnings?.length) response.warnings = result.warnings;
-      if (result.errors?.length) response.errors = result.errors;
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response, null, 2)
+            text: JSON.stringify(listing, null, 2)
           }
         ]
       };
-    } catch (err) {
+    }
+  );
+  server.registerTool(
+    "get_calculator_info",
+    {
+      title: "Get Calculator Info",
+      description: "Get detailed information about a specific calculator including its inputs, outputs, and formula. Use this to understand what parameters a calculator needs before running it.",
+      inputSchema: import_zod3.z.object({
+        slug: import_zod3.z.string().describe('Calculator slug (e.g. "microstrip-impedance")')
+      })
+    },
+    async ({ slug }) => {
+      const calc = getCalculator(slug);
+      if (!calc) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Calculator "${slug}" not found. Use list_calculators to see available calculators.`
+            }
+          ],
+          isError: true
+        };
+      }
+      const info = {
+        slug: calc.slug,
+        title: calc.title,
+        category: calc.category,
+        description: calc.description,
+        inputs: calc.inputs.map((i) => ({
+          key: i.key,
+          label: i.label,
+          unit: i.unit,
+          defaultValue: i.defaultValue,
+          min: i.min,
+          max: i.max,
+          tooltip: i.tooltip
+        })),
+        outputs: calc.outputs.map((o) => ({
+          key: o.key,
+          label: o.label,
+          unit: o.unit,
+          tooltip: o.tooltip
+        })),
+        formula: calc.formula.primary,
+        keywords: calc.keywords
+      };
       return {
         content: [
           {
             type: "text",
-            text: `Calculation error: ${err instanceof Error ? err.message : String(err)}`
+            text: JSON.stringify(info, null, 2)
           }
-        ],
-        isError: true
+        ]
       };
     }
-  }
-);
-server.registerTool(
-  "list_simulation_tools",
-  {
-    title: "List Simulation Tools",
-    description: "List the 14 server-side RF simulation tools available via API key. These require RFTOOLS_API_KEY (set in env). Free tier: 5 runs/month. Pro: 100/month. API tier: 10 000/month.",
-    inputSchema: import_zod.z.object({})
-  },
-  async () => {
-    const listing = SIMULATION_TOOLS.map((t) => ({
-      slug: t.slug,
-      jobType: t.jobType,
-      title: t.title,
-      description: t.description,
-      params: t.params
-    }));
-    return {
-      content: [{ type: "text", text: JSON.stringify(listing, null, 2) }]
-    };
-  }
-);
-server.registerTool(
-  "run_simulation",
-  {
-    title: "Run Simulation Tool",
-    description: "Submit a server-side RF simulation job and wait for the result. Requires RFTOOLS_API_KEY environment variable. Simulations typically complete in 15\u2013120 seconds; queue wait may add more time. Use list_simulation_tools to see available jobTypes and required params.",
-    inputSchema: import_zod.z.object({
-      jobType: import_zod.z.string().describe(
-        'Job type identifier (e.g. "impedance_match", "filter_monte_carlo", "emi_radiated"). Use list_simulation_tools to see all valid values.'
-      ),
-      params: import_zod.z.record(import_zod.z.string(), import_zod.z.unknown()).describe(
-        "Simulation parameters as key/value pairs. Use list_simulation_tools to see required params per jobType."
-      )
-    })
-  },
-  async ({ jobType, params }) => {
-    if (!API_KEY) {
-      return {
-        content: [{
-          type: "text",
-          text: 'RFTOOLS_API_KEY is not set. Add it to your MCP config:\n  "env": { "RFTOOLS_API_KEY": "rfc_..." }\nGet a key at https://rftools.io/dashboard'
-        }],
-        isError: true
-      };
-    }
-    const tool = SIMULATION_TOOLS.find((t) => t.jobType === jobType);
-    if (!tool) {
-      const valid = SIMULATION_TOOLS.map((t) => t.jobType).join(", ");
-      return {
-        content: [{
-          type: "text",
-          text: `Unknown jobType "${jobType}". Valid values: ${valid}`
-        }],
-        isError: true
-      };
-    }
-    let submitResp;
-    try {
-      submitResp = await apiPost("/v1/jobs", { jobType, params });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("401") || msg.includes("quota")) {
+  );
+  server.registerTool(
+    "run_calculation",
+    {
+      title: "Run Calculation",
+      description: "Run an RF/electronics calculator with the given inputs. Use get_calculator_info first to see required inputs.",
+      inputSchema: import_zod3.z.object({
+        slug: import_zod3.z.string().describe('Calculator slug (e.g. "microstrip-impedance")'),
+        inputs: import_zod3.z.record(import_zod3.z.string(), import_zod3.z.number()).describe('Input values keyed by input name (e.g. {"traceWidth": 1.2, "substrateHeight": 1.6})')
+      })
+    },
+    async ({ slug, inputs }) => {
+      const calc = getCalculator(slug);
+      if (!calc) {
         return {
-          content: [{
-            type: "text",
-            text: `API key error: ${msg}
-Check your quota at https://rftools.io/dashboard`
-          }],
-          isError: true
-        };
-      }
-      return {
-        content: [{ type: "text", text: `Failed to submit job: ${msg}` }],
-        isError: true
-      };
-    }
-    const { jobId } = submitResp;
-    const started = Date.now();
-    while (true) {
-      const elapsed = Date.now() - started;
-      if (elapsed >= POLL_TIMEOUT_MS) {
-        return {
-          content: [{
-            type: "text",
-            text: `Simulation timed out after 10 minutes. Job ID: ${jobId}
-Check status at https://rftools.io/tools/${tool.slug}/results?jobId=${jobId}`
-          }],
-          isError: true
-        };
-      }
-      await sleep(pollInterval(elapsed));
-      let statusResp;
-      try {
-        statusResp = await apiGet(`/v1/jobs/${jobId}`);
-      } catch (err) {
-        console.error(`[rftools] poll error for ${jobId}:`, err);
-        continue;
-      }
-      const { status, queuePosition, queueTotal, resultUrl, errorMessage, progress } = statusResp;
-      if (status === "queued") {
-        const pos = queuePosition != null ? `position ${queuePosition}/${queueTotal ?? "?"}` : "waiting";
-        console.error(`[rftools] ${jobId} queued \u2014 ${pos} (+${Math.round(elapsed / 1e3)}s elapsed)`);
-        continue;
-      }
-      if (status === "processing") {
-        const pct = progress != null ? ` ${Math.round(progress * 100)}%` : "";
-        console.error(`[rftools] ${jobId} processing${pct} (+${Math.round(elapsed / 1e3)}s elapsed)`);
-        continue;
-      }
-      if (status === "failed") {
-        return {
-          content: [{
-            type: "text",
-            text: `Simulation failed: ${errorMessage ?? "unknown error"}
-Job ID: ${jobId}`
-          }],
-          isError: true
-        };
-      }
-      if (status === "completed" && resultUrl) {
-        let resultData;
-        try {
-          const res = await fetch(resultUrl);
-          if (!res.ok) throw new Error(`Result fetch ${res.status}`);
-          resultData = await res.json();
-        } catch (err) {
-          return {
-            content: [{
+          content: [
+            {
               type: "text",
-              text: `Job completed but result fetch failed: ${err instanceof Error ? err.message : String(err)}
-View at: https://rftools.io/tools/${tool.slug}/results?jobId=${jobId}`
-            }],
-            isError: true
-          };
-        }
-        const webUrl = `https://rftools.io/tools/${tool.slug}/results?jobId=${jobId}`;
+              text: `Calculator "${slug}" not found. Use list_calculators to see available calculators.`
+            }
+          ],
+          isError: true
+        };
+      }
+      try {
+        const result = calc.calculate(inputs);
+        const results = calc.outputs.map((o) => ({
+          key: o.key,
+          label: o.label,
+          value: result.values[o.key],
+          unit: o.unit
+        }));
+        const webUrl = `https://rftools.io/calculators/${calc.category}/${calc.slug}`;
+        const response = {
+          slug: calc.slug,
+          results,
+          webUrl
+        };
+        if (result.warnings?.length) response.warnings = result.warnings;
+        if (result.errors?.length) response.errors = result.errors;
         return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({ jobId, jobType, tool: tool.title, webUrl, result: resultData }, null, 2)
-          }]
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(response, null, 2)
+            }
+          ]
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Calculation error: ${err instanceof Error ? err.message : String(err)}`
+            }
+          ],
+          isError: true
         };
       }
     }
-  }
-);
+  );
+  registerSimulationTools(server);
+  return server;
+}
 async function main() {
   const transport = new import_stdio.StdioServerTransport();
-  await server.connect(transport);
+  await createServer().connect(transport);
   console.error("rftools MCP server running on stdio");
 }
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
+var runningAsProgram = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  typeof require !== "undefined" && typeof module !== "undefined" && require.main === module
+);
+if (runningAsProgram) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  createServer
 });

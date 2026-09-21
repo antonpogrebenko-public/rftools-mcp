@@ -10,17 +10,17 @@ Give Claude, Cursor, or any MCP-compatible AI assistant access to validated engi
 
 ## Quick Start
 
-Calculators work with no API key. For simulation tools, sign up at [rftools.io](https://rftools.io) and generate an API key from your dashboard.
+Calculators work with no API key, and so do the simulation tools: without one, a job runs on the free lane. A key raises the limits — sign up at [rftools.io](https://rftools.io) and generate one from your dashboard.
 
 ## Setup
 
-### Without API key — calculators only
+### Without API key
 
-All 241 calculators run locally with no sign-up required.
+All 241 calculators run locally with no sign-up required, and every simulation tool still submits — on the free lane, with the free limits and the free-lane parameter bounds stated on the response.
 
-### With API key — calculators + simulation tools
+### With API key
 
-Sign up at [rftools.io](https://rftools.io) and generate an API key from your [dashboard](https://rftools.io/dashboard). Free accounts include 5 simulation runs/month. Pro: 100/month. API tier: 10,000/month.
+Sign up at [rftools.io](https://rftools.io) and generate an API key from your [dashboard](https://rftools.io/dashboard). Free accounts include 5 simulation runs/month. Pro: 100/month. API tier: 10,000/month. A paid key also unlocks the modes the free lane cannot run: the antenna optimiser and the FDTD `normal` and `fine` meshes.
 
 ### Claude Desktop
 
@@ -135,54 +135,71 @@ Run a calculator with specific inputs. Returns results with units and a link to 
 
 ---
 
-### Simulation tools — API key required
+### Simulation tools — no API key required, a key raises the limits
 
-Server-side jobs that are too heavy for in-browser computation. Jobs run on shared compute (free tier) or a priority queue (Pro/API tier). Simulations typically complete in 15–120 seconds; queue wait may add additional time.
+Server-side jobs that are too heavy for in-browser computation. Each of the 13 job types is its own tool, `simulate_<name>`, whose input schema is generated from that job type's parameter contract: every parameter typed, with its unit, range, options, default and any free-lane bound stated. A call is checked against that contract before anything is sent, so a wrong parameter name comes back naming the key and the keys that are accepted, and spends no quota.
 
-**Quota:** Free: 5 runs/month · Pro: 100/month · API tier: 10,000/month
+**Quota:** Free: 5 runs/month · Pro: 100/month · API tier: 10,000/month. Without a key the job still runs, on the free lane, and the response says which limits applied.
+
+**Waiting:** a `simulate_*` call submits and waits up to `waitSeconds` (default 90, maximum 600), polling immediately — a mode that finishes in a second costs no delay — and reporting progress to hosts that ask for it. On reaching the bound it returns the job id, status, progress and stage; the job keeps running, and `get_simulation_status` and `get_simulation_result` pick it up. `waitSeconds: 0` submits and returns at once.
+
+**Results:** the default is a summary — the result's `summary`, `warnings` and `provenance`, every scalar value, and links — with series longer than 50 points described by their length and extremes rather than listed, so a 100 kB result arrives as about 6 kB. Pass `full: true` for the whole payload. The link to the stored result (`resultUrl`) is presigned and lives **15 minutes**; ask for the status again to mint a fresh one.
+
+**Repeat submissions:** an identical submission inside **60 seconds** returns the job already running rather than starting a second one.
+
+**Files:** a file-input job type takes either `inputFiles: [{name, content}]` (inline text, up to 5 MB in one call) or `inputPaths: ["/path/to/file.s2p"]` (read from this machine). The server obtains the presigned upload, sends the file, and submits the job with the resulting key.
+
+#### The 13 job types
+
+| Tool | `jobType` | What it does | Files | Time budget | Paid-only / free-lane bound |
+|------|-----------|--------------|-------|------------:|------------------------------|
+| `simulate_antenna_sim` | `antenna_sim` | Wire Antenna Simulator (NEC-2) | — | 1200 s | `solveMode: optimize` |
+| `simulate_emi_radiated` | `emi_radiated` | EMI Radiated Emissions Estimator | — | 240 s | — |
+| `simulate_eye_diagram` | `eye_diagram` | Eye Diagram from S-Parameters | 1 × `.s2p` `.s4p` | 120 s | — |
+| `simulate_fdtd_sparam` | `fdtd_sparam` | FDTD Transmission Line Simulator | — | 32400 s | `solveMode: normal`, `fine` |
+| `simulate_filter_monte_carlo` | `filter_monte_carlo` | RF Filter Monte Carlo Analysis | — | 120 s | `monteCarloIterations` ≤ 500 |
+| `simulate_impedance_matching` | `impedance_match` | Broadband Impedance Matching Synthesizer | 0–2 × `.s2p` | 120 s | — |
+| `simulate_magnetics_optimizer` | `magnetics_optimizer` | Magnetics & Transformer Design Optimizer | — | 360 s | — |
+| `simulate_pdn_impedance` | `pdn_impedance` | PDN Impedance Analyzer & Decoupling Capacitor Optimizer | — | 360 s | — |
+| `simulate_radar_detection` | `radar_detection` | Radar Detection Performance Monte Carlo | — | 300 s | — |
+| `simulate_rf_cascade` | `rf_cascade` | RF Cascade Budget Analyzer | 0–12 × `.s2p` | 180 s | — |
+| `simulate_sat_link_budget` | `sat_link_budget` | Satellite & Terrestrial Link Budget | — | 240 s | — |
+| `simulate_smps_control_loop` | `smps_control_loop` | SMPS Control Loop Stability Analyzer | — | 300 s | — |
+| `simulate_sparam_pipeline` | `sparam_pipeline` | S-Parameter Analysis Pipeline | 1–4 × `.s1p`–`.s4p` | 120 s | — |
+
+The time budget is the lane's cap, not an estimate: most jobs finish in 15–120 seconds, and queue wait may add more.
 
 #### `list_simulation_tools`
 
-List all 13 available simulation tools with their `jobType` identifiers and parameter reference.
+Every job type with its tool name, parameter names, file rules, time budget and free-lane bounds — all read from the same contract the tools are generated from.
 
-```
-"What simulation tools are available?"
-"Show me the RF simulation tools"
-```
+#### `submit_simulation`
+
+Submit by job type and return at once with the job id, queue position and time budget. Takes `jobType`, `params`, and `inputFiles` / `inputPaths` for file-input job types.
+
+#### `get_simulation_status`
+
+Progress, stage, queue position, start and finish times for a job id.
+
+#### `get_simulation_result`
+
+The finished result for a job id, summarised by default, whole with `full: true`.
 
 #### `run_simulation`
 
-Submit a simulation job and wait for the result. Returns the full result JSON along with a link to the interactive results page on rftools.io.
+The compatibility form of a `simulate_*` call: `jobType`, `params`, optional files, `waitSeconds` (default 90, max 600) and `full`. Prefer the typed `simulate_*` tool for the job you want — it is the one whose schema an agent can read.
 
 ```
+"Analyse the PDN of a 100 × 80 mm four-layer board, port at the IC, target 10 mΩ"
+"Run an eye diagram on this .s4p at 10 Gbps with PRBS-15"
 "Synthesize a broadband matching network from 50Ω to 200Ω between 800–1200 MHz"
-"Run a Monte Carlo tolerance analysis on a 2nd-order Butterworth low-pass filter at 1 GHz"
-"Simulate a 3-element Yagi antenna at 144 MHz"
-"Estimate radiated emissions from a 10cm trace carrying 50mA at 100 MHz"
-"Run SMPS control loop stability analysis on my buck converter"
+"Simulate a 3-element Yagi at 144 MHz and give me the pattern"
+"Estimate radiated emissions from a 10 cm trace carrying 50 mA at 100 MHz"
 ```
 
-**Parameters:**
-- `jobType` (required): Job type identifier — use `list_simulation_tools` to see all valid values
-- `params` (required): Simulation parameters — use `list_simulation_tools` to see required params per job type
+#### When something goes wrong
 
-**Available simulation tools:**
-
-| Tool | `jobType` |
-|------|-----------|
-| Broadband Impedance Matching Synthesizer | `impedance_match` |
-| RF Filter Monte Carlo Tolerance Analysis | `filter_monte_carlo` |
-| Eye Diagram Generator | `eye_diagram` |
-| NEC2 Wire Antenna Simulator | `antenna_sim` |
-| S-Parameter Analysis Pipeline | `sparam_pipeline` |
-| FDTD S-Parameter Simulator | `fdtd_sparam` |
-| SMPS Control Loop Stability Analyzer | `smps_control_loop` |
-| EMI Radiated Emissions Estimator | `emi_radiated` |
-| Magnetics Optimizer (NSGA-II) | `magnetics_optimizer` |
-| Radar Detection Probability Calculator | `radar_detection` |
-| PDN Impedance Analyzer | `pdn_impedance` |
-| Satellite Link Budget (ITU-R) | `sat_link_budget` |
-| RF Cascade Budget with Monte Carlo | `rf_cascade` |
+Failures are classified by HTTP status and by the service's own error kind, never by matching text: an invalid key, a spent allowance, a rate limit with its retry time, a refused parameter (with the service's own detail, unchanged), a job too large for its lane, a mode the tier does not carry, a timeout and a service fault each read differently. Polling stops at once on a 4xx, and after five failures in a row that are not.
 
 ## Example Conversations
 
@@ -241,12 +258,12 @@ This MCP server calls the **exact same validated calculator code** that runs on 
 AI Agent ←stdio→ rftools-mcp ←direct call→ calculator function
 ```
 
-**Simulation tools** run server-side on rftools.io infrastructure (AWS Lambda + SQS + Fargate). The MCP server submits the job and polls until the result is ready, then returns the full result JSON inline.
+**Simulation tools** run server-side on rftools.io infrastructure (AWS Lambda + SQS + EC2/Fargate workers). Their input schemas are generated at build time from the same parameter contract the website's forms are built from, so a contract change reaches the agent at the next release rather than through a hand-edited string. The server validates the call, uploads any files, submits the job, polls it within the wait bound while reporting progress, and returns a summarised result with a link to the whole payload.
 
 ```
-AI Agent ←stdio→ rftools-mcp ←HTTPS + API key→ rftools.io API → SQS → worker
-                                ←poll /jobs/{id}←
-                                ←result JSON←
+AI Agent ←stdio→ rftools-mcp ←HTTPS (key optional)→ rftools.io API → SQS → worker
+                                ←poll /v1/jobs/{id}←
+                                ←result JSON from a 15-minute presigned link←
 ```
 
 ## Machine-Readable Documentation
