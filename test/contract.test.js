@@ -1,0 +1,207 @@
+// The contract: what the generated schemas produce, and what an agent sees
+// when it lists the tools.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import {
+  JOB_INDEX,
+  JOB_SCHEMAS,
+  JOB_TYPES,
+  assertContractConsistent,
+  toolNameForJobType,
+  listJobTypes,
+} from '../src/job-schemas.ts';
+import { describeParam, shapeForJob, validateParams } from '../src/json-schema-to-zod.ts';
+import { connectedServer, textOf, jsonOf } from './helpers.js';
+
+const indexJson = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../../shared/job-schemas/index.json', import.meta.url)), 'utf8'),
+);
+const CONTRACT_COUNT = Object.keys(indexJson.jobTypes).length;
+
+test('every job type in the index has a schema, and nothing else does', () => {
+  assertContractConsistent();
+  assert.equal(JOB_TYPES.length, CONTRACT_COUNT);
+  assert.equal(Object.keys(JOB_SCHEMAS).length, CONTRACT_COUNT);
+  for (const jobType of JOB_TYPES) {
+    assert.equal(JOB_SCHEMAS[jobType]['x-jobType'], jobType);
+    assert.equal(JOB_SCHEMAS[jobType]['x-slug'], JOB_INDEX[jobType].slug);
+  }
+});
+
+test('every job type converts to a zod shape with every contract parameter', () => {
+  for (const jobType of JOB_TYPES) {
+    const schema = JOB_SCHEMAS[jobType];
+    const shape = shapeForJob(schema);
+    assert.deepEqual(Object.keys(shape).sort(), Object.keys(schema.properties).sort(), jobType);
+  }
+});
+
+test('the tool name is the slug with underscores', () => {
+  assert.equal(toolNameForJobType('pdn_impedance'), 'simulate_pdn_impedance');
+  assert.equal(toolNameForJobType('impedance_match'), 'simulate_impedance_matching');
+  assert.equal(toolNameForJobType('sparam_pipeline'), 'simulate_sparam_pipeline');
+});
+
+test('a required parameter is enforced locally', () => {
+  const missing = validateParams(JOB_SCHEMAS.sat_link_budget, { frequency_ghz: 12 });
+  assert.equal(missing.ok, false);
+  assert.ok(missing.problems.join('\n').includes('latitude_deg'), missing.problems.join('\n'));
+
+  const present = validateParams(JOB_SCHEMAS.sat_link_budget, { latitude_deg: 52, longitude_deg: 4 });
+  assert.equal(present.ok, true);
+});
+
+test('an unknown key is refused locally, naming the key and the accepted keys', () => {
+  const result = validateParams(JOB_SCHEMAS.pdn_impedance, { boardWidth_mm: 100, bogusKey: 1 });
+  assert.equal(result.ok, false);
+  const message = result.problems.join('\n');
+  assert.ok(message.includes('"bogusKey"'), message);
+  assert.ok(message.includes('boardWidth_mm'), message);
+  assert.ok(message.includes('maxCapCount'), message);
+});
+
+test('a value outside the enum is refused, and a value outside the range too', () => {
+  const badEnum = validateParams(JOB_SCHEMAS.antenna_sim, { solveMode: 'turbo' });
+  assert.equal(badEnum.ok, false);
+  assert.ok(badEnum.problems.join('\n').toLowerCase().includes('solvemode'));
+
+  const badRange = validateParams(JOB_SCHEMAS.filter_monte_carlo, { monteCarloIterations: 99999 });
+  assert.equal(badRange.ok, false);
+  assert.ok(badRange.problems.join('\n').includes('monteCarloIterations'));
+});
+
+test('defaults from the contract are filled in', () => {
+  const result = validateParams(JOB_SCHEMAS.eye_diagram, {});
+  assert.equal(result.ok, true);
+  assert.equal(result.value.prbs, 'prbs15');
+  assert.equal(result.value.samplesPerUI, 64);
+});
+
+test('a parameter the schema does not describe travels as given', () => {
+  const wires = [{ start: [0, 0, 0], end: [0, 0, 1], radius: 0.001, segments: 11 }];
+  const result = validateParams(JOB_SCHEMAS.antenna_sim, { wires, feed: { wire: 0, segment: 5 } });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value.wires, wires);
+  assert.deepEqual(result.value.feed, { wire: 0, segment: 5 });
+});
+
+test('a tier bound and a paid-only mode are stated in the parameter description', () => {
+  const trials = describeParam(
+    'monteCarloIterations',
+    JOB_SCHEMAS.filter_monte_carlo.properties.monteCarloIterations,
+  );
+  assert.ok(/free/i.test(trials), trials);
+  assert.ok(trials.includes('500'), trials);
+
+  const solveMode = describeParam('solveMode', JOB_SCHEMAS.fdtd_sparam.properties.solveMode);
+  assert.ok(solveMode.includes('Paid tier only'), solveMode);
+  assert.ok(solveMode.includes('normal') && solveMode.includes('fine'), solveMode);
+
+  const hidden = describeParam('referenceImpedance', JOB_SCHEMAS.antenna_sim.properties.referenceImpedance);
+  assert.ok(hidden.includes('Advanced'), hidden);
+
+  const derived = describeParam('portX_mm', JOB_SCHEMAS.pdn_impedance.properties.portX_mm);
+  assert.ok(derived.includes('derive'), derived);
+});
+
+test('the server lists one typed tool per job type, with no prose params', async () => {
+  const harness = await connectedServer({ apiKey: '' });
+  try {
+    const { tools } = await harness.client.listTools();
+    const simulate = tools.filter((t) => t.name.startsWith('simulate_'));
+    assert.equal(simulate.length, CONTRACT_COUNT);
+
+    for (const jobType of JOB_TYPES) {
+      const tool = simulate.find((t) => t.name === toolNameForJobType(jobType));
+      assert.ok(tool, `missing tool for ${jobType}`);
+      assert.equal(tool.inputSchema.type, 'object');
+      assert.equal(tool.inputSchema.additionalProperties, false);
+      // Every contract parameter is its own typed property, not a prose blob.
+      assert.ok(!('params' in tool.inputSchema.properties), `${jobType} still has a prose params key`);
+      for (const name of Object.keys(JOB_SCHEMAS[jobType].properties)) {
+        const prop = tool.inputSchema.properties[name];
+        assert.ok(prop, `${jobType}.${name} missing from the published schema`);
+        assert.ok(typeof prop.description === 'string' && prop.description.length > 0);
+      }
+    }
+
+    // The lifecycle tools are there too, and nothing else.
+    const rest = tools.filter((t) => !t.name.startsWith('simulate_')).map((t) => t.name).sort();
+    assert.deepEqual(rest, [
+      'get_simulation_result',
+      'get_simulation_status',
+      'list_simulation_tools',
+      'run_simulation',
+      'submit_simulation',
+    ]);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('the published schema carries ranges, enums and defaults from the contract', async () => {
+  const harness = await connectedServer({ apiKey: '' });
+  try {
+    const { tools } = await harness.client.listTools();
+    const eye = tools.find((t) => t.name === 'simulate_eye_diagram');
+    assert.equal(eye.inputSchema.properties.samplesPerUI.minimum, 16);
+    assert.equal(eye.inputSchema.properties.samplesPerUI.maximum, 128);
+    assert.equal(eye.inputSchema.properties.samplesPerUI.default, 64);
+    assert.deepEqual(eye.inputSchema.properties.prbs.enum, ['prbs7', 'prbs15', 'prbs31']);
+    // A file-input job type offers both ways to give it a file.
+    assert.ok(eye.inputSchema.properties.inputFiles);
+    assert.ok(eye.inputSchema.properties.inputPaths);
+    // A job type that takes no files offers neither.
+    const pdn = tools.find((t) => t.name === 'simulate_pdn_impedance');
+    assert.ok(!pdn.inputSchema.properties.inputFiles);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('a call with an unknown key is refused by the server before any request', async () => {
+  const harness = await connectedServer({
+    apiKey: '',
+    api: undefined,
+  });
+  try {
+    const result = await harness.client.callTool({
+      name: 'simulate_pdn_impedance',
+      arguments: { boardWidth_mm: 100, bogusKey: 7 },
+    });
+    assert.equal(result.isError, true);
+    const text = textOf(result);
+    assert.ok(text.includes('bogusKey'), text);
+    assert.ok(text.includes('boardWidth_mm'), text);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('every published count comes from the index', async () => {
+  const harness = await connectedServer({ apiKey: '' });
+  try {
+    const { tools } = await harness.client.listTools();
+    const listTool = tools.find((t) => t.name === 'list_simulation_tools');
+    assert.ok(listTool.description.includes(String(CONTRACT_COUNT)), listTool.description);
+
+    const listed = jsonOf(await harness.client.callTool({ name: 'list_simulation_tools', arguments: {} }));
+    assert.equal(listed.count, CONTRACT_COUNT);
+    assert.equal(listed.tools.length, CONTRACT_COUNT);
+    assert.deepEqual(
+      listed.tools.map((t) => t.jobType).sort(),
+      Object.keys(indexJson.jobTypes).sort(),
+    );
+    for (const entry of listed.tools) {
+      assert.equal(entry.timeBudgetSeconds, indexJson.jobTypes[entry.jobType].timeoutSeconds);
+      assert.equal(Boolean(entry.files), indexJson.jobTypes[entry.jobType].files);
+    }
+    assert.equal(listJobTypes().length, CONTRACT_COUNT);
+  } finally {
+    await harness.close();
+  }
+});
