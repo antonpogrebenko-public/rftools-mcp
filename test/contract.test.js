@@ -113,6 +113,19 @@ test('an integer parameter refuses a fractional value locally', () => {
   assert.equal(validateParams(JOB_SCHEMAS.filter_monte_carlo, { order: 5 }).ok, true);
 });
 
+test('a measured quantity that steps by one is still a number', () => {
+  // `traceL` is a trace length in millimetres whose form spinner steps by
+  // 1 mm, and a 30.5 mm trace is an ordinary board. Integrality is a flag the
+  // registry sets by hand on quantities that are counted; deriving it from the
+  // step refused this, a 100.5 MHz clock and a 50.5 % duty cycle.
+  assert.equal(JOB_SCHEMAS.fdtd_sparam.properties.traceL.type, 'number');
+  const result = validateParams(JOB_SCHEMAS.fdtd_sparam, {
+    structureType: 'microstrip_open_stub', traceL: 30.5,
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.problems));
+  assert.equal(result.value.traceL, 30.5);
+});
+
 test('a parameter the schema does not describe travels as given', () => {
   const wires = [{ start: [0, 0, 0], end: [0, 0, 1], radius: 0.001, segments: 11 }];
   const result = validateParams(JOB_SCHEMAS.antenna_sim, { wires, feed: { wire: 0, segment: 5 } });

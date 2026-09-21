@@ -33764,7 +33764,7 @@ var emi_radiated_default = {
       "x-tooltip": "Length of the longest unshielded cable attached to the PCB."
     },
     fClk_MHz: {
-      type: "integer",
+      type: "number",
       minimum: 1,
       maximum: 2e3,
       default: 100,
@@ -33774,7 +33774,7 @@ var emi_radiated_default = {
       "x-tooltip": "Fundamental clock frequency. Harmonics are computed up to 1 GHz."
     },
     dutyCycle: {
-      type: "integer",
+      type: "number",
       minimum: 1,
       maximum: 99,
       default: 50,
@@ -33794,7 +33794,7 @@ var emi_radiated_default = {
       "x-tooltip": "Signal 10%\u201390% rise time. Longer rise times reduce high-frequency harmonics."
     },
     nTrials: {
-      type: "number",
+      type: "integer",
       minimum: 1e3,
       maximum: 5e5,
       default: 1e5,
@@ -33855,7 +33855,7 @@ var eye_diagram_default = {
       "x-label": "PRBS Length"
     },
     samplesPerUI: {
-      type: "number",
+      type: "integer",
       minimum: 16,
       maximum: 128,
       default: 64,
@@ -33951,7 +33951,7 @@ var fdtd_sparam_default = {
       "x-step": 0.1
     },
     traceL: {
-      type: "integer",
+      type: "number",
       minimum: 1,
       maximum: 200,
       default: 30,
@@ -33960,7 +33960,7 @@ var fdtd_sparam_default = {
       "x-step": 1
     },
     stubL: {
-      type: "integer",
+      type: "number",
       minimum: 1,
       maximum: 100,
       default: 15,
@@ -33999,7 +33999,7 @@ var fdtd_sparam_default = {
       }
     },
     viaAR: {
-      type: "integer",
+      type: "number",
       minimum: 1,
       maximum: 20,
       default: 5,
@@ -34171,7 +34171,7 @@ var filter_monte_carlo_default = {
       "x-tooltip": "Largest peak-to-peak |S21| variation across the passband for a build to pass. Leave blank to allow 0.5 dB more than the standard-value design achieves."
     },
     rejectionSpec_db: {
-      type: "integer",
+      type: "number",
       minimum: 0,
       maximum: 200,
       "x-label": "Stopband Rejection Minimum (optional)",
@@ -34180,7 +34180,7 @@ var filter_monte_carlo_default = {
       "x-tooltip": "Smallest rejection a build must reach from 2\xD7 the cutoff upward (low-pass) or below half the cutoff (high-pass). Leave blank to allow 3 dB less than the standard-value design achieves."
     },
     monteCarloIterations: {
-      type: "number",
+      type: "integer",
       minimum: 50,
       maximum: 1e4,
       default: 500,
@@ -34335,7 +34335,7 @@ var magnetics_optimizer_default = {
       "x-label": "Topology"
     },
     Vin: {
-      type: "integer",
+      type: "number",
       minimum: 1,
       maximum: 1e3,
       default: 48,
@@ -34433,7 +34433,7 @@ var magnetics_optimizer_default = {
       "x-tooltip": "0 = minimize loss, 1 = minimize volume, 0.3 = balanced (default)"
     },
     population: {
-      type: "number",
+      type: "integer",
       minimum: 20,
       maximum: 500,
       "x-label": "GA Population",
@@ -34443,7 +34443,7 @@ var magnetics_optimizer_default = {
       "x-tooltip": "Rounded up to a multiple of 4. Blank uses the lane default."
     },
     generations: {
-      type: "number",
+      type: "integer",
       minimum: 10,
       maximum: 500,
       "x-label": "GA Generations",
@@ -35172,7 +35172,7 @@ var smps_control_loop_default = {
       }
     },
     monteCarloTrials: {
-      type: "number",
+      type: "integer",
       minimum: 1e3,
       maximum: 5e5,
       default: 2e5,
@@ -35182,7 +35182,7 @@ var smps_control_loop_default = {
       "x-tooltip": "Each trial re-evaluates T(s) with randomized component values."
     },
     tolL: {
-      type: "integer",
+      type: "number",
       minimum: 0,
       maximum: 100,
       default: 20,
@@ -35191,7 +35191,7 @@ var smps_control_loop_default = {
       "x-step": 1
     },
     tolC: {
-      type: "integer",
+      type: "number",
       minimum: 0,
       maximum: 100,
       default: 20,
