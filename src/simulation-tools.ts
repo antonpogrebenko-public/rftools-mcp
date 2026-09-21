@@ -306,11 +306,12 @@ export function shapeResult(
 
   if (opts.full) return { ...head, full: true, result: payload };
 
-  const { value, elided } = summariseResult(payload);
+  const { value, elided, truncated } = summariseResult(payload);
   return {
     ...head,
     summarised: true,
     ...(elided ? { elided: true } : {}),
+    ...(truncated ? { truncated: true } : {}),
     hint: 'Series are described, not listed. Ask again with full: true for the whole payload.',
     result: value,
   };

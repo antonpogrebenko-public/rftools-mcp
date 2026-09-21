@@ -7,18 +7,30 @@
 
 import { z } from 'zod';
 import type { JobParamSchema, JobSchema } from './job-schemas.ts';
+import { structureShapeFor } from './param-shapes.ts';
 
-/** Human sentence for one parameter, from the schema's annotations. */
-export function describeParam(name: string, prop: JobParamSchema): string {
+/**
+ * Human sentence for one parameter, from the schema's annotations.
+ *
+ * `shapeNote` describes a structure the schema itself does not (see
+ * param-shapes.ts). The `x-ref` pointer is never published: it names a file in
+ * the service's repository, which is no use to the caller forming the call.
+ */
+export function describeParam(name: string, prop: JobParamSchema, shapeNote?: string): string {
   const parts: string[] = [];
   const label = prop['x-label'] ?? name;
   const unit = prop['x-unit'];
   parts.push(unit ? `${label} (${unit})` : label);
 
-  if (prop['x-tooltip']) parts.push(prop['x-tooltip']);
+  // When we carry fuller prose for a structure the tooltip only sketches,
+  // the prose replaces the sketch rather than repeating it.
+  const tooltip = prop['x-tooltip'];
+  if (tooltip && !(shapeNote && tooltip.includes('{'))) parts.push(tooltip);
 
-  if (prop['x-ref']) {
-    parts.push(`Structure is not described by this schema; pass it as the service expects (see ${prop['x-ref']}).`);
+  if (shapeNote) {
+    parts.push(shapeNote);
+  } else if (prop['x-ref']) {
+    parts.push('Structure is not described by this schema; pass it as the service expects');
   }
 
   const range: string[] = [];
@@ -52,7 +64,15 @@ export function describeParam(name: string, prop: JobParamSchema): string {
   }
 
   if (prop['x-hidden']) {
-    parts.push('Advanced — most callers can leave it out.');
+    // Hidden means "not on the web form", which is not the same as optional:
+    // antenna_sim's geometry is hidden behind an editor and still required.
+    // Never invite a caller to omit a parameter its own tooltip calls required.
+    const saysRequired = /\brequired\b/i.test(prop['x-tooltip'] ?? '');
+    parts.push(
+      saysRequired
+        ? 'Not on the web form, which has an editor for it — give it here as described'
+        : 'Advanced — most callers can leave it out',
+    );
   }
 
   return parts.join('. ').replace(/\.\./g, '.');
@@ -60,8 +80,14 @@ export function describeParam(name: string, prop: JobParamSchema): string {
 
 /** The zod type for one parameter, before optionality is applied. */
 function baseType(prop: JobParamSchema): z.ZodTypeAny {
-  // A parameter the schema deliberately does not describe travels as given.
-  if (prop['x-ref']) return z.unknown();
+  // A parameter the schema does not describe travels as given — but the
+  // contract's declared type still holds, so the published schema says at
+  // least whether it is a list or an object.
+  if (prop['x-ref']) {
+    if (prop.type === 'array') return z.array(z.unknown());
+    if (prop.type === 'object') return z.record(z.string(), z.unknown());
+    return z.unknown();
+  }
 
   if (prop.enum?.length) {
     return z.enum(prop.enum as [string, ...string[]]);
@@ -93,8 +119,13 @@ function baseType(prop: JobParamSchema): z.ZodTypeAny {
 }
 
 /** The zod type for one parameter, with description, default and optionality. */
-export function zodForParam(name: string, prop: JobParamSchema, required: boolean): z.ZodTypeAny {
-  let t = baseType(prop).describe(describeParam(name, prop));
+export function zodForParam(
+  name: string,
+  prop: JobParamSchema,
+  required: boolean,
+  shapeNote?: string,
+): z.ZodTypeAny {
+  let t = baseType(prop).describe(describeParam(name, prop, shapeNote));
   if (prop.default !== undefined) {
     t = t.default(prop.default as never);
   } else if (!required) {
@@ -106,9 +137,10 @@ export function zodForParam(name: string, prop: JobParamSchema, required: boolea
 /** Every parameter of a job type as a zod shape. */
 export function shapeForJob(schema: JobSchema): Record<string, z.ZodTypeAny> {
   const required = new Set(schema.required ?? []);
+  const jobType = schema['x-jobType'];
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const [name, prop] of Object.entries(schema.properties ?? {})) {
-    shape[name] = zodForParam(name, prop, required.has(name));
+    shape[name] = zodForParam(name, prop, required.has(name), structureShapeFor(jobType, name));
   }
   return shape;
 }

@@ -120,6 +120,57 @@ test('a tier bound and a paid-only mode are stated in the parameter description'
   assert.ok(derived.includes('derive'), derived);
 });
 
+test('a structure the schema does not describe keeps its type and its shape prose', async () => {
+  const harness = await connectedServer({ apiKey: '' });
+  try {
+    const { tools } = await harness.client.listTools();
+    const antenna = tools.find((t) => t.name === 'simulate_antenna_sim');
+    const props = antenna.inputSchema.properties;
+
+    // The contract's declared type survives: a list is published as a list.
+    assert.equal(props.wires.type, 'array');
+    assert.equal(props.feed.type, 'object');
+    assert.equal(props.ground.type, 'object');
+    assert.equal(props.conductor.type, 'object');
+    assert.equal(props.optimize.type, 'object');
+
+    // And the shape is spelled out, as the prose string used to.
+    assert.match(props.wires.description, /start:\[x,y,z\]/);
+    assert.match(props.wires.description, /segments/);
+    assert.match(props.feed.description, /\{wire, segment\}/);
+    assert.match(props.ground.description, /free_space \| perfect \| finite/);
+    assert.match(props.conductor.description, /copper \| aluminium \| perfect \| custom/);
+    assert.match(props.optimize.description, /populationSize/);
+
+    // A parameter its own tooltip calls required is never called optional.
+    for (const name of ['wires', 'feed']) {
+      assert.doesNotMatch(props[name].description, /leave it out/, name);
+    }
+
+    // No description points at a file in the service's repository.
+    for (const [name, prop] of Object.entries(props)) {
+      assert.doesNotMatch(prop.description ?? '', /backend\/|\.py\b/, name);
+    }
+  } finally {
+    await harness.close();
+  }
+});
+
+test('no published description points at a file no caller can open', async () => {
+  const harness = await connectedServer({ apiKey: '' });
+  try {
+    const { tools } = await harness.client.listTools();
+    for (const tool of tools) {
+      assert.doesNotMatch(tool.description ?? '', /backend\/|\.py\b/, tool.name);
+      for (const [name, prop] of Object.entries(tool.inputSchema?.properties ?? {})) {
+        assert.doesNotMatch(prop.description ?? '', /backend\/|\.py\b/, `${tool.name}.${name}`);
+      }
+    }
+  } finally {
+    await harness.close();
+  }
+});
+
 test('the server lists one typed tool per job type, with no prose params', async () => {
   const harness = await connectedServer({ apiKey: '' });
   try {

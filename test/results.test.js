@@ -99,6 +99,53 @@ test('other large fixtures also fit the budget', () => {
   }
 });
 
+test('a single enormous string cannot defeat the bound', () => {
+  const payload = { summary: { ok: true }, log: 'x'.repeat(200_000) };
+  const shaped = shapeResult('pdn_impedance', 'job-1', { status: 'completed' }, payload);
+  const text = JSON.stringify(shaped);
+  assert.ok(text.length < 8192, `output is ${text.length} bytes`);
+  assert.equal(shaped.truncated, true);
+  // The headline survives, and the caller is told where the rest went.
+  assert.deepEqual(shaped.result.summary, { ok: true });
+  if (shaped.result.log !== undefined) {
+    assert.ok(shaped.result.log.length <= 600, 'a kept string must be cut to its limit');
+    assert.match(shaped.result.log, /use full: true/);
+  }
+});
+
+test('a very wide result cannot defeat the bound either', () => {
+  const payload = Object.fromEntries(
+    Array.from({ length: 400 }, (_, i) => [`k${i}`, { a: i, b: `value ${i}`, c: [1, 2, 3] }]),
+  );
+  const shaped = shapeResult('pdn_impedance', 'job-1', { status: 'completed' }, payload);
+  const text = JSON.stringify(shaped);
+  assert.ok(text.length < 8192, `output is ${text.length} bytes`);
+  assert.ok(shaped.elided || shaped.truncated);
+});
+
+test('thousands of scalar keys are dropped down to the budget, quickly', () => {
+  const payload = Object.fromEntries(Array.from({ length: 20_000 }, (_, i) => [`s${i}`, i * 1.5]));
+  payload.summary = { peak: 42 };
+  const started = Date.now();
+  const shaped = shapeResult('pdn_impedance', 'job-1', { status: 'completed' }, payload);
+  const text = JSON.stringify(shaped);
+  assert.ok(text.length < 8192, `output is ${text.length} bytes`);
+  assert.deepEqual(shaped.result.summary, { peak: 42 }, 'the headline is never what gets dropped');
+  assert.ok(Date.now() - started < 2000, 'summarising must not take seconds');
+});
+
+test('when even the headline is too large, only the headline is returned', () => {
+  const payload = {
+    summary: Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`m${i}`, { v: i, note: `n${i}` }])),
+    extra: 'more',
+  };
+  const shaped = shapeResult('pdn_impedance', 'job-1', { status: 'completed' }, payload);
+  const text = JSON.stringify(shaped);
+  assert.ok(text.length < 8192, `output is ${text.length} bytes`);
+  assert.equal(shaped.truncated, true);
+  assert.deepEqual(Object.keys(shaped.result), ['summary']);
+});
+
 test('the summarised JSON is compact, not pretty-printed', () => {
   const shaped = shapeResult('pdn_impedance', 'job-1', { status: 'completed' }, { summary: { a: 1 } });
   const text = JSON.stringify(shaped);

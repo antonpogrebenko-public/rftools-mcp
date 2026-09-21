@@ -11,23 +11,56 @@ import { RftoolsApi } from '../src/api.ts';
 import { registerSimulationTools } from '../src/simulation-tools.ts';
 
 /**
+ * The base the tests point the client at. It carries a path prefix, as the
+ * live one does (`https://rftools.io/api/py`), so a route that forgets to
+ * spell `/v1` cannot accidentally match.
+ */
+export const API_HOST = 'api.test';
+export const API_BASE_PATH = '/py';
+export const API_BASE_URL = `https://${API_HOST}${API_BASE_PATH}`;
+
+/**
  * A fetch built from routes. Each route is [matcher, responder]; the first
  * matching route answers. Every call is recorded on `.calls`.
+ *
+ * A string matcher starting with "/" matches the request's **whole pathname**,
+ * not a fragment of the URL: a route registered as "/upload" does not answer a
+ * request to "/v1/upload", so a wrong path fails the test instead of passing
+ * it. Any other string matches the host exactly (for the S3 and result URLs).
+ * A function matcher receives (url, init).
  */
-export function scriptedFetch(routes) {
+export function scriptedFetch(routes, basePath = API_BASE_PATH) {
   const calls = [];
   const impl = async (url, init = {}) => {
-    calls.push({ url, init, method: init.method ?? 'GET', body: parseBody(init.body) });
+    const parsed = new URL(url);
+    calls.push({
+      url,
+      pathname: parsed.pathname,
+      host: parsed.host,
+      init,
+      method: init.method ?? 'GET',
+      body: parseBody(init.body),
+    });
     for (const [match, respond] of routes) {
-      if (typeof match === 'string' ? url.includes(match) : match(url, init)) {
+      const hit =
+        typeof match === 'string'
+          ? match.startsWith('/')
+            ? parsed.pathname === basePath + match
+            : parsed.host === match
+          : match(url, init);
+      if (hit) {
         const out = await respond(url, init, calls.length);
         return out instanceof Response ? out : jsonResponse(out);
       }
     }
-    throw new Error(`no route for ${init.method ?? 'GET'} ${url}`);
+    throw new Error(`no route for ${init.method ?? 'GET'} ${url} (pathname ${parsed.pathname})`);
   };
   impl.calls = calls;
-  impl.callsTo = (fragment) => calls.filter((c) => c.url.includes(fragment));
+  /** Calls whose path (after the base) starts with this prefix, or that went to this host. */
+  impl.callsTo = (prefix) =>
+    calls.filter((c) => (prefix.startsWith('/') ? c.pathname.startsWith(basePath + prefix) : c.host === prefix));
+  /** Every call to the API itself, as opposed to S3 or a result link. */
+  impl.apiCalls = () => calls.filter((c) => c.host === API_HOST);
   return impl;
 }
 
@@ -76,7 +109,7 @@ export function fakeClock(start = 1_000_000) {
 
 /** The deps a handler takes, wired to a scripted fetch and a fake clock. */
 export function makeTestDeps({ fetchImpl, apiKey = 'rfc_test', clock = fakeClock(), files = {}, waitMax = 600 } = {}) {
-  const api = new RftoolsApi({ baseUrl: 'https://api.test/py', apiKey, fetchImpl });
+  const api = new RftoolsApi({ baseUrl: API_BASE_URL, apiKey, fetchImpl });
   return {
     api,
     sleep: clock.sleep,

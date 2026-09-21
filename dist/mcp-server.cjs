@@ -33544,7 +33544,7 @@ var antenna_sim_default = {
         "sweep",
         "optimize"
       ],
-      default: "standard",
+      default: "instant",
       "x-label": "Solve Mode",
       "x-tooltip": "Instant is a closed-form textbook model of a preset. Standard solves your geometry with NEC-2 at one frequency; Sweep solves it across a band; Optimize searches element lengths and spacings.",
       "x-paidOnly": [
@@ -34785,7 +34785,7 @@ var rf_cascade_default = {
       type: "number",
       minimum: -30,
       maximum: 100,
-      default: 28,
+      "x-derived": "no spec (absent means not judged)",
       "x-label": "Gain Spec (min)",
       "x-unit": "dB"
     },
@@ -34793,7 +34793,7 @@ var rf_cascade_default = {
       type: "number",
       minimum: -40,
       maximum: 50,
-      default: -8,
+      "x-derived": "no spec (absent means not judged)",
       "x-label": "IIP3 Spec (min)",
       "x-unit": "dBm"
     },
@@ -35501,7 +35501,7 @@ var RftoolsApi = class {
    * Returns the key the job body carries.
    */
   async uploadFile(filename, content) {
-    const ticket = await this.post("/upload", {
+    const ticket = await this.post("/v1/upload", {
       filename,
       contentType: "application/octet-stream"
     });
@@ -35556,14 +35556,33 @@ async function errorFromResponse(res) {
 
 // ../rftools-mcp/src/json-schema-to-zod.ts
 var import_zod = require("zod");
-function describeParam(name, prop) {
+
+// ../rftools-mcp/src/param-shapes.ts
+var STRUCTURE_SHAPES = {
+  antenna_sim: {
+    wires: "Array of {start:[x,y,z] in metres, end:[x,y,z] in metres, radius in metres, segments}. Each segment must be no longer than \u03BB/10 and no shorter than 8 wire radii",
+    feed: "Object {wire, segment}, both 0-based: which wire the source drives, and which segment of it",
+    ground: "Object {type: free_space | perfect | finite}, plus epsilonR and conductivity (S/m) when finite. Omit for free space",
+    conductor: "Object {material: copper | aluminium | perfect | custom}, plus conductivity (S/m) when custom. Omit for copper",
+    optimize: "Object {populationSize: a multiple of 4 between 8 and 200, generations: 1 to 200, lengthRange, spacingRange} for the NSGA-II search"
+  }
+};
+function structureShapeFor(jobType, param) {
+  return STRUCTURE_SHAPES[jobType]?.[param];
+}
+
+// ../rftools-mcp/src/json-schema-to-zod.ts
+function describeParam(name, prop, shapeNote) {
   const parts = [];
   const label = prop["x-label"] ?? name;
   const unit = prop["x-unit"];
   parts.push(unit ? `${label} (${unit})` : label);
-  if (prop["x-tooltip"]) parts.push(prop["x-tooltip"]);
-  if (prop["x-ref"]) {
-    parts.push(`Structure is not described by this schema; pass it as the service expects (see ${prop["x-ref"]}).`);
+  const tooltip = prop["x-tooltip"];
+  if (tooltip && !(shapeNote && tooltip.includes("{"))) parts.push(tooltip);
+  if (shapeNote) {
+    parts.push(shapeNote);
+  } else if (prop["x-ref"]) {
+    parts.push("Structure is not described by this schema; pass it as the service expects");
   }
   const range = [];
   if (prop.minimum !== void 0) range.push(`min ${prop.minimum}`);
@@ -35590,12 +35609,19 @@ function describeParam(name, prop) {
     parts.push(`Applies when ${showWhen.key} is "${showWhen.value}".`);
   }
   if (prop["x-hidden"]) {
-    parts.push("Advanced \u2014 most callers can leave it out.");
+    const saysRequired = /\brequired\b/i.test(prop["x-tooltip"] ?? "");
+    parts.push(
+      saysRequired ? "Not on the web form, which has an editor for it \u2014 give it here as described" : "Advanced \u2014 most callers can leave it out"
+    );
   }
   return parts.join(". ").replace(/\.\./g, ".");
 }
 function baseType(prop) {
-  if (prop["x-ref"]) return import_zod.z.unknown();
+  if (prop["x-ref"]) {
+    if (prop.type === "array") return import_zod.z.array(import_zod.z.unknown());
+    if (prop.type === "object") return import_zod.z.record(import_zod.z.string(), import_zod.z.unknown());
+    return import_zod.z.unknown();
+  }
   if (prop.enum?.length) {
     return import_zod.z.enum(prop.enum);
   }
@@ -35623,8 +35649,8 @@ function baseType(prop) {
       return import_zod.z.string();
   }
 }
-function zodForParam(name, prop, required) {
-  let t = baseType(prop).describe(describeParam(name, prop));
+function zodForParam(name, prop, required, shapeNote) {
+  let t = baseType(prop).describe(describeParam(name, prop, shapeNote));
   if (prop.default !== void 0) {
     t = t.default(prop.default);
   } else if (!required) {
@@ -35634,9 +35660,10 @@ function zodForParam(name, prop, required) {
 }
 function shapeForJob(schema) {
   const required = new Set(schema.required ?? []);
+  const jobType = schema["x-jobType"];
   const shape = {};
   for (const [name, prop] of Object.entries(schema.properties ?? {})) {
-    shape[name] = zodForParam(name, prop, required.has(name));
+    shape[name] = zodForParam(name, prop, required.has(name), structureShapeFor(jobType, name));
   }
   return shape;
 }
@@ -35745,7 +35772,7 @@ function collect(node, headlineAbove, depth, out) {
     collect(value, headline, depth + 1, out);
   }
 }
-function fitToBudget(root, budget) {
+function fitToBudget(root, budget, allowHeadline = false) {
   let elidedAny = false;
   const bulky = Math.max(200, Math.floor(budget / 10));
   for (let guard = 0; guard < 2e3; guard += 1) {
@@ -35754,7 +35781,8 @@ function fitToBudget(root, budget) {
     collect(root, false, 0, candidates);
     if (candidates.length === 0) break;
     const plain = candidates.filter((c2) => !c2.headline);
-    const pool = plain.length > 0 ? plain : candidates;
+    const pool = plain.length > 0 ? plain : allowHeadline ? candidates : [];
+    if (pool.length === 0) break;
     const large = pool.filter((c2) => c2.size > bulky);
     const from = large.length > 0 ? large : pool;
     let target = from[0];
@@ -35766,14 +35794,59 @@ function fitToBudget(root, budget) {
   }
   return elidedAny;
 }
+var LAST_RESORT_KEYS = ["summary", "warnings", "provenance", "webUrl", "resultUrl"];
+var MAX_STRING_CHARS = 500;
+function truncateStrings(node, limit) {
+  let cut = false;
+  if (isScalar(node) || node === null) return false;
+  const entries = Array.isArray(node) ? node.map((v, i) => [i, v]) : Object.entries(node);
+  for (const [key, value] of entries) {
+    if (typeof value === "string") {
+      if (value.length > limit) {
+        node[key] = `${value.slice(0, limit)}\u2026 [+${value.length - limit} characters, use full: true]`;
+        cut = true;
+      }
+    } else if (!isScalar(value)) {
+      cut = truncateStrings(value, limit) || cut;
+    }
+  }
+  return cut;
+}
+function enforceBudget(root, budget) {
+  const elided = fitToBudget(root, budget);
+  if (size(root) <= budget) return { elided, truncated: false };
+  let truncated = truncateStrings(root, MAX_STRING_CHARS);
+  if (size(root) <= budget) return { elided, truncated };
+  for (const scalarsOnly of [true, false]) {
+    for (let pass = 0; pass < 8; pass += 1) {
+      const total = size(root);
+      if (total <= budget) break;
+      const droppable = Object.entries(root).filter(([k, v]) => !LAST_RESORT_KEYS.includes(k) && (scalarsOnly ? isScalar(v) : true)).map(([k, v]) => ({ key: k, cost: size(v) + k.length + 4 })).sort((a, b) => b.cost - a.cost);
+      if (droppable.length === 0) break;
+      let freed = 0;
+      for (const { key, cost } of droppable) {
+        delete root[key];
+        truncated = true;
+        freed += cost;
+        if (total - freed <= budget) break;
+      }
+    }
+  }
+  if (size(root) <= budget) return { elided, truncated };
+  for (const key of Object.keys(root)) {
+    if (!LAST_RESORT_KEYS.includes(key)) delete root[key];
+  }
+  if (size(root) > budget) fitToBudget(root, budget, true);
+  return { elided, truncated: true };
+}
 function summariseResult(payload, opts = {}) {
   const maxSeries = opts.maxSeries ?? DEFAULTS.maxSeries;
   const maxSeriesChars = opts.maxSeriesChars ?? DEFAULTS.maxSeriesChars;
   const budget = opts.budgetChars ?? DEFAULTS.budgetChars;
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
     const value2 = { result: reduce(payload, maxSeries, maxSeriesChars) };
-    const elided2 = fitToBudget(value2, budget);
-    return { value: value2, elided: elided2 };
+    const { elided: elided2, truncated: truncated2 } = enforceBudget(value2, budget);
+    return { value: value2, elided: elided2, truncated: truncated2 };
   }
   const source = payload;
   const value = {};
@@ -35784,8 +35857,8 @@ function summariseResult(payload, opts = {}) {
     if (k in value) continue;
     value[k] = isScalar(v) ? v : reduce(v, maxSeries, maxSeriesChars);
   }
-  const elided = fitToBudget(value, budget);
-  return { value, elided };
+  const { elided, truncated } = enforceBudget(value, budget);
+  return { value, elided, truncated };
 }
 
 // ../rftools-mcp/src/simulation-tools.ts
@@ -35945,11 +36018,12 @@ function shapeResult(jobType, jobId, status, payload, opts = {}) {
   if (status.resultExpiresAt) head.resultExpiresAt = status.resultExpiresAt;
   if (status.finishedAt) head.finishedAt = status.finishedAt;
   if (opts.full) return { ...head, full: true, result: payload };
-  const { value, elided } = summariseResult(payload);
+  const { value, elided, truncated } = summariseResult(payload);
   return {
     ...head,
     summarised: true,
     ...elided ? { elided: true } : {},
+    ...truncated ? { truncated: true } : {},
     hint: "Series are described, not listed. Ask again with full: true for the whole payload.",
     result: value
   };

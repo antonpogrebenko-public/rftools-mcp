@@ -143,7 +143,7 @@ function collect(node: unknown, headlineAbove: boolean, depth: number, out: Cand
  * Headline keys (`summary`, `warnings`, `provenance`, …) go last, and only if
  * nothing else is left. Every step removes a branch, so this terminates.
  */
-export function fitToBudget(root: Record<string, unknown>, budget: number): boolean {
+export function fitToBudget(root: Record<string, unknown>, budget: number, allowHeadline = false): boolean {
   let elidedAny = false;
   const bulky = Math.max(200, Math.floor(budget / 10));
   for (let guard = 0; guard < 2000; guard += 1) {
@@ -152,7 +152,12 @@ export function fitToBudget(root: Record<string, unknown>, budget: number): bool
     collect(root, false, 0, candidates);
     if (candidates.length === 0) break;
     const plain = candidates.filter((c) => !c.headline);
-    const pool = plain.length > 0 ? plain : candidates;
+    // Headline branches are not touched here: when the bulk is elsewhere —
+    // a huge log string, say — eliding `summary` costs the caller the one
+    // thing it came for and frees nothing. enforceBudget comes back for them
+    // as a last resort, after everything else has been tried.
+    const pool = plain.length > 0 ? plain : allowHeadline ? candidates : [];
+    if (pool.length === 0) break;
     const large = pool.filter((c) => c.size > bulky);
     const from = large.length > 0 ? large : pool;
     let target = from[0];
@@ -165,11 +170,90 @@ export function fitToBudget(root: Record<string, unknown>, budget: number): bool
   return elidedAny;
 }
 
+/** The keys that survive to the last resort. */
+const LAST_RESORT_KEYS = ['summary', 'warnings', 'provenance', 'webUrl', 'resultUrl'];
+
+/** Longest string the summary will print once it is fighting for room. */
+const MAX_STRING_CHARS = 500;
+
+function truncateStrings(node: unknown, limit: number): boolean {
+  let cut = false;
+  if (isScalar(node) || node === null) return false;
+  const entries: Array<[string | number, unknown]> = Array.isArray(node)
+    ? node.map((v, i) => [i, v] as [number, unknown])
+    : Object.entries(node as Record<string, unknown>);
+  for (const [key, value] of entries) {
+    if (typeof value === 'string') {
+      if (value.length > limit) {
+        (node as Record<string | number, unknown>)[key] =
+          `${value.slice(0, limit)}… [+${value.length - limit} characters, use full: true]`;
+        cut = true;
+      }
+    } else if (!isScalar(value)) {
+      cut = truncateStrings(value, limit) || cut;
+    }
+  }
+  return cut;
+}
+
+/**
+ * The budget, enforced rather than hoped for. Containers go first, deepest
+ * bulky branch first; then long strings are cut; then whole non-headline keys
+ * are dropped, largest first; and if even that is not enough, only the
+ * headline keys are kept. The result is always within the budget.
+ */
+export function enforceBudget(
+  root: Record<string, unknown>,
+  budget: number,
+): { elided: boolean; truncated: boolean } {
+  const elided = fitToBudget(root, budget);
+  if (size(root) <= budget) return { elided, truncated: false };
+
+  // A single enormous string defeats container elision: cut it.
+  let truncated = truncateStrings(root, MAX_STRING_CHARS);
+  if (size(root) <= budget) return { elided, truncated };
+
+  // Width, not depth: drop whole keys the caller did not come for. Scalars
+  // first, then what is left of the containers, largest first each time.
+  for (const scalarsOnly of [true, false]) {
+    for (let pass = 0; pass < 8; pass += 1) {
+      const total = size(root);
+      if (total <= budget) break;
+      const droppable = Object.entries(root)
+        .filter(([k, v]) => !LAST_RESORT_KEYS.includes(k) && (scalarsOnly ? isScalar(v) : true))
+        .map(([k, v]) => ({ key: k, cost: size(v) + k.length + 4 }))
+        .sort((a, b) => b.cost - a.cost);
+      if (droppable.length === 0) break;
+      // Drop enough of the largest to clear the overrun in one pass, rather
+      // than re-measuring the whole object per key: a wide result would make
+      // that quadratic. The loop re-measures and goes again if it was short.
+      let freed = 0;
+      for (const { key, cost } of droppable) {
+        delete root[key];
+        truncated = true;
+        freed += cost;
+        if (total - freed <= budget) break;
+      }
+    }
+  }
+  if (size(root) <= budget) return { elided, truncated };
+
+  // Last resort: the headline and nothing else — and if the headline itself
+  // is the bulk, elide inside it too.
+  for (const key of Object.keys(root)) {
+    if (!LAST_RESORT_KEYS.includes(key)) delete root[key];
+  }
+  if (size(root) > budget) fitToBudget(root, budget, true);
+  return { elided, truncated: true };
+}
+
 export interface SummarisedResult {
   /** The summarised payload: headline keys first, then everything else reduced. */
   value: Record<string, unknown>;
   /** True when something was left out beyond the series reduction. */
   elided: boolean;
+  /** True when a string was cut or a whole key dropped to stay within the budget. */
+  truncated: boolean;
 }
 
 /**
@@ -184,8 +268,8 @@ export function summariseResult(payload: unknown, opts: SummariseOptions = {}): 
 
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     const value = { result: reduce(payload, maxSeries, maxSeriesChars) } as Record<string, unknown>;
-    const elided = fitToBudget(value, budget);
-    return { value, elided };
+    const { elided, truncated } = enforceBudget(value, budget);
+    return { value, elided, truncated };
   }
 
   const source = payload as Record<string, unknown>;
@@ -201,6 +285,6 @@ export function summariseResult(payload: unknown, opts: SummariseOptions = {}): 
     value[k] = isScalar(v) ? v : reduce(v, maxSeries, maxSeriesChars);
   }
 
-  const elided = fitToBudget(value, budget);
-  return { value, elided };
+  const { elided, truncated } = enforceBudget(value, budget);
+  return { value, elided, truncated };
 }

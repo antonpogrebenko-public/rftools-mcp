@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { handleStatus, handleResult } from '../src/simulation-tools.ts';
-import { makeTestDeps, scriptedFetch, jsonResponse, connectedServer, jsonOf, textOf } from './helpers.js';
+import { API_BASE_URL, makeTestDeps, scriptedFetch, jsonResponse, connectedServer, jsonOf, textOf } from './helpers.js';
 
 const RESULT = {
   summary: { zMin_mohm: 4.1, zMax_mohm: 31.7, capCount: 12 },
@@ -41,7 +41,7 @@ const COMPLETED = {
 
 test('submit_simulation returns the id, the queue position and the time budget', async () => {
   const fetchImpl = statusSequence([COMPLETED]);
-  const harness = await connectedServer({ apiKey: 'rfc_k', baseUrl: 'https://api.test/py', fetchImpl });
+  const harness = await connectedServer({ apiKey: 'rfc_k', baseUrl: API_BASE_URL, fetchImpl });
   try {
     const out = jsonOf(
       await harness.client.callTool({

@@ -266,7 +266,9 @@ export class RftoolsApi {
    * Returns the key the job body carries.
    */
   async uploadFile(filename: string, content: Uint8Array | string): Promise<string> {
-    const ticket = (await this.post('/upload', {
+    // The jobs router is mounted at /api/py/v1, so the upload route is
+    // /v1/upload against this base — the same path the browser posts to.
+    const ticket = (await this.post('/v1/upload', {
       filename,
       contentType: 'application/octet-stream',
     })) as UploadTicket;

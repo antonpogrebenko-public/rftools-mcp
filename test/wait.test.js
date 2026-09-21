@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { runAndWait } from '../src/simulation-tools.ts';
-import { makeTestDeps, scriptedFetch, jsonResponse, fakeClock, connectedServer, textOf } from './helpers.js';
+import { API_BASE_URL, makeTestDeps, scriptedFetch, jsonResponse, fakeClock, connectedServer, textOf } from './helpers.js';
 
 const RESULT = {
   summary: { zMin_mohm: 4.1, zMax_mohm: 31.7, capCount: 12 },
@@ -103,7 +103,7 @@ test('a waiting call reports progress to a host that asked for it', async () => 
   const clock = fakeClock();
   const harness = await connectedServer({
     apiKey: 'rfc_k',
-    baseUrl: 'https://api.test/py',
+    baseUrl: API_BASE_URL,
     fetchImpl,
     sleep: clock.sleep,
     now: clock.now,

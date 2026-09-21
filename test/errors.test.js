@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import { ApiError, RftoolsApi, describeApiError, describeJobError, kindForStatus, renderDetail } from '../src/api.ts';
 import { runAndWait, handleResult, waitForJob } from '../src/simulation-tools.ts';
-import { makeTestDeps, scriptedFetch, jsonResponse, errorResponse, fakeClock } from './helpers.js';
+import { API_BASE_URL, makeTestDeps, scriptedFetch, jsonResponse, errorResponse } from './helpers.js';
 
 function submitFailing(response) {
   return scriptedFetch([[(url, init) => url.endsWith('/v1/jobs') && init?.method === 'POST', () => response()]]);
@@ -64,7 +64,7 @@ test('an unreachable service is transient, not a fault', async () => {
   const fetchImpl = () => {
     throw new TypeError('fetch failed');
   };
-  const api = new RftoolsApi({ baseUrl: 'https://api.test/py', apiKey: 'k', fetchImpl });
+  const api = new RftoolsApi({ baseUrl: API_BASE_URL, apiKey: 'k', fetchImpl });
   await assert.rejects(
     () => api.submitJob('pdn_impedance', {}),
     (err) => {
