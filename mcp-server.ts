@@ -90,7 +90,7 @@ const SIMULATION_TOOLS = [
     jobType: 'pdn_impedance',
     title: 'PDN Impedance Analyzer',
     description: 'Power delivery network impedance with plane-pair cavity resonance (Novak) and genetic algorithm decoupling optimizer.',
-    params: 'planesX (m), planesY (m), planesSeparation (m), vrmR (Ω), vrmL (H), vrmC (F), targetImpedance (Ω), freqPoints (int), population (int), generations (int), capBudget (int)',
+    params: 'boardWidth_mm, boardLength_mm, dielectricEr (relative permittivity, e.g. FR4 ≈ 4.5), lossTangent (e.g. FR4 ≈ 0.02), boardThickness_mm (plane-pair separation), portX_mm, portY_mm (port location, e.g. IC power pin), vrmBandwidth_hz (VRM control-loop bandwidth), vrmDcr_mohm, targetImpedance_mohm, freqMin_hz, freqMax_hz, maxCapCount (decoupling capacitor budget)',
   },
   {
     slug: 'sat-link-budget',
@@ -337,7 +337,7 @@ server.registerTool(
   {
     title: 'List Simulation Tools',
     description:
-      'List the 14 server-side RF simulation tools available via API key. ' +
+      `List the ${SIMULATION_TOOLS.length} server-side RF simulation tools available via API key. ` +
       'These require RFTOOLS_API_KEY (set in env). Free tier: 5 runs/month. Pro: 100/month. API tier: 10 000/month.',
     inputSchema: z.object({}),
   },

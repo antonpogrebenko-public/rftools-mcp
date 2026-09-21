@@ -37,6 +37,9 @@
   "bugs": {
     "url": "https://github.com/antonpogrebenko-public/rftools-mcp/issues"
   },
+  "scripts": {
+    "test": "node --test"
+  },
   "bin": {
     "rftools-mcp": "dist/mcp-server.cjs"
   },
