@@ -61,10 +61,31 @@ jobs:
             [ "${GITHUB_REF_NAME#v}" = "$pkg" ] || { echo "tag does not match package.json"; exit 1; }
           fi
 
-      - name: The bundle must be present and start
+      # The bundle is generated from sources this repository does not hold:
+      # mcp-server.ts imports the frontend's calculator registry and the
+      # generated job schemas, both of which live in the rfhub monorepo (see
+      # scripts/build.sh). So the reproducibility check — rebuild and compare —
+      # runs there, in scripts/pre-deploy-check.sh, which is the only place
+      # both trees exist.
+      #
+      # What can be checked here is the release-time half of the same mistake,
+      # and the one the documented procedure invites: bump the version in four
+      # files, push the tag, and forget to rebuild. The bundle carries the
+      # version it was built from, so a stale artefact says so.
+      - name: The bundle must have been rebuilt for this version
         run: |
           set -euo pipefail
           test -s dist/mcp-server.cjs
+          pkg=$(node -p "require('./package.json').version")
+          grep -qF "version: \"$pkg\"" dist/mcp-server.cjs \
+            || grep -qF "version: '$pkg'" dist/mcp-server.cjs \
+            || { echo "dist/mcp-server.cjs was not rebuilt for $pkg."; \
+                 echo "Run 'npm run build' in the rfhub monorepo and commit it."; \
+                 exit 1; }
+
+      - name: The bundle must start
+        run: |
+          set -euo pipefail
           # The bundle leaves its two runtime dependencies external, so they
           # have to be on disk for the smoke test (there is no lockfile: the
           # package ships only dist/, and nothing here is built from source).

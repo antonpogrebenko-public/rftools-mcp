@@ -39,7 +39,9 @@
     "url": "https://github.com/antonpogrebenko-public/rftools-mcp/issues"
   },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build": "bash scripts/build.sh",
+    "build:check": "bash scripts/build.sh --check"
   },
   "bin": {
     "rftools-mcp": "dist/mcp-server.cjs"
