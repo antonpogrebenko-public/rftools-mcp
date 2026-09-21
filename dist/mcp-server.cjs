@@ -35417,7 +35417,8 @@ Service said: ${detail}` : "");
       return "Too many requests." + (err.retryAfter !== void 0 ? ` Retry after ${err.retryAfter} s.` : " Retry shortly.") + (detail ? `
 Service said: ${detail}` : "");
     case "invalid_request":
-      return `The service refused the request as invalid:
+      return err.status === 0 ? `The call does not match the job type's contract, so nothing was sent:
+${detail || "(no detail given)"}` : `The service refused the request as invalid:
 ${detail || "(no detail given)"}`;
     case "too_large":
       return `The request is larger than this lane will run:
@@ -35425,7 +35426,7 @@ ${detail || "(no detail given)"}`;
     case "forbidden":
       return `Not authorised for this job: ${detail || "the job belongs to another account."}`;
     case "not_found":
-      return `Not found: ${detail || "no such job."}`;
+      return err.status === 0 ? detail || "Not found." : `Not found: ${detail || "no such job."}`;
     case "unavailable":
       return `The service is temporarily unavailable: ${detail || "try again shortly."}`;
     case "transient":
@@ -35796,6 +35797,7 @@ var TIER_LIMITS = "Free tier: 5 runs/month. Pro: 100/month. API tier: 10 000/mon
 var RESULT_URL_LIFETIME = "15 minutes";
 var DEDUP_WINDOW_SECONDS = 60;
 var TERMINAL = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
+var RESERVED_ARG_NAMES = ["waitSeconds", "full", "inputFiles", "inputPaths"];
 function makeDeps(opts = {}) {
   return {
     api: opts.api ?? new RftoolsApi({ apiKey: opts.apiKey, baseUrl: opts.baseUrl, fetchImpl: opts.fetchImpl }),
@@ -36197,6 +36199,11 @@ function registerSimulationTools(server, options = {}) {
   for (const jobType of JOB_TYPES) {
     const schema = JOB_SCHEMAS[jobType];
     const spec = schema["x-files"];
+    for (const reserved of RESERVED_ARG_NAMES) {
+      if (reserved in schema.properties) {
+        throw new Error(`${jobType} has a parameter named "${reserved}", which the tool layer reserves`);
+      }
+    }
     const shape = {
       ...shapeForJob(schema),
       ...spec ? fileFieldsFor(spec) : {},

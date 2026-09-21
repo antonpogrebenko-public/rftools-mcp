@@ -114,13 +114,18 @@ export function describeApiError(err: ApiError): string {
         (detail ? `\nService said: ${detail}` : '')
       );
     case 'invalid_request':
-      return `The service refused the request as invalid:\n${detail || '(no detail given)'}`;
+      // status 0 means we refused it ourselves, against the contract, before
+      // anything was sent — say so rather than blaming the service.
+      return err.status === 0
+        ? `The call does not match the job type's contract, so nothing was sent:\n${detail || '(no detail given)'}`
+        : `The service refused the request as invalid:\n${detail || '(no detail given)'}`;
     case 'too_large':
       return `The request is larger than this lane will run:\n${detail || '(no detail given)'}`;
     case 'forbidden':
       return `Not authorised for this job: ${detail || 'the job belongs to another account.'}`;
     case 'not_found':
-      return `Not found: ${detail || 'no such job.'}`;
+      // status 0: our own reading of the job's state, already a full sentence.
+      return err.status === 0 ? detail || 'Not found.' : `Not found: ${detail || 'no such job.'}`;
     case 'unavailable':
       return `The service is temporarily unavailable: ${detail || 'try again shortly.'}`;
     case 'transient':

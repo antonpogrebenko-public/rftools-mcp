@@ -15,6 +15,7 @@ import {
   listJobTypes,
 } from '../src/job-schemas.ts';
 import { describeParam, shapeForJob, validateParams } from '../src/json-schema-to-zod.ts';
+import { RESERVED_ARG_NAMES } from '../src/simulation-tools.ts';
 import { connectedServer, textOf, jsonOf } from './helpers.js';
 
 const indexJson = JSON.parse(
@@ -37,6 +38,17 @@ test('every job type converts to a zod shape with every contract parameter', () 
     const schema = JOB_SCHEMAS[jobType];
     const shape = shapeForJob(schema);
     assert.deepEqual(Object.keys(shape).sort(), Object.keys(schema.properties).sort(), jobType);
+  }
+});
+
+test('no job parameter collides with a name the tool layer reserves', () => {
+  for (const jobType of JOB_TYPES) {
+    for (const reserved of RESERVED_ARG_NAMES) {
+      assert.ok(
+        !(reserved in JOB_SCHEMAS[jobType].properties),
+        `${jobType} has a parameter named ${reserved}`,
+      );
+    }
   }
 });
 

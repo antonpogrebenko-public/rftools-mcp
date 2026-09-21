@@ -49,6 +49,9 @@ export const DEDUP_WINDOW_SECONDS = 60;
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 
+/** Argument names the tool layer owns; no job parameter may take one. */
+export const RESERVED_ARG_NAMES = ['waitSeconds', 'full', 'inputFiles', 'inputPaths'] as const;
+
 export interface SimulationDeps {
   api: RftoolsApi;
   sleep: (ms: number) => Promise<void>;
@@ -652,6 +655,14 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
   for (const jobType of JOB_TYPES) {
     const schema = JOB_SCHEMAS[jobType];
     const spec = schema['x-files'];
+    // The tool's own controls share the argument object with the job's
+    // parameters, so a contract that grew one of these names would be
+    // silently swallowed. Refuse to start instead.
+    for (const reserved of RESERVED_ARG_NAMES) {
+      if (reserved in schema.properties) {
+        throw new Error(`${jobType} has a parameter named "${reserved}", which the tool layer reserves`);
+      }
+    }
     const shape: Record<string, z.ZodTypeAny> = {
       ...shapeForJob(schema),
       ...(spec ? fileFieldsFor(spec) : {}),

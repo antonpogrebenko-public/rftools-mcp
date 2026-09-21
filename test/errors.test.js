@@ -208,12 +208,15 @@ test('an expired result link is reported as such, with what to do next', async (
   assert.match(out.content[0].text, /status again/);
 });
 
-test('a locally invalid call never reaches the service', async () => {
+test('a locally invalid call never reaches the service, and says so', async () => {
   const fetchImpl = scriptedFetch([]);
   const deps = makeTestDeps({ fetchImpl });
   const out = await runAndWait(deps, 'sat_link_budget', { frequency_ghz: 12 }, { waitSeconds: 10 });
   assert.equal(out.isError, true);
   assert.match(out.content[0].text, /latitude_deg/);
+  // The refusal is ours, not the service's, and the message says nothing was sent.
+  assert.match(out.content[0].text, /nothing was sent/);
+  assert.doesNotMatch(out.content[0].text, /The service refused/);
   assert.equal(fetchImpl.calls.length, 0);
 });
 
