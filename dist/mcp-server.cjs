@@ -33631,7 +33631,7 @@ var antenna_sim_default = {
       }
     },
     freqPoints: {
-      type: "number",
+      type: "integer",
       minimum: 2,
       maximum: 2001,
       default: 51,
@@ -33679,7 +33679,7 @@ var antenna_sim_default = {
       }
     },
     randomSeed: {
-      type: "number",
+      type: "integer",
       minimum: 0,
       "x-label": "Random Seed",
       "x-dimensionless": true,
@@ -33764,7 +33764,7 @@ var emi_radiated_default = {
       "x-tooltip": "Length of the longest unshielded cable attached to the PCB."
     },
     fClk_MHz: {
-      type: "number",
+      type: "integer",
       minimum: 1,
       maximum: 2e3,
       default: 100,
@@ -33774,7 +33774,7 @@ var emi_radiated_default = {
       "x-tooltip": "Fundamental clock frequency. Harmonics are computed up to 1 GHz."
     },
     dutyCycle: {
-      type: "number",
+      type: "integer",
       minimum: 1,
       maximum: 99,
       default: 50,
@@ -33804,7 +33804,7 @@ var emi_radiated_default = {
       "x-tooltip": "More trials = tighter confidence intervals. 100K is a good balance."
     },
     randomSeed: {
-      type: "number",
+      type: "integer",
       minimum: 0,
       "x-label": "Random Seed",
       "x-dimensionless": true,
@@ -33951,7 +33951,7 @@ var fdtd_sparam_default = {
       "x-step": 0.1
     },
     traceL: {
-      type: "number",
+      type: "integer",
       minimum: 1,
       maximum: 200,
       default: 30,
@@ -33960,7 +33960,7 @@ var fdtd_sparam_default = {
       "x-step": 1
     },
     stubL: {
-      type: "number",
+      type: "integer",
       minimum: 1,
       maximum: 100,
       default: 15,
@@ -33999,7 +33999,7 @@ var fdtd_sparam_default = {
       }
     },
     viaAR: {
-      type: "number",
+      type: "integer",
       minimum: 1,
       maximum: 20,
       default: 5,
@@ -34110,7 +34110,7 @@ var filter_monte_carlo_default = {
       "x-label": "Band Type"
     },
     order: {
-      type: "number",
+      type: "integer",
       minimum: 2,
       maximum: 9,
       default: 5,
@@ -34171,7 +34171,7 @@ var filter_monte_carlo_default = {
       "x-tooltip": "Largest peak-to-peak |S21| variation across the passband for a build to pass. Leave blank to allow 0.5 dB more than the standard-value design achieves."
     },
     rejectionSpec_db: {
-      type: "number",
+      type: "integer",
       minimum: 0,
       maximum: 200,
       "x-label": "Stopband Rejection Minimum (optional)",
@@ -34195,7 +34195,7 @@ var filter_monte_carlo_default = {
       }
     },
     randomSeed: {
-      type: "number",
+      type: "integer",
       minimum: 0,
       "x-label": "Random Seed",
       "x-dimensionless": true,
@@ -34335,7 +34335,7 @@ var magnetics_optimizer_default = {
       "x-label": "Topology"
     },
     Vin: {
-      type: "number",
+      type: "integer",
       minimum: 1,
       maximum: 1e3,
       default: 48,
@@ -34453,7 +34453,7 @@ var magnetics_optimizer_default = {
       "x-tooltip": "Blank uses the lane default."
     },
     randomSeed: {
-      type: "number",
+      type: "integer",
       minimum: 0,
       "x-label": "Random Seed",
       "x-dimensionless": true,
@@ -34583,7 +34583,7 @@ var pdn_impedance_default = {
       "x-unit": "Hz"
     },
     maxCapCount: {
-      type: "number",
+      type: "integer",
       minimum: 1,
       maximum: 200,
       default: 30,
@@ -34593,7 +34593,7 @@ var pdn_impedance_default = {
       "x-tooltip": "Total decoupling capacitor budget the optimizer may place"
     },
     randomSeed: {
-      type: "number",
+      type: "integer",
       minimum: 0,
       "x-label": "Random Seed",
       "x-dimensionless": true,
@@ -34686,7 +34686,7 @@ var radar_detection_default = {
       "x-tooltip": "e.g. 1e-6 = 1 \xB5s"
     },
     nPulses: {
-      type: "number",
+      type: "integer",
       minimum: 1,
       maximum: 512,
       default: 10,
@@ -35182,7 +35182,7 @@ var smps_control_loop_default = {
       "x-tooltip": "Each trial re-evaluates T(s) with randomized component values."
     },
     tolL: {
-      type: "number",
+      type: "integer",
       minimum: 0,
       maximum: 100,
       default: 20,
@@ -35191,7 +35191,7 @@ var smps_control_loop_default = {
       "x-step": 1
     },
     tolC: {
-      type: "number",
+      type: "integer",
       minimum: 0,
       maximum: 100,
       default: 20,
@@ -35588,7 +35588,9 @@ function describeParam(name, prop, shapeNote) {
   if (prop.minimum !== void 0) range.push(`min ${prop.minimum}`);
   if (prop.maximum !== void 0) range.push(`max ${prop.maximum}`);
   if (range.length) parts.push(range.join(", "));
-  if (prop.default !== void 0) parts.push(`default ${JSON.stringify(prop.default)}`);
+  if (prop.default !== void 0) {
+    parts.push(`omit for the default of ${JSON.stringify(prop.default)}`);
+  }
   if (prop["x-derived"]) {
     parts.push(`Omit to let the service derive it: ${prop["x-derived"]}.`);
   }
@@ -35650,13 +35652,8 @@ function baseType(prop) {
   }
 }
 function zodForParam(name, prop, required, shapeNote) {
-  let t = baseType(prop).describe(describeParam(name, prop, shapeNote));
-  if (prop.default !== void 0) {
-    t = t.default(prop.default);
-  } else if (!required) {
-    t = t.optional();
-  }
-  return t;
+  const t = baseType(prop).describe(describeParam(name, prop, shapeNote));
+  return required ? t : t.optional();
 }
 function shapeForJob(schema) {
   const required = new Set(schema.required ?? []);

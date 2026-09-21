@@ -86,11 +86,31 @@ test('a value outside the enum is refused, and a value outside the range too', (
   assert.ok(badRange.problems.join('\n').includes('monteCarloIterations'));
 });
 
-test('defaults from the contract are filled in', () => {
-  const result = validateParams(JOB_SCHEMAS.eye_diagram, {});
+test('a call posts only the keys the caller named', () => {
+  // The schema used to apply its defaults on parse, so every defaulted key was
+  // posted whether or not the caller mentioned it. `stable_seed` hashes the
+  // submitted dict, so that made the same design submitted from here, from the
+  // browser and from the SDK three different Monte Carlo samples. The default
+  // is published in the parameter description and applied by the service.
+  const result = validateParams(JOB_SCHEMAS.eye_diagram, { dataRate: 5e9 });
   assert.equal(result.ok, true);
-  assert.equal(result.value.prbs, 'prbs15');
-  assert.equal(result.value.samplesPerUI, 64);
+  assert.deepEqual(Object.keys(result.value), ['dataRate']);
+});
+
+test('the default is stated in the description instead', () => {
+  const prbs = describeParam('prbs', JOB_SCHEMAS.eye_diagram.properties.prbs);
+  assert.ok(prbs.includes('prbs15'), prbs);
+  assert.ok(/omit/i.test(prbs), prbs);
+});
+
+test('an integer parameter refuses a fractional value locally', () => {
+  assert.equal(JOB_SCHEMAS.filter_monte_carlo.properties.order.type, 'integer');
+  const result = validateParams(JOB_SCHEMAS.filter_monte_carlo, { order: 5.7 });
+  assert.equal(result.ok, false);
+  assert.ok(result.problems.join('\n').includes('order'), result.problems.join('\n'));
+
+  // A whole value given as a float is the same filter; JSON has one number type.
+  assert.equal(validateParams(JOB_SCHEMAS.filter_monte_carlo, { order: 5 }).ok, true);
 });
 
 test('a parameter the schema does not describe travels as given', () => {
@@ -213,7 +233,11 @@ test('the published schema carries ranges, enums and defaults from the contract'
     const eye = tools.find((t) => t.name === 'simulate_eye_diagram');
     assert.equal(eye.inputSchema.properties.samplesPerUI.minimum, 16);
     assert.equal(eye.inputSchema.properties.samplesPerUI.maximum, 128);
-    assert.equal(eye.inputSchema.properties.samplesPerUI.default, 64);
+    // No `default` in the published schema: a zod default is applied on parse,
+    // which would post the key whether or not the caller named it. The value
+    // is in the description instead.
+    assert.equal(eye.inputSchema.properties.samplesPerUI.default, undefined);
+    assert.ok(eye.inputSchema.properties.samplesPerUI.description.includes('64'));
     assert.deepEqual(eye.inputSchema.properties.prbs.enum, ['prbs7', 'prbs15', 'prbs31']);
     // A file-input job type offers both ways to give it a file.
     assert.ok(eye.inputSchema.properties.inputFiles);

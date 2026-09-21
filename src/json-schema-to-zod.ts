@@ -38,7 +38,11 @@ export function describeParam(name: string, prop: JobParamSchema, shapeNote?: st
   if (prop.maximum !== undefined) range.push(`max ${prop.maximum}`);
   if (range.length) parts.push(range.join(', '));
 
-  if (prop.default !== undefined) parts.push(`default ${JSON.stringify(prop.default)}`);
+  // The default is stated, not applied — see `zodForParam`. A caller who wants
+  // it omits the key, and the service fills it in.
+  if (prop.default !== undefined) {
+    parts.push(`omit for the default of ${JSON.stringify(prop.default)}`);
+  }
 
   if (prop['x-derived']) {
     parts.push(`Omit to let the service derive it: ${prop['x-derived']}.`);
@@ -118,20 +122,33 @@ function baseType(prop: JobParamSchema): z.ZodTypeAny {
   }
 }
 
-/** The zod type for one parameter, with description, default and optionality. */
+/**
+ * The zod type for one parameter, with its description and its optionality.
+ *
+ * Deliberately no `.default()`. A zod default is *applied* on parse, so every
+ * defaulted key ended up in the parsed object and was posted — a 30-parameter
+ * job type went out with 30 keys however few the caller named.
+ *
+ * That is not a cosmetic difference. `stable_seed` in the worker hashes the
+ * submitted dict, so the same design submitted from the browser (which omits
+ * blank fields), from the SDK (which posts only what the caller gave) and from
+ * here drew three different Monte Carlo samples. Three surfaces, one design,
+ * three answers within sampling error of each other and none reproducible from
+ * another.
+ *
+ * So the default is published in the description instead — `describeParam`
+ * writes "omit for the default of N" — and the service applies it. Everything
+ * else about the tool schema is unchanged: the type, range and enum still
+ * refuse a bad value locally, before any request.
+ */
 export function zodForParam(
   name: string,
   prop: JobParamSchema,
   required: boolean,
   shapeNote?: string,
 ): z.ZodTypeAny {
-  let t = baseType(prop).describe(describeParam(name, prop, shapeNote));
-  if (prop.default !== undefined) {
-    t = t.default(prop.default as never);
-  } else if (!required) {
-    t = t.optional();
-  }
-  return t;
+  const t = baseType(prop).describe(describeParam(name, prop, shapeNote));
+  return required ? t : t.optional();
 }
 
 /** Every parameter of a job type as a zod shape. */
