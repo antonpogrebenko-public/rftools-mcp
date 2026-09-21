@@ -1,0 +1,40 @@
+# The test suite ran nowhere.
+#
+# `publish.yml` fires on a tag, and by then the decision has been made: it
+# checks the four version strings agree and that the bundle answers
+# `initialize`, which last release's bundle also does. Nothing ran `npm test`
+# on a push or a pull request, so a change to `src/*.ts` reached the tag with
+# whatever the author happened to run locally.
+#
+# Node 22 rather than the repo's minimum of 18: the tests import the
+# TypeScript sources directly and rely on the runtime stripping types, which
+# arrived in 22.6 behind a flag and is on by default from 22.18.
+name: Test
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # No lockfile is committed (see .gitignore: the published package is
+      # dist/ alone and nothing here is built from source at install time), so
+      # `npm ci` has nothing to read. `npm install` with the resolver pinned to
+      # the declared ranges is what this repository can offer.
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Test
+        run: npm test
