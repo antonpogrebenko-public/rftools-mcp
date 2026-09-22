@@ -12,6 +12,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   ApiError,
   RftoolsApi,
+  UPLOAD_NEEDS_KEY,
   describeApiError,
   describeJobError,
   type JobStatusResponse,
@@ -338,6 +339,12 @@ export async function submitJob(
   }
 
   const spec = fileSchemaFor(jobType);
+  // A call that carries files needs a key, and saying so here means saying it
+  // before anything is read off this machine and before a byte leaves it.
+  const bringsFiles = Boolean(inputFiles?.length) || Boolean(inputPaths?.length);
+  if (bringsFiles && !deps.api.hasKey) {
+    throw new ApiError(0, 'auth', UPLOAD_NEEDS_KEY);
+  }
   const files = await gatherFiles(deps, inputFiles, inputPaths);
   if (!spec && files.length > 0) {
     throw new ApiError(0, 'invalid_request', `${jobType} takes no file input`);
@@ -538,7 +545,10 @@ export function handleListTools(): ToolText {
   return ok({
     count: JOB_TYPES.length,
     tiers: TIER_LIMITS,
-    keyless: 'Without RFTOOLS_API_KEY a job still runs, on the free lane.',
+    keyless:
+      'Without RFTOOLS_API_KEY a job still runs, on the free lane — but only '
+      + 'a job that takes no file. ' + UPLOAD_NEEDS_KEY,
+    fileToolsNeedKey: UPLOAD_NEEDS_KEY,
     resultLifetime: `A result link lives ${RESULT_URL_LIFETIME}; ask for the status again for a fresh one.`,
     dedupWindowSeconds: DEDUP_WINDOW_SECONDS,
     tools: listJobTypes().map((t) => ({
@@ -563,7 +573,7 @@ const inlineFileSchema = z.object({
 });
 
 function fileFieldsFor(spec: JobFileSchema): Record<string, z.ZodTypeAny> {
-  const what = `${spec.min === 0 ? 'Optional. ' : ''}${spec.min}–${spec.max} file(s), ${spec.extensions.join(', ')}.`;
+  const what = `${spec.min === 0 ? 'Optional. ' : ''}${spec.min}–${spec.max} file(s), ${spec.extensions.join(', ')}. ${UPLOAD_NEEDS_KEY}`;
   return {
     inputFiles: z
       .array(inlineFileSchema)
@@ -705,7 +715,8 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
       title: 'List Simulation Tools',
       description:
         `List the ${JOB_TYPES.length} server-side simulation job types, their tool names, parameters, file rules and ` +
-        `time budgets. ${TIER_LIMITS} A job runs without a key on the free lane.`,
+        `time budgets. ${TIER_LIMITS} A job runs without a key on the free lane; a job that takes a file does not. ` +
+        UPLOAD_NEEDS_KEY,
       inputSchema: z.object({}),
     },
     async () => handleListTools() as never,
@@ -722,8 +733,8 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
         {
           jobType: z.enum(JOB_TYPES as [string, ...string[]]).describe('Which job type to run'),
           params: z.record(z.string(), z.unknown()).default({}).describe('Parameters for that job type, validated locally against its contract'),
-          inputFiles: z.array(inlineFileSchema).optional().describe('Inline files for file-input job types'),
-          inputPaths: z.array(z.string()).optional().describe('Local file paths for file-input job types'),
+          inputFiles: z.array(inlineFileSchema).optional().describe(`Inline files for file-input job types. ${UPLOAD_NEEDS_KEY}`),
+          inputPaths: z.array(z.string()).optional().describe(`Local file paths for file-input job types. ${UPLOAD_NEEDS_KEY}`),
         },
         'submit_simulation',
       ),
@@ -781,8 +792,8 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
         {
           jobType: z.enum(JOB_TYPES as [string, ...string[]]).describe('Which job type to run'),
           params: z.record(z.string(), z.unknown()).default({}).describe('Parameters for that job type'),
-          inputFiles: z.array(inlineFileSchema).optional().describe('Inline files for file-input job types'),
-          inputPaths: z.array(z.string()).optional().describe('Local file paths for file-input job types'),
+          inputFiles: z.array(inlineFileSchema).optional().describe(`Inline files for file-input job types. ${UPLOAD_NEEDS_KEY}`),
+          inputPaths: z.array(z.string()).optional().describe(`Local file paths for file-input job types. ${UPLOAD_NEEDS_KEY}`),
           waitSeconds: z
             .number()
             .min(0)

@@ -35481,6 +35481,7 @@ ${errorMessage}` : sentence;
   if (errorKind) return errorMessage ? `${errorKind}: ${errorMessage}` : `The job failed (${errorKind}).`;
   return errorMessage ?? "The job failed without a message.";
 }
+var UPLOAD_NEEDS_KEY = "Uploading a file needs an API key; set RFTOOLS_API_KEY.";
 var DEFAULT_BASE = "https://rftools.io/api/py";
 var RftoolsApi = class {
   constructor(opts = {}) {
@@ -35528,6 +35529,7 @@ var RftoolsApi = class {
    * Returns the key the job body carries.
    */
   async uploadFile(filename, content) {
+    if (!this.hasKey) throw new ApiError(0, "auth", UPLOAD_NEEDS_KEY);
     const ticket = await this.post("/v1/upload", {
       filename,
       contentType: "application/octet-stream"
@@ -36065,6 +36067,10 @@ async function submitJob(deps, jobType, params, inputFiles, inputPaths) {
     throw new ApiError(0, "invalid_request", checked.problems.map((p) => `- ${p}`).join("\n"));
   }
   const spec = fileSchemaFor(jobType);
+  const bringsFiles = Boolean(inputFiles?.length) || Boolean(inputPaths?.length);
+  if (bringsFiles && !deps.api.hasKey) {
+    throw new ApiError(0, "auth", UPLOAD_NEEDS_KEY);
+  }
   const files = await gatherFiles(deps, inputFiles, inputPaths);
   if (!spec && files.length > 0) {
     throw new ApiError(0, "invalid_request", `${jobType} takes no file input`);
@@ -36225,7 +36231,8 @@ function handleListTools() {
   return ok({
     count: JOB_TYPES.length,
     tiers: TIER_LIMITS,
-    keyless: "Without RFTOOLS_API_KEY a job still runs, on the free lane.",
+    keyless: "Without RFTOOLS_API_KEY a job still runs, on the free lane \u2014 but only a job that takes no file. " + UPLOAD_NEEDS_KEY,
+    fileToolsNeedKey: UPLOAD_NEEDS_KEY,
     resultLifetime: `A result link lives ${RESULT_URL_LIFETIME}; ask for the status again for a fresh one.`,
     dedupWindowSeconds: DEDUP_WINDOW_SECONDS,
     tools: listJobTypes().map((t) => ({
@@ -36244,7 +36251,7 @@ var inlineFileSchema = import_zod2.z.object({
   content: import_zod2.z.string().describe("The file's text content")
 });
 function fileFieldsFor(spec) {
-  const what = `${spec.min === 0 ? "Optional. " : ""}${spec.min}\u2013${spec.max} file(s), ${spec.extensions.join(", ")}.`;
+  const what = `${spec.min === 0 ? "Optional. " : ""}${spec.min}\u2013${spec.max} file(s), ${spec.extensions.join(", ")}. ${UPLOAD_NEEDS_KEY}`;
   return {
     inputFiles: import_zod2.z.array(inlineFileSchema).optional().describe(`${what} Inline content; at most 5 MB in one call. The server uploads them and passes the keys.`),
     inputPaths: import_zod2.z.array(import_zod2.z.string()).optional().describe(`${what} Paths on this machine, read by the server and uploaded.`)
@@ -36337,7 +36344,7 @@ function registerSimulationTools(server, options = {}) {
     "list_simulation_tools",
     {
       title: "List Simulation Tools",
-      description: `List the ${JOB_TYPES.length} server-side simulation job types, their tool names, parameters, file rules and time budgets. ${TIER_LIMITS} A job runs without a key on the free lane.`,
+      description: `List the ${JOB_TYPES.length} server-side simulation job types, their tool names, parameters, file rules and time budgets. ${TIER_LIMITS} A job runs without a key on the free lane; a job that takes a file does not. ` + UPLOAD_NEEDS_KEY,
       inputSchema: import_zod2.z.object({})
     },
     async () => handleListTools()
@@ -36351,8 +36358,8 @@ function registerSimulationTools(server, options = {}) {
         {
           jobType: import_zod2.z.enum(JOB_TYPES).describe("Which job type to run"),
           params: import_zod2.z.record(import_zod2.z.string(), import_zod2.z.unknown()).default({}).describe("Parameters for that job type, validated locally against its contract"),
-          inputFiles: import_zod2.z.array(inlineFileSchema).optional().describe("Inline files for file-input job types"),
-          inputPaths: import_zod2.z.array(import_zod2.z.string()).optional().describe("Local file paths for file-input job types")
+          inputFiles: import_zod2.z.array(inlineFileSchema).optional().describe(`Inline files for file-input job types. ${UPLOAD_NEEDS_KEY}`),
+          inputPaths: import_zod2.z.array(import_zod2.z.string()).optional().describe(`Local file paths for file-input job types. ${UPLOAD_NEEDS_KEY}`)
         },
         "submit_simulation"
       )
@@ -36401,8 +36408,8 @@ function registerSimulationTools(server, options = {}) {
         {
           jobType: import_zod2.z.enum(JOB_TYPES).describe("Which job type to run"),
           params: import_zod2.z.record(import_zod2.z.string(), import_zod2.z.unknown()).default({}).describe("Parameters for that job type"),
-          inputFiles: import_zod2.z.array(inlineFileSchema).optional().describe("Inline files for file-input job types"),
-          inputPaths: import_zod2.z.array(import_zod2.z.string()).optional().describe("Local file paths for file-input job types"),
+          inputFiles: import_zod2.z.array(inlineFileSchema).optional().describe(`Inline files for file-input job types. ${UPLOAD_NEEDS_KEY}`),
+          inputPaths: import_zod2.z.array(import_zod2.z.string()).optional().describe(`Local file paths for file-input job types. ${UPLOAD_NEEDS_KEY}`),
           waitSeconds: import_zod2.z.number().min(0).max(deps.waitMaxSeconds).default(deps.waitDefaultSeconds).describe(`How long to wait before returning the job id (max ${deps.waitMaxSeconds})`),
           full: import_zod2.z.boolean().default(false).describe("Return the whole result payload instead of the summary")
         },

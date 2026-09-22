@@ -193,6 +193,18 @@ export interface UploadTicket {
   fields?: Record<string, string>;
 }
 
+/**
+ * What every surface says when an upload is attempted without a credential.
+ *
+ * The API's 401 on `POST /v1/upload` sends the same sentence in its own words
+ * ("a signed-in session or an API key"); here there is no session to offer, so
+ * it names the variable the host has to set. Refusing locally with this saves
+ * a round trip and, more to the point, saves an agent from reading a bare 401
+ * and retrying the whole call with the same empty header.
+ */
+export const UPLOAD_NEEDS_KEY =
+  'Uploading a file needs an API key; set RFTOOLS_API_KEY.';
+
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface ApiOptions {
@@ -266,6 +278,11 @@ export class RftoolsApi {
    * Returns the key the job body carries.
    */
   async uploadFile(filename: string, content: Uint8Array | string): Promise<string> {
+    // Before the request, not after it. The service refuses an anonymous
+    // upload, and its 401 arrives as "auth" with no mention of the variable
+    // this host has to set — so the answer is given here, where it is known.
+    if (!this.hasKey) throw new ApiError(0, 'auth', UPLOAD_NEEDS_KEY);
+
     // The jobs router is mounted at /api/py/v1, so the upload route is
     // /v1/upload against this base — the same path the browser posts to.
     const ticket = (await this.post('/v1/upload', {

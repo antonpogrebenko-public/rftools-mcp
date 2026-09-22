@@ -10,13 +10,15 @@ Give Claude, Cursor, or any MCP-compatible AI assistant access to validated engi
 
 ## Quick Start
 
-Calculators work with no API key, and so do the simulation tools: without one, a job runs on the free lane. A key raises the limits — sign up at [rftools.io](https://rftools.io) and generate one from your dashboard.
+Calculators work with no API key, and so do the simulation tools: without one, a job runs on the free lane. A key raises the limits — sign up at [rftools.io](https://rftools.io) and generate one from your dashboard. The one thing a key is required for is a file: uploading a file needs an API key; set `RFTOOLS_API_KEY`.
 
 ## Setup
 
 ### Without API key
 
-All 241 calculators run locally with no sign-up required, and every simulation tool still submits — on the free lane, with the free limits and the free-lane parameter bounds stated on the response.
+All 241 calculators run locally with no sign-up required, and every simulation tool that takes no file still submits — on the free lane, with the free limits and the free-lane parameter bounds stated on the response.
+
+A job type that takes a file is the exception. Uploading a file needs an API key; set `RFTOOLS_API_KEY`. Without one, a call carrying `inputFiles` or `inputPaths` is refused here, with that sentence, before the file is read and before any request leaves this machine.
 
 ### With API key
 
@@ -139,7 +141,7 @@ Run a calculator with specific inputs. Returns results with units and a link to 
 
 Server-side jobs that are too heavy for in-browser computation. Each of the 13 job types is its own tool, `simulate_<name>`, whose input schema is generated from that job type's parameter contract: every parameter typed, with its unit, range, options, default and any free-lane bound stated. A call is checked against that contract before anything is sent, so a wrong parameter name comes back naming the key and the keys that are accepted, and spends no quota.
 
-**Quota:** Free: 5 runs/month · Pro: 100/month · API tier: 10,000/month. Without a key the job still runs, on the free lane, and the response says which limits applied.
+**Quota:** Free: 5 runs/month · Pro: 100/month · API tier: 10,000/month. Without a key a job that takes no file still runs, on the free lane, and the response says which limits applied. A job that takes a file needs a key — see **Files** below.
 
 **Waiting:** a `simulate_*` call submits and waits up to `waitSeconds` (default 90, maximum 600), polling immediately — a mode that finishes in a second costs no delay — and reporting progress to hosts that ask for it. On reaching the bound it returns the job id, status, progress and stage; the job keeps running, and `get_simulation_status` and `get_simulation_result` pick it up. `waitSeconds: 0` submits and returns at once.
 
@@ -148,6 +150,8 @@ Server-side jobs that are too heavy for in-browser computation. Each of the 13 j
 **Repeat submissions:** an identical submission inside **60 seconds** returns the job already running rather than starting a second one.
 
 **Files:** a file-input job type takes either `inputFiles: [{name, content}]` (inline text, up to 5 MB in one call) or `inputPaths: ["/path/to/file.s2p"]` (read from this machine). The server obtains the presigned upload, sends the file, and submits the job with the resulting key.
+
+Uploading a file needs an API key; set `RFTOOLS_API_KEY`. The service refuses an anonymous upload, so this server refuses it first — locally, before the file is read and before any request is made — and says which variable to set rather than passing back a bare 401. The uploaded object is recorded against the key's account, and only that account may submit it.
 
 #### The 13 job types
 
