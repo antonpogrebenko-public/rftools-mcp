@@ -34289,7 +34289,7 @@ var impedance_match_default = {
       "x-label": "Max Q Factor",
       "x-dimensionless": true,
       "x-step": 0.5,
-      "x-tooltip": "Upper bound on each section's loaded Q; omit for unconstrained"
+      "x-tooltip": "Upper bound on each section's loaded Q; omit for unconstrained. Ladder networks are measured against the ceiling but not constrained by it."
     },
     componentSeries: {
       type: "string",
