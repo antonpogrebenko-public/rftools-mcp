@@ -94,6 +94,47 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Tools
 
+### What changed in 2.0.0
+
+- **One typed tool per job type.** Each of the 13 simulation job types now has
+  its own `simulate_<jobType>` tool (e.g. `simulate_impedance_matching`) with a
+  real input schema — name, type, unit, range, options and default per
+  parameter — generated from the job type's parameter contract. `run_simulation`
+  still exists as a compatibility form that takes `jobType` and `params`, but
+  prefer the typed tool: it is the one an agent can read the schema of.
+- **Uploads go through this server**, inline (`inputFiles: [{name, content}]`)
+  or by path on this machine (`inputPaths`); a file-input job type needs
+  `RFTOOLS_API_KEY` — see **Files** below.
+- **`submit_simulation` / `get_simulation_status` / `get_simulation_result`**
+  are the fire-and-forget primitives underneath `run_simulation` and the typed
+  tools, for a caller that wants to submit, do other work, and poll later.
+- **`run_simulation` is now bounded by `waitSeconds`** (default 90, maximum
+  600): it submits, polls, and if the job has not finished by the bound it
+  returns the job id, status, progress and stage rather than blocking further
+  — the job keeps running, and a later `get_simulation_status` /
+  `get_simulation_result` call picks it up.
+- **Results are summarised by default** — `summary`, `warnings`, `provenance`,
+  every scalar value, and long series described by length and extremes rather
+  than listed in full. Pass `full: true` for the whole payload.
+- **No defaults are posted.** A `simulate_*` call sends only the parameters
+  you name; it no longer fills in the contract's defaults itself. Since a
+  sampling job type's random seed is derived from the request body, omitting a
+  parameter and sending it at its default are the same request to the solver
+  but not the same body, and can draw a different sample. Set `randomSeed` to
+  pin a run exactly.
+- **Typed errors.** Failures are classified by the service's `errorKind`, not
+  by matching message text — see **When something goes wrong** below.
+
+**Breaking:**
+
+- `list_simulation_tools` no longer carries a hand-written sentence describing
+  each job type's parameters; it lists them as a plain array of names
+  (`params: string[]`). Read a `simulate_*` tool's own input schema for the
+  type, unit, range, options and default of each parameter.
+- Unknown parameter keys are now refused locally, before any request leaves
+  this machine — the same contract the service validates against, checked
+  here first.
+
 ### Calculator tools — no API key required
 
 #### `list_calculators`
