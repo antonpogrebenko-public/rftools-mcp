@@ -34273,6 +34273,7 @@ var impedance_match_default = {
     topology: {
       type: "string",
       enum: [
+        "auto",
         "L",
         "Pi",
         "T",
@@ -34281,6 +34282,26 @@ var impedance_match_default = {
       ],
       default: "L",
       "x-label": "Topology"
+    },
+    maxQ: {
+      type: "number",
+      minimum: 0.1,
+      "x-label": "Max Q Factor",
+      "x-dimensionless": true,
+      "x-step": 0.5,
+      "x-tooltip": "Upper bound on each section's loaded Q; omit for unconstrained"
+    },
+    componentSeries: {
+      type: "string",
+      enum: [
+        "E12",
+        "E24",
+        "E96",
+        "ideal"
+      ],
+      default: "E24",
+      "x-label": "Component Series",
+      "x-tooltip": "Standard values every element is snapped to before the headline return loss is computed. E24 is what the tool has always used."
     },
     targetRL: {
       type: "number",
@@ -34386,10 +34407,13 @@ var magnetics_optimizer_default = {
       default: 100,
       "x-label": "Target Inductance",
       "x-unit": "\xB5H",
-      "x-tooltip": "Target magnetizing inductance",
+      "x-tooltip": "Target inductance the design is sized for (power and coupled inductors)",
       "x-showWhen": {
         key: "topology",
-        value: "power_inductor"
+        value: [
+          "power_inductor",
+          "coupled_inductor"
+        ]
       }
     },
     iPeak_A: {
@@ -34401,7 +34425,10 @@ var magnetics_optimizer_default = {
       "x-tooltip": "Peak inductor current (sets B_peak constraint)",
       "x-showWhen": {
         key: "topology",
-        value: "power_inductor"
+        value: [
+          "power_inductor",
+          "coupled_inductor"
+        ]
       }
     },
     Tamb: {
@@ -35608,7 +35635,10 @@ function describeParam(name, prop, shapeNote) {
   }
   const showWhen = prop["x-showWhen"];
   if (showWhen) {
-    parts.push(`Applies when ${showWhen.key} is "${showWhen.value}".`);
+    const values = Array.isArray(showWhen.value) ? showWhen.value : [showWhen.value];
+    const quoted = values.map((v) => `"${v}"`);
+    const shown = quoted.length <= 1 ? quoted[0] : `${quoted.slice(0, -1).join(", ")} or ${quoted[quoted.length - 1]}`;
+    parts.push(`Applies when ${showWhen.key} is ${shown}.`);
   }
   if (prop["x-hidden"]) {
     const saysRequired = /\brequired\b/i.test(prop["x-tooltip"] ?? "");

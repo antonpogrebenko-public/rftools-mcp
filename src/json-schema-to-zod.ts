@@ -64,7 +64,12 @@ export function describeParam(name: string, prop: JobParamSchema, shapeNote?: st
 
   const showWhen = prop['x-showWhen'];
   if (showWhen) {
-    parts.push(`Applies when ${showWhen.key} is "${showWhen.value}".`);
+    const values = Array.isArray(showWhen.value) ? showWhen.value : [showWhen.value];
+    const quoted = values.map((v) => `"${v}"`);
+    const shown = quoted.length <= 1
+      ? quoted[0]
+      : `${quoted.slice(0, -1).join(', ')} or ${quoted[quoted.length - 1]}`;
+    parts.push(`Applies when ${showWhen.key} is ${shown}.`);
   }
 
   if (prop['x-hidden']) {

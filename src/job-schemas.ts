@@ -35,7 +35,8 @@ export interface JobParamSchema {
   'x-unit'?: string;
   'x-tooltip'?: string;
   'x-hidden'?: boolean;
-  'x-showWhen'?: { key: string; value: string };
+  /** Which branch of the form this parameter belongs to; a list means several. */
+  'x-showWhen'?: { key: string; value: string | string[] };
   /** Per-tier bound: { free: { maximum: 500 } }. */
   'x-tier'?: Record<string, { minimum?: number; maximum?: number }>;
   /** What the handler computes when the parameter is absent. */
