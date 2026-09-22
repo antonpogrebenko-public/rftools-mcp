@@ -137,7 +137,7 @@ Run a calculator with specific inputs. Returns results with units and a link to 
 
 ---
 
-### Simulation tools — no API key required, a key raises the limits
+### Simulation tools — no API key required unless the job takes a file
 
 Server-side jobs that are too heavy for in-browser computation. Each of the 13 job types is its own tool, `simulate_<name>`, whose input schema is generated from that job type's parameter contract: every parameter typed, with its unit, range, options, default and any free-lane bound stated. A call is checked against that contract before anything is sent, so a wrong parameter name comes back naming the key and the keys that are accepted, and spends no quota.
 
@@ -179,7 +179,7 @@ Every job type with its tool name, parameter names, file rules, time budget and 
 
 #### `submit_simulation`
 
-Submit by job type and return at once with the job id, queue position and time budget. Takes `jobType`, `params`, and `inputFiles` / `inputPaths` for file-input job types.
+Submit by job type and return at once with the job id, queue position and time budget. Takes `jobType`, `params`, and `inputFiles` / `inputPaths` for file-input job types — which need an API key; set `RFTOOLS_API_KEY`.
 
 #### `get_simulation_status`
 
@@ -191,7 +191,7 @@ The finished result for a job id, summarised by default, whole with `full: true`
 
 #### `run_simulation`
 
-The compatibility form of a `simulate_*` call: `jobType`, `params`, optional files, `waitSeconds` (default 90, max 600) and `full`. Prefer the typed `simulate_*` tool for the job you want — it is the one whose schema an agent can read.
+The compatibility form of a `simulate_*` call: `jobType`, `params`, optional files (which need a key, as above), `waitSeconds` (default 90, max 600) and `full`. Prefer the typed `simulate_*` tool for the job you want — it is the one whose schema an agent can read.
 
 ```
 "Analyse the PDN of a 100 × 80 mm four-layer board, port at the IC, target 10 mΩ"
