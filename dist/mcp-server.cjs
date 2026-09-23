@@ -20983,7 +20983,7 @@ var berSnr = {
   shortTitle: "BER Calculator",
   category: "signal",
   description: "Free BER calculator for BPSK, QPSK, 8PSK, 16-QAM. Enter Eb/N0 to instantly compute bit error rate. Compare modulation schemes and optimize link performance.",
-  metaTitle: "BER Calculator \u2014 Bit Error Rate from Eb/N0 | rftools.io",
+  metaTitle: "BER Calculator \u2014 Bit Error Rate from Eb/N0",
   metaDescription: "Enter Eb/N0 \u2192 get BER for BPSK, QPSK, 8PSK & 16-QAM side by side. Compare modulation schemes instantly. Free online bit error rate calculator with exact erfc formulas.",
   keywords: [
     "BER calculator",
