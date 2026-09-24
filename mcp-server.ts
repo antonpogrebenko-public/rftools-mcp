@@ -4,10 +4,22 @@ import { z } from 'zod';
 import { getAllCalculators, getCalculator, getCalculatorsByCategory } from '@/lib/calculators/registry';
 import type { CalculatorCategory } from '@/lib/calculators/types';
 import { CATEGORIES } from '@/lib/calculators/types';
+import { appliedInputs, buildCalculatorProvenance, outOfRangeWarnings } from '@/lib/provenance/build';
+import packageJson from './package.json' with { type: 'json' };
 import { assertContractConsistent } from './src/job-schemas.ts';
 import { registerSimulationTools } from './src/simulation-tools.ts';
 
 const VALID_CATEGORIES = Object.keys(CATEGORIES) as CalculatorCategory[];
+
+/**
+ * `provenance.version` on a calculator result: `mcp@<package version>`, read
+ * from package.json when the bundle is built, so it is derived, never typed
+ * (openspec api-metering, design Decision 6). The server's own `version` below
+ * stays a literal because the publish workflow reads it from this file and
+ * checks it against package.json; `test/calculators.test.js` checks the two
+ * agree in the built bundle.
+ */
+export const ENGINE_VERSION = `mcp@${packageJson.version}`;
 
 /**
  * Build the server. Nothing here touches stdio, so this module can be imported
@@ -18,7 +30,7 @@ export function createServer(): McpServer {
 
   const server = new McpServer({
     name: 'rftools',
-    version: '2.0.0',
+    version: '2.1.0',
   });
 
   // --- list_calculators ---
@@ -136,7 +148,9 @@ export function createServer(): McpServer {
     {
       title: 'Run Calculation',
       description:
-        'Run an RF/electronics calculator with the given inputs. Use get_calculator_info first to see required inputs.',
+        'Run an RF/electronics calculator with the given inputs. Use get_calculator_info first to see its inputs; an ' +
+        'input left out takes its default. The result carries provenance: the formula source, assumptions, whether ' +
+        'the inputs lie inside the range the calculator is stated for, the inputs used and the engine version.',
       inputSchema: z.object({
         slug: z.string().describe('Calculator slug (e.g. "microstrip-impedance")'),
         inputs: z
@@ -159,7 +173,17 @@ export function createServer(): McpServer {
       }
 
       try {
-        const result = calc.calculate(inputs);
+        // Computed on exactly the inputs the provenance reports: every declared
+        // input, the caller's value or else its default. A left-out input used
+        // to reach calculate() as undefined.
+        const applied = appliedInputs(calc, inputs);
+        const startedAt = Date.now();
+        const result = calc.calculate(applied);
+        const provenance = buildCalculatorProvenance(calc, applied, {
+          engineVersion: ENGINE_VERSION,
+          startedAt,
+          values: result.values,
+        });
 
         const results = calc.outputs.map((o) => ({
           key: o.key,
@@ -175,8 +199,18 @@ export function createServer(): McpServer {
           results,
           webUrl,
         };
-        if (result.warnings?.length) response.warnings = result.warnings;
+        // The API's order: the calculator's own, then inputs it does not read,
+        // then any input outside its stated range (same wording as the API).
+        const warnings = [
+          ...(result.warnings ?? []),
+          ...Object.keys(inputs)
+            .filter((key) => !Object.hasOwn(applied, key))
+            .map((key) => `Input '${key}' is not read by this calculator and was ignored.`),
+          ...outOfRangeWarnings(provenance),
+        ];
+        if (warnings.length) response.warnings = warnings;
         if (result.errors?.length) response.errors = result.errors;
+        response.provenance = provenance;
 
         return {
           content: [

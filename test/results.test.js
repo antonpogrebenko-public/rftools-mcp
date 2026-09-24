@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import Ajv2020 from 'ajv/dist/2020.js';
+import addFormats from 'ajv-formats';
+
 import { summariseResult, describeSeries } from '../src/summarize.ts';
 import { shapeResult } from '../src/simulation-tools.ts';
 
@@ -47,6 +50,76 @@ test('the envelope keys lead and survive', () => {
   assert.deepEqual(value.summary, { gainMax_db: 12.4 });
   assert.equal(value.warnings.length, 1);
   assert.equal(value.provenance.method, 'openEMS');
+});
+
+/**
+ * A job's provenance as a worker writes it after api-metering 6.3: all nine
+ * members, and an `inputs` holding a list longer than a series (an antenna's
+ * wires) and an assumption longer than the summary's string limit — the two
+ * things the reduction would otherwise have described or cut.
+ */
+function jobProvenance() {
+  const wires = Array.from({ length: 120 }, (_, i) => ({
+    tag: i + 1, segments: 11, x1: 0, y1: 0, z1: i * 0.01, x2: 0, y2: 0, z2: (i + 1) * 0.01, radius: 0.001,
+  }));
+  return {
+    method: 'nec2',
+    version: 'worker@3f2c1a9b04de',
+    formulaRef: 'Burke & Poggio, "Numerical Electromagnetics Code (NEC)", LLNL 1981',
+    assumptions: [
+      { code: 'thin-wire', text: `Thin-wire kernel: ${'every wire radius is small against the wavelength and the segment length, '.repeat(10)}` },
+      { code: 'perfect-ground', text: 'Perfect ground plane below the structure.' },
+    ],
+    validRange: {
+      status: 'inside',
+      bounds: Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`p${i}`, { min: 0, max: 100 + i, unit: 'mm' }])),
+      outside: [],
+      model: null,
+    },
+    computedAt: '2026-09-24T12:00:01.234Z',
+    inputs: { solveMode: 'sweep', freqStart_mhz: 100, freqStop_mhz: 200, wires },
+    seed: null,
+    elapsedSeconds: 41.2,
+  };
+}
+
+test('a summarised job result keeps its provenance whole (spec result-provenance)', () => {
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  const validate = ajv.compile(JSON.parse(readFileSync(
+    fileURLToPath(new URL('../../shared/result-provenance.schema.json', import.meta.url)), 'utf8',
+  )));
+  const provenance = jobProvenance();
+  assert.ok(validate(provenance), ajv.errorsText(validate.errors));
+
+  const payload = {
+    summary: { gainMax_dbi: 7.1 },
+    warnings: [],
+    provenance,
+    frequencies_mhz: Array.from({ length: 2001 }, (_, i) => 100 + i * 0.05),
+    swr: Array.from({ length: 2001 }, (_, i) => 1 + (i % 17) / 10),
+    log: 'x'.repeat(50_000),
+  };
+  const shaped = shapeResult('antenna_sim', 'job-9', { status: 'completed' }, payload);
+
+  // Everything else is still summarised, the long log cut to fit...
+  assert.equal(shaped.summarised, true);
+  assert.equal(shaped.truncated, true);
+  assert.ok(!Array.isArray(shaped.result.swr), 'the series is described, not listed');
+  assert.ok(shaped.result.log === undefined || shaped.result.log.length <= 600);
+  // ...but the provenance is exactly what the worker wrote, and still valid.
+  assert.deepEqual(shaped.result.provenance, jobProvenance());
+  assert.ok(validate(shaped.result.provenance), ajv.errorsText(validate.errors));
+  assert.deepEqual(Object.keys(shaped.result).slice(0, 3), ['summary', 'warnings', 'provenance']);
+  // The budget bounds the rest: the result minus its provenance still fits.
+  const { provenance: _whole, ...rest } = shaped.result;
+  assert.ok(JSON.stringify({ ...shaped, result: rest }).length < 8192);
+});
+
+test('a legacy provenance is returned as it was written, members missing and all', () => {
+  const legacy = { method: 'cavity+GA', version: '3.1.0', seed: 7, inputs: { turns: [1, 2, 3] }, elapsedSeconds: 41.2 };
+  const { value } = summariseResult({ provenance: legacy, bulk: Array.from({ length: 900 }, (_, i) => i) });
+  assert.deepEqual(value.provenance, legacy);
 });
 
 test('a result without summary, warnings or provenance still summarises', () => {

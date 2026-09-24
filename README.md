@@ -94,6 +94,22 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Tools
 
+### What changed in 2.1.0
+
+- **Calculator results carry provenance.** `run_calculation` returns a
+  `provenance` object beside the values: the method (`calculator:<slug>`), the
+  engine (`mcp@<version>`), the published formula source, the calculator's stated
+  assumptions, the inputs it computed from, whether they lie inside the range
+  the calculator is stated for (and, for a fitted model, its validated range
+  and worst-case error), when it was computed and how long it took. It is the
+  same object the rftools.io API returns.
+- **An input left out takes its default**, as on the website and the API; it
+  used to reach the calculator as undefined. An input the calculator does not
+  read is named in `warnings`, and so is an input outside its stated range —
+  the value is still computed.
+- **A simulation result's `provenance` is returned whole** in the default
+  summary. Series are still described rather than listed.
+
 ### What changed in 2.0.0
 
 - **One typed tool per job type.** Each of the 13 simulation job types now has
@@ -164,7 +180,7 @@ Get detailed info about a calculator — inputs with units/defaults, outputs, an
 
 #### `run_calculation`
 
-Run a calculator with specific inputs. Returns results with units and a link to the interactive version on rftools.io. Runs locally — instant, no quota consumed.
+Run a calculator with specific inputs. Returns results with units, a link to the interactive version on rftools.io, and the result's `provenance` (formula source, assumptions, inputs used, whether they lie inside the calculator's stated range, engine version and time). An input left out takes its default. Runs locally — instant, no quota consumed.
 
 ```
 "Calculate microstrip impedance for a 0.3mm trace on 0.2mm Rogers RO4003C"

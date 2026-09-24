@@ -3,8 +3,9 @@
 // A finished job's payload is a plot's worth of data: tens of thousands of
 // points, several megabytes for a sweep. The default a caller gets is the
 // headline — the envelope's `summary`, its warnings and provenance, the scalar
-// values, and links — with every series described rather than listed. The whole
-// payload is one `full: true` (or one fetch of `resultUrl`) away.
+// values, and links — with every series described rather than listed. The
+// provenance is never reduced: it comes back whole (see summariseResult). The
+// whole payload is one `full: true` (or one fetch of `resultUrl`) away.
 
 /** Keys whose content is the headline, never elided while anything else remains. */
 const HEADLINE_KEYS = new Set([
@@ -260,6 +261,16 @@ export interface SummarisedResult {
  * The default form of a result: `summary`, `warnings` and `provenance` when the
  * envelope carries them, every scalar, and everything else described rather
  * than listed.
+ *
+ * `provenance` is the exception to all of the reduction: it is returned
+ * exactly as the worker wrote it — never described, elided or cut — and it
+ * sits outside the budget, which bounds everything else (spec
+ * result-provenance: "the summary still contains the provenance object in
+ * full"). It is what says how every other number was made: which method,
+ * which engine, from which inputs, inside which validated range. A job's
+ * `inputs` can be a list longer than a series (an antenna's wires), and a
+ * summary that described them as `{length, min, max}` would no longer say what
+ * was computed.
  */
 export function summariseResult(payload: unknown, opts: SummariseOptions = {}): SummarisedResult {
   const maxSeries = opts.maxSeries ?? DEFAULTS.maxSeries;
@@ -273,18 +284,29 @@ export function summariseResult(payload: unknown, opts: SummariseOptions = {}): 
   }
 
   const source = payload as Record<string, unknown>;
-  const value: Record<string, unknown> = {};
+  const rest: Record<string, unknown> = {};
 
   // The envelope's own keys lead, when the worker wrote them.
-  for (const key of ['summary', 'warnings', 'provenance'] as const) {
-    if (source[key] !== undefined) value[key] = reduce(source[key], maxSeries, maxSeriesChars);
+  for (const key of ['summary', 'warnings'] as const) {
+    if (source[key] !== undefined) rest[key] = reduce(source[key], maxSeries, maxSeriesChars);
   }
-  // Then every other key: scalars verbatim, containers described.
+  // Then every other key but provenance: scalars verbatim, containers described.
   for (const [k, v] of Object.entries(source)) {
-    if (k in value) continue;
-    value[k] = isScalar(v) ? v : reduce(v, maxSeries, maxSeriesChars);
+    if (k in rest || k === 'provenance') continue;
+    rest[k] = isScalar(v) ? v : reduce(v, maxSeries, maxSeriesChars);
   }
 
-  const { elided, truncated } = enforceBudget(value, budget);
+  const { elided, truncated } = enforceBudget(rest, budget);
+  if (source.provenance === undefined) return { value: rest, elided, truncated };
+
+  // Provenance goes back in its place, after summary and warnings, whole.
+  const value: Record<string, unknown> = {};
+  for (const key of ['summary', 'warnings'] as const) {
+    if (key in rest) value[key] = rest[key];
+  }
+  value.provenance = source.provenance;
+  for (const [k, v] of Object.entries(rest)) {
+    if (!(k in value)) value[k] = v;
+  }
   return { value, elided, truncated };
 }

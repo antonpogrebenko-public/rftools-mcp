@@ -313,7 +313,7 @@ export function shapeResult(
     summarised: true,
     ...(elided ? { elided: true } : {}),
     ...(truncated ? { truncated: true } : {}),
-    hint: 'Series are described, not listed. Ask again with full: true for the whole payload.',
+    hint: 'Series are described, not listed; provenance is complete. Ask again with full: true for the whole payload.',
     result: value,
   };
 }

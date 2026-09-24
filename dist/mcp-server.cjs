@@ -31,6 +31,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // ../rftools-mcp/mcp-server.ts
 var mcp_server_exports = {};
 __export(mcp_server_exports, {
+  ENGINE_VERSION: () => ENGINE_VERSION,
   createServer: () => createServer
 });
 module.exports = __toCommonJS(mcp_server_exports);
@@ -209,7 +210,29 @@ var microstripImpedance = {
       { title: "Transmission Line Design Handbook", source: "Brian C. Wadell, Artech House (1991), Chapter 3 \u2014 Microstrip" },
       { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 3.8 \u2014 Microstrip and effective permittivity" }
     ]
-  }
+  },
+  assumptions: [
+    {
+      code: "quasi-static",
+      text: "Quasi-static: Z\u2080 and \u03B5eff are the Hammerstad\u2013Jensen static values, with no frequency dependence; dispersion is not modelled."
+    },
+    {
+      code: "bare-microstrip",
+      text: "Bare microstrip: air above the trace, with no soldermask or other cover layer."
+    },
+    {
+      code: "homogeneous-substrate",
+      text: "One homogeneous, isotropic, non-magnetic substrate of relative permittivity \u03B5r over a solid ground plane, both extending well beyond the trace."
+    },
+    {
+      code: "thickness-effective-width",
+      text: "Copper thickness t is modelled as an effective width increase \u0394w = (t/\u03C0)(1 + ln(2h/t)), applied to both Z\u2080 and \u03B5eff."
+    },
+    {
+      code: "lossless",
+      text: "Lossless: conductor and dielectric losses are neglected, so Z\u2080 is real and the propagation delay is \u221A\u03B5eff/c."
+    }
+  ]
 };
 
 // src/lib/calculators/rf/rf-link-budget.ts
@@ -2399,6 +2422,28 @@ var traceWidthCurrent = {
     ],
     reference: "IPC-2221B Section 6.2; IPC-2152"
   },
+  assumptions: [
+    {
+      code: "ipc-2221-fit",
+      text: "The IPC-2221 width is the standard\u2019s chart fit A = (I/(k\xB7\u0394T^0.44))^(1/0.725), with A in mil\xB2, k = 0.048 for an external layer and 0.024 for an internal one."
+    },
+    {
+      code: "ipc-2152-scaled",
+      text: "The IPC-2152 width is not read from IPC-2152\u2019s charts: it is the IPC-2221 width scaled by a fixed 0.75 (external) or 0.85 (internal), with none of IPC-2152\u2019s corrections for board thickness or nearby copper planes."
+    },
+    {
+      code: "steady-state-dc",
+      text: "Steady DC (or RMS) current in a single trace: pulsed currents, skin effect and heating from neighbouring traces are not modelled."
+    },
+    {
+      code: "copper-weight",
+      text: "Copper is 1.37 mil (34.8 \xB5m) thick per ounce, and the trace cross-section is a rectangle of that thickness."
+    },
+    {
+      code: "resistance-at-temperature",
+      text: "Resistance, voltage drop and power use the IPC-2221 width and \u03C1 = 1.72\xD710\u207B\u2078 \u03A9\xB7m at 20 \xB0C with \u03B1 = 0.00393 /\xB0C, evaluated at a 25 \xB0C ambient plus the allowed rise."
+    }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["microstrip-impedance", "trace-resistance", "via-calculator"],
   relatedBlogPosts: ["microstrip-impedance-design-guide", "microstrip-impedance", "pcb-trace-width-current-capacity"],
@@ -3040,16 +3085,67 @@ var differentialPair = {
     }
   ],
   calculate: calculateDifferentialPair,
+  // What `diffMicrostrip` computes, written out. The single line is closed-form
+  // Hammerstad–Jensen; everything that couples the two traces is fitted, and is
+  // labelled `fit` rather than written as if it were a closed form. The
+  // ε_eff,mode lines are the code's per-mode filling factor q_mode·(εr − 1)
+  // rewritten with q·(εr − 1) = ε_eff − 1.
   formula: {
-    primary: "Z_{diff} = 2Z_{odd} \\approx 2Z_0(1-Qe),\\ Z_{com} = \\frac{Z_{even}}{2} \\approx \\frac{Z_0(1+Qe)}{2}",
+    primary: "Z\u2080 = (60/\u221A\u03B5eff)\xB7ln[F(u)/u + \u221A(1 + 4/u\xB2)], u = W_eff/H (Hammerstad\u2013Jensen);  Z_odd = \u03C1_odd\xB7Z\u2080\xB7\u221A(\u03B5eff/\u03B5eff,odd), \u03B5eff,odd = 1 + (\u03B5eff \u2212 1)(1 \u2212 f_odd);  Z_even = \u03C1_even\xB7Z\u2080\xB7\u221A(\u03B5eff/\u03B5eff,even), \u03B5eff,even = 1 + (\u03B5eff \u2212 1)(1 + f_even);  \u03C1_odd, \u03C1_even, f_odd, f_even fitted to a 2-D method-of-moments solver as functions of W/H and S/H;  Z_diff = 2\xB7Z_odd, Z_com = Z_even/2",
+    // One relation per line: the formula sidebar is ~310 px wide.
+    latex: "\\begin{aligned} Z_0 &= \\tfrac{60}{\\sqrt{\\varepsilon_{eff}}}\\ln\\!\\Big[\\tfrac{F(u)}{u} + \\sqrt{1 + 4/u^2}\\Big] \\\\ Z_{odd} &= \\rho_{odd}\\,Z_0\\sqrt{\\varepsilon_{eff}/\\varepsilon_{eff,odd}} \\\\ Z_{even} &= \\rho_{even}\\,Z_0\\sqrt{\\varepsilon_{eff}/\\varepsilon_{eff,even}} \\\\ \\varepsilon_{eff,odd} &= 1 + (\\varepsilon_{eff} - 1)(1 - f_{odd}) \\\\ \\varepsilon_{eff,even} &= 1 + (\\varepsilon_{eff} - 1)(1 + f_{even}) \\\\ \\rho,\\ f &= \\mathrm{fit}(W/H,\\ S/H) \\\\ Z_{diff} &= 2Z_{odd},\\quad Z_{com} = Z_{even}/2 \\end{aligned}",
     variables: [
       { symbol: "Z\u2080", description: "Single-ended microstrip impedance (Hammerstad-Jensen)", unit: "\u03A9" },
-      { symbol: "Q", description: "Normalized edge-to-edge gap: 2S/W", unit: "" },
-      { symbol: "Qe", description: "Empirical coupling coefficient: exp(\u22120.347Q)", unit: "" },
-      { symbol: "Z_odd", description: "Odd-mode impedance = Z\u2080(1 \u2212 Qe)", unit: "\u03A9" },
-      { symbol: "Z_even", description: "Even-mode impedance = Z\u2080(1 + Qe)", unit: "\u03A9" }
+      { symbol: "\u03B5eff", description: "Single-line effective permittivity (Hammerstad\u2013Jensen)", unit: "" },
+      {
+        symbol: "u",
+        description: "W_eff/H, where W_eff = W + (T/\u03C0)(1 + ln(2H/T)) widens the trace for its copper thickness",
+        unit: ""
+      },
+      { symbol: "F(u)", description: "6 + (2\u03C0 \u2212 6)\xB7exp[\u2212(30.666/u)^0.7528]", unit: "" },
+      {
+        symbol: "\u03C1_odd, \u03C1_even",
+        description: "Each mode\u2019s air-filled impedance as a ratio to the single line, 1 \u2213 a\xB7exp[\u2212b\xB7(S/H)^p], with a, b and p fitted to a 2-D method-of-moments solver as functions of W/H; both tend to 1 as the traces separate",
+        unit: ""
+      },
+      {
+        symbol: "f_odd, f_even",
+        description: "Change in each mode\u2019s share of field in the substrate relative to the single line, fitted to the same solver as a function of W/H and S/H; both tend to 0 as the traces separate",
+        unit: ""
+      }
     ],
-    reference: "IPC-2141A; Wadell Chapter 3.7"
+    reference: "E. Hammerstad and \xD8. Jensen, \u201CAccurate Models for Microstrip Computer-Aided Design\u201D, IEEE MTT-S International Microwave Symposium Digest, 1980 (single line); coupling fitted to rftools.io\u2019s 2-D method-of-moments solver (src/lib/pcb/__tests__/solver), within 2% on a mode impedance over W/H 0.2\u20134 and S/H 0.1\u20133."
+  },
+  assumptions: [
+    {
+      code: "quasi-static",
+      text: "Quasi-static: the mode impedances and effective permittivities are the low-frequency values; dispersion is not modelled."
+    },
+    {
+      code: "bare-microstrip",
+      text: "Bare surface pair: air above the traces, with no soldermask or cover layer, on one homogeneous substrate over a solid ground plane."
+    },
+    {
+      code: "symmetric-pair",
+      text: "Two identical traces of the same width and thickness; Zdiff = 2\xB7Zodd and Zcommon = Zeven/2."
+    },
+    {
+      code: "fitted-coupling",
+      text: "Coupling is fitted, as ratios to the Hammerstad\u2013Jensen single line, to a 2-D method-of-moments solver over trace width 0.2\u20134\xD7 and spacing 0.1\u20133\xD7 the substrate height (published bound 2% on a mode impedance); outside that range the result is extrapolated and inValidatedRange reads 0."
+    },
+    {
+      code: "thickness-single-line-only",
+      text: "Copper thickness enters only through the single line\u2019s effective-width correction; the added sidewall coupling across the gap is not modelled."
+    },
+    {
+      code: "lossless",
+      text: "Lossless: conductor and dielectric losses are neglected."
+    }
+  ],
+  fittedModel: {
+    description: MICRO_COUPLED_RANGE.description,
+    worstCaseError: MICRO_COUPLED_RANGE.worstCase,
+    insideOutput: "inValidatedRange"
   },
   visualization: {
     type: "cross-section",
@@ -3063,18 +3159,37 @@ var differentialPair = {
   ],
   relatedTools: ["eye-diagram", "fdtd-sparam"],
   relatedBlogPosts: ["eye-diagram-signal-integrity-10gbps", "microstrip-impedance-design-guide", "opamp-gain"],
+  // Expected values are the committed method-of-moments solver's, from
+  // `__tests__/fixtures/saturn-tier4-ground-truth.json` (`coupledMicrostrip`),
+  // which `tier4-ground-truth.test.ts` holds these points to. That fixture is
+  // dimensionless (H = 1) with zero-thickness strips, and `calculate()` refuses
+  // zero copper, so each case is scaled to H = 5 mm with the form's thinnest
+  // copper, 5 µm: t/H = 0.001, which moves a mode impedance by under 0.3%. The
+  // tolerance is the model's published bound; its measured error is in `source`.
   verificationData: [
     {
       inputs: {
-        traceWidth: 0.15,
-        traceSpacing: 0.15,
-        substrateHeight: 0.1,
-        dielectricConstant: 4.2,
-        copperThickness: 17.5
+        traceWidth: 5,
+        traceSpacing: 0.75,
+        substrateHeight: 5,
+        dielectricConstant: 4.3,
+        copperThickness: 5
       },
-      expectedOutputs: { zdiff: 55 },
-      tolerance: 0.02,
-      source: "IPC-2141A: tight coupling (S=W) on 0.1mm FR4, Zdiff \u2248 2\xD7Z_odd = 55\u03A9"
+      expectedOutputs: { zodd: 41.6823, zeven: 94.3141, zdiff: 83.3646, zcom: 47.15705 },
+      tolerance: MICRO_COUPLED_RANGE.worstCase,
+      source: "2-D method-of-moments solver, fixture case w/h=1 s/h=0.15 (\u03B5r 4.3, tight coupling), scaled to H = 5 mm. The model gives Zodd 41.625 \u03A9 and Zeven 94.136 \u03A9, \u22120.14% and \u22120.19% from the solver, inside its 2% bound."
+    },
+    {
+      inputs: {
+        traceWidth: 1.5,
+        traceSpacing: 2.5,
+        substrateHeight: 5,
+        dielectricConstant: 4.3,
+        copperThickness: 5
+      },
+      expectedOutputs: { zodd: 82.7677, zeven: 146.109, zdiff: 165.5354, zcom: 73.0545 },
+      tolerance: MICRO_COUPLED_RANGE.worstCase,
+      source: "2-D method-of-moments solver, fixture case w/h=0.3 s/h=0.5 (\u03B5r 4.3, narrow traces), scaled to H = 5 mm. The model gives Zodd 83.090 \u03A9 and Zeven 145.703 \u03A9, +0.39% and \u22120.28% from the solver, inside its 2% bound."
     }
   ]
 };
@@ -3335,6 +3450,36 @@ var viaCalculator = {
     ],
     reference: 'IPC-2141A; IPC-2221B; Howard Johnson "High-Speed Signal Propagation"'
   },
+  assumptions: [
+    {
+      code: "through-via",
+      text: "A plated through via in a board of one dielectric constant: its height is the full board thickness; blind, buried and back-drilled vias are not modelled."
+    },
+    {
+      code: "coaxial-impedance",
+      text: "Impedance treats the drilled barrel and the antipad edge as a coaxial line, Z = (60/\u221A\u03B5r)\xB7ln(D_antipad/d); the pads, the unused stub and return vias are not modelled."
+    },
+    {
+      code: "ipc-2141-capacitance",
+      text: "Capacitance uses the IPC-2141A pad-to-antipad form C = 0.0554\xB7\u03B5r\xB7T\xB7D/(D_antipad \u2212 D) pF, dimensions in mm."
+    },
+    {
+      code: "isolated-wire-inductance",
+      text: "Inductance is that of an isolated round conductor of length T and diameter d, L = 0.2\xB7T\xB7(ln(4T/d) + 0.5) nH; the return path through nearby planes and vias, which sets the loop inductance, is not modelled."
+    },
+    {
+      code: "lumped",
+      text: "Capacitance and inductance are lumped values, valid while the via is short compared with a wavelength."
+    },
+    {
+      code: "ipc-2221-current",
+      text: "Current capacity applies the IPC-2221 external-layer fit (k = 0.048) at a fixed 10 \xB0C rise to the plated annulus A = \u03C0\xB7t\xB7(d \u2212 t)."
+    },
+    {
+      code: "signal-layer-ignored",
+      text: "The signal-layer input does not change any output."
+    }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["trace-width-current", "microstrip-impedance"],
   relatedBlogPosts: ["decoupling-capacitor", "fdtd-via-transition-signal-integrity", "pdn-impedance-plane-resonances-decoupling"],
@@ -21942,6 +22087,9 @@ var mixerSpurCalculator = {
       symbol: "N",
       unit: "",
       defaultValue: 5,
+      min: 2,
+      max: 7,
+      step: 1,
       tooltip: "Maximum harmonic order (m+n) to analyze (2-7)"
     }
   ],
@@ -27411,6 +27559,36 @@ var coplanarWaveguide = {
     ],
     reference: 'R. N. Simons, "Coplanar Waveguide Circuits, Components and Systems", Wiley 2001, ch. 2'
   },
+  assumptions: [
+    {
+      code: "quasi-static",
+      text: "Quasi-static conformal-mapping model: Z\u2080 and \u03B5r_eff are the low-frequency values; dispersion is not modelled."
+    },
+    {
+      code: "semi-infinite-grounds",
+      text: "The coplanar grounds on either side are treated as infinitely wide; the width of a real ground pour is not an input."
+    },
+    {
+      code: "grounds-equipotential",
+      text: "Grounded CPW: the coplanar grounds and the backing plane are one equipotential, as if densely stitched with vias; the parallel-plate mode between them is not modelled."
+    },
+    {
+      code: "ungrounded-open-below",
+      text: "Ungrounded CPW: the substrate has height h with air below it and no other conductor nearby."
+    },
+    {
+      code: "bare-surface",
+      text: "One homogeneous substrate of relative permittivity \u03B5r with air above the conductors: no soldermask or cover layer."
+    },
+    {
+      code: "thickness-correction",
+      text: "Copper thickness t widens the strip by \u0394 = (t/\u03C0)(1 + ln(2h/t)) and narrows each gap by \u0394/2 for Z\u2080; its sidewall capacitance, in air, lowers \u03B5r_eff through a correction fitted to a 2-D electrostatic solver (max 0.52% on \u03B5r_eff across \xBD\u20132 oz copper)."
+    },
+    {
+      code: "lossless",
+      text: "Lossless: conductor and dielectric losses are neglected."
+    }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "microstrip-impedance",
@@ -27455,6 +27633,15 @@ var coplanarWaveguide = {
 
 // src/lib/calculators/pcb/asymmetric-stripline.ts
 var C_MM_PER_PS2 = 0.299792458;
+var OFFSET_FIT = { minWb: 0.05, maxWb: 1.2, minNearFraction: 0.05 };
+function outsideOffsetFit(w, h1, h2) {
+  const b = h1 + h2;
+  if (!(b > 0)) return false;
+  const near = Math.min(h1, h2) / b;
+  if (!(near < 0.5)) return false;
+  const wb = w / b;
+  return wb < OFFSET_FIT.minWb || wb > OFFSET_FIT.maxWb || near < OFFSET_FIT.minNearFraction;
+}
 function calculateAsymmetricStripline(inputs) {
   const { traceWidth, heightToNearPlane, heightToFarPlane, copperThickness, dielectricConst } = inputs;
   const warnings = [];
@@ -27475,9 +27662,9 @@ function calculateAsymmetricStripline(inputs) {
   if (h2 < h1) {
     warnings.push("Far-plane height is smaller than near-plane height \u2014 swap the two values");
   }
-  if (traceWidth / (2 * h1 + t) > 0.5) {
+  if (outsideOffsetFit(traceWidth, h1, h2)) {
     warnings.push(
-      "Wide trace relative to the near-plane spacing \u2014 the parallel-plate branch is in use and Z\u2080 carries a few percent more uncertainty"
+      "Outside the range the off-centre correction was fitted over (W/b 0.05\u20131.2 and a near-plane gap of at least 0.05 of b = h\u2081 + h\u2082, about a 19:1 offset) \u2014 Z\u2080 is extrapolated and may be off by more than the model\u2019s 0.75%"
     );
   }
   if (t / planeSpacing > 0.25) {
@@ -27485,7 +27672,7 @@ function calculateAsymmetricStripline(inputs) {
   }
   if (asymmetryRatio > 3) {
     warnings.push(
-      "Strongly offset trace \u2014 it couples almost entirely to the near plane, so keep that plane unbroken beneath the route. Beyond a 3:1 offset the superposition model also drifts a few percent high"
+      "Strongly offset trace \u2014 it couples almost entirely to the near plane, so keep that plane unbroken beneath the route"
     );
   }
   return {
@@ -27620,11 +27807,33 @@ var asymmetricStriplineCalc = {
     { key: "asymmetryRatio", label: "Asymmetry Ratio", symbol: "h\u2082/h\u2081", unit: "", precision: 2 }
   ],
   calculate: calculateAsymmetricStripline,
+  // What `asymmetricStripline` computes (`striplineNormC` in lib/pcb/impedance),
+  // written out: Cohn's exact centred strip for each mirrored half, the fitted
+  // off-centre fringing, and Cohn's thickness increment. Only ΔC_off is fitted,
+  // and it is labelled `fit` rather than written as if it were a closed form.
   formula: {
-    primary: "Z\u2080 = 2\xB7Z_a\xB7Z_b/(Z_a+Z_b),  Z_x = (60/\u221A\u03B5r)\xB7ln[4(2h_x+t)/(0.67\u03C0(0.8W+t))]",
-    latex: "Z_0 = \\frac{2 Z_a Z_b}{Z_a + Z_b},\\quad Z_x = \\frac{60}{\\sqrt{\\varepsilon_r}}\\ln\\!\\left[\\frac{4(2h_x+t)}{0.67\\pi(0.8W+t)}\\right]",
+    primary: "Z\u2080 = \u03B7\u2080/(\u221A\u03B5r\xB7\u0108),  \u0108 = \xBD[C\u2080(W, 2h\u2081) + C\u2080(W, 2h\u2082)] + \u0394C_off + \u0394C_t;  C\u2080(W, b) = 4K(k)/K(k\u2032), k = tanh(\u03C0W/2b), exact for a centred zero-thickness strip (Cohn);  \u0394C_off = A\xB7[((h\u2081 + h\u2082)/2h\u2081)^p \u2212 1]\xB7[1 \u2212 exp(\u2212c\xB7(W/(h\u2081 + h\u2082))^q)], A, p, c, q fitted to a 2-D method-of-moments solver, zero at h\u2081 = h\u2082;  \u0394C_t = Cohn\u2019s copper-thickness fringing increment, zero at t = 0",
+    // One relation per line: the formula sidebar is ~310 px wide.
+    latex: "\\begin{aligned} Z_0 &= \\frac{\\eta_0}{\\sqrt{\\varepsilon_r}\\,\\hat{C}} \\\\ \\hat{C} &= \\tfrac{1}{2}\\textstyle\\sum_{i=1,2} C_0(W, 2h_i) \\\\ &\\quad + \\Delta C_{off} + \\Delta C_t \\\\ C_0(W, b) &= \\frac{4K(k)}{K(k')} \\\\ k &= \\tanh(\\pi W/2b) \\\\ \\Delta C_{off} &= \\mathrm{fit}\\!\\left(\\tfrac{W}{h_1 + h_2},\\,\\tfrac{h_1}{h_1 + h_2}\\right) \\\\ \\Delta C_{off}\\big|_{h_1 = h_2} &= 0 \\end{aligned}",
     variables: [
       { symbol: "Z\u2080", description: "Characteristic impedance", unit: "\u03A9" },
+      { symbol: "\u0108", description: "Capacitance per unit length, normalised to \u03B5\u2080\u03B5r", unit: "" },
+      {
+        symbol: "C\u2080(W, b)",
+        description: "Exact capacitance of a zero-thickness strip centred between planes b apart (Cohn); K is the complete elliptic integral of the first kind and k\u2032 = \u221A(1 \u2212 k\xB2)",
+        unit: ""
+      },
+      {
+        symbol: "\u0394C_off",
+        description: "Edge fringing that superposing the two halves misses when the trace is off centre: A\xB7[((h\u2081 + h\u2082)/2h\u2081)^p \u2212 1]\xB7[1 \u2212 exp(\u2212c\xB7(W/(h\u2081 + h\u2082))^q)], with A, p, c and q fitted to a 2-D method-of-moments solver",
+        unit: ""
+      },
+      {
+        symbol: "\u0394C_t",
+        description: "Cohn\u2019s copper-thickness fringing increment, evaluated at b = h\u2081 + h\u2082 + t; zero when t = 0",
+        unit: ""
+      },
+      { symbol: "\u03B7\u2080", description: "Impedance of free space, 376.73", unit: "\u03A9" },
       { symbol: "W", description: "Trace width", unit: "mm" },
       { symbol: "h\u2081", description: "Dielectric to the near plane", unit: "mm" },
       { symbol: "h\u2082", description: "Dielectric to the far plane", unit: "mm" },
@@ -27632,13 +27841,40 @@ var asymmetricStriplineCalc = {
       { symbol: "\u03B5r", description: "Dielectric constant", unit: "" }
     ],
     derivation: [
-      "An offset trace sees two independent half-structures: one bounded by the near plane, one by the far plane.",
-      "Mirroring each half about its own plane produces a symmetric stripline of spacing b = 2h + t, whose impedance is half that of the half-structure.",
-      "The two halves share the same conductor, so their capacitances add and their impedances combine in parallel: Z\u2080 = 2\xB7Z_a\xB7Z_b/(Z_a + Z_b).",
-      "With h\u2081 = h\u2082 the expression collapses exactly to the symmetric stripline result, and as either gap approaches zero Z\u2080 correctly goes to zero."
+      "An offset trace sees two half-structures: one bounded by the near plane, one by the far plane. Mirroring each half about its own plane gives a centred stripline of spacing 2h, whose capacitance is twice that of the half.",
+      "The two halves share one conductor, so their capacitances add: \u0108 starts as the mean of the two centred values, each Cohn\u2019s exact conformal-mapping result 4K(k)/K(k\u2032), valid at every trace width.",
+      "Superposition assumes no field wraps round the trace edge from one half to the other, so it keeps the centred fringing however far off centre the trace sits, and reads up to 14% high. \u0394C_off restores the missing fringing. Its form was fitted to a 2-D method-of-moments solver over W/b 0.05\u20131.2 and a near-plane gap of 0.05\u20130.5 of b = h\u2081 + h\u2082, with a maximum residual of 0.75%.",
+      "\u0394C_off is zero at h\u2081 = h\u2082, so a centred trace gets Cohn\u2019s exact result with nothing fitted; as either gap approaches zero, Z\u2080 goes to zero.",
+      "Copper thickness adds Cohn\u2019s fringing increment, which is exact for wide strips and zero at t = 0."
     ],
-    reference: 'S. B. Cohn, "Characteristic Impedance of the Shielded-Strip Transmission Line", IRE Trans. MTT-2, 1954; IPC-2141A'
+    reference: "S. B. Cohn, \u201CCharacteristic Impedance of the Shielded-Strip Transmission Line\u201D, IRE Trans. MTT-2, 1954 (exact centred strip and thickness increment); off-centre fringing fitted to rftools.io\u2019s 2-D method-of-moments solver (src/lib/pcb/__tests__/solver), within 0.75% over W/b 0.05\u20131.2 and a near-plane gap of 0.05\u20130.5 of b."
   },
+  assumptions: [
+    {
+      code: "quasi-static",
+      text: "Z\u2080 comes from the electrostatic capacitance per unit length of a TEM line, with no frequency dependence; higher-order modes are not modelled."
+    },
+    {
+      code: "homogeneous-dielectric",
+      text: "One homogeneous dielectric fills both sides of the trace (core and prepreg share a single \u03B5r), so \u03B5eff = \u03B5r and the propagation delay is \u221A\u03B5r/c."
+    },
+    {
+      code: "infinite-planes",
+      text: "Both reference planes are solid and extend well beyond the trace; plane splits, voids and side walls are not modelled."
+    },
+    {
+      code: "fitted-offset-correction",
+      text: "The extra edge fringing of an off-centre trace, which superposing two half-striplines misses, is a correction fitted to a 2-D method-of-moments solver over W/b 0.05\u20131.2 and a near-plane gap of 0.05\u20130.5 of b = h\u2081 + h\u2082 (max residual 0.75%); outside that range it is extrapolated."
+    },
+    {
+      code: "rectangular-trace",
+      text: "The trace is a rectangle of thickness t, which enters through Cohn\u2019s fringing increment (exact for wide strips); a trapezoidal etch profile is not modelled."
+    },
+    {
+      code: "lossless",
+      text: "Lossless: conductor and dielectric losses are neglected."
+    }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "controlled-impedance",
@@ -27661,11 +27897,66 @@ var asymmetricStriplineCalc = {
       question: "Is asymmetric stripline worse than centred stripline?",
       answer: "Not inherently. It is slightly more sensitive to plane splits and to etch tolerance on the near-plane dielectric, but impedance control is achievable. What matters is that the fabricator builds the stack-up you modelled."
     }
+  ],
+  // Both references are for a zero-thickness strip, so these points enter
+  // copperThickness 0 — below the form's 5 µm minimum, deliberately; calculate()
+  // accepts it and then adds no thickness increment. Any copper would add Cohn's
+  // increment, which is exact only for wide strips, and the check would no
+  // longer be against the reference. The offset cases are from the committed
+  // solver fixture (`offsetSingleStripline` in
+  // `__tests__/fixtures/saturn-tier4-ground-truth.json`), which
+  // `tier4-ground-truth.test.ts` holds these points to.
+  verificationData: [
+    {
+      inputs: {
+        traceWidth: 0.2,
+        heightToNearPlane: 0.5,
+        heightToFarPlane: 0.5,
+        copperThickness: 0,
+        dielectricConst: 4.3
+      },
+      expectedOutputs: { impedance: 73.7972683, centredImpedance: 73.7972683 },
+      tolerance: 1e-6,
+      source: "Cohn 1954, exact centred zero-thickness stripline: Z\u2080 = \u03B7\u2080/(\u221A\u03B5r\xB74K(k)/K(k\u2032)), k = tanh(\u03C0W/2b), W/b = 0.2, \u03B5r 4.3, evaluated independently of this code (73.7972683 \u03A9). Nothing is fitted at h\u2081 = h\u2082; the committed solver fixture gives 73.7983 \u03A9, 0.0014% away."
+    },
+    {
+      inputs: {
+        traceWidth: 0.2,
+        heightToNearPlane: 0.25,
+        heightToFarPlane: 0.75,
+        copperThickness: 0,
+        dielectricConst: 4.3
+      },
+      expectedOutputs: { impedance: 64.1105 },
+      tolerance: 75e-4,
+      source: "2-D method-of-moments solver, fixture case w/b=0.2 h1/b=0.25 (3:1 offset, \u03B5r 4.3). The model gives 63.892 \u03A9, \u22120.34% from the solver, inside its 0.75% bound."
+    },
+    {
+      inputs: {
+        traceWidth: 0.4,
+        heightToNearPlane: 0.1,
+        heightToFarPlane: 0.9,
+        copperThickness: 0,
+        dielectricConst: 4.3
+      },
+      expectedOutputs: { impedance: 27.3665 },
+      tolerance: 75e-4,
+      source: "2-D method-of-moments solver, fixture case w/b=0.4 h1/b=0.1 (9:1 offset, \u03B5r 4.3). The model gives 27.484 \u03A9, +0.43% from the solver, inside its 0.75% bound."
+    }
   ]
 };
 
 // src/lib/calculators/pcb/dual-stripline.ts
 var C_MM_PER_PS3 = 0.299792458;
+var OFFSET_FIT2 = { minWb: 0.05, maxWb: 1.2, minNearFraction: 0.05 };
+function outsideOffsetFit2(w, h1, h2) {
+  const b = h1 + h2;
+  if (!(b > 0)) return false;
+  const near = Math.min(h1, h2) / b;
+  if (!(near < 0.5)) return false;
+  const wb = w / b;
+  return wb < OFFSET_FIT2.minWb || wb > OFFSET_FIT2.maxWb || near < OFFSET_FIT2.minNearFraction;
+}
 function calculateDualStripline(inputs) {
   const {
     traceWidth,
@@ -27732,10 +28023,15 @@ function calculateDualStripline(inputs) {
       "Signal layers are separated by more than half the plane gap \u2014 the coupling estimate is outside its accurate range and reads low"
     );
   }
-  if (traceWidth / (2 * Math.min(h1, h2) + t) > 0.5) {
-    warnings.push(
-      "Wide trace relative to the nearer plane spacing \u2014 the parallel-plate branch is in use and impedance carries a few percent more uncertainty"
-    );
+  for (const [layer, near, far] of [
+    [1, h1, s + t + h2],
+    [2, h2, s + t + h1]
+  ]) {
+    if (outsideOffsetFit2(traceWidth, near, far)) {
+      warnings.push(
+        `Layer ${layer} is outside the range the off-centre correction was fitted over (W/b 0.05\u20131.2 and a near-plane gap of at least 0.05 of the dielectric between its planes) \u2014 its Z\u2080 is extrapolated and may be off by more than the model\u2019s 0.75%`
+      );
+    }
   }
   return {
     values: {
@@ -31379,6 +31675,11 @@ var edgeCoupledInternalAsymmetric = {
     ],
     reference: "S. B. Cohn, IRE Trans. MTT-3 (1955) for the centred case; offset correction fitted to the committed solver in src/lib/pcb/__tests__/solver."
   },
+  fittedModel: {
+    description: OFFSET_COUPLED_RANGE.description,
+    worstCaseError: OFFSET_COUPLED_RANGE.worstCase,
+    insideOutput: "inValidatedRange"
+  },
   visualization: { type: "none" },
   relatedCalculators: [
     "edge-coupled-internal-symmetric",
@@ -31649,6 +31950,11 @@ var edgeCoupledEmbedded = {
       "On a bare pair the even mode carries the higher permittivity, since the odd mode drives field through an air gap. Cover a tight gap and that ordering can invert, which the model reproduces because it was fitted to a layered field solve rather than assumed."
     ],
     reference: "Filling factors fitted to the layered method-of-moments solver committed in src/lib/pcb/__tests__/solver, which reproduces Hammerstad\u2013Jensen to 0.1% and the fully-embedded limit to 0.005%."
+  },
+  fittedModel: {
+    description: MICRO_COUPLED_RANGE.description,
+    worstCaseError: MICRO_COUPLED_RANGE.worstCase,
+    insideOutput: "inValidatedRange"
   },
   visualization: { type: "none" },
   relatedCalculators: [
@@ -33364,6 +33670,172 @@ var CATEGORIES = {
   }
 };
 
+// src/lib/provenance/build.ts
+var ENGINE_VERSION_PATTERN = /^[a-z][a-z0-9-]*@\S+$/;
+function text(value) {
+  const trimmed = (value ?? "").trim();
+  return trimmed === "" ? null : trimmed;
+}
+function calculatorFormulaRef(def) {
+  const own = text(def.formula?.reference);
+  if (own) return own;
+  const first = def.methodology?.references?.[0];
+  if (!first) return null;
+  const parts = [text(first.title), text(first.source)].filter((p) => p !== null);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+function appliedInputs(def, given) {
+  const applied = {};
+  for (const input of def.inputs) {
+    const value = given[input.key];
+    applied[input.key] = typeof value === "number" ? value : input.defaultValue;
+  }
+  return applied;
+}
+function toMillis(t) {
+  return t instanceof Date ? t.getTime() : t;
+}
+function isBounded(b) {
+  return b.min !== null || b.max !== null;
+}
+function liesOutside(value, b) {
+  if (!Number.isFinite(value)) return true;
+  return b.min !== null && value < b.min || b.max !== null && value > b.max;
+}
+function buildValidRange(def, inputs, values) {
+  const bounds = {};
+  const outside = [];
+  let anyBound = false;
+  for (const input of def.inputs) {
+    const bound = {
+      min: input.min ?? null,
+      max: input.max ?? null,
+      unit: input.unit ?? ""
+    };
+    bounds[input.key] = bound;
+    if (!isBounded(bound)) continue;
+    anyBound = true;
+    if (liesOutside(inputs[input.key], bound)) outside.push(input.key);
+  }
+  let model = null;
+  if (def.fittedModel) {
+    const flag = values?.[def.fittedModel.insideOutput];
+    model = {
+      description: def.fittedModel.description,
+      worstCaseError: def.fittedModel.worstCaseError,
+      inside: flag === 1 ? true : flag === 0 ? false : null
+    };
+  }
+  let status;
+  if (outside.length > 0 || model?.inside === false) status = "outside";
+  else if (!anyBound && !model || model && model.inside === null) status = "unknown";
+  else status = "inside";
+  return { status, bounds, outside, model };
+}
+function buildCalculatorProvenance(def, inputs, { engineVersion, startedAt, values, now }) {
+  if (!ENGINE_VERSION_PATTERN.test(engineVersion)) {
+    throw new Error(
+      `engineVersion ${JSON.stringify(engineVersion)} is not <component>@<revision>; a component that cannot determine its revision says so, e.g. "web@dev".`
+    );
+  }
+  const end = toMillis(now ?? Date.now());
+  const applied = appliedInputs(def, inputs);
+  return {
+    method: `calculator:${def.slug}`,
+    version: engineVersion,
+    formulaRef: calculatorFormulaRef(def),
+    assumptions: (def.assumptions ?? []).map((a) => ({ code: a.code, text: a.text })),
+    validRange: buildValidRange(def, applied, values),
+    computedAt: new Date(end).toISOString(),
+    inputs: applied,
+    seed: null,
+    elapsedSeconds: Math.max(0, (end - toMillis(startedAt)) / 1e3)
+  };
+}
+function describeBound(b) {
+  const unit = b.unit ? ` ${b.unit}` : "";
+  if (b.min !== null && b.max !== null) return `${b.min} to ${b.max}${unit}`;
+  if (b.min !== null) return `at least ${b.min}${unit}`;
+  return `at most ${b.max}${unit}`;
+}
+function outOfRangeWarnings(provenance) {
+  const warnings = [];
+  const { validRange, inputs } = provenance;
+  for (const key of validRange.outside) {
+    const bound = validRange.bounds[key];
+    warnings.push(
+      `Input '${key}' = ${inputs[key]} is outside the range this calculator is stated for (${describeBound(bound)}); the result is extrapolated.`
+    );
+  }
+  if (validRange.model?.inside === false) {
+    warnings.push(
+      `The inputs lie outside the fitted model's validated range (${validRange.model.description}); its worst-case error of ${+(validRange.model.worstCaseError * 100).toFixed(2)}% applies only inside it.`
+    );
+  }
+  return warnings;
+}
+
+// ../rftools-mcp/package.json
+var package_default = {
+  name: "rftools-mcp",
+  version: "2.1.0",
+  mcpName: "io.github.antonpogrebenko-public/rftools",
+  type: "module",
+  description: "MCP server for rftools.io \u2014 241 RF & electronics calculators for AI agents via the MCP",
+  keywords: [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "rf",
+    "rf-engineering",
+    "electronics",
+    "calculator",
+    "impedance",
+    "pcb",
+    "pcb-design",
+    "antenna",
+    "signal-processing",
+    "power-electronics",
+    "emc",
+    "engineering",
+    "claude",
+    "claude-desktop",
+    "ai-tools",
+    "microstrip",
+    "smith-chart",
+    "vswr",
+    "link-budget"
+  ],
+  author: "rftools.io",
+  license: "MIT",
+  homepage: "https://rftools.io",
+  repository: {
+    type: "git",
+    url: "https://github.com/antonpogrebenko-public/rftools-mcp"
+  },
+  bugs: {
+    url: "https://github.com/antonpogrebenko-public/rftools-mcp/issues"
+  },
+  scripts: {
+    test: "node --test test/*.test.js",
+    build: "bash scripts/build.sh",
+    "build:check": "bash scripts/build.sh --check"
+  },
+  bin: {
+    "rftools-mcp": "dist/mcp-server.cjs"
+  },
+  files: [
+    "dist/mcp-server.cjs"
+  ],
+  dependencies: {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    zod: "^4.3.6"
+  },
+  engines: {
+    node: ">=18"
+  }
+};
+
 // ../shared/job-schemas/index.json
 var job_schemas_default = {
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -33529,6 +34001,7 @@ var antenna_sim_default = {
   "x-jobType": "antenna_sim",
   "x-slug": "antenna-sim",
   "x-title": "Wire Antenna Simulator (NEC-2)",
+  "x-formulaRef": "Numerical Electromagnetics Code (NEC) \u2014 Method of Moments, G. J. Burke and A. J. Poggio, Naval Ocean Systems Center TD 116 (1981)",
   "x-checks": [
     "sweep_stop_after_start"
   ],
@@ -33697,6 +34170,7 @@ var emi_radiated_default = {
   "x-jobType": "emi_radiated",
   "x-slug": "emi-radiated",
   "x-title": "EMI Radiated Emissions Estimator",
+  "x-formulaRef": null,
   "x-checks": [],
   type: "object",
   additionalProperties: false,
@@ -33822,6 +34296,7 @@ var eye_diagram_default = {
   "x-jobType": "eye_diagram",
   "x-slug": "eye-diagram",
   "x-title": "Eye Diagram from S-Parameters",
+  "x-formulaRef": null,
   "x-checks": [],
   "x-files": {
     min: 1,
@@ -33873,6 +34348,7 @@ var fdtd_sparam_default = {
   "x-jobType": "fdtd_sparam",
   "x-slug": "fdtd-sparam",
   "x-title": "FDTD Transmission Line Simulator",
+  "x-formulaRef": null,
   "x-checks": [
     "sweep_span_within_center"
   ],
@@ -34086,6 +34562,7 @@ var filter_monte_carlo_default = {
   "x-jobType": "filter_monte_carlo",
   "x-slug": "filter-monte-carlo",
   "x-title": "RF Filter Monte Carlo Analysis",
+  "x-formulaRef": null,
   "x-checks": [],
   type: "object",
   additionalProperties: false,
@@ -34213,6 +34690,7 @@ var impedance_match_default = {
   "x-jobType": "impedance_match",
   "x-slug": "impedance-matching",
   "x-title": "Broadband Impedance Matching Synthesizer",
+  "x-formulaRef": "Microwave Engineering, 4th ed., David M. Pozar (2011), Chapter 5 \u2014 Impedance Matching and Tuning",
   "x-checks": [
     "sweep_stop_after_start"
   ],
@@ -34337,6 +34815,7 @@ var magnetics_optimizer_default = {
   "x-jobType": "magnetics_optimizer",
   "x-slug": "magnetics-optimizer",
   "x-title": "Magnetics & Transformer Design Optimizer",
+  "x-formulaRef": null,
   "x-checks": [
     "converter_load_nonzero"
   ],
@@ -34498,6 +34977,7 @@ var pdn_impedance_default = {
   "x-jobType": "pdn_impedance",
   "x-slug": "pdn-impedance",
   "x-title": "PDN Impedance Analyzer & Decoupling Capacitor Optimizer",
+  "x-formulaRef": null,
   "x-checks": [
     "port_within_board",
     "sweep_stop_after_start"
@@ -34638,6 +35118,7 @@ var radar_detection_default = {
   "x-jobType": "radar_detection",
   "x-slug": "radar-detection",
   "x-title": "Radar Detection Performance Monte Carlo",
+  "x-formulaRef": null,
   "x-checks": [
     "probability_in_open_unit_interval"
   ],
@@ -34780,6 +35261,7 @@ var rf_cascade_default = {
   "x-jobType": "rf_cascade",
   "x-slug": "rf-cascade",
   "x-title": "RF Cascade Budget Analyzer",
+  "x-formulaRef": "Noise Figures of Radio Receivers, Harald T. Friis, Proc. IRE 32(7), pp. 419\u2013422 (1944)",
   "x-checks": [],
   "x-files": {
     min: 0,
@@ -34867,6 +35349,7 @@ var sat_link_budget_default = {
   "x-jobType": "sat_link_budget",
   "x-slug": "sat-link-budget",
   "x-title": "Satellite & Terrestrial Link Budget",
+  "x-formulaRef": "ITU-R P.618-13, Propagation data and prediction methods required for the design of Earth-space telecommunication systems",
   "x-checks": [],
   type: "object",
   additionalProperties: false,
@@ -35018,6 +35501,7 @@ var smps_control_loop_default = {
   "x-jobType": "smps_control_loop",
   "x-slug": "smps-control-loop",
   "x-title": "SMPS Control Loop Stability Analyzer",
+  "x-formulaRef": null,
   "x-checks": [
     "converter_duty_in_ccm_range",
     "converter_load_nonzero"
@@ -35277,6 +35761,7 @@ var sparam_pipeline_default = {
   "x-jobType": "sparam_pipeline",
   "x-slug": "sparam-pipeline",
   "x-title": "S-Parameter Analysis Pipeline",
+  "x-formulaRef": null,
   "x-checks": [
     "sweep_stop_after_start"
   ],
@@ -35545,8 +36030,8 @@ var RftoolsApi = class {
       throw new ApiError(0, "transient", `upload of ${filename} failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new ApiError(res.status, kindForStatus(res.status), `upload of ${filename} failed: ${text || res.statusText}`);
+      const text2 = await res.text().catch(() => "");
+      throw new ApiError(res.status, kindForStatus(res.status), `upload of ${filename} failed: ${text2 || res.statusText}`);
     }
     return ticket.key;
   }
@@ -35567,13 +36052,13 @@ var RftoolsApi = class {
 };
 async function errorFromResponse(res) {
   let detail;
-  const text = await res.text().catch(() => "");
-  if (text) {
+  const text2 = await res.text().catch(() => "");
+  if (text2) {
     try {
-      const parsed = JSON.parse(text);
+      const parsed = JSON.parse(text2);
       detail = parsed && typeof parsed === "object" && "detail" in parsed ? parsed.detail : parsed;
     } catch {
-      detail = text;
+      detail = text2;
     }
   } else {
     detail = res.statusText;
@@ -35878,15 +36363,24 @@ function summariseResult(payload, opts = {}) {
     return { value: value2, elided: elided2, truncated: truncated2 };
   }
   const source = payload;
-  const value = {};
-  for (const key of ["summary", "warnings", "provenance"]) {
-    if (source[key] !== void 0) value[key] = reduce(source[key], maxSeries, maxSeriesChars);
+  const rest = {};
+  for (const key of ["summary", "warnings"]) {
+    if (source[key] !== void 0) rest[key] = reduce(source[key], maxSeries, maxSeriesChars);
   }
   for (const [k, v] of Object.entries(source)) {
-    if (k in value) continue;
-    value[k] = isScalar(v) ? v : reduce(v, maxSeries, maxSeriesChars);
+    if (k in rest || k === "provenance") continue;
+    rest[k] = isScalar(v) ? v : reduce(v, maxSeries, maxSeriesChars);
   }
-  const { elided, truncated } = enforceBudget(value, budget);
+  const { elided, truncated } = enforceBudget(rest, budget);
+  if (source.provenance === void 0) return { value: rest, elided, truncated };
+  const value = {};
+  for (const key of ["summary", "warnings"]) {
+    if (key in rest) value[key] = rest[key];
+  }
+  value.provenance = source.provenance;
+  for (const [k, v] of Object.entries(rest)) {
+    if (!(k in value)) value[k] = v;
+  }
   return { value, elided, truncated };
 }
 
@@ -35915,9 +36409,9 @@ function json(value) {
   return JSON.stringify(value);
 }
 function ok(value, note) {
-  const text = note ? `${note}
+  const text2 = note ? `${note}
 ${json(value)}` : json(value);
-  return { content: [{ type: "text", text }] };
+  return { content: [{ type: "text", text: text2 }] };
 }
 function fail(message) {
   return { content: [{ type: "text", text: message }], isError: true };
@@ -36053,7 +36547,7 @@ function shapeResult(jobType, jobId, status, payload, opts = {}) {
     summarised: true,
     ...elided ? { elided: true } : {},
     ...truncated ? { truncated: true } : {},
-    hint: "Series are described, not listed. Ask again with full: true for the whole payload.",
+    hint: "Series are described, not listed; provenance is complete. Ask again with full: true for the whole payload.",
     result: value
   };
 }
@@ -36434,11 +36928,12 @@ function registerSimulationTools(server, options = {}) {
 
 // ../rftools-mcp/mcp-server.ts
 var VALID_CATEGORIES = Object.keys(CATEGORIES);
+var ENGINE_VERSION = `mcp@${package_default.version}`;
 function createServer() {
   assertContractConsistent();
   const server = new import_mcp.McpServer({
     name: "rftools",
-    version: "2.0.0"
+    version: "2.1.0"
   });
   server.registerTool(
     "list_calculators",
@@ -36537,7 +37032,7 @@ function createServer() {
     "run_calculation",
     {
       title: "Run Calculation",
-      description: "Run an RF/electronics calculator with the given inputs. Use get_calculator_info first to see required inputs.",
+      description: "Run an RF/electronics calculator with the given inputs. Use get_calculator_info first to see its inputs; an input left out takes its default. The result carries provenance: the formula source, assumptions, whether the inputs lie inside the range the calculator is stated for, the inputs used and the engine version.",
       inputSchema: import_zod3.z.object({
         slug: import_zod3.z.string().describe('Calculator slug (e.g. "microstrip-impedance")'),
         inputs: import_zod3.z.record(import_zod3.z.string(), import_zod3.z.number()).describe('Input values keyed by input name (e.g. {"traceWidth": 1.2, "substrateHeight": 1.6})')
@@ -36557,7 +37052,14 @@ function createServer() {
         };
       }
       try {
-        const result = calc.calculate(inputs);
+        const applied = appliedInputs(calc, inputs);
+        const startedAt = Date.now();
+        const result = calc.calculate(applied);
+        const provenance = buildCalculatorProvenance(calc, applied, {
+          engineVersion: ENGINE_VERSION,
+          startedAt,
+          values: result.values
+        });
         const results = calc.outputs.map((o) => ({
           key: o.key,
           label: o.label,
@@ -36570,8 +37072,14 @@ function createServer() {
           results,
           webUrl
         };
-        if (result.warnings?.length) response.warnings = result.warnings;
+        const warnings = [
+          ...result.warnings ?? [],
+          ...Object.keys(inputs).filter((key) => !Object.hasOwn(applied, key)).map((key) => `Input '${key}' is not read by this calculator and was ignored.`),
+          ...outOfRangeWarnings(provenance)
+        ];
+        if (warnings.length) response.warnings = warnings;
         if (result.errors?.length) response.errors = result.errors;
+        response.provenance = provenance;
         return {
           content: [
             {
@@ -36613,5 +37121,6 @@ if (runningAsProgram) {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  ENGINE_VERSION,
   createServer
 });
