@@ -187,6 +187,62 @@ export interface JobSubmitResponse {
   queueTotal?: number;
 }
 
+// ── POST /v1/calculate/solve (openspec kicad-plugin, design Decision 10) ────
+//
+// Unlike the job endpoints above, `/v1/calculate` and its `/solve` twin need
+// the same key a plain calculator call does — there is no free anonymous
+// lane here. `solve_calculation` (src/solve.ts) says so before it posts,
+// the same way `UPLOAD_NEEDS_KEY` does for a file below.
+
+/** What one output should equal, and the value it should equal. */
+export interface SolveTarget {
+  output: string;
+  value: number;
+}
+
+/** The body `solve_calculation` sends. Only the fields the caller named. */
+export interface SolveRequestBody {
+  slug: string;
+  inputs: Record<string, number>;
+  solveFor: string;
+  target: SolveTarget;
+  grid?: number;
+  range?: [number, number];
+}
+
+/**
+ * The forward result at the returned value — exactly what `POST /v1/calculate`
+ * returns for those inputs. `provenance` is the nine-member envelope
+ * (`shared/result-provenance.schema.json`); this tool relays it unchanged, so
+ * it is typed loosely here rather than duplicating that schema.
+ */
+export interface SolveForwardResult {
+  slug: string;
+  values: Record<string, number | null>;
+  warnings: string[];
+  errors: string[];
+  provenance: Record<string, unknown>;
+}
+
+/** What `POST /v1/calculate/solve` returns. */
+export interface SolveResponse {
+  slug: string;
+  solveFor: string;
+  target: SolveTarget;
+  /** The grid as given; `null` when none was. */
+  grid: number | null;
+  /** The solution on the grid, or the unrounded value when there was none. */
+  value: number;
+  /** The search's own solution, before any grid rounding. */
+  unrounded: number;
+  /** False: no value in the range reached the target; `value` is the nearest. */
+  reached: boolean;
+  evaluations: number;
+  /** The solve's own facts: other solutions in range, an unreachable target. */
+  warnings: string[];
+  result: SolveForwardResult;
+}
+
 export interface UploadTicket {
   uploadUrl: string;
   key: string;
@@ -270,6 +326,16 @@ export class RftoolsApi {
 
   async jobStatus(jobId: string): Promise<JobStatusResponse> {
     return (await this.get(`/v1/jobs/${encodeURIComponent(jobId)}`)) as JobStatusResponse;
+  }
+
+  /**
+   * Solve one calculator input for a target output: one metered call, under
+   * the same key `/v1/calculate` itself requires. `body` carries only the
+   * fields the caller named (`solve.ts` builds it that way) — nothing is
+   * defaulted in here.
+   */
+  async solve(body: SolveRequestBody): Promise<SolveResponse> {
+    return (await this.post('/v1/calculate/solve', body)) as SolveResponse;
   }
 
   /**

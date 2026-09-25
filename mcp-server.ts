@@ -6,8 +6,10 @@ import type { CalculatorCategory } from '@/lib/calculators/types';
 import { CATEGORIES } from '@/lib/calculators/types';
 import { appliedInputs, buildCalculatorProvenance, outOfRangeWarnings } from '@/lib/provenance/build';
 import packageJson from './package.json' with { type: 'json' };
+import { RftoolsApi } from './src/api.ts';
 import { assertContractConsistent } from './src/job-schemas.ts';
 import { registerSimulationTools } from './src/simulation-tools.ts';
+import { handleSolve } from './src/solve.ts';
 
 const VALID_CATEGORIES = Object.keys(CATEGORIES) as CalculatorCategory[];
 
@@ -30,8 +32,12 @@ export function createServer(): McpServer {
 
   const server = new McpServer({
     name: 'rftools',
-    version: '2.1.0',
+    version: '2.2.0',
   });
+
+  // Shared with the simulation tools below, so a test that overrides the
+  // fetch or the key for one overrides it for both.
+  const api = new RftoolsApi();
 
   // --- list_calculators ---
   server.registerTool(
@@ -234,9 +240,63 @@ export function createServer(): McpServer {
     },
   );
 
+  // --- solve_calculation ---
+  // Unlike run_calculation above, this runs the search on rftools.io's own
+  // calculators rather than the bundled registry: a genuine network call,
+  // metered like /calculate itself (design Decision 10, spec
+  // api-access/target-solve). See src/solve.ts for the request/response
+  // handling and src/api.ts for the typed request and response shapes.
+  server.registerTool(
+    'solve_calculation',
+    {
+      title: 'Solve Calculation',
+      description:
+        'Find the value of one calculator input that makes an output equal a target — e.g. the trace width that ' +
+        'gives 50 Ω on microstrip-impedance, or the gap that gives 90 Ω on differential-pair. The search runs ' +
+        'server-side on rftools.io and costs one metered call: it needs an API key, the same one POST /calculate ' +
+        'itself requires — unlike run_calculation, this does not run locally or for free. `reached: false` means no ' +
+        'value in the search range reaches the target, and the value returned is the nearest one found instead. Use ' +
+        "get_calculator_info first for the calculator's input and output keys and their stated bounds (min/max) — " +
+        'solveFor needs an explicit `range` when it states no bound.',
+      inputSchema: z.object({
+        slug: z.string().describe('Calculator slug (e.g. "microstrip-impedance")'),
+        inputs: z
+          .record(z.string(), z.number())
+          .describe(
+            "The calculator's other inputs, keyed by input name (the input named by solveFor is not one of " +
+              'these — e.g. {"substrateHeight": 1.6, "dielectricConstant": 4.2, "copperThickness": 35})',
+          ),
+        solveFor: z.string().describe('Which declared numeric input to solve for (e.g. "traceWidth")'),
+        target: z
+          .object({
+            output: z.string().describe('The output key to bring to a value (e.g. "impedance")'),
+            value: z.number().describe('The value that output should equal'),
+          })
+          .describe('What to solve for'),
+        grid: z
+          .number()
+          .positive()
+          .optional()
+          .describe(
+            'Round the solved value to the nearest multiple of this manufacturing grid, e.g. 0.001 (mm). Omit for the unrounded solution.',
+          ),
+        range: z
+          .tuple([z.number(), z.number()])
+          .optional()
+          .describe(
+            '[low, high], narrowing the search inside solveFor\'s stated bound. Required when get_calculator_info ' +
+              'shows no min/max for solveFor.',
+          ),
+      }),
+    },
+    async ({ slug, inputs, solveFor, target, grid, range }) => {
+      return (await handleSolve(api, { slug, inputs, solveFor, target, grid, range })) as never;
+    },
+  );
+
   // --- the simulation surface: one typed tool per job type, generated from
   //     shared/job-schemas, plus the lifecycle tools ---
-  registerSimulationTools(server);
+  registerSimulationTools(server, { api });
 
   return server;
 }

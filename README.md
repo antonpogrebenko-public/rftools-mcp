@@ -94,6 +94,15 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Tools
 
+### What changed in 2.2.0
+
+- **New tool: `solve_calculation`.** Finds the value of one calculator input
+  that makes an output equal a target — the trace width for 50 Ω, the gap for
+  90 Ω — instead of an agent guessing values and calling `run_calculation` in a
+  loop. Unlike every other calculator tool, this runs the search server-side
+  on rftools.io and **requires an API key and spends one metered call** — see
+  **`solve_calculation`** below.
+
 ### What changed in 2.1.0
 
 - **Calculator results carry provenance.** `run_calculation` returns a
@@ -151,7 +160,12 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
   this machine — the same contract the service validates against, checked
   here first.
 
-### Calculator tools — no API key required
+### Calculator tools
+
+`list_calculators`, `get_calculator_info` and `run_calculation` need no API
+key — they run locally, for free. `solve_calculation` is the exception: it
+runs on rftools.io itself and needs a key, exactly as `run_calculation` needs
+none — see its own section below.
 
 #### `list_calculators`
 
@@ -178,6 +192,10 @@ Get detailed info about a calculator — inputs with units/defaults, outputs, an
 **Parameters:**
 - `slug` (required): Calculator identifier (e.g. `"microstrip-impedance"`)
 
+Each input carries its stated `min`/`max` (the same bounds `run_calculation`'s
+`provenance.validRange` checks against). An input with neither is unbounded —
+`solve_calculation` needs an explicit `range` to solve for one of those.
+
 #### `run_calculation`
 
 Run a calculator with specific inputs. Returns results with units, a link to the interactive version on rftools.io, and the result's `provenance` (formula source, assumptions, inputs used, whether they lie inside the calculator's stated range, engine version and time). An input left out takes its default. Runs locally — instant, no quota consumed.
@@ -191,6 +209,34 @@ Run a calculator with specific inputs. Returns results with units, a link to the
 **Parameters:**
 - `slug` (required): Calculator identifier
 - `inputs` (required): Object with input values, e.g. `{"traceWidth": 0.3, "substrateHeight": 0.2}`
+
+#### `solve_calculation` — needs an API key, spends one metered call
+
+Find the value of one calculator input that makes an output equal a target,
+instead of calling `run_calculation` in a loop to search for it yourself. The
+search runs server-side on rftools.io's own calculators — the same engine
+`/calculate` uses — so it needs an API key (`RFTOOLS_API_KEY`), the same one
+`/calculate` itself requires, and it is metered like any other API call.
+`reached: false` means no value inside the search range reaches the target;
+the value returned is then the nearest one the search found, not a guess.
+
+```
+"What trace width gives 50 Ω on 1.6mm FR4 with 1oz copper?"
+"Find the gap that gives 90 Ω differential impedance for a 0.15mm trace"
+```
+
+**Parameters:**
+- `slug` (required): Calculator identifier
+- `inputs` (required): The calculator's *other* inputs, keyed by name — not including `solveFor`'s own input
+- `solveFor` (required): Which declared numeric input to solve for, e.g. `"traceWidth"`
+- `target` (required): `{"output": "impedance", "value": 50}` — the output key and the value it should reach
+- `grid` (optional): Round the solution to the nearest multiple of this manufacturing grid, e.g. `0.001` (mm)
+- `range` (optional): `[low, high]`, narrowing the search inside `solveFor`'s stated bound. Required when `get_calculator_info` shows no `min`/`max` for that input.
+
+The response carries `value` (on the grid, if one was given), `unrounded`,
+`reached`, `evaluations`, the solve's own `warnings` (e.g. another crossing
+exists in range), and `result` — exactly what `run_calculation`/`/calculate`
+return for the calculator at that value, provenance included.
 
 ---
 
@@ -319,6 +365,15 @@ This MCP server calls the **exact same validated calculator code** that runs on 
 AI Agent ←stdio→ rftools-mcp ←direct call→ calculator function
 ```
 
+**`solve_calculation`** is the one calculator tool that is not a direct call:
+it runs the search on rftools.io's own calculators, so it needs an API key
+and is metered like a plain `/calculate` call — no queue, no polling, one
+request and one response.
+
+```
+AI Agent ←stdio→ rftools-mcp ←HTTPS (key required)→ POST /calculate/solve
+```
+
 **Simulation tools** run server-side on rftools.io infrastructure (AWS Lambda + SQS + EC2/Fargate workers). Their input schemas are generated at build time from the same parameter contract the website's forms are built from, so a contract change reaches the agent at the next release rather than through a hand-edited string. The server validates the call, uploads any files, submits the job, polls it within the wait bound while reporting progress, and returns a summarised result with a link to the whole payload.
 
 ```
@@ -330,7 +385,7 @@ AI Agent ←stdio→ rftools-mcp ←HTTPS (key optional)→ rftools.io API → S
 ## Machine-Readable Documentation
 
 - **[rftools.io/llms.txt](https://rftools.io/llms.txt)** — Summary with API info and MCP setup
-- **[rftools.io/llms-full.txt](https://rftools.io/llms-full.txt)** — Complete listing of all 203 calculators with inputs, outputs, units, and URLs
+- **[rftools.io/llms-full.txt](https://rftools.io/llms-full.txt)** — Complete listing of all 241 calculators with inputs, outputs, units, and URLs
 
 ## Links
 

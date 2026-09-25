@@ -33778,7 +33778,7 @@ function outOfRangeWarnings(provenance) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.1.0",
+  version: "2.2.0",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io \u2014 241 RF & electronics calculators for AI agents via the MCP",
@@ -33835,6 +33835,215 @@ var package_default = {
     node: ">=18"
   }
 };
+
+// ../rftools-mcp/src/api.ts
+var ApiError = class extends Error {
+  constructor(status, kind, detail, retryAfter) {
+    super(renderDetail(detail) || `API ${status}`);
+    this.name = "ApiError";
+    this.status = status;
+    this.kind = kind;
+    this.detail = detail;
+    this.retryAfter = retryAfter;
+  }
+};
+function kindForStatus(status) {
+  if (status === 401) return "auth";
+  if (status === 402) return "quota";
+  if (status === 403) return "forbidden";
+  if (status === 404) return "not_found";
+  if (status === 413) return "too_large";
+  if (status === 429) return "rate_limited";
+  if (status === 400 || status === 422) return "invalid_request";
+  if (status === 503) return "unavailable";
+  if (status >= 500) return "fault";
+  return "fault";
+}
+function renderDetail(detail) {
+  if (detail == null) return "";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((entry) => {
+      if (typeof entry === "string") return `- ${entry}`;
+      const p = entry;
+      const name = p.param ?? (Array.isArray(p.loc) ? p.loc.filter((x) => x !== "body").join(".") : void 0);
+      const reason = p.reason ?? p.msg ?? "";
+      const bits = [];
+      if (name) bits.push(String(name));
+      if (reason) bits.push(reason);
+      let line = `- ${bits.join(": ")}`;
+      if (p.value !== void 0) line += ` (given ${JSON.stringify(p.value)})`;
+      if (p.allowed !== void 0) line += `; allowed: ${renderAllowed(p.allowed)}`;
+      return line;
+    }).join("\n");
+  }
+  return JSON.stringify(detail);
+}
+function renderAllowed(allowed) {
+  if (Array.isArray(allowed)) return allowed.map((a) => String(a)).join(", ");
+  if (allowed && typeof allowed === "object") return JSON.stringify(allowed);
+  return String(allowed);
+}
+function describeApiError(err) {
+  const detail = renderDetail(err.detail);
+  switch (err.kind) {
+    case "auth":
+      return "The API key was refused, or its monthly allowance is spent. Check the key and its usage at https://rftools.io/dashboard." + (detail ? `
+Service said: ${detail}` : "");
+    case "quota":
+      return "The monthly simulation allowance is spent. Free: 5 runs/month, Pro: 100/month, API: 10 000/month. See https://rftools.io/dashboard." + (detail ? `
+Service said: ${detail}` : "");
+    case "rate_limited":
+      return "Too many requests." + (err.retryAfter !== void 0 ? ` Retry after ${err.retryAfter} s.` : " Retry shortly.") + (detail ? `
+Service said: ${detail}` : "");
+    case "invalid_request":
+      return err.status === 0 ? `The call does not match the job type's contract, so nothing was sent:
+${detail || "(no detail given)"}` : `The service refused the request as invalid:
+${detail || "(no detail given)"}`;
+    case "too_large":
+      return `The request is larger than this lane will run:
+${detail || "(no detail given)"}`;
+    case "forbidden":
+      return `Not authorised for this job: ${detail || "the job belongs to another account."}`;
+    case "not_found":
+      return err.status === 0 ? detail || "Not found." : `Not found: ${detail || "no such job."}`;
+    case "unavailable":
+      return `The service is temporarily unavailable: ${detail || "try again shortly."}`;
+    case "transient":
+      return `The service could not be reached: ${detail || err.message}. Retry shortly.`;
+    case "fault":
+    default:
+      return `The service failed (HTTP ${err.status}): ${detail || err.message}`;
+  }
+}
+var JOB_ERROR_KINDS = {
+  invalid_request: "The job was refused as invalid \u2014 a parameter is outside what this job type accepts.",
+  too_large: "The job is larger than its lane will run. Reduce the mesh, the sweep, the population or the trial count, or use a paid lane.",
+  not_available: "That mode is not available on this tier. A paid key unlocks it.",
+  timeout: "The job ran past its time budget and was stopped. Reduce the size of the problem or use a paid lane.",
+  interrupted: "The job was interrupted before it finished. Resubmit it.",
+  result_expired: "The result is no longer stored. Results are kept for 30 days on the free tier; resubmit the job.",
+  rate_limited: "The job was refused because too many were submitted at once. Retry shortly.",
+  transient: "The job failed on something transient. Resubmit it.",
+  fault: "The job failed inside the service. This is a fault on our side, not a problem with the request."
+};
+function describeJobError(errorKind, errorMessage) {
+  const sentence = errorKind ? JOB_ERROR_KINDS[errorKind] : void 0;
+  if (sentence) return errorMessage ? `${sentence}
+${errorMessage}` : sentence;
+  if (errorKind) return errorMessage ? `${errorKind}: ${errorMessage}` : `The job failed (${errorKind}).`;
+  return errorMessage ?? "The job failed without a message.";
+}
+var UPLOAD_NEEDS_KEY = "Uploading a file needs an API key; set RFTOOLS_API_KEY.";
+var DEFAULT_BASE = "https://rftools.io/api/py";
+var RftoolsApi = class {
+  constructor(opts = {}) {
+    this.baseUrl = opts.baseUrl ?? process.env.RFTOOLS_API_BASE ?? DEFAULT_BASE;
+    this.apiKey = opts.apiKey ?? process.env.RFTOOLS_API_KEY ?? "";
+    this.doFetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
+  }
+  /** True when a key is configured; false means the free lane. */
+  get hasKey() {
+    return Boolean(this.apiKey);
+  }
+  headers(extra = {}) {
+    return this.apiKey ? { ...extra, Authorization: `Bearer ${this.apiKey}` } : { ...extra };
+  }
+  async request(path2, init) {
+    let res;
+    try {
+      res = await this.doFetch(`${this.baseUrl}${path2}`, init);
+    } catch (err) {
+      throw new ApiError(0, "transient", err instanceof Error ? err.message : String(err));
+    }
+    if (!res.ok) throw await errorFromResponse(res);
+    if (res.status === 204) return null;
+    return await res.json();
+  }
+  async post(path2, body) {
+    return this.request(path2, {
+      method: "POST",
+      headers: this.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body)
+    });
+  }
+  async get(path2) {
+    return this.request(path2, { method: "GET", headers: this.headers() });
+  }
+  async submitJob(jobType, params, inputFileKeys = []) {
+    return await this.post("/v1/jobs", { jobType, params, inputFileKeys });
+  }
+  async jobStatus(jobId) {
+    return await this.get(`/v1/jobs/${encodeURIComponent(jobId)}`);
+  }
+  /**
+   * Solve one calculator input for a target output: one metered call, under
+   * the same key `/v1/calculate` itself requires. `body` carries only the
+   * fields the caller named (`solve.ts` builds it that way) — nothing is
+   * defaulted in here.
+   */
+  async solve(body) {
+    return await this.post("/v1/calculate/solve", body);
+  }
+  /**
+   * Upload one file: ask for a presigned POST, then send the form the way the
+   * browser does — the policy's fields first, the bytes under `file` last.
+   * Returns the key the job body carries.
+   */
+  async uploadFile(filename, content) {
+    if (!this.hasKey) throw new ApiError(0, "auth", UPLOAD_NEEDS_KEY);
+    const ticket = await this.post("/v1/upload", {
+      filename,
+      contentType: "application/octet-stream"
+    });
+    const form = new FormData();
+    for (const [k, v] of Object.entries(ticket.fields ?? {})) form.append(k, v);
+    const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+    form.append("file", new Blob([bytes], { type: "application/octet-stream" }), filename);
+    let res;
+    try {
+      res = await this.doFetch(ticket.uploadUrl, { method: "POST", body: form });
+    } catch (err) {
+      throw new ApiError(0, "transient", `upload of ${filename} failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!res.ok) {
+      const text2 = await res.text().catch(() => "");
+      throw new ApiError(res.status, kindForStatus(res.status), `upload of ${filename} failed: ${text2 || res.statusText}`);
+    }
+    return ticket.key;
+  }
+  /** Fetch a finished job's result payload from its presigned URL. */
+  async fetchResult(resultUrl) {
+    let res;
+    try {
+      res = await this.doFetch(resultUrl, { method: "GET" });
+    } catch (err) {
+      throw new ApiError(0, "transient", err instanceof Error ? err.message : String(err));
+    }
+    if (!res.ok) {
+      const kind = res.status === 403 || res.status === 404 ? "not_found" : kindForStatus(res.status);
+      throw new ApiError(res.status, kind, `the result link is no longer valid (HTTP ${res.status}); ask for the status again to get a fresh one`);
+    }
+    return await res.json();
+  }
+};
+async function errorFromResponse(res) {
+  let detail;
+  const text2 = await res.text().catch(() => "");
+  if (text2) {
+    try {
+      const parsed = JSON.parse(text2);
+      detail = parsed && typeof parsed === "object" && "detail" in parsed ? parsed.detail : parsed;
+    } catch {
+      detail = text2;
+    }
+  } else {
+    detail = res.statusText;
+  }
+  const header = res.headers?.get?.("Retry-After") ?? res.headers?.get?.("retry-after") ?? null;
+  const retryAfter = header != null && header !== "" && Number.isFinite(Number(header)) ? Number(header) : void 0;
+  return new ApiError(res.status, kindForStatus(res.status), detail, retryAfter);
+}
 
 // ../shared/job-schemas/index.json
 var job_schemas_default = {
@@ -35868,206 +36077,6 @@ var import_promises = require("node:fs/promises");
 var import_node_path = __toESM(require("node:path"), 1);
 var import_zod2 = require("zod");
 
-// ../rftools-mcp/src/api.ts
-var ApiError = class extends Error {
-  constructor(status, kind, detail, retryAfter) {
-    super(renderDetail(detail) || `API ${status}`);
-    this.name = "ApiError";
-    this.status = status;
-    this.kind = kind;
-    this.detail = detail;
-    this.retryAfter = retryAfter;
-  }
-};
-function kindForStatus(status) {
-  if (status === 401) return "auth";
-  if (status === 402) return "quota";
-  if (status === 403) return "forbidden";
-  if (status === 404) return "not_found";
-  if (status === 413) return "too_large";
-  if (status === 429) return "rate_limited";
-  if (status === 400 || status === 422) return "invalid_request";
-  if (status === 503) return "unavailable";
-  if (status >= 500) return "fault";
-  return "fault";
-}
-function renderDetail(detail) {
-  if (detail == null) return "";
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail.map((entry) => {
-      if (typeof entry === "string") return `- ${entry}`;
-      const p = entry;
-      const name = p.param ?? (Array.isArray(p.loc) ? p.loc.filter((x) => x !== "body").join(".") : void 0);
-      const reason = p.reason ?? p.msg ?? "";
-      const bits = [];
-      if (name) bits.push(String(name));
-      if (reason) bits.push(reason);
-      let line = `- ${bits.join(": ")}`;
-      if (p.value !== void 0) line += ` (given ${JSON.stringify(p.value)})`;
-      if (p.allowed !== void 0) line += `; allowed: ${renderAllowed(p.allowed)}`;
-      return line;
-    }).join("\n");
-  }
-  return JSON.stringify(detail);
-}
-function renderAllowed(allowed) {
-  if (Array.isArray(allowed)) return allowed.map((a) => String(a)).join(", ");
-  if (allowed && typeof allowed === "object") return JSON.stringify(allowed);
-  return String(allowed);
-}
-function describeApiError(err) {
-  const detail = renderDetail(err.detail);
-  switch (err.kind) {
-    case "auth":
-      return "The API key was refused, or its monthly allowance is spent. Check the key and its usage at https://rftools.io/dashboard." + (detail ? `
-Service said: ${detail}` : "");
-    case "quota":
-      return "The monthly simulation allowance is spent. Free: 5 runs/month, Pro: 100/month, API: 10 000/month. See https://rftools.io/dashboard." + (detail ? `
-Service said: ${detail}` : "");
-    case "rate_limited":
-      return "Too many requests." + (err.retryAfter !== void 0 ? ` Retry after ${err.retryAfter} s.` : " Retry shortly.") + (detail ? `
-Service said: ${detail}` : "");
-    case "invalid_request":
-      return err.status === 0 ? `The call does not match the job type's contract, so nothing was sent:
-${detail || "(no detail given)"}` : `The service refused the request as invalid:
-${detail || "(no detail given)"}`;
-    case "too_large":
-      return `The request is larger than this lane will run:
-${detail || "(no detail given)"}`;
-    case "forbidden":
-      return `Not authorised for this job: ${detail || "the job belongs to another account."}`;
-    case "not_found":
-      return err.status === 0 ? detail || "Not found." : `Not found: ${detail || "no such job."}`;
-    case "unavailable":
-      return `The service is temporarily unavailable: ${detail || "try again shortly."}`;
-    case "transient":
-      return `The service could not be reached: ${detail || err.message}. Retry shortly.`;
-    case "fault":
-    default:
-      return `The service failed (HTTP ${err.status}): ${detail || err.message}`;
-  }
-}
-var JOB_ERROR_KINDS = {
-  invalid_request: "The job was refused as invalid \u2014 a parameter is outside what this job type accepts.",
-  too_large: "The job is larger than its lane will run. Reduce the mesh, the sweep, the population or the trial count, or use a paid lane.",
-  not_available: "That mode is not available on this tier. A paid key unlocks it.",
-  timeout: "The job ran past its time budget and was stopped. Reduce the size of the problem or use a paid lane.",
-  interrupted: "The job was interrupted before it finished. Resubmit it.",
-  result_expired: "The result is no longer stored. Results are kept for 30 days on the free tier; resubmit the job.",
-  rate_limited: "The job was refused because too many were submitted at once. Retry shortly.",
-  transient: "The job failed on something transient. Resubmit it.",
-  fault: "The job failed inside the service. This is a fault on our side, not a problem with the request."
-};
-function describeJobError(errorKind, errorMessage) {
-  const sentence = errorKind ? JOB_ERROR_KINDS[errorKind] : void 0;
-  if (sentence) return errorMessage ? `${sentence}
-${errorMessage}` : sentence;
-  if (errorKind) return errorMessage ? `${errorKind}: ${errorMessage}` : `The job failed (${errorKind}).`;
-  return errorMessage ?? "The job failed without a message.";
-}
-var UPLOAD_NEEDS_KEY = "Uploading a file needs an API key; set RFTOOLS_API_KEY.";
-var DEFAULT_BASE = "https://rftools.io/api/py";
-var RftoolsApi = class {
-  constructor(opts = {}) {
-    this.baseUrl = opts.baseUrl ?? process.env.RFTOOLS_API_BASE ?? DEFAULT_BASE;
-    this.apiKey = opts.apiKey ?? process.env.RFTOOLS_API_KEY ?? "";
-    this.doFetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
-  }
-  /** True when a key is configured; false means the free lane. */
-  get hasKey() {
-    return Boolean(this.apiKey);
-  }
-  headers(extra = {}) {
-    return this.apiKey ? { ...extra, Authorization: `Bearer ${this.apiKey}` } : { ...extra };
-  }
-  async request(path2, init) {
-    let res;
-    try {
-      res = await this.doFetch(`${this.baseUrl}${path2}`, init);
-    } catch (err) {
-      throw new ApiError(0, "transient", err instanceof Error ? err.message : String(err));
-    }
-    if (!res.ok) throw await errorFromResponse(res);
-    if (res.status === 204) return null;
-    return await res.json();
-  }
-  async post(path2, body) {
-    return this.request(path2, {
-      method: "POST",
-      headers: this.headers({ "Content-Type": "application/json" }),
-      body: JSON.stringify(body)
-    });
-  }
-  async get(path2) {
-    return this.request(path2, { method: "GET", headers: this.headers() });
-  }
-  async submitJob(jobType, params, inputFileKeys = []) {
-    return await this.post("/v1/jobs", { jobType, params, inputFileKeys });
-  }
-  async jobStatus(jobId) {
-    return await this.get(`/v1/jobs/${encodeURIComponent(jobId)}`);
-  }
-  /**
-   * Upload one file: ask for a presigned POST, then send the form the way the
-   * browser does — the policy's fields first, the bytes under `file` last.
-   * Returns the key the job body carries.
-   */
-  async uploadFile(filename, content) {
-    if (!this.hasKey) throw new ApiError(0, "auth", UPLOAD_NEEDS_KEY);
-    const ticket = await this.post("/v1/upload", {
-      filename,
-      contentType: "application/octet-stream"
-    });
-    const form = new FormData();
-    for (const [k, v] of Object.entries(ticket.fields ?? {})) form.append(k, v);
-    const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
-    form.append("file", new Blob([bytes], { type: "application/octet-stream" }), filename);
-    let res;
-    try {
-      res = await this.doFetch(ticket.uploadUrl, { method: "POST", body: form });
-    } catch (err) {
-      throw new ApiError(0, "transient", `upload of ${filename} failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    if (!res.ok) {
-      const text2 = await res.text().catch(() => "");
-      throw new ApiError(res.status, kindForStatus(res.status), `upload of ${filename} failed: ${text2 || res.statusText}`);
-    }
-    return ticket.key;
-  }
-  /** Fetch a finished job's result payload from its presigned URL. */
-  async fetchResult(resultUrl) {
-    let res;
-    try {
-      res = await this.doFetch(resultUrl, { method: "GET" });
-    } catch (err) {
-      throw new ApiError(0, "transient", err instanceof Error ? err.message : String(err));
-    }
-    if (!res.ok) {
-      const kind = res.status === 403 || res.status === 404 ? "not_found" : kindForStatus(res.status);
-      throw new ApiError(res.status, kind, `the result link is no longer valid (HTTP ${res.status}); ask for the status again to get a fresh one`);
-    }
-    return await res.json();
-  }
-};
-async function errorFromResponse(res) {
-  let detail;
-  const text2 = await res.text().catch(() => "");
-  if (text2) {
-    try {
-      const parsed = JSON.parse(text2);
-      detail = parsed && typeof parsed === "object" && "detail" in parsed ? parsed.detail : parsed;
-    } catch {
-      detail = text2;
-    }
-  } else {
-    detail = res.statusText;
-  }
-  const header = res.headers?.get?.("Retry-After") ?? res.headers?.get?.("retry-after") ?? null;
-  const retryAfter = header != null && header !== "" && Number.isFinite(Number(header)) ? Number(header) : void 0;
-  return new ApiError(res.status, kindForStatus(res.status), detail, retryAfter);
-}
-
 // ../rftools-mcp/src/json-schema-to-zod.ts
 var import_zod = require("zod");
 
@@ -36926,6 +36935,36 @@ function registerSimulationTools(server, options = {}) {
   return names;
 }
 
+// ../rftools-mcp/src/solve.ts
+var SOLVE_NEEDS_KEY = "solve_calculation calls the metered POST /calculate/solve endpoint, which needs an API key \u2014 the same one POST /calculate itself requires. Unlike run_calculation, this does not run locally or for free. Set RFTOOLS_API_KEY. A free key: https://rftools.io/dashboard";
+function buildSolveBody(args) {
+  const body = {
+    slug: args.slug,
+    inputs: args.inputs,
+    solveFor: args.solveFor,
+    target: args.target
+  };
+  if (args.grid !== void 0) body.grid = args.grid;
+  if (args.range !== void 0) body.range = args.range;
+  return body;
+}
+function solveErrorText(err) {
+  if (err instanceof ApiError) return describeApiError(err);
+  return err instanceof Error ? err.message : String(err);
+}
+async function handleSolve(api, args) {
+  if (!api.hasKey) {
+    return { content: [{ type: "text", text: SOLVE_NEEDS_KEY }], isError: true };
+  }
+  let response;
+  try {
+    response = await api.solve(buildSolveBody(args));
+  } catch (err) {
+    return { content: [{ type: "text", text: solveErrorText(err) }], isError: true };
+  }
+  return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
+}
+
 // ../rftools-mcp/mcp-server.ts
 var VALID_CATEGORIES = Object.keys(CATEGORIES);
 var ENGINE_VERSION = `mcp@${package_default.version}`;
@@ -36933,8 +36972,9 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp.McpServer({
     name: "rftools",
-    version: "2.1.0"
+    version: "2.2.0"
   });
+  const api = new RftoolsApi();
   server.registerTool(
     "list_calculators",
     {
@@ -37101,7 +37141,34 @@ function createServer() {
       }
     }
   );
-  registerSimulationTools(server);
+  server.registerTool(
+    "solve_calculation",
+    {
+      title: "Solve Calculation",
+      description: "Find the value of one calculator input that makes an output equal a target \u2014 e.g. the trace width that gives 50 \u03A9 on microstrip-impedance, or the gap that gives 90 \u03A9 on differential-pair. The search runs server-side on rftools.io and costs one metered call: it needs an API key, the same one POST /calculate itself requires \u2014 unlike run_calculation, this does not run locally or for free. `reached: false` means no value in the search range reaches the target, and the value returned is the nearest one found instead. Use get_calculator_info first for the calculator's input and output keys and their stated bounds (min/max) \u2014 solveFor needs an explicit `range` when it states no bound.",
+      inputSchema: import_zod3.z.object({
+        slug: import_zod3.z.string().describe('Calculator slug (e.g. "microstrip-impedance")'),
+        inputs: import_zod3.z.record(import_zod3.z.string(), import_zod3.z.number()).describe(
+          `The calculator's other inputs, keyed by input name (the input named by solveFor is not one of these \u2014 e.g. {"substrateHeight": 1.6, "dielectricConstant": 4.2, "copperThickness": 35})`
+        ),
+        solveFor: import_zod3.z.string().describe('Which declared numeric input to solve for (e.g. "traceWidth")'),
+        target: import_zod3.z.object({
+          output: import_zod3.z.string().describe('The output key to bring to a value (e.g. "impedance")'),
+          value: import_zod3.z.number().describe("The value that output should equal")
+        }).describe("What to solve for"),
+        grid: import_zod3.z.number().positive().optional().describe(
+          "Round the solved value to the nearest multiple of this manufacturing grid, e.g. 0.001 (mm). Omit for the unrounded solution."
+        ),
+        range: import_zod3.z.tuple([import_zod3.z.number(), import_zod3.z.number()]).optional().describe(
+          "[low, high], narrowing the search inside solveFor's stated bound. Required when get_calculator_info shows no min/max for solveFor."
+        )
+      })
+    },
+    async ({ slug, inputs, solveFor, target, grid, range }) => {
+      return await handleSolve(api, { slug, inputs, solveFor, target, grid, range });
+    }
+  );
+  registerSimulationTools(server, { api });
   return server;
 }
 async function main() {
