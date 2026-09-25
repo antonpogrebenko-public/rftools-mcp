@@ -6,23 +6,30 @@
 // parameter names, their ranges, units, defaults and tier bounds all come from
 // these files, so a contract change reaches the MCP server at the next build.
 //
+// Read from vendor/shared/, not ../../shared/: this package is also tested
+// and published from a standalone checkout (see .github/workflows/test.yml),
+// where ../../shared does not exist. vendor/shared/job-schemas/ is a
+// monorepo-root-shared/-identical, committed copy that scripts/vendor_shared.sh
+// writes and scripts/build.sh keeps fresh before every build; test/vendor.test.js
+// checks it against ../../shared when that directory is present.
+//
 // The imports are static so that esbuild inlines them — the published package
 // ships only dist/mcp-server.cjs, so the bundle has to be self-contained.
 
-import indexJson from '../../shared/job-schemas/index.json' with { type: 'json' };
-import antennaSim from '../../shared/job-schemas/antenna_sim.json' with { type: 'json' };
-import emiRadiated from '../../shared/job-schemas/emi_radiated.json' with { type: 'json' };
-import eyeDiagram from '../../shared/job-schemas/eye_diagram.json' with { type: 'json' };
-import fdtdSparam from '../../shared/job-schemas/fdtd_sparam.json' with { type: 'json' };
-import filterMonteCarlo from '../../shared/job-schemas/filter_monte_carlo.json' with { type: 'json' };
-import impedanceMatch from '../../shared/job-schemas/impedance_match.json' with { type: 'json' };
-import magneticsOptimizer from '../../shared/job-schemas/magnetics_optimizer.json' with { type: 'json' };
-import pdnImpedance from '../../shared/job-schemas/pdn_impedance.json' with { type: 'json' };
-import radarDetection from '../../shared/job-schemas/radar_detection.json' with { type: 'json' };
-import rfCascade from '../../shared/job-schemas/rf_cascade.json' with { type: 'json' };
-import satLinkBudget from '../../shared/job-schemas/sat_link_budget.json' with { type: 'json' };
-import smpsControlLoop from '../../shared/job-schemas/smps_control_loop.json' with { type: 'json' };
-import sparamPipeline from '../../shared/job-schemas/sparam_pipeline.json' with { type: 'json' };
+import indexJson from '../vendor/shared/job-schemas/index.json' with { type: 'json' };
+import antennaSim from '../vendor/shared/job-schemas/antenna_sim.json' with { type: 'json' };
+import emiRadiated from '../vendor/shared/job-schemas/emi_radiated.json' with { type: 'json' };
+import eyeDiagram from '../vendor/shared/job-schemas/eye_diagram.json' with { type: 'json' };
+import fdtdSparam from '../vendor/shared/job-schemas/fdtd_sparam.json' with { type: 'json' };
+import filterMonteCarlo from '../vendor/shared/job-schemas/filter_monte_carlo.json' with { type: 'json' };
+import impedanceMatch from '../vendor/shared/job-schemas/impedance_match.json' with { type: 'json' };
+import magneticsOptimizer from '../vendor/shared/job-schemas/magnetics_optimizer.json' with { type: 'json' };
+import pdnImpedance from '../vendor/shared/job-schemas/pdn_impedance.json' with { type: 'json' };
+import radarDetection from '../vendor/shared/job-schemas/radar_detection.json' with { type: 'json' };
+import rfCascade from '../vendor/shared/job-schemas/rf_cascade.json' with { type: 'json' };
+import satLinkBudget from '../vendor/shared/job-schemas/sat_link_budget.json' with { type: 'json' };
+import smpsControlLoop from '../vendor/shared/job-schemas/smps_control_loop.json' with { type: 'json' };
+import sparamPipeline from '../vendor/shared/job-schemas/sparam_pipeline.json' with { type: 'json' };
 
 /** One parameter of a job type, as the generated schema describes it. */
 export interface JobParamSchema {

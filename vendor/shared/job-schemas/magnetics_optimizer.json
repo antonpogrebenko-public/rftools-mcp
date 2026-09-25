@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "magnetics_optimizer",
+  "x-slug": "magnetics-optimizer",
+  "x-title": "Magnetics & Transformer Design Optimizer",
+  "x-formulaRef": null,
+  "x-checks": [
+    "converter_load_nonzero"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "topology": {
+      "type": "string",
+      "enum": [
+        "flyback_xfmr",
+        "forward_xfmr",
+        "power_inductor",
+        "coupled_inductor"
+      ],
+      "default": "flyback_xfmr",
+      "x-label": "Topology"
+    },
+    "Vin": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 48,
+      "x-label": "Input Voltage",
+      "x-unit": "V",
+      "x-step": 1
+    },
+    "Vout": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 999,
+      "default": 12,
+      "x-label": "Output Voltage",
+      "x-unit": "V",
+      "x-step": 0.5
+    },
+    "Iout": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 100,
+      "default": 3,
+      "x-label": "Output Current",
+      "x-unit": "A",
+      "x-step": 0.1
+    },
+    "fSw": {
+      "type": "number",
+      "minimum": 1000,
+      "maximum": 10000000,
+      "default": 100000,
+      "x-label": "Switching Frequency",
+      "x-unit": "Hz",
+      "x-tooltip": "e.g. 100e3 for 100 kHz"
+    },
+    "dutyCycle": {
+      "type": "number",
+      "minimum": 0.05,
+      "maximum": 0.9,
+      "default": 0.45,
+      "x-label": "Duty Cycle",
+      "x-dimensionless": true,
+      "x-step": 0.01,
+      "x-tooltip": "Primary on-time duty cycle (0.05–0.90)"
+    },
+    "inductance_uH": {
+      "type": "number",
+      "minimum": 0.1,
+      "default": 100,
+      "x-label": "Target Inductance",
+      "x-unit": "µH",
+      "x-tooltip": "Target inductance the design is sized for (power and coupled inductors)",
+      "x-showWhen": {
+        "key": "topology",
+        "value": [
+          "power_inductor",
+          "coupled_inductor"
+        ]
+      }
+    },
+    "iPeak_A": {
+      "type": "number",
+      "minimum": 0.01,
+      "x-derived": "1.2 x Iout",
+      "x-label": "Peak Current",
+      "x-unit": "A",
+      "x-tooltip": "Peak inductor current (sets B_peak constraint)",
+      "x-showWhen": {
+        "key": "topology",
+        "value": [
+          "power_inductor",
+          "coupled_inductor"
+        ]
+      }
+    },
+    "Tamb": {
+      "type": "number",
+      "minimum": -40,
+      "maximum": 85,
+      "default": 40,
+      "x-label": "Ambient Temperature",
+      "x-unit": "°C",
+      "x-step": 5
+    },
+    "Tmax": {
+      "type": "number",
+      "minimum": 60,
+      "maximum": 200,
+      "default": 100,
+      "x-label": "Max Junction Temp",
+      "x-unit": "°C",
+      "x-step": 5
+    },
+    "objectiveWeight": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0.3,
+      "x-label": "Objective: Loss ↔ Volume",
+      "x-dimensionless": true,
+      "x-step": 0.05,
+      "x-tooltip": "0 = minimize loss, 1 = minimize volume, 0.3 = balanced (default)"
+    },
+    "population": {
+      "type": "integer",
+      "minimum": 20,
+      "maximum": 500,
+      "x-label": "GA Population",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 4,
+      "x-tooltip": "Rounded up to a multiple of 4. Blank uses the lane default."
+    },
+    "generations": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 500,
+      "x-label": "GA Generations",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 10,
+      "x-tooltip": "Blank uses the lane default."
+    },
+    "randomSeed": {
+      "type": "integer",
+      "minimum": 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+}

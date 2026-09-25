@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "fdtd_sparam",
+  "x-slug": "fdtd-sparam",
+  "x-title": "FDTD Transmission Line Simulator",
+  "x-formulaRef": null,
+  "x-checks": [
+    "sweep_span_within_center"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "structureType": {
+      "type": "string",
+      "enum": [
+        "microstrip_open_stub",
+        "coupled_line_filter",
+        "through_via",
+        "step_discontinuity"
+      ],
+      "default": "microstrip_open_stub",
+      "x-label": "Structure"
+    },
+    "substrateName": {
+      "type": "string",
+      "enum": [
+        "FR4",
+        "Rogers4350B",
+        "Rogers3003",
+        "custom"
+      ],
+      "default": "FR4",
+      "x-label": "Substrate"
+    },
+    "subEr": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 20,
+      "default": 4.4,
+      "x-label": "Dielectric Constant",
+      "x-dimensionless": true,
+      "x-step": 0.01,
+      "x-showWhen": {
+        "key": "substrateName",
+        "value": "custom"
+      }
+    },
+    "subH": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 10,
+      "default": 1.6,
+      "x-label": "Substrate Height",
+      "x-unit": "mm",
+      "x-step": 0.05,
+      "x-showWhen": {
+        "key": "substrateName",
+        "value": "custom"
+      }
+    },
+    "subTanD": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 0.1,
+      "default": 0.02,
+      "x-label": "Loss Tangent",
+      "x-dimensionless": true,
+      "x-step": 0.001,
+      "x-showWhen": {
+        "key": "substrateName",
+        "value": "custom"
+      }
+    },
+    "traceW": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 20,
+      "default": 3,
+      "x-label": "Trace Width",
+      "x-unit": "mm",
+      "x-step": 0.1
+    },
+    "traceL": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 30,
+      "x-label": "Trace Length",
+      "x-unit": "mm",
+      "x-step": 1
+    },
+    "stubL": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 15,
+      "x-label": "Stub Length",
+      "x-unit": "mm",
+      "x-step": 1,
+      "x-showWhen": {
+        "key": "structureType",
+        "value": "microstrip_open_stub"
+      }
+    },
+    "gapW": {
+      "type": "number",
+      "minimum": 0.05,
+      "maximum": 5,
+      "default": 0.2,
+      "x-label": "Coupling Gap",
+      "x-unit": "mm",
+      "x-step": 0.05,
+      "x-showWhen": {
+        "key": "structureType",
+        "value": "coupled_line_filter"
+      }
+    },
+    "viaDia": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 2,
+      "default": 0.3,
+      "x-label": "Via Diameter",
+      "x-unit": "mm",
+      "x-step": 0.05,
+      "x-showWhen": {
+        "key": "structureType",
+        "value": "through_via"
+      }
+    },
+    "viaAR": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 20,
+      "default": 5,
+      "x-label": "Via Aspect Ratio",
+      "x-dimensionless": true,
+      "x-step": 1,
+      "x-showWhen": {
+        "key": "structureType",
+        "value": "through_via"
+      }
+    },
+    "w2": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 20,
+      "default": 1.5,
+      "x-label": "Output Trace Width",
+      "x-unit": "mm",
+      "x-step": 0.1,
+      "x-showWhen": {
+        "key": "structureType",
+        "value": "step_discontinuity"
+      }
+    },
+    "freqCenter": {
+      "type": "number",
+      "minimum": 100000000,
+      "default": 2400000000,
+      "x-label": "Center Frequency",
+      "x-unit": "Hz"
+    },
+    "freqSpan": {
+      "type": "number",
+      "minimum": 100000000,
+      "default": 4000000000,
+      "x-label": "Frequency Span",
+      "x-unit": "Hz"
+    },
+    "solveMode": {
+      "type": "string",
+      "enum": [
+        "instant",
+        "express",
+        "normal",
+        "fine"
+      ],
+      "default": "instant",
+      "x-label": "Solve Mode",
+      "x-tooltip": "Instant solves a 2D cross-section and cascades published models — seconds, engineering accuracy. Express and above run a real 3D FDTD field solve on progressively finer meshes.",
+      "x-paidOnly": [
+        "normal",
+        "fine"
+      ]
+    },
+    "copperT": {
+      "type": "number",
+      "minimum": 0.005,
+      "maximum": 0.5,
+      "default": 0.035,
+      "x-label": "Copper Thickness",
+      "x-unit": "mm",
+      "x-hidden": true,
+      "x-step": 0.005,
+      "x-tooltip": "0.035 mm is 1 oz copper."
+    },
+    "roughness": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10,
+      "default": 0.6,
+      "x-label": "Surface Roughness",
+      "x-unit": "µm",
+      "x-hidden": true,
+      "x-step": 0.1,
+      "x-tooltip": "RMS copper roughness used by the Hammerstad/Huray correction."
+    }
+  }
+}

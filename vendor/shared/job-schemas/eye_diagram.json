@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "eye_diagram",
+  "x-slug": "eye-diagram",
+  "x-title": "Eye Diagram from S-Parameters",
+  "x-formulaRef": null,
+  "x-checks": [],
+  "x-files": {
+    "min": 1,
+    "max": 1,
+    "extensions": [
+      ".s2p",
+      ".s4p"
+    ],
+    "label": "Drop .s2p / .s4p Touchstone file here"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "dataRate": {
+      "type": "number",
+      "minimum": 1000000,
+      "default": 10000000000,
+      "x-label": "Data Rate",
+      "x-unit": "bps",
+      "x-tooltip": "e.g. 10e9 for 10 Gbps"
+    },
+    "prbs": {
+      "type": "string",
+      "enum": [
+        "prbs7",
+        "prbs15",
+        "prbs31"
+      ],
+      "default": "prbs15",
+      "x-label": "PRBS Length"
+    },
+    "samplesPerUI": {
+      "type": "integer",
+      "minimum": 16,
+      "maximum": 128,
+      "default": 64,
+      "x-label": "Samples per UI",
+      "x-dimensionless": true,
+      "x-step": 16
+    }
+  }
+}

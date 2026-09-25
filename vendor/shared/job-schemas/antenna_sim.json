@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "antenna_sim",
+  "x-slug": "antenna-sim",
+  "x-title": "Wire Antenna Simulator (NEC-2)",
+  "x-formulaRef": "Numerical Electromagnetics Code (NEC) — Method of Moments, G. J. Burke and A. J. Poggio, Naval Ocean Systems Center TD 116 (1981)",
+  "x-checks": [
+    "sweep_stop_after_start"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "solveMode": {
+      "type": "string",
+      "enum": [
+        "instant",
+        "standard",
+        "sweep",
+        "optimize"
+      ],
+      "default": "instant",
+      "x-label": "Solve Mode",
+      "x-tooltip": "Instant is a closed-form textbook model of a preset. Standard solves your geometry with NEC-2 at one frequency; Sweep solves it across a band; Optimize searches element lengths and spacings.",
+      "x-paidOnly": [
+        "optimize"
+      ]
+    },
+    "freq": {
+      "type": "number",
+      "minimum": 1000,
+      "default": 146000000,
+      "x-label": "Frequency",
+      "x-unit": "Hz"
+    },
+    "referenceImpedance": {
+      "type": "number",
+      "minimum": 0.1,
+      "default": 50,
+      "x-label": "Reference Impedance",
+      "x-unit": "Ω",
+      "x-hidden": true,
+      "x-tooltip": "Impedance the reported VSWR and reflection coefficient are referred to."
+    },
+    "wires": {
+      "type": "array",
+      "x-label": "Wire Geometry",
+      "x-hidden": true,
+      "x-tooltip": "Wire segments of the antenna. Required for every mode but Instant.",
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    "feed": {
+      "type": "object",
+      "x-label": "Feed Point",
+      "x-hidden": true,
+      "x-tooltip": "Which wire and segment the source drives. Required for every mode but Instant.",
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    "ground": {
+      "type": "object",
+      "x-label": "Ground",
+      "x-hidden": true,
+      "x-tooltip": "Ground model: { type: free_space | perfect | finite }, with epsilonR and conductivity when finite. Absent means free space.",
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    "conductor": {
+      "type": "object",
+      "x-label": "Conductor",
+      "x-hidden": true,
+      "x-tooltip": "Conductor model: { material: copper | aluminium | perfect | custom }, with conductivity when custom. Absent means copper.",
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    "optimize": {
+      "type": "object",
+      "x-label": "Search Settings",
+      "x-hidden": true,
+      "x-tooltip": "NSGA-II settings: { populationSize, generations, lengthRange, spacingRange }.",
+      "x-showWhen": {
+        "key": "solveMode",
+        "value": "optimize"
+      },
+      "x-ref": "backend/src/core/antenna/_antenna_validate.py"
+    },
+    "freqStart": {
+      "type": "number",
+      "minimum": 1000,
+      "x-label": "Sweep Start",
+      "x-unit": "Hz",
+      "x-hidden": true,
+      "x-tooltip": "Lower bound of the sweep. Required in Sweep mode.",
+      "x-showWhen": {
+        "key": "solveMode",
+        "value": "sweep"
+      }
+    },
+    "freqStop": {
+      "type": "number",
+      "minimum": 1000,
+      "x-label": "Sweep Stop",
+      "x-unit": "Hz",
+      "x-hidden": true,
+      "x-tooltip": "Upper bound of the sweep. Required in Sweep mode.",
+      "x-showWhen": {
+        "key": "solveMode",
+        "value": "sweep"
+      }
+    },
+    "freqPoints": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 2001,
+      "default": 51,
+      "x-label": "Sweep Points",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "How many frequencies the sweep solves.",
+      "x-showWhen": {
+        "key": "solveMode",
+        "value": "sweep"
+      }
+    },
+    "antennaType": {
+      "type": "string",
+      "enum": [
+        "dipole",
+        "yagi3",
+        "yagi5",
+        "loop"
+      ],
+      "default": "dipole",
+      "x-label": "Closed-Form Model",
+      "x-hidden": true,
+      "x-tooltip": "Which textbook model Instant evaluates. Instant has no model for other geometries.",
+      "x-showWhen": {
+        "key": "solveMode",
+        "value": "instant"
+      }
+    },
+    "groundType": {
+      "type": "string",
+      "enum": [
+        "free_space",
+        "perfect",
+        "real"
+      ],
+      "default": "free_space",
+      "x-label": "Closed-Form Ground",
+      "x-hidden": true,
+      "x-tooltip": "Ground the closed-form model assumes. Instant only.",
+      "x-showWhen": {
+        "key": "solveMode",
+        "value": "instant"
+      }
+    },
+    "randomSeed": {
+      "type": "integer",
+      "minimum": 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+}

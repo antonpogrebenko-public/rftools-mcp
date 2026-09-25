@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "smps_control_loop",
+  "x-slug": "smps-control-loop",
+  "x-title": "SMPS Control Loop Stability Analyzer",
+  "x-formulaRef": null,
+  "x-checks": [
+    "converter_duty_in_ccm_range",
+    "converter_load_nonzero"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "topology": {
+      "type": "string",
+      "enum": [
+        "buck",
+        "boost",
+        "buck_boost",
+        "flyback"
+      ],
+      "default": "buck",
+      "x-label": "Topology"
+    },
+    "controlMode": {
+      "type": "string",
+      "enum": [
+        "voltage_mode",
+        "peak_current"
+      ],
+      "default": "voltage_mode",
+      "x-label": "Control Mode"
+    },
+    "Vin": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 12,
+      "x-label": "Input Voltage",
+      "x-unit": "V",
+      "x-step": 0.1
+    },
+    "Vout": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 999,
+      "default": 5,
+      "x-label": "Output Voltage",
+      "x-unit": "V",
+      "x-step": 0.1
+    },
+    "Iout": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 100,
+      "default": 2,
+      "x-label": "Output Current",
+      "x-unit": "A",
+      "x-step": 0.1
+    },
+    "L": {
+      "type": "number",
+      "minimum": 1e-9,
+      "default": 0.000047,
+      "x-label": "Inductance",
+      "x-unit": "H",
+      "x-step": 0.000001,
+      "x-tooltip": "e.g. 47e-6 for 47 µH"
+    },
+    "C": {
+      "type": "number",
+      "minimum": 1e-12,
+      "default": 0.00022,
+      "x-label": "Output Capacitance",
+      "x-unit": "F",
+      "x-step": 0.000001,
+      "x-tooltip": "e.g. 220e-6 for 220 µF"
+    },
+    "ESR": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0.05,
+      "x-label": "Capacitor ESR",
+      "x-unit": "Ω",
+      "x-step": 0.001,
+      "x-tooltip": "Equivalent series resistance of output capacitor"
+    },
+    "Fsw": {
+      "type": "number",
+      "minimum": 1000,
+      "maximum": 10000000,
+      "default": 100000,
+      "x-label": "Switching Frequency",
+      "x-unit": "Hz"
+    },
+    "Vramp": {
+      "type": "number",
+      "minimum": 0.1,
+      "default": 1,
+      "x-label": "Sawtooth Amplitude",
+      "x-unit": "V",
+      "x-tooltip": "Peak-to-peak sawtooth amplitude for the PWM comparator",
+      "x-showWhen": {
+        "key": "controlMode",
+        "value": "voltage_mode"
+      }
+    },
+    "Rsense": {
+      "type": "number",
+      "minimum": 0.001,
+      "default": 0.1,
+      "x-label": "Sense Resistor",
+      "x-unit": "Ω",
+      "x-showWhen": {
+        "key": "controlMode",
+        "value": "peak_current"
+      }
+    },
+    "externalRamp": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10,
+      "default": 0,
+      "x-label": "External Ramp (Se/Sn)",
+      "x-dimensionless": true,
+      "x-step": 0.1,
+      "x-tooltip": "Slope compensation as a fraction of the sensed inductor up-slope; 0 applies none. Above 50 % duty cycle the inductor-current loop needs m_c·D′ > 0.5, where m_c = 1 + Se/Sn.",
+      "x-showWhen": {
+        "key": "controlMode",
+        "value": "peak_current"
+      }
+    },
+    "compensatorType": {
+      "type": "string",
+      "enum": [
+        "type1",
+        "type2",
+        "type3"
+      ],
+      "default": "type3",
+      "x-label": "Compensator"
+    },
+    "compK": {
+      "type": "number",
+      "minimum": 0.001,
+      "default": 2000,
+      "x-label": "Compensator Gain (K)",
+      "x-unit": "rad/s"
+    },
+    "compFz1": {
+      "type": "number",
+      "minimum": 1,
+      "default": 500,
+      "x-label": "Zero 1 Frequency",
+      "x-unit": "Hz"
+    },
+    "compFz2": {
+      "type": "number",
+      "minimum": 1,
+      "default": 1500,
+      "x-label": "Zero 2 Frequency",
+      "x-unit": "Hz",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": "type3"
+      }
+    },
+    "compFp1": {
+      "type": "number",
+      "minimum": 1,
+      "default": 20000,
+      "x-label": "Pole 1 Frequency",
+      "x-unit": "Hz"
+    },
+    "compFp2": {
+      "type": "number",
+      "minimum": 1,
+      "default": 50000,
+      "x-label": "Pole 2 Frequency",
+      "x-unit": "Hz",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": "type3"
+      }
+    },
+    "monteCarloTrials": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 500000,
+      "default": 200000,
+      "x-label": "MC Trials",
+      "x-dimensionless": true,
+      "x-step": 1000,
+      "x-tooltip": "Each trial re-evaluates T(s) with randomized component values."
+    },
+    "tolL": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 20,
+      "x-label": "Inductor Tolerance",
+      "x-unit": "%",
+      "x-step": 1
+    },
+    "tolC": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 20,
+      "x-label": "Capacitor Tolerance",
+      "x-unit": "%",
+      "x-step": 1
+    },
+    "tolESR": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 200,
+      "default": 50,
+      "x-label": "ESR Tolerance",
+      "x-unit": "%",
+      "x-step": 5
+    },
+    "tolRsense": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 1,
+      "x-label": "Sense Resistor Tolerance",
+      "x-unit": "%",
+      "x-hidden": true,
+      "x-step": 0.5,
+      "x-showWhen": {
+        "key": "controlMode",
+        "value": "peak_current"
+      }
+    },
+    "tolLoad": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 30,
+      "x-label": "Load Tolerance",
+      "x-unit": "%",
+      "x-step": 5
+    },
+    "toleranceDistribution": {
+      "type": "string",
+      "enum": [
+        "gaussian",
+        "uniform"
+      ],
+      "default": "gaussian",
+      "x-label": "Distribution"
+    }
+  }
+}

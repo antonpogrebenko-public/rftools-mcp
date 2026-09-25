@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "sparam_pipeline",
+  "x-slug": "sparam-pipeline",
+  "x-title": "S-Parameter Analysis Pipeline",
+  "x-formulaRef": null,
+  "x-checks": [
+    "sweep_stop_after_start"
+  ],
+  "x-files": {
+    "min": 1,
+    "max": 4,
+    "extensions": [
+      ".s1p",
+      ".s2p",
+      ".s3p",
+      ".s4p"
+    ],
+    "label": "Drop up to 4 Touchstone files here"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "refImpedance": {
+      "type": "number",
+      "minimum": 1,
+      "default": 50,
+      "x-label": "Reference Impedance",
+      "x-unit": "Ω"
+    },
+    "freqStart": {
+      "type": "number",
+      "default": 0,
+      "x-label": "Analysis Freq Start",
+      "x-unit": "Hz",
+      "x-tooltip": "0 = use file range"
+    },
+    "freqStop": {
+      "type": "number",
+      "default": 0,
+      "x-label": "Analysis Freq Stop",
+      "x-unit": "Hz",
+      "x-tooltip": "0 = use file range"
+    }
+  }
+}

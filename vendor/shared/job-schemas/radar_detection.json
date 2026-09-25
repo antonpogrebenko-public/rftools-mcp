@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "radar_detection",
+  "x-slug": "radar-detection",
+  "x-title": "Radar Detection Performance Monte Carlo",
+  "x-formulaRef": null,
+  "x-checks": [
+    "probability_in_open_unit_interval"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "frequency_hz": {
+      "type": "number",
+      "minimum": 100000000,
+      "maximum": 300000000000,
+      "default": 10000000000,
+      "x-label": "Carrier Frequency",
+      "x-unit": "Hz",
+      "x-tooltip": "e.g. 3e9 = S-band, 10e9 = X-band, 77e9 = automotive mmWave"
+    },
+    "peakPower_w": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 1000000,
+      "default": 1000,
+      "x-label": "Peak Tx Power",
+      "x-unit": "W"
+    },
+    "antGainTx_dbi": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 60,
+      "default": 30,
+      "x-label": "Tx Antenna Gain",
+      "x-unit": "dBi"
+    },
+    "antGainRx_dbi": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 60,
+      "default": 30,
+      "x-label": "Rx Antenna Gain",
+      "x-unit": "dBi",
+      "x-tooltip": "Set equal to Tx for monostatic radar"
+    },
+    "noiseFig_db": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 30,
+      "default": 5,
+      "x-label": "Receiver NF",
+      "x-unit": "dB"
+    },
+    "lossesTx_db": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 20,
+      "default": 1.5,
+      "x-label": "Tx Losses",
+      "x-unit": "dB"
+    },
+    "lossesRx_db": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 20,
+      "default": 1.5,
+      "x-label": "Rx Losses",
+      "x-unit": "dB"
+    },
+    "pulseWidth_s": {
+      "type": "number",
+      "minimum": 1e-9,
+      "maximum": 0.001,
+      "default": 0.000001,
+      "x-label": "Pulse Width",
+      "x-unit": "s",
+      "x-tooltip": "e.g. 1e-6 = 1 µs"
+    },
+    "nPulses": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 512,
+      "default": 10,
+      "x-label": "Integrated Pulses",
+      "x-dimensionless": true,
+      "x-step": 1,
+      "x-tooltip": "Non-coherent pulse integration count"
+    },
+    "swerlingModel": {
+      "type": "string",
+      "enum": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "default": "1",
+      "x-label": "Swerling Model",
+      "x-tooltip": "Target RCS fluctuation model"
+    },
+    "pfa": {
+      "type": "number",
+      "minimum": 1e-12,
+      "maximum": 0.1,
+      "default": 0.000001,
+      "x-label": "Prob. False Alarm",
+      "x-dimensionless": true,
+      "x-tooltip": "e.g. 1e-6 for a CFAR detector"
+    },
+    "targetRcs_dbsm": {
+      "type": "number",
+      "minimum": -40,
+      "maximum": 60,
+      "default": 0,
+      "x-label": "Target RCS (mean)",
+      "x-unit": "dBsm",
+      "x-tooltip": "0 dBsm = 1 m²; fighter aircraft ≈ 0–5 dBsm"
+    },
+    "rangeMax_km": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 2000,
+      "default": 100,
+      "x-label": "Max Range",
+      "x-unit": "km"
+    },
+    "rainRate_mmhr": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 150,
+      "default": 0,
+      "x-label": "Rain Rate",
+      "x-unit": "mm/hr",
+      "x-tooltip": "0 = no rain; 25 = heavy rain; 100 = extreme"
+    }
+  }
+}

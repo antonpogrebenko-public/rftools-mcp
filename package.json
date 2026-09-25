@@ -41,7 +41,9 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "build": "bash scripts/build.sh",
-    "build:check": "bash scripts/build.sh --check"
+    "build:check": "bash scripts/build.sh --check",
+    "vendor": "bash scripts/vendor_shared.sh",
+    "vendor:check": "bash scripts/vendor_shared.sh --check"
   },
   "bin": {
     "rftools-mcp": "dist/mcp-server.cjs"

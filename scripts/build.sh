@@ -10,16 +10,17 @@
 # ── Why this needs the monorepo ──────────────────────────────────────────────
 #
 # `mcp-server.ts` imports `@/lib/calculators/registry` (the frontend's
-# calculator definitions) and `src/job-schemas.ts` imports
-# `../../shared/job-schemas/*.json` (the generated job contracts). Neither is in
-# this repository: this package is a checkout of one directory of rfhub, and the
-# bundle is how those definitions reach npm. So the build runs from the
-# frontend, whose tsconfig resolves the `@` alias, and it can only run inside a
-# full rfhub checkout.
+# calculator definitions) and `src/job-schemas.ts` imports the generated job
+# contracts, vendored under vendor/shared/ by scripts/vendor_shared.sh (see
+# that script for why: this package is a checkout of one directory of rfhub,
+# and the bundle is how those definitions reach npm). The registry import can
+# only be resolved from inside a full rfhub checkout, so the build runs from
+# the frontend, whose tsconfig resolves the `@` alias.
 #
 # That is also why the drift check below runs in `scripts/pre-deploy-check.sh`
 # at the monorepo root rather than in this repository's own CI, which never has
-# the sources to rebuild from.
+# the sources to rebuild from. This script keeps vendor/ current every time it
+# runs, so a rebuilt bundle and a refreshed vendor/ never fall out of step.
 #
 # Usage:
 #   bash scripts/build.sh            # write dist/mcp-server.cjs
@@ -50,6 +51,11 @@ build_to() {
 }
 
 if [ "${1:-}" = "--check" ]; then
+  # First: is vendor/ itself what ../shared (and the frontend fixtures) say it
+  # should be? A stale vendor/ would make the bundle check below pass on a
+  # bundle built from outdated contracts without ever comparing to source.
+  bash "$HERE/scripts/vendor_shared.sh" --check
+
   # Not under dist/: a leftover there is a file someone commits by accident.
   candidate="$(mktemp -t mcp-server-check)"
   trap 'rm -f "$candidate"' EXIT
@@ -67,6 +73,10 @@ if [ "${1:-}" = "--check" ]; then
   echo "dist/mcp-server.cjs matches its sources"
   exit 0
 fi
+
+# Refresh vendor/ from ../shared (and the frontend fixtures) before building,
+# so the bundle is never built from a vendored copy older than the monorepo.
+bash "$HERE/scripts/vendor_shared.sh"
 
 mkdir -p "$HERE/dist"
 build_to "$BUNDLE"

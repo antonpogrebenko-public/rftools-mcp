@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "filter_monte_carlo",
+  "x-slug": "filter-monte-carlo",
+  "x-title": "RF Filter Monte Carlo Analysis",
+  "x-formulaRef": null,
+  "x-checks": [],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "filterType": {
+      "type": "string",
+      "enum": [
+        "butterworth",
+        "chebyshev1"
+      ],
+      "default": "butterworth",
+      "x-label": "Filter Type"
+    },
+    "bandType": {
+      "type": "string",
+      "enum": [
+        "lowpass",
+        "highpass"
+      ],
+      "default": "lowpass",
+      "x-label": "Band Type"
+    },
+    "order": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 9,
+      "default": 5,
+      "x-label": "Filter Order",
+      "x-dimensionless": true,
+      "x-step": 1
+    },
+    "freqCutoff": {
+      "type": "number",
+      "minimum": 1000,
+      "default": 1000000000,
+      "x-label": "Cutoff Frequency",
+      "x-unit": "Hz",
+      "x-tooltip": "-3 dB frequency for Butterworth; passband edge for Chebyshev"
+    },
+    "ripple": {
+      "type": "number",
+      "minimum": 0.01,
+      "maximum": 3,
+      "default": 0.5,
+      "x-label": "Passband Ripple",
+      "x-unit": "dB",
+      "x-step": 0.1,
+      "x-tooltip": "Chebyshev only"
+    },
+    "impedance": {
+      "type": "number",
+      "minimum": 1,
+      "default": 50,
+      "x-label": "System Impedance",
+      "x-unit": "Ω"
+    },
+    "componentTolerance": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 50,
+      "default": 5,
+      "x-label": "Component Tolerance",
+      "x-unit": "%",
+      "x-step": 0.5
+    },
+    "toleranceDistribution": {
+      "type": "string",
+      "enum": [
+        "uniform",
+        "gaussian"
+      ],
+      "default": "uniform",
+      "x-label": "Distribution"
+    },
+    "rippleSpec_db": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 20,
+      "x-label": "Passband Variation Limit (optional)",
+      "x-unit": "dB",
+      "x-step": 0.1,
+      "x-tooltip": "Largest peak-to-peak |S21| variation across the passband for a build to pass. Leave blank to allow 0.5 dB more than the standard-value design achieves."
+    },
+    "rejectionSpec_db": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 200,
+      "x-label": "Stopband Rejection Minimum (optional)",
+      "x-unit": "dB",
+      "x-step": 1,
+      "x-tooltip": "Smallest rejection a build must reach from 2× the cutoff upward (low-pass) or below half the cutoff (high-pass). Leave blank to allow 3 dB less than the standard-value design achieves."
+    },
+    "monteCarloIterations": {
+      "type": "integer",
+      "minimum": 50,
+      "maximum": 10000,
+      "default": 500,
+      "x-label": "Monte Carlo Trials",
+      "x-dimensionless": true,
+      "x-step": 50,
+      "x-tooltip": "Free tier: max 500",
+      "x-tier": {
+        "free": {
+          "maximum": 500
+        }
+      }
+    },
+    "randomSeed": {
+      "type": "integer",
+      "minimum": 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+}

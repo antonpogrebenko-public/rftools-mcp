@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "pdn_impedance",
+  "x-slug": "pdn-impedance",
+  "x-title": "PDN Impedance Analyzer & Decoupling Capacitor Optimizer",
+  "x-formulaRef": null,
+  "x-checks": [
+    "port_within_board",
+    "sweep_stop_after_start"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "boardWidth_mm": {
+      "type": "number",
+      "minimum": 10,
+      "maximum": 500,
+      "default": 100,
+      "x-label": "Board Width",
+      "x-unit": "mm"
+    },
+    "boardLength_mm": {
+      "type": "number",
+      "minimum": 10,
+      "maximum": 500,
+      "default": 150,
+      "x-label": "Board Length",
+      "x-unit": "mm"
+    },
+    "dielectricEr": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 15,
+      "default": 4.5,
+      "x-label": "Dielectric ε_r",
+      "x-dimensionless": true,
+      "x-step": 0.1,
+      "x-tooltip": "FR4 ≈ 4.5; Rogers 4350B ≈ 3.66; Rogers 3003 ≈ 3.0"
+    },
+    "lossTangent": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 0.1,
+      "default": 0.02,
+      "x-label": "Loss Tangent",
+      "x-dimensionless": true,
+      "x-step": 0.001,
+      "x-tooltip": "FR4 ≈ 0.020; Rogers materials ≈ 0.002–0.004"
+    },
+    "boardThickness_mm": {
+      "type": "number",
+      "minimum": 0.05,
+      "maximum": 5,
+      "default": 1.6,
+      "x-label": "Plane-Pair Separation",
+      "x-unit": "mm"
+    },
+    "portX_mm": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 500,
+      "x-derived": "board centre (boardWidth_mm / 2)",
+      "x-label": "Port X location",
+      "x-unit": "mm",
+      "x-tooltip": "Location where PDN impedance is evaluated (e.g. IC power pin)"
+    },
+    "portY_mm": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 500,
+      "x-derived": "board centre (boardLength_mm / 2)",
+      "x-label": "Port Y location",
+      "x-unit": "mm"
+    },
+    "vrmBandwidth_hz": {
+      "type": "number",
+      "minimum": 1000,
+      "maximum": 10000000,
+      "default": 100000,
+      "x-label": "VRM Bandwidth",
+      "x-unit": "Hz",
+      "x-tooltip": "VRM control loop bandwidth — the VRM provides low impedance only below this frequency"
+    },
+    "vrmDcr_mohm": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 500,
+      "default": 5,
+      "x-label": "VRM DC Resistance",
+      "x-unit": "mΩ"
+    },
+    "targetImpedance_mohm": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 1000,
+      "default": 10,
+      "x-label": "Target Impedance",
+      "x-unit": "mΩ",
+      "x-tooltip": "Flat target impedance — keep Z_PDN below this across all frequencies"
+    },
+    "freqMin_hz": {
+      "type": "number",
+      "minimum": 100,
+      "maximum": 1000000,
+      "default": 1000,
+      "x-label": "Freq Min",
+      "x-unit": "Hz"
+    },
+    "freqMax_hz": {
+      "type": "number",
+      "minimum": 1000000,
+      "maximum": 10000000000,
+      "default": 1000000000,
+      "x-label": "Freq Max",
+      "x-unit": "Hz"
+    },
+    "maxCapCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 30,
+      "x-label": "Max Decap Count",
+      "x-dimensionless": true,
+      "x-step": 1,
+      "x-tooltip": "Total decoupling capacitor budget the optimizer may place"
+    },
+    "randomSeed": {
+      "type": "integer",
+      "minimum": 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+}

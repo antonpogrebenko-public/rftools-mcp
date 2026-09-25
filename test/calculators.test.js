@@ -10,7 +10,9 @@
 // scripts/pre-deploy-check.sh) fails whenever it is not what the sources
 // produce — so after `npm run build`, testing the bundle tests the sources.
 //
-// The schema is shared/result-provenance.schema.json, the canonical copy. Ajv
+// The schema is shared/result-provenance.schema.json, read here from its
+// vendored copy (vendor/shared/, see scripts/vendor_shared.sh) so this test
+// also runs from a standalone checkout with no ../../shared beside it. Ajv
 // is the one the MCP SDK already depends on, so no package is added for it.
 
 import test from 'node:test';
@@ -28,7 +30,7 @@ const here = (rel) => fileURLToPath(new URL(rel, import.meta.url));
 
 const BUNDLE = here('../dist/mcp-server.cjs');
 const pkg = JSON.parse(readFileSync(here('../package.json'), 'utf8'));
-const schema = JSON.parse(readFileSync(here('../../shared/result-provenance.schema.json'), 'utf8'));
+const schema = JSON.parse(readFileSync(here('../vendor/shared/result-provenance.schema.json'), 'utf8'));
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);

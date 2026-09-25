@@ -1,0 +1,156 @@
+{
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "checks": [
+    "converter_duty_in_ccm_range",
+    "converter_load_nonzero",
+    "port_within_board",
+    "probability_in_open_unit_interval",
+    "sweep_span_within_center",
+    "sweep_stop_after_start"
+  ],
+  "jobTypes": {
+    "antenna_sim": {
+      "slug": "antenna-sim",
+      "title": "Wire Antenna Simulator (NEC-2)",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 1200,
+      "files": false
+    },
+    "emi_radiated": {
+      "slug": "emi-radiated",
+      "title": "EMI Radiated Emissions Estimator",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 240,
+      "files": false
+    },
+    "eye_diagram": {
+      "slug": "eye-diagram",
+      "title": "Eye Diagram from S-Parameters",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 120,
+      "files": true
+    },
+    "fdtd_sparam": {
+      "slug": "fdtd-sparam",
+      "title": "FDTD Transmission Line Simulator",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 32400,
+      "files": false
+    },
+    "filter_monte_carlo": {
+      "slug": "filter-monte-carlo",
+      "title": "RF Filter Monte Carlo Analysis",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 120,
+      "files": false
+    },
+    "impedance_match": {
+      "slug": "impedance-matching",
+      "title": "Broadband Impedance Matching Synthesizer",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 120,
+      "files": true
+    },
+    "magnetics_optimizer": {
+      "slug": "magnetics-optimizer",
+      "title": "Magnetics & Transformer Design Optimizer",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 360,
+      "files": false
+    },
+    "pdn_impedance": {
+      "slug": "pdn-impedance",
+      "title": "PDN Impedance Analyzer & Decoupling Capacitor Optimizer",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 360,
+      "files": false
+    },
+    "radar_detection": {
+      "slug": "radar-detection",
+      "title": "Radar Detection Performance Monte Carlo",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 300,
+      "files": false
+    },
+    "rf_cascade": {
+      "slug": "rf-cascade",
+      "title": "RF Cascade Budget Analyzer",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 180,
+      "files": true
+    },
+    "sat_link_budget": {
+      "slug": "sat-link-budget",
+      "title": "Satellite & Terrestrial Link Budget",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 240,
+      "files": false
+    },
+    "smps_control_loop": {
+      "slug": "smps-control-loop",
+      "title": "SMPS Control Loop Stability Analyzer",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 300,
+      "files": false
+    },
+    "sparam_pipeline": {
+      "slug": "sparam-pipeline",
+      "title": "S-Parameter Analysis Pipeline",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 120,
+      "files": true
+    }
+  }
+}

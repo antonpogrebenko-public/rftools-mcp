@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "sat_link_budget",
+  "x-slug": "sat-link-budget",
+  "x-title": "Satellite & Terrestrial Link Budget",
+  "x-formulaRef": "ITU-R P.618-13, Propagation data and prediction methods required for the design of Earth-space telecommunication systems",
+  "x-checks": [],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "latitude_deg",
+    "longitude_deg"
+  ],
+  "properties": {
+    "linkType": {
+      "type": "string",
+      "enum": [
+        "satellite",
+        "terrestrial"
+      ],
+      "default": "satellite",
+      "x-label": "Link Type"
+    },
+    "frequency_ghz": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 100,
+      "default": 12,
+      "x-label": "Frequency",
+      "x-unit": "GHz",
+      "x-step": 0.1,
+      "x-tooltip": "e.g. 4 = C-band, 12 = Ku-band, 20 = Ka-band, 60 = mmWave"
+    },
+    "eirp_dbw": {
+      "type": "number",
+      "minimum": -10,
+      "maximum": 90,
+      "default": 46,
+      "x-label": "EIRP",
+      "x-unit": "dBW"
+    },
+    "gt_db_k": {
+      "type": "number",
+      "minimum": -30,
+      "maximum": 50,
+      "default": 0,
+      "x-label": "G/T",
+      "x-unit": "dB/K",
+      "x-tooltip": "Receive antenna gain minus system noise temperature (dB/K)"
+    },
+    "distance_km": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 50000,
+      "default": 35786,
+      "x-label": "Path Distance",
+      "x-unit": "km",
+      "x-tooltip": "GEO orbit ≈ 35786 km; LEO ≈ 500–2000 km; terrestrial path in km"
+    },
+    "elevationAngle_deg": {
+      "type": "number",
+      "minimum": 5,
+      "maximum": 90,
+      "default": 45,
+      "x-label": "Elevation Angle",
+      "x-unit": "°",
+      "x-tooltip": "Satellite elevation angle from the earth station. Lower elevation = more atmosphere.",
+      "x-showWhen": {
+        "key": "linkType",
+        "value": "satellite"
+      }
+    },
+    "latitude_deg": {
+      "type": "number",
+      "minimum": -90,
+      "maximum": 90,
+      "x-label": "Site Latitude",
+      "x-unit": "°",
+      "x-tooltip": "North positive. Rain rate, rain height, cloud water and water vapour are read from the ITU-R climate maps at this point."
+    },
+    "longitude_deg": {
+      "type": "number",
+      "minimum": -180,
+      "maximum": 180,
+      "x-label": "Site Longitude",
+      "x-unit": "°",
+      "x-tooltip": "East positive, west negative (New York is −74.0). Required: the climate maps vary with longitude as much as latitude."
+    },
+    "stationHeight_km": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 8,
+      "x-label": "Station Height (optional)",
+      "x-unit": "km",
+      "x-step": 0.01,
+      "x-tooltip": "Height above mean sea level. Leave blank to use the ITU-R P.1511 topographic height at the site."
+    },
+    "polarization": {
+      "type": "string",
+      "enum": [
+        "horizontal",
+        "vertical",
+        "circular"
+      ],
+      "default": "horizontal",
+      "x-label": "Polarization"
+    },
+    "modulation": {
+      "type": "string",
+      "enum": [
+        "bpsk",
+        "qpsk",
+        "8psk",
+        "16qam",
+        "64qam"
+      ],
+      "default": "qpsk",
+      "x-label": "Modulation"
+    },
+    "reqEbN0_db": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 30,
+      "default": 7,
+      "x-label": "Required Eb/N₀",
+      "x-unit": "dB",
+      "x-tooltip": "Required Eb/N₀ for target BER from modem spec sheet"
+    },
+    "dataRate_bps": {
+      "type": "number",
+      "minimum": 1000,
+      "maximum": 10000000000,
+      "default": 10000000,
+      "x-label": "Data Rate",
+      "x-unit": "bps",
+      "x-tooltip": "e.g. 10e6 = 10 Mbps"
+    },
+    "targetAvailability_pct": {
+      "type": "number",
+      "minimum": 90,
+      "maximum": 99.999,
+      "default": 99.5,
+      "x-label": "Target Availability",
+      "x-unit": "%",
+      "x-step": 0.1,
+      "x-tooltip": "99.5% = 43.8 h/yr outage; 99.9% = 8.8 h/yr; 99.99% = 0.88 h/yr"
+    }
+  }
+}

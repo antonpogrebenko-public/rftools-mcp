@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "emi_radiated",
+  "x-slug": "emi-radiated",
+  "x-title": "EMI Radiated Emissions Estimator",
+  "x-formulaRef": null,
+  "x-checks": [],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "standard": {
+      "type": "string",
+      "enum": [
+        "fcc_b",
+        "fcc_a",
+        "cispr32_b",
+        "cispr32_a"
+      ],
+      "default": "fcc_b",
+      "x-label": "Regulatory Standard"
+    },
+    "measDist": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 30,
+      "default": 3,
+      "x-label": "Measurement Distance",
+      "x-unit": "m",
+      "x-step": 0.5,
+      "x-tooltip": "FCC Class B: 3 m. FCC Class A / CISPR: 10 m. Limits scale automatically."
+    },
+    "dmCurrent_mA": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 1000,
+      "default": 10,
+      "x-label": "DM Loop Current (peak)",
+      "x-unit": "mA",
+      "x-step": 0.1,
+      "x-tooltip": "Peak current circulating in the PCB loop (e.g., power rail decoupling current)."
+    },
+    "loopArea_cm2": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 1000,
+      "default": 1,
+      "x-label": "Loop Area",
+      "x-unit": "cm²",
+      "x-step": 0.1,
+      "x-tooltip": "Area of the current loop on the PCB. Smaller = less DM radiation."
+    },
+    "cmCurrent_uA": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 10000,
+      "default": 1,
+      "x-label": "CM Cable Current (peak)",
+      "x-unit": "µA",
+      "x-step": 0.1,
+      "x-tooltip": "Common-mode current on attached cables. Even µA levels can dominate emissions."
+    },
+    "cableLen_m": {
+      "type": "number",
+      "minimum": 0.01,
+      "maximum": 10,
+      "default": 0.5,
+      "x-label": "Cable Length",
+      "x-unit": "m",
+      "x-step": 0.05,
+      "x-tooltip": "Length of the longest unshielded cable attached to the PCB."
+    },
+    "fClk_MHz": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 2000,
+      "default": 100,
+      "x-label": "Clock Frequency",
+      "x-unit": "MHz",
+      "x-step": 1,
+      "x-tooltip": "Fundamental clock frequency. Harmonics are computed up to 1 GHz."
+    },
+    "dutyCycle": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 99,
+      "default": 50,
+      "x-label": "Duty Cycle",
+      "x-unit": "%",
+      "x-step": 1,
+      "x-tooltip": "50% duty cycle suppresses even harmonics. Other values can excite them."
+    },
+    "tRise_ns": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 100,
+      "default": 1,
+      "x-label": "Rise Time",
+      "x-unit": "ns",
+      "x-step": 0.1,
+      "x-tooltip": "Signal 10%–90% rise time. Longer rise times reduce high-frequency harmonics."
+    },
+    "nTrials": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 500000,
+      "default": 100000,
+      "x-label": "Monte Carlo Trials",
+      "x-dimensionless": true,
+      "x-step": 1000,
+      "x-tooltip": "More trials = tighter confidence intervals. 100K is a good balance."
+    },
+    "randomSeed": {
+      "type": "integer",
+      "minimum": 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    }
+  }
+}

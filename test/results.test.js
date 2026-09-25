@@ -11,7 +11,12 @@ import addFormats from 'ajv-formats';
 import { summariseResult, describeSeries } from '../src/summarize.ts';
 import { shapeResult } from '../src/simulation-tools.ts';
 
-const FIXTURE_DIR = '../../frontend/src/components/async-tool/results/__tests__/fixtures/';
+// Vendored copies of frontend/src/components/async-tool/results/__tests__/fixtures/:
+// this repo is also tested from a standalone checkout (.github/workflows/test.yml),
+// where ../../frontend does not exist. See scripts/vendor_shared.sh and
+// test/vendor.test.js, which checks these against the frontend fixtures when
+// that directory is present.
+const FIXTURE_DIR = '../vendor/frontend-fixtures/';
 
 function fixture(name) {
   return JSON.parse(readFileSync(fileURLToPath(new URL(FIXTURE_DIR + name, import.meta.url)), 'utf8'));
@@ -87,7 +92,7 @@ test('a summarised job result keeps its provenance whole (spec result-provenance
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   const validate = ajv.compile(JSON.parse(readFileSync(
-    fileURLToPath(new URL('../../shared/result-provenance.schema.json', import.meta.url)), 'utf8',
+    fileURLToPath(new URL('../vendor/shared/result-provenance.schema.json', import.meta.url)), 'utf8',
   )));
   const provenance = jobProvenance();
   assert.ok(validate(provenance), ajv.errorsText(validate.errors));

@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Result provenance",
+  "description": "The provenance envelope every computed result carries: an API calculator result, each batch item, an MCP calculator result and an async job result (openspec api-metering, design Decision 6; spec api-access/result-provenance). It says what computed the values, from which published formula, under which assumptions, whether the inputs lay inside the range the method is stated for, which engine version computed them and when. It is the existing `provenance` object of the job result envelope, extended; no result carries two.",
+  "$comment": "Hand-written, and canonical. scripts/sync_job_schemas.ts copies it byte for byte into backend/src/schemas/ and backend/worker/schemas/, and its --check (run by scripts/pre-deploy-check.sh) fails on a copy that differs. After editing, run: cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts. Members are added, never renamed or removed: additionalProperties stays true so that a reader built against this version accepts a result carrying a later member.",
+  "type": "object",
+  "required": [
+    "method",
+    "version",
+    "formulaRef",
+    "assumptions",
+    "validRange",
+    "computedAt",
+    "inputs",
+    "seed",
+    "elapsedSeconds"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "method": {
+      "description": "A stable identifier of what computed the values: `calculator:<slug>` for a calculator; for a job, the handler's stated method (`openems_express`, `nec2`, `analytical`, ...) or its module name.",
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "description": "The engine version that computed the values, as `<component>@<revision>`: `api@<sha12>`, `web@<sha12>`, `mcp@<package version>`, `worker@<sha12>`. Derived at build or deploy time, never typed; a component that cannot determine its revision says so (`api@dev`) rather than claiming one.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*@\\S+$"
+    },
+    "formulaRef": {
+      "description": "The published source of the formula or method, or null where none is named. For a calculator: `formula.reference`, else its first methodology reference as `<title>, <source>`. For a job: the tool's first methodology reference (the job schema's `x-formulaRef`), unless the handler records a more specific one.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "assumptions": {
+      "description": "What the method assumes, as stable codes with a sentence each. May be empty; an empty list states no assumption, it does not certify that there are none.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/assumption" }
+    },
+    "validRange": { "$ref": "#/$defs/validRange" },
+    "computedAt": {
+      "description": "When the values were computed: ISO-8601 in UTC, millisecond precision, `Z` suffix (what JavaScript's `Date.prototype.toISOString` writes).",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "inputs": {
+      "description": "The inputs the values were computed from, after defaults were applied.",
+      "type": "object"
+    },
+    "seed": {
+      "description": "The seed a randomised computation used; null for anything not randomised, which includes every calculator.",
+      "type": ["integer", "null"]
+    },
+    "elapsedSeconds": {
+      "description": "How long the computation took, in seconds.",
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "assumption": {
+      "description": "One thing the method assumes. `code` is stable and kebab-case, for a reader to group or filter on; `text` is the sentence a person reads.",
+      "type": "object",
+      "required": ["code", "text"],
+      "additionalProperties": true,
+      "properties": {
+        "code": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "bound": {
+      "description": "The range one input is stated for. A null end states no bound on that side.",
+      "type": "object",
+      "required": ["min", "max", "unit"],
+      "additionalProperties": true,
+      "properties": {
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "unit": {
+          "description": "The input's unit as the calculator or tool declares it; empty for a dimensionless quantity.",
+          "type": "string"
+        }
+      }
+    },
+    "fittedModel": {
+      "description": "The validated range of a fitted model the values rest on: the geometry the fit was measured over, its worst-case error inside that range, and whether these inputs lay inside it.",
+      "type": "object",
+      "required": ["description", "worstCaseError", "inside"],
+      "additionalProperties": true,
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "worstCaseError": {
+          "description": "Worst-case error inside the validated range, as a fraction (0.02 is 2%).",
+          "type": "number",
+          "minimum": 0
+        },
+        "inside": {
+          "description": "Whether the inputs lay inside the validated range; null when it could not be determined.",
+          "type": ["boolean", "null"]
+        }
+      }
+    },
+    "validRange": {
+      "description": "The input bounds the method is stated for and whether the given inputs lay inside them. `inside`: every stated bound holds and any fitted model reports inside. `outside`: an input lies outside its bound (named in `outside`) or the fitted model reports outside. `unknown`: no bound is stated, or whether they hold could not be determined.",
+      "type": "object",
+      "required": ["status", "bounds", "outside", "model"],
+      "additionalProperties": true,
+      "properties": {
+        "status": { "enum": ["inside", "outside", "unknown"] },
+        "bounds": {
+          "description": "Input key to its stated range.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/bound" }
+        },
+        "outside": {
+          "description": "The input keys whose values lay outside their bounds.",
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "model": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/fittedModel" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["status"],
+            "properties": { "status": { "const": "inside" } }
+          },
+          "then": {
+            "properties": {
+              "outside": { "maxItems": 0 },
+              "model": {
+                "anyOf": [
+                  { "type": "null" },
+                  { "type": "object", "properties": { "inside": { "const": true } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["status"],
+            "properties": { "status": { "const": "outside" } }
+          },
+          "then": {
+            "anyOf": [
+              { "required": ["outside"], "properties": { "outside": { "minItems": 1 } } },
+              {
+                "required": ["model"],
+                "properties": {
+                  "model": {
+                    "type": "object",
+                    "required": ["inside"],
+                    "properties": { "inside": { "const": false } }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

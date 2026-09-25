@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "rf_cascade",
+  "x-slug": "rf-cascade",
+  "x-title": "RF Cascade Budget Analyzer",
+  "x-formulaRef": "Noise Figures of Radio Receivers, Harald T. Friis, Proc. IRE 32(7), pp. 419–422 (1944)",
+  "x-checks": [],
+  "x-files": {
+    "min": 0,
+    "max": 12,
+    "extensions": [
+      ".s2p"
+    ],
+    "label": "Optional: upload .s2p files and add `\"sparamFile\": \"filename.s2p\"` to a stage in the JSON above to override its gain_db from |S21|²."
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stages"
+  ],
+  "properties": {
+    "stages": {
+      "type": "string",
+      "x-label": "Stage Definitions (JSON)",
+      "x-tooltip": "Array of stage objects. type: \"amp\"|\"filter\"|\"attenuator\"|\"mixer\"|\"switch\". Passive stages (filter/attenuator/switch) automatically set NF = |gain|."
+    },
+    "nfSpec_db": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 50,
+      "default": 6,
+      "x-label": "NF Spec (max)",
+      "x-unit": "dB"
+    },
+    "gainSpec_db": {
+      "type": "number",
+      "minimum": -30,
+      "maximum": 100,
+      "x-derived": "no spec (absent means not judged)",
+      "x-label": "Gain Spec (min)",
+      "x-unit": "dB"
+    },
+    "iip3Spec_dbm": {
+      "type": "number",
+      "minimum": -40,
+      "maximum": 50,
+      "x-derived": "no spec (absent means not judged)",
+      "x-label": "IIP3 Spec (min)",
+      "x-unit": "dBm"
+    },
+    "inputPower_dbm": {
+      "type": "number",
+      "minimum": -130,
+      "maximum": 20,
+      "default": -70,
+      "x-label": "Input Signal Power",
+      "x-unit": "dBm"
+    },
+    "bandwidth_hz": {
+      "type": "number",
+      "minimum": 1000,
+      "maximum": 10000000000,
+      "default": 10000000,
+      "x-label": "Noise Bandwidth",
+      "x-unit": "Hz",
+      "x-tooltip": "e.g. 10e6 = 10 MHz IF bandwidth"
+    },
+    "analysisFreq_hz": {
+      "type": "number",
+      "default": 0,
+      "x-label": "Analysis Freq (when using .s2p)",
+      "x-unit": "Hz",
+      "x-tooltip": "Frequency at which to sample |S21|² from uploaded Touchstone files. 0 = auto (mid-band of the file)."
+    },
+    "snrMin_db": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 40,
+      "default": 0,
+      "x-label": "SFDR Min SNR",
+      "x-unit": "dB",
+      "x-tooltip": "SNR required at the detector, used as the SFDR reference floor. 0 = textbook SFDR referenced to the noise floor. Set e.g. 12 dB to reference SFDR to a usable-sensitivity floor instead."
+    }
+  }
+}

@@ -33819,7 +33819,9 @@ var package_default = {
   scripts: {
     test: "node --test test/*.test.js",
     build: "bash scripts/build.sh",
-    "build:check": "bash scripts/build.sh --check"
+    "build:check": "bash scripts/build.sh --check",
+    vendor: "bash scripts/vendor_shared.sh",
+    "vendor:check": "bash scripts/vendor_shared.sh --check"
   },
   bin: {
     "rftools-mcp": "dist/mcp-server.cjs"
@@ -34045,7 +34047,7 @@ async function errorFromResponse(res) {
   return new ApiError(res.status, kindForStatus(res.status), detail, retryAfter);
 }
 
-// ../shared/job-schemas/index.json
+// ../rftools-mcp/vendor/shared/job-schemas/index.json
 var job_schemas_default = {
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
   checks: [
@@ -34203,7 +34205,7 @@ var job_schemas_default = {
   }
 };
 
-// ../shared/job-schemas/antenna_sim.json
+// ../rftools-mcp/vendor/shared/job-schemas/antenna_sim.json
 var antenna_sim_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -34372,7 +34374,7 @@ var antenna_sim_default = {
   }
 };
 
-// ../shared/job-schemas/emi_radiated.json
+// ../rftools-mcp/vendor/shared/job-schemas/emi_radiated.json
 var emi_radiated_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -34498,7 +34500,7 @@ var emi_radiated_default = {
   }
 };
 
-// ../shared/job-schemas/eye_diagram.json
+// ../rftools-mcp/vendor/shared/job-schemas/eye_diagram.json
 var eye_diagram_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -34550,7 +34552,7 @@ var eye_diagram_default = {
   }
 };
 
-// ../shared/job-schemas/fdtd_sparam.json
+// ../rftools-mcp/vendor/shared/job-schemas/fdtd_sparam.json
 var fdtd_sparam_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -34764,7 +34766,7 @@ var fdtd_sparam_default = {
   }
 };
 
-// ../shared/job-schemas/filter_monte_carlo.json
+// ../rftools-mcp/vendor/shared/job-schemas/filter_monte_carlo.json
 var filter_monte_carlo_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -34892,7 +34894,7 @@ var filter_monte_carlo_default = {
   }
 };
 
-// ../shared/job-schemas/impedance_match.json
+// ../rftools-mcp/vendor/shared/job-schemas/impedance_match.json
 var impedance_match_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -35017,7 +35019,7 @@ var impedance_match_default = {
   }
 };
 
-// ../shared/job-schemas/magnetics_optimizer.json
+// ../rftools-mcp/vendor/shared/job-schemas/magnetics_optimizer.json
 var magnetics_optimizer_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -35179,7 +35181,7 @@ var magnetics_optimizer_default = {
   }
 };
 
-// ../shared/job-schemas/pdn_impedance.json
+// ../rftools-mcp/vendor/shared/job-schemas/pdn_impedance.json
 var pdn_impedance_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -35320,7 +35322,7 @@ var pdn_impedance_default = {
   }
 };
 
-// ../shared/job-schemas/radar_detection.json
+// ../rftools-mcp/vendor/shared/job-schemas/radar_detection.json
 var radar_detection_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -35463,7 +35465,7 @@ var radar_detection_default = {
   }
 };
 
-// ../shared/job-schemas/rf_cascade.json
+// ../rftools-mcp/vendor/shared/job-schemas/rf_cascade.json
 var rf_cascade_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -35551,7 +35553,7 @@ var rf_cascade_default = {
   }
 };
 
-// ../shared/job-schemas/sat_link_budget.json
+// ../rftools-mcp/vendor/shared/job-schemas/sat_link_budget.json
 var sat_link_budget_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -35703,7 +35705,7 @@ var sat_link_budget_default = {
   }
 };
 
-// ../shared/job-schemas/smps_control_loop.json
+// ../rftools-mcp/vendor/shared/job-schemas/smps_control_loop.json
 var smps_control_loop_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
@@ -35963,7 +35965,7 @@ var smps_control_loop_default = {
   }
 };
 
-// ../shared/job-schemas/sparam_pipeline.json
+// ../rftools-mcp/vendor/shared/job-schemas/sparam_pipeline.json
 var sparam_pipeline_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $generated: "GENERATED FILE \u2014 do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",

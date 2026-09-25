@@ -1,0 +1,503 @@
+{
+ "bestDesign": {
+  "N1": 14,
+  "N2": 4,
+  "airGapMm": 0.403,
+  "awgPrimary": 21,
+  "awgSecondary": 14,
+  "bAc_T": 0.0778,
+  "bPeak_T": 0.1557,
+  "bSat_T": 0.39,
+  "coreName": "RM10 / N87",
+  "fillFactor": 0.37,
+  "geometry": "RM",
+  "inductance_uH": 58.32,
+  "interleaving": "Full",
+  "lossModel": "verified",
+  "material": "N87",
+  "saturationMarginPct": 50.1,
+  "sources": {
+   "core": "TDK RM 10",
+   "material": "TDK SIFERRIT material N87 data sheet (June 2025)",
+   "materialNote": null,
+   "thermalResistance": "TDK Ferrites and accessories data book (2013-05-01) \u00a76.6"
+  },
+  "thermalResistance_KW": 40.0,
+  "volume_cm3": 3.36
+ },
+ "derived": {
+  "basis": "DCM boundary: iPeak = 2*Pin/(Vin*D), L = Vin*D/(fSw*iPeak)",
+  "iPeak_A": 3.704,
+  "inductance_uH": 58.32,
+  "note": "A flyback's magnetizing inductance and peak current follow from the converter at the DCM boundary, so inductance_uH and iPeak_A are not read for this topology. They size the design: its peak flux is L*iPeak/(N1*Ae)."
+ },
+ "evolutionHistory": [
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 0,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 7,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 14,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 21,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 28,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 35,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 42,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 49,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 56,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 63,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 70,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 77,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 84,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 91,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 98,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 105,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 112,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 119,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 126,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 133,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 140,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 147,
+   "hypervolume": 790.9201
+  },
+  {
+   "bestLoss": 0.5092,
+   "bestVolume": 1.86,
+   "gen": 150,
+   "hypervolume": 790.9201
+  }
+ ],
+ "losses": {
+  "coreLoss_W": 0.1962,
+  "efficiency_pct": 98.58,
+  "totalLoss_W": 0.5186,
+  "windingLoss_W": 0.3225
+ },
+ "operatingPoints": [
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 20,
+   "loss_W": 0.209,
+   "tempRise_C": 8.4,
+   "vIn": 48.0
+  },
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 40,
+   "loss_W": 0.248,
+   "tempRise_C": 9.9,
+   "vIn": 48.0
+  },
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 60,
+   "loss_W": 0.312,
+   "tempRise_C": 12.5,
+   "vIn": 48.0
+  },
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 80,
+   "loss_W": 0.403,
+   "tempRise_C": 16.1,
+   "vIn": 48.0
+  },
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 100,
+   "loss_W": 0.519,
+   "tempRise_C": 20.7,
+   "vIn": 48.0
+  },
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 20,
+   "loss_W": 0.208,
+   "tempRise_C": 8.3,
+   "vIn": 52.8
+  },
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 40,
+   "loss_W": 0.243,
+   "tempRise_C": 9.7,
+   "vIn": 52.8
+  },
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 60,
+   "loss_W": 0.302,
+   "tempRise_C": 12.1,
+   "vIn": 52.8
+  },
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 80,
+   "loss_W": 0.385,
+   "tempRise_C": 15.4,
+   "vIn": 52.8
+  },
+  {
+   "bPeak_T": 0.1557,
+   "loadPct": 100,
+   "loss_W": 0.491,
+   "tempRise_C": 19.6,
+   "vIn": 52.8
+  }
+ ],
+ "params": {
+  "Iout": 3.0,
+  "Vin": 48.0,
+  "Vout": 12.0,
+  "fSw": 100000.0,
+  "topology": "flyback_xfmr"
+ },
+ "paretoFront": [
+  {
+   "design": {
+    "N1": 14,
+    "N2": 4,
+    "airGapMm": 0.497,
+    "awgPrimary": 14,
+    "awgSecondary": 14,
+    "bAc_T": 0.0631,
+    "bPeak_T": 0.1262,
+    "bSat_T": 0.41,
+    "coreName": "PQ26/20 / N97",
+    "fillFactor": 0.315,
+    "geometry": "PQ",
+    "inductance_uH": 58.32,
+    "interleaving": "P-S-P",
+    "lossModel": "verified",
+    "material": "N97",
+    "saturationMarginPct": 61.5,
+    "sources": {
+     "core": "TDK PQ 26/20",
+     "material": "TDK SIFERRIT material N97 data sheet (June 2025)",
+     "materialNote": null,
+     "thermalResistance": "TDK Ferrites and accessories data book (2013-05-01) \u00a76.6"
+    },
+    "thermalResistance_KW": 32.0,
+    "volume_cm3": 5.44
+   },
+   "efficiency_pct": 98.61,
+   "totalLoss_W": 0.5092,
+   "volume_cm3": 5.44
+  },
+  {
+   "design": {
+    "N1": 14,
+    "N2": 4,
+    "airGapMm": 0.403,
+    "awgPrimary": 21,
+    "awgSecondary": 14,
+    "bAc_T": 0.0778,
+    "bPeak_T": 0.1557,
+    "bSat_T": 0.39,
+    "coreName": "RM10 / N87",
+    "fillFactor": 0.37,
+    "geometry": "RM",
+    "inductance_uH": 58.32,
+    "interleaving": "Full",
+    "lossModel": "verified",
+    "material": "N87",
+    "saturationMarginPct": 50.1,
+    "sources": {
+     "core": "TDK RM 10",
+     "material": "TDK SIFERRIT material N87 data sheet (June 2025)",
+     "materialNote": null,
+     "thermalResistance": "TDK Ferrites and accessories data book (2013-05-01) \u00a76.6"
+    },
+    "thermalResistance_KW": 40.0,
+    "volume_cm3": 3.36
+   },
+   "efficiency_pct": 98.58,
+   "totalLoss_W": 0.5186,
+   "volume_cm3": 3.36
+  },
+  {
+   "design": {
+    "N1": 14,
+    "N2": 4,
+    "airGapMm": 0.254,
+    "awgPrimary": 18,
+    "awgSecondary": 14,
+    "bAc_T": 0.1205,
+    "bPeak_T": 0.2411,
+    "bSat_T": 0.41,
+    "coreName": "PQ20/16 / N97",
+    "fillFactor": 0.354,
+    "geometry": "PQ",
+    "inductance_uH": 58.32,
+    "interleaving": "P-S-P",
+    "lossModel": "verified",
+    "material": "N97",
+    "saturationMarginPct": 26.5,
+    "sources": {
+     "core": "TDK PQ 20/16",
+     "material": "TDK SIFERRIT material N97 data sheet (June 2025)",
+     "materialNote": null,
+     "thermalResistance": "TDK Ferrites and accessories data book (2013-05-01) \u00a76.6"
+    },
+    "thermalResistance_KW": 51.0,
+    "volume_cm3": 2.37
+   },
+   "efficiency_pct": 98.5,
+   "totalLoss_W": 0.5496,
+   "volume_cm3": 2.37
+  },
+  {
+   "design": {
+    "N1": 14,
+    "N2": 4,
+    "airGapMm": 0.261,
+    "awgPrimary": 23,
+    "awgSecondary": 16,
+    "bAc_T": 0.1189,
+    "bPeak_T": 0.2377,
+    "bSat_T": 0.39,
+    "coreName": "RM8 / N87",
+    "fillFactor": 0.369,
+    "geometry": "RM",
+    "inductance_uH": 58.32,
+    "interleaving": "P-S-P",
+    "lossModel": "verified",
+    "material": "N87",
+    "saturationMarginPct": 23.8,
+    "sources": {
+     "core": "TDK RM 8",
+     "material": "TDK SIFERRIT material N87 data sheet (June 2025)",
+     "materialNote": null,
+     "thermalResistance": "TDK Ferrites and accessories data book (2013-05-01) \u00a76.6"
+    },
+    "thermalResistance_KW": 57.0,
+    "volume_cm3": 1.86
+   },
+   "efficiency_pct": 98.43,
+   "totalLoss_W": 0.5735,
+   "volume_cm3": 1.86
+  }
+ ],
+ "provenance": {
+  "assumptions": [],
+  "computedAt": "2026-09-24T20:35:25.711Z",
+  "elapsedSeconds": 6.164,
+  "formulaRef": null,
+  "inputs": {
+   "Iout": 3.0,
+   "Tamb": 40.0,
+   "Tmax": 100.0,
+   "Vin": 48.0,
+   "Vout": 12.0,
+   "dutyCycle": 0.45,
+   "fSw": 100000.0,
+   "objectiveWeight": 0.3,
+   "topology": "flyback_xfmr"
+  },
+  "method": "magnetics_optimizer",
+  "seed": 16859571143123332537,
+  "validRange": {
+   "bounds": {
+    "Iout": {
+     "max": 100,
+     "min": 0.1,
+     "unit": "A"
+    },
+    "Tamb": {
+     "max": 85,
+     "min": -40,
+     "unit": "\u00b0C"
+    },
+    "Tmax": {
+     "max": 200,
+     "min": 60,
+     "unit": "\u00b0C"
+    },
+    "Vin": {
+     "max": 1000,
+     "min": 1,
+     "unit": "V"
+    },
+    "Vout": {
+     "max": 999,
+     "min": 0.5,
+     "unit": "V"
+    },
+    "dutyCycle": {
+     "max": 0.9,
+     "min": 0.05,
+     "unit": ""
+    },
+    "fSw": {
+     "max": 10000000,
+     "min": 1000,
+     "unit": "Hz"
+    },
+    "generations": {
+     "max": 500,
+     "min": 10,
+     "unit": ""
+    },
+    "iPeak_A": {
+     "max": null,
+     "min": 0.01,
+     "unit": "A"
+    },
+    "inductance_uH": {
+     "max": null,
+     "min": 0.1,
+     "unit": "\u00b5H"
+    },
+    "objectiveWeight": {
+     "max": 1,
+     "min": 0,
+     "unit": ""
+    },
+    "population": {
+     "max": 500,
+     "min": 20,
+     "unit": ""
+    },
+    "randomSeed": {
+     "max": null,
+     "min": 0,
+     "unit": ""
+    }
+   },
+   "model": null,
+   "outside": [],
+   "status": "inside"
+  },
+  "version": "worker@fixture"
+ },
+ "summary": {
+  "coresEvaluated": 104,
+  "feasiblePct": 100.0,
+  "generations": 150,
+  "paretoSize": 4,
+  "population": 200,
+  "runtime_s": 6.2,
+  "topology": "flyback_xfmr"
+ },
+ "thermal": {
+  "ambientTemp_C": 40.0,
+  "junctionTemp_C": 60.7,
+  "pass": true,
+  "tMax_C": 100.0,
+  "tempRise_C": 20.7
+ },
+ "warnings": [
+  {
+   "code": "tier_bound",
+   "message": "The optimiser population was set to 200 by the free tier, not by anything in the request. A higher tier computes this with more."
+  },
+  {
+   "code": "tier_bound",
+   "message": "The optimiser generation count was set to 150 by the free tier, not by anything in the request. A higher tier computes this with more."
+  }
+ ]
+}

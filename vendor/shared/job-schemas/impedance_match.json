@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "impedance_match",
+  "x-slug": "impedance-matching",
+  "x-title": "Broadband Impedance Matching Synthesizer",
+  "x-formulaRef": "Microwave Engineering, 4th ed., David M. Pozar (2011), Chapter 5 — Impedance Matching and Tuning",
+  "x-checks": [
+    "sweep_stop_after_start"
+  ],
+  "x-files": {
+    "min": 0,
+    "max": 2,
+    "extensions": [
+      ".s2p"
+    ]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "sourceR": {
+      "type": "number",
+      "minimum": 0.1,
+      "default": 50,
+      "x-label": "Source Resistance",
+      "x-unit": "Ω",
+      "x-tooltip": "Real part of source impedance"
+    },
+    "sourceX": {
+      "type": "number",
+      "default": 0,
+      "x-label": "Source Reactance",
+      "x-unit": "Ω",
+      "x-tooltip": "Imaginary part of source impedance"
+    },
+    "loadR": {
+      "type": "number",
+      "minimum": 0.1,
+      "default": 200,
+      "x-label": "Load Resistance",
+      "x-unit": "Ω"
+    },
+    "loadX": {
+      "type": "number",
+      "default": 0,
+      "x-label": "Load Reactance",
+      "x-unit": "Ω"
+    },
+    "freqStart": {
+      "type": "number",
+      "minimum": 1000,
+      "default": 800000000,
+      "x-label": "Freq Start",
+      "x-unit": "Hz",
+      "x-tooltip": "Lower bound of matching band"
+    },
+    "freqStop": {
+      "type": "number",
+      "minimum": 1000,
+      "default": 1200000000,
+      "x-label": "Freq Stop",
+      "x-unit": "Hz"
+    },
+    "topology": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "L",
+        "Pi",
+        "T",
+        "ladder_2",
+        "ladder_3"
+      ],
+      "default": "L",
+      "x-label": "Topology"
+    },
+    "maxQ": {
+      "type": "number",
+      "minimum": 0.1,
+      "x-label": "Max Q Factor",
+      "x-dimensionless": true,
+      "x-step": 0.5,
+      "x-tooltip": "Upper bound on each section's loaded Q; omit for unconstrained. Ladder networks are measured against the ceiling but not constrained by it."
+    },
+    "componentSeries": {
+      "type": "string",
+      "enum": [
+        "E12",
+        "E24",
+        "E96",
+        "ideal"
+      ],
+      "default": "E24",
+      "x-label": "Component Series",
+      "x-tooltip": "Standard values every element is snapped to before the headline return loss is computed. E24 is what the tool has always used."
+    },
+    "targetRL": {
+      "type": "number",
+      "minimum": -60,
+      "maximum": 0,
+      "default": -15,
+      "x-label": "Target Return Loss",
+      "x-unit": "dB",
+      "x-hidden": true,
+      "x-step": 0.5,
+      "x-tooltip": "Return loss the synthesiser aims for across the band; a negative number of dB."
+    },
+    "sourceFileRole": {
+      "type": "string",
+      "enum": [
+        "none",
+        "source",
+        "load",
+        "both"
+      ],
+      "default": "none",
+      "x-label": "Touchstone File Role",
+      "x-hidden": true,
+      "x-tooltip": "What an uploaded .s2p describes. Ignored when no file is uploaded."
+    }
+  }
+}

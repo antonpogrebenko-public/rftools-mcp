@@ -19,7 +19,7 @@ import { RESERVED_ARG_NAMES } from '../src/simulation-tools.ts';
 import { connectedServer, textOf, jsonOf } from './helpers.js';
 
 const indexJson = JSON.parse(
-  readFileSync(fileURLToPath(new URL('../../shared/job-schemas/index.json', import.meta.url)), 'utf8'),
+  readFileSync(fileURLToPath(new URL('../vendor/shared/job-schemas/index.json', import.meta.url)), 'utf8'),
 );
 const CONTRACT_COUNT = Object.keys(indexJson.jobTypes).length;
 
