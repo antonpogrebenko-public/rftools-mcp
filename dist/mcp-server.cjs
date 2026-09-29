@@ -180,7 +180,7 @@ var microstripImpedance = {
   },
   visualization: { type: "cross-section", layers: ["trace", "substrate", "ground"] },
   relatedCalculators: ["vswr-return-loss", "trace-width-current", "rf-link-budget"],
-  relatedTools: ["impedance-matching", "pdn-impedance"],
+  relatedTools: ["impedance-matching", "pdn-impedance", "fdtd-sparam"],
   relatedBlogPosts: ["coax-loss", "eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"],
   verificationData: [
     {
@@ -4205,7 +4205,7 @@ var buckConverter = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["ldo-thermal", "voltage-divider"],
-  relatedTools: ["smps-control-loop"],
+  relatedTools: ["smps-control-loop", "magnetics-optimizer"],
   relatedBlogPosts: ["buck-converter-design-guide", "magnetics-optimizer-transformer-design", "smps-control-loop-stability-buck-converter"],
   verificationData: [
     {
@@ -5717,7 +5717,6 @@ var patchAntenna = {
     "microstrip-impedance",
     "rf-link-budget"
   ],
-  relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" },
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -9449,7 +9448,6 @@ var antennaBeamwidth = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["eirp-calculator", "dipole-antenna", "patch-antenna"],
-  relatedTools: ["antenna-sim"],
   relatedBlogPosts: ["power-density"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
@@ -12407,7 +12405,6 @@ var hornAntenna = {
   visualization: { type: "none" },
   relatedCalculators: ["parabolic-dish-antenna", "eirp-calculator", "antenna-beamwidth", "yagi-antenna", "dipole-antenna"],
   relatedBlogPosts: ["yagi-antenna-simulation-2m-band"],
-  relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
   ],
@@ -12537,7 +12534,6 @@ var parabolicDishAntenna = {
   visualization: { type: "none" },
   relatedCalculators: ["horn-antenna", "eirp-calculator", "rf-link-budget"],
   relatedBlogPosts: ["antenna-beamwidth"],
-  relatedTools: ["antenna-sim"],
   liveWidgets: [
     { type: "space-weather", position: "above-outputs" }
   ],
@@ -24843,6 +24839,7 @@ var radiatedEmissionEstimate = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["shielding-effectiveness", "emi-margin-budget", "ground-plane-impedance"],
+  relatedTools: ["emi-radiated"],
   relatedBlogPosts: ["chassis-resonance", "emc-fcc-ce-testing-guide", "emi-radiated-emissions-pcb-fcc-compliance"]
 };
 
