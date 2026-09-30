@@ -24007,6 +24007,10 @@ var ethernetCable = {
 // src/lib/calculators/pcb/power-plane-impedance.ts
 var EPS0 = 88541878128e-22;
 var MU0 = 125663706212e-17;
+var C0 = 299792458;
+function cavityModeHz(m, n, lengthM, widthM, er) {
+  return C0 / (2 * Math.sqrt(er)) * Math.sqrt((m / lengthM) ** 2 + (n / widthM) ** 2);
+}
 function calculatePowerPlaneImpedance(inputs) {
   const { length, width, dielectric, er, frequency } = inputs;
   if (length <= 0 || width <= 0) {
@@ -24018,19 +24022,24 @@ function calculatePowerPlaneImpedance(inputs) {
   if (er <= 0) {
     return { values: {}, errors: ["Dielectric constant must be positive"] };
   }
-  const areaM2 = length * 1e-3 * (width * 1e-3);
+  const lengthM = length * 1e-3;
+  const widthM = width * 1e-3;
+  const areaM2 = lengthM * widthM;
   const dM = dielectric * 1e-3;
   const capacitance = er * EPS0 * areaM2 / dM * 1e9;
   const inductance = MU0 * dM * (length / width) * 1e9;
-  const omega_res_sq = 1 / (inductance * 1e-9 * capacitance * 1e-9);
-  const resonantFrequency = Math.sqrt(omega_res_sq) / (2 * Math.PI) / 1e6;
   const omega = 2 * Math.PI * frequency * 1e6;
   const impedance = omega * inductance * 1e-9 * 1e3;
+  const cavityResonanceTM10 = cavityModeHz(1, 0, lengthM, widthM, er) / 1e6;
+  const cavityResonanceTM01 = cavityModeHz(0, 1, lengthM, widthM, er) / 1e6;
+  const firstCavityResonance = Math.min(cavityResonanceTM10, cavityResonanceTM01);
   return {
     values: {
       capacitance,
       impedance,
-      resonantFrequency,
+      firstCavityResonance,
+      cavityResonanceTM10,
+      cavityResonanceTM01,
       inductance
     }
   };
@@ -24092,7 +24101,7 @@ var powerPlaneImpedance = {
       defaultValue: 100,
       min: 1e-3,
       max: 1e4,
-      tooltip: "Frequency at which to evaluate plane impedance"
+      tooltip: "Frequency at which to evaluate the reactance \u03C9L of the plane inductance"
     }
   ],
   outputs: [
@@ -24106,19 +24115,35 @@ var powerPlaneImpedance = {
     },
     {
       key: "impedance",
-      label: "Impedance at Frequency",
-      symbol: "Z",
+      label: "Reactance of Plane Inductance (\u03C9L)",
+      symbol: "X_L",
       unit: "m\u03A9",
       precision: 2,
-      tooltip: "Inductive reactance of the plane at the given frequency"
+      tooltip: "\u03C9L = 2\u03C0f\xB7L of the edge-to-edge plane inductance at the given frequency. It is not the impedance a device sees at a point on the plane, which also depends on the plane capacitance, the feed, the decoupling capacitors and the cavity resonances."
     },
     {
-      key: "resonantFrequency",
-      label: "Self-Resonant Frequency",
-      symbol: "f_res",
+      key: "firstCavityResonance",
+      label: "First Cavity Resonance (half-wave along the longer side)",
+      symbol: "f_1",
       unit: "MHz",
       precision: 1,
-      tooltip: "Frequency at which plane capacitance resonates with plane inductance"
+      tooltip: "The lowest resonance of the plane pair: the lower of TM\u2081\u2080 and TM\u2080\u2081, a half wavelength in the dielectric along the longer side of the plane."
+    },
+    {
+      key: "cavityResonanceTM10",
+      label: "Cavity Resonance TM\u2081\u2080 (half-wave along the length)",
+      symbol: "f_10",
+      unit: "MHz",
+      precision: 1,
+      tooltip: "TM\u2081\u2080 cavity mode, c/(2\xB7l\xB7\u221A\u03B5r): one half wavelength along the plane length, open edges."
+    },
+    {
+      key: "cavityResonanceTM01",
+      label: "Cavity Resonance TM\u2080\u2081 (half-wave across the width)",
+      symbol: "f_01",
+      unit: "MHz",
+      precision: 1,
+      tooltip: "TM\u2080\u2081 cavity mode, c/(2\xB7w\xB7\u221A\u03B5r): one half wavelength across the plane width, open edges."
     },
     {
       key: "inductance",
@@ -24126,21 +24151,22 @@ var powerPlaneImpedance = {
       symbol: "L_plane",
       unit: "nH",
       precision: 3,
-      tooltip: "Plane-pair inductance \u03BC0\xB7d\xB7(length/width), for current flowing along the length"
+      tooltip: "Plane-pair inductance \u03BC0\xB7d\xB7(length/width): the sheet inductance \u03BC0\xB7d per square times the length/width squares, for current flowing uniformly along the length from edge to edge"
     }
   ],
   calculate: calculatePowerPlaneImpedance,
   formula: {
-    primary: "C = \\frac{\\varepsilon_r \\varepsilon_0 A}{d},\\quad L = \\mu_0 d \\frac{l}{w},\\quad f_{res} = \\frac{1}{2\\pi\\sqrt{LC}}",
+    primary: "C = \\frac{\\varepsilon_r \\varepsilon_0 A}{d},\\quad L = \\mu_0 d \\frac{l}{w},\\quad X_L = 2\\pi f L,\\quad f_{mn} = \\frac{c}{2\\sqrt{\\varepsilon_r}}\\sqrt{\\left(\\frac{m}{l}\\right)^2 + \\left(\\frac{n}{w}\\right)^2}",
     variables: [
       { symbol: "\u03B5r", description: "Dielectric constant", unit: "" },
       { symbol: "A", description: "Plane area", unit: "m\xB2" },
       { symbol: "d", description: "Dielectric thickness", unit: "m" },
       { symbol: "\u03BC0", description: "Vacuum permeability (\u03BC0\xB7d is the sheet inductance per square)", unit: "H/m" },
       { symbol: "l/w", description: "Plane length over width: the number of squares along the current path", unit: "" },
-      { symbol: "f_res", description: "Self-resonant frequency", unit: "Hz" }
+      { symbol: "f_mn", description: "Cavity resonance of mode TMmn: m half-waves along the length l, n across the width w (TM\u2081\u2080: m = 1, n = 0)", unit: "Hz" },
+      { symbol: "c", description: "Speed of light in vacuum, 299 792 458 m/s", unit: "m/s" }
     ],
-    reference: "Bogatin, Signal and Power Integrity \u2014 Simplified (sheet inductance of a plane pair, \u03BC0\xB7h per square); Smith & Bogatin, Principles of Power Integrity for PDN Design"
+    reference: "Swaminathan & Engin, Power Integrity Modeling and Design for Semiconductors and Systems (cavity resonances of a rectangular plane pair); Novak & Miller, Frequency-Domain Characterization of Power Distribution Networks; Bogatin, Signal and Power Integrity \u2014 Simplified (sheet inductance of a plane pair, \u03BC0\xB7h per square)"
   },
   assumptions: [
     {
@@ -24148,12 +24174,16 @@ var powerPlaneImpedance = {
       text: "The plane pair is an ideal parallel-plate structure: C = \u03B50\xB7\u03B5r\xB7A/d with no fringing, and L = \u03BC0\xB7d\xB7(l/w) for current spreading uniformly across the width and flowing along the length."
     },
     {
-      code: "lumped-resonance",
-      text: "The self-resonant frequency is the lumped resonance 1/(2\u03C0\u221A(LC)) of that capacitance and inductance, which reduces to c/(2\u03C0\xB7l\xB7\u221A\u03B5r); it is not the first cavity mode of the plane pair, c/(2\xB7l\xB7\u221A\u03B5r)."
+      code: "open-edge-cavity",
+      text: "The cavity resonances are those of an ideal rectangular plane pair with open (magnetic-wall) edges, f_mn = c/(2\u221A\u03B5r)\xB7\u221A((m/l)\xB2 + (n/w)\xB2): fringing, vias, cut-outs, decoupling capacitors and losses are not included, and \u03B5r does not vary with frequency."
+    },
+    {
+      code: "lowest-two-modes",
+      text: "Only TM\u2081\u2080 and TM\u2080\u2081 are reported; the lower of the two is always the first resonance, but higher modes follow, and when one side is more than twice the other, the second half-wave mode along the longer side (TM\u2082\u2080 or TM\u2080\u2082) falls below the half-wave across the shorter side."
     },
     {
       code: "inductive-reactance-only",
-      text: "The impedance at frequency is the inductive reactance \u03C9L alone: the plane capacitance, spreading from a point feed, vias and decoupling capacitors are not included."
+      text: "The reactance at frequency is \u03C9L of the plane inductance alone: the plane capacitance, spreading from a point feed, vias, decoupling capacitors and the cavity resonances are not included, so it describes the plane only well below the first cavity resonance."
     }
   ],
   visualization: { type: "none" },
