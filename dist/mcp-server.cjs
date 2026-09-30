@@ -35331,7 +35331,7 @@ var pdn_impedance_default = {
   "x-jobType": "pdn_impedance",
   "x-slug": "pdn-impedance",
   "x-title": "PDN Impedance Analyzer & Decoupling Capacitor Optimizer",
-  "x-formulaRef": null,
+  "x-formulaRef": "Frequency-Domain Characterization of Power Distribution Networks, Istv\xE1n Novak and Jason R. Miller, Artech House (2007)",
   "x-checks": [
     "port_within_board",
     "sweep_stop_after_start"
@@ -35388,18 +35388,29 @@ var pdn_impedance_default = {
       type: "number",
       minimum: 0,
       maximum: 500,
-      "x-derived": "board centre (boardWidth_mm / 2)",
+      "x-derived": "one-third point (boardWidth_mm / 3)",
       "x-label": "Port X location",
       "x-unit": "mm",
-      "x-tooltip": "Location where PDN impedance is evaluated (e.g. IC power pin)"
+      "x-tooltip": "Where the IC draws current (its power pins). Leave blank for the one-third point of the board width: no cavity mode has a voltage null there, so every mode shows on the plot. The board centre hides every mode with an odd index."
     },
     portY_mm: {
       type: "number",
       minimum: 0,
       maximum: 500,
-      "x-derived": "board centre (boardLength_mm / 2)",
+      "x-derived": "one-third point (boardLength_mm / 3)",
       "x-label": "Port Y location",
-      "x-unit": "mm"
+      "x-unit": "mm",
+      "x-tooltip": "Where the IC draws current, along the board length. Leave blank for the one-third point of the board length (see Port X location)."
+    },
+    portSize_mm: {
+      type: "number",
+      minimum: 0.25,
+      maximum: 20,
+      default: 1,
+      "x-label": "Port Size",
+      "x-unit": "mm",
+      "x-step": 0.25,
+      "x-tooltip": "Side of the square through which the IC current enters the planes (roughly its power-pin field). The plane spreading inductance depends on it. A port over an edge is modelled with its image."
     },
     vrmBandwidth_hz: {
       type: "number",
@@ -35418,6 +35429,16 @@ var pdn_impedance_default = {
       "x-label": "VRM DC Resistance",
       "x-unit": "m\u03A9"
     },
+    boardInductance_nh: {
+      type: "number",
+      minimum: 0,
+      maximum: 20,
+      default: 1,
+      "x-label": "Board Inductance",
+      "x-unit": "nH",
+      "x-step": 0.1,
+      "x-tooltip": "Inductance between the regulator and the planes (vias, traces, connector), in series with the VRM."
+    },
     targetImpedance_mohm: {
       type: "number",
       minimum: 0.1,
@@ -35425,7 +35446,7 @@ var pdn_impedance_default = {
       default: 10,
       "x-label": "Target Impedance",
       "x-unit": "m\u03A9",
-      "x-tooltip": "Flat target impedance \u2014 keep Z_PDN below this across all frequencies"
+      "x-tooltip": "Flat target impedance. Z_PDN is judged against it across the decoupling band, up to 0.8 \xD7 the first cavity mode."
     },
     freqMin_hz: {
       type: "number",
