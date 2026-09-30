@@ -16886,15 +16886,60 @@ var bldcThermal = {
 
 // src/lib/calculators/motor/servo-motor.ts
 function calculateServoMotor(inputs) {
-  const { voltage, current, speed, armRes } = inputs;
-  const inputPower = voltage * current;
+  const { voltage, current, speed, loadTorque, armRes } = inputs;
+  if (!(voltage > 0)) return { values: {}, errors: ["Supply voltage must be greater than zero"] };
+  if (!(speed > 0)) return { values: {}, errors: ["No-load speed must be greater than zero"] };
+  if (!(armRes > 0)) return { values: {}, errors: ["Winding resistance must be greater than zero"] };
+  if (current < 0) return { values: {}, errors: ["Operating current cannot be negative"] };
+  if (loadTorque < 0) return { values: {}, errors: ["Load torque cannot be negative"] };
+  const noLoadRads = speed * Math.PI / 30;
+  const torqueConstant = voltage / noLoadRads;
+  const stallCurrent = voltage / armRes;
+  const stallTorque = torqueConstant * stallCurrent;
   const backEmf = voltage - current * armRes;
-  const speedRads = speed * Math.PI / 30;
-  const copperLoss = current * current * armRes;
-  const outputPower = Math.max(0, inputPower - copperLoss);
-  const efficiency = inputPower > 0 ? Math.min(outputPower / inputPower * 100, 100) : 0;
-  const mechanicalTorque = speedRads > 0 ? outputPower / speedRads : 0;
-  return { values: { inputPower, outputPower, efficiency, backEmf, stallTorque: mechanicalTorque } };
+  if (backEmf < 0) {
+    return {
+      values: {},
+      errors: [
+        `Operating current exceeds the stall current V/R_a = ${stallCurrent.toFixed(3)} A: the motor cannot draw it from this supply`
+      ]
+    };
+  }
+  const inputPower = voltage * current;
+  const operatingSpeed = speed * backEmf / voltage;
+  const torque = torqueConstant * current;
+  const outputPower = backEmf * current;
+  const efficiency = inputPower > 0 ? outputPower / inputPower * 100 : 0;
+  const warnings = [];
+  let loadCurrent;
+  let loadSpeed;
+  if (loadTorque > stallTorque) {
+    loadCurrent = stallCurrent;
+    loadSpeed = 0;
+    warnings.push(
+      `Load torque exceeds the stall torque of ${stallTorque.toFixed(4)} N\xB7m: the motor stalls, drawing its stall current of ${stallCurrent.toFixed(3)} A`
+    );
+  } else {
+    loadCurrent = loadTorque / torqueConstant;
+    loadSpeed = speed * (1 - loadTorque / stallTorque);
+  }
+  const loadPower = loadTorque * loadSpeed * Math.PI / 30;
+  return {
+    values: {
+      torque,
+      operatingSpeed,
+      backEmf,
+      inputPower,
+      outputPower,
+      efficiency,
+      torqueConstant,
+      stallTorque,
+      loadCurrent,
+      loadSpeed,
+      loadPower
+    },
+    warnings
+  };
 }
 var servoMotor = {
   slug: "servo-motor",
@@ -16906,29 +16951,82 @@ var servoMotor = {
   keywords: ["servo motor", "torque speed", "back EMF", "servo efficiency", "RC servo", "servo power"],
   inputs: [
     { key: "voltage", label: "Supply Voltage", symbol: "V", unit: "V", defaultValue: 5, min: 0 },
-    { key: "current", label: "Operating Current", symbol: "I", unit: "A", defaultValue: 0.5, min: 0 },
-    { key: "speed", label: "No-Load Speed", symbol: "n", unit: "RPM", defaultValue: 500, min: 1 },
-    { key: "loadTorque", label: "Load Torque", symbol: "T_L", unit: "N\xB7m", defaultValue: 0.05, min: 0, step: 1e-3 },
+    {
+      key: "current",
+      label: "Operating Current",
+      symbol: "I",
+      unit: "A",
+      defaultValue: 0.5,
+      min: 0,
+      tooltip: "Current measured at the operating point; sets the torque, speed and power outputs"
+    },
+    {
+      key: "speed",
+      label: "No-Load Speed",
+      symbol: "n_nl",
+      unit: "RPM",
+      defaultValue: 500,
+      min: 1,
+      tooltip: "Datasheet no-load speed at this supply voltage; with it, K_t = K_e = V/\u03C9_nl"
+    },
+    {
+      key: "loadTorque",
+      label: "Load Torque",
+      symbol: "T_L",
+      unit: "N\xB7m",
+      defaultValue: 0.05,
+      min: 0,
+      step: 1e-3,
+      tooltip: "Torque the load demands; sets the current, speed and power at load torque"
+    },
     { key: "armRes", label: "Winding Resistance", symbol: "R_a", unit: "\u03A9", defaultValue: 2, min: 0.1 }
   ],
   outputs: [
+    { key: "torque", label: "Operating Torque", symbol: "T", unit: "N\xB7m", precision: 4 },
+    { key: "operatingSpeed", label: "Operating Speed", symbol: "n", unit: "RPM", precision: 1 },
+    { key: "backEmf", label: "Back-EMF", symbol: "V_emf", unit: "V", precision: 2 },
     { key: "inputPower", label: "Input Power", symbol: "P_in", unit: "W", precision: 2 },
     { key: "outputPower", label: "Output Power", symbol: "P_out", unit: "W", precision: 3 },
     { key: "efficiency", label: "Efficiency", symbol: "\u03B7", unit: "%", precision: 1, thresholds: { good: { min: 60 }, warning: { min: 40 } } },
-    { key: "backEmf", label: "Back-EMF", symbol: "V_emf", unit: "V", precision: 2 },
-    { key: "stallTorque", label: "Mechanical Torque", symbol: "T", unit: "N\xB7m", precision: 4, tooltip: "Torque at operating speed: T = P_out / \u03C9" }
+    { key: "torqueConstant", label: "Torque Constant", symbol: "K_t", unit: "N\xB7m/A", precision: 5 },
+    { key: "stallTorque", label: "Stall Torque", symbol: "T_stall", unit: "N\xB7m", precision: 4 },
+    { key: "loadCurrent", label: "Current at Load Torque", symbol: "I_L", unit: "A", precision: 3 },
+    { key: "loadSpeed", label: "Speed at Load Torque", symbol: "n_L", unit: "RPM", precision: 1 },
+    { key: "loadPower", label: "Output Power at Load Torque", symbol: "P_L", unit: "W", precision: 3 }
   ],
   calculate: calculateServoMotor,
   formula: {
-    primary: "T = P_out / \u03C9,  \u03B7 = P_out/P_in \xD7 100%",
+    primary: "K_t = K_e = V/\u03C9_nl,  T = K_t\xB7I,  \u03C9 = (V \u2212 I\xB7R_a)/K_e,  T_stall = K_t\xB7V/R_a",
+    latex: "K_t = K_e = \\frac{V}{\\omega_{nl}},\\quad T = K_t I,\\quad \\omega = \\frac{V - I R_a}{K_e} = \\omega_{nl}\\left(1 - \\frac{T}{T_{stall}}\\right),\\quad T_{stall} = \\frac{K_t V}{R_a}",
     variables: [
-      { symbol: "T", description: "Mechanical torque", unit: "N\xB7m" },
-      { symbol: "\u03C9", description: "Angular speed (= 2\u03C0 \xD7 RPM / 60)", unit: "rad/s" }
-    ]
+      { symbol: "T", description: "Torque at the operating current", unit: "N\xB7m" },
+      { symbol: "K_t", description: "Torque constant, equal to the back-EMF constant K_e in SI units", unit: "N\xB7m/A" },
+      { symbol: "V", description: "Supply voltage", unit: "V" },
+      { symbol: "I", description: "Operating current", unit: "A" },
+      { symbol: "R_a", description: "Winding resistance", unit: "\u03A9" },
+      { symbol: "\u03C9_nl", description: "No-load angular speed (= 2\u03C0 \xD7 RPM / 60)", unit: "rad/s" },
+      { symbol: "\u03C9", description: "Angular speed at the operating point", unit: "rad/s" },
+      { symbol: "T_stall", description: "Stall torque at this supply voltage", unit: "N\xB7m" }
+    ],
+    reference: "Hughes & Drury, Electric Motors and Drives, ch. 3 (d.c. motors); maxon, Key information on maxon DC motors"
   },
+  assumptions: [
+    {
+      code: "linear-dc-motor",
+      text: "The motor is a linear brushed DC machine: V = I\xB7R_a + K_e\xB7\u03C9 and T = K_t\xB7I, with K_t = K_e in SI units and R_a constant."
+    },
+    {
+      code: "no-load-current-neglected",
+      text: "The no-load current is neglected, so K_e = V/\u03C9_nl and the friction and iron-loss torque are not subtracted: the torque is the electromagnetic torque, and the shaft delivers slightly less."
+    },
+    {
+      code: "stall-without-back-drive",
+      text: "A load torque above the stall torque is reported as a stall at zero speed and stall current: the load is assumed not to drive the motor backwards."
+    }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "bldc-motor", "gear-ratio"],
-  relatedBlogPosts: ["gear-ratio", "motor-starting-torque"]
+  relatedBlogPosts: ["servo-motor", "gear-ratio", "motor-starting-torque"]
 };
 
 // src/lib/calculators/motor/gear-ratio.ts
@@ -23907,6 +24005,8 @@ var ethernetCable = {
 };
 
 // src/lib/calculators/pcb/power-plane-impedance.ts
+var EPS0 = 88541878128e-22;
+var MU0 = 125663706212e-17;
 function calculatePowerPlaneImpedance(inputs) {
   const { length, width, dielectric, er, frequency } = inputs;
   if (length <= 0 || width <= 0) {
@@ -23920,8 +24020,8 @@ function calculatePowerPlaneImpedance(inputs) {
   }
   const areaM2 = length * 1e-3 * (width * 1e-3);
   const dM = dielectric * 1e-3;
-  const capacitance = er * 8854e-15 * areaM2 / dM * 1e9;
-  const inductance = 0.3 * dielectric * (length / width);
+  const capacitance = er * EPS0 * areaM2 / dM * 1e9;
+  const inductance = MU0 * dM * (length / width) * 1e9;
   const omega_res_sq = 1 / (inductance * 1e-9 * capacitance * 1e-9);
   const resonantFrequency = Math.sqrt(omega_res_sq) / (2 * Math.PI) / 1e6;
   const omega = 2 * Math.PI * frequency * 1e6;
@@ -24026,20 +24126,36 @@ var powerPlaneImpedance = {
       symbol: "L_plane",
       unit: "nH",
       precision: 3,
-      tooltip: "Approximate spreading inductance of the plane"
+      tooltip: "Plane-pair inductance \u03BC0\xB7d\xB7(length/width), for current flowing along the length"
     }
   ],
   calculate: calculatePowerPlaneImpedance,
   formula: {
-    primary: "C = \\frac{\\varepsilon_r \\varepsilon_0 A}{d},\\quad f_{res} = \\frac{1}{2\\pi\\sqrt{LC}}",
+    primary: "C = \\frac{\\varepsilon_r \\varepsilon_0 A}{d},\\quad L = \\mu_0 d \\frac{l}{w},\\quad f_{res} = \\frac{1}{2\\pi\\sqrt{LC}}",
     variables: [
       { symbol: "\u03B5r", description: "Dielectric constant", unit: "" },
       { symbol: "A", description: "Plane area", unit: "m\xB2" },
       { symbol: "d", description: "Dielectric thickness", unit: "m" },
+      { symbol: "\u03BC0", description: "Vacuum permeability (\u03BC0\xB7d is the sheet inductance per square)", unit: "H/m" },
+      { symbol: "l/w", description: "Plane length over width: the number of squares along the current path", unit: "" },
       { symbol: "f_res", description: "Self-resonant frequency", unit: "Hz" }
     ],
-    reference: "IPC-2141A / Larry Smith PDN analysis techniques"
+    reference: "Bogatin, Signal and Power Integrity \u2014 Simplified (sheet inductance of a plane pair, \u03BC0\xB7h per square); Smith & Bogatin, Principles of Power Integrity for PDN Design"
   },
+  assumptions: [
+    {
+      code: "parallel-plate",
+      text: "The plane pair is an ideal parallel-plate structure: C = \u03B50\xB7\u03B5r\xB7A/d with no fringing, and L = \u03BC0\xB7d\xB7(l/w) for current spreading uniformly across the width and flowing along the length."
+    },
+    {
+      code: "lumped-resonance",
+      text: "The self-resonant frequency is the lumped resonance 1/(2\u03C0\u221A(LC)) of that capacitance and inductance, which reduces to c/(2\u03C0\xB7l\xB7\u221A\u03B5r); it is not the first cavity mode of the plane pair, c/(2\xB7l\xB7\u221A\u03B5r)."
+    },
+    {
+      code: "inductive-reactance-only",
+      text: "The impedance at frequency is the inductive reactance \u03C9L alone: the plane capacitance, spreading from a point feed, vias and decoupling capacitors are not included."
+    }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["decoupling-capacitor", "via-stub-resonance", "pcb-trace-inductance"],
   relatedTools: ["pdn-impedance"],
