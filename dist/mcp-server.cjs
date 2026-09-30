@@ -33921,7 +33921,7 @@ function outOfRangeWarnings(provenance) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.2.0",
+  version: "2.2.1",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io \u2014 241 RF & electronics calculators for AI agents via the MCP",
@@ -37117,7 +37117,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp.McpServer({
     name: "rftools",
-    version: "2.2.0"
+    version: "2.2.1"
   });
   const api = new RftoolsApi();
   server.registerTool(
