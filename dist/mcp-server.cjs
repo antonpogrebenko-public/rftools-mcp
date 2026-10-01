@@ -140,6 +140,7 @@ var microstripImpedance = {
   outputs: [
     {
       key: "impedance",
+      primary: true,
       label: "Characteristic Impedance",
       symbol: "Z\u2080",
       unit: "\u03A9",
@@ -236,6 +237,14 @@ var microstripImpedance = {
 };
 
 // src/lib/calculators/rf/rf-link-budget.ts
+var C0 = 299792458;
+var MAX_EXTRA_LOSSES = 4;
+function extraLossSum(inputs) {
+  const count = Math.max(0, Math.min(MAX_EXTRA_LOSSES, Math.round(inputs.extraLossCount ?? 0)));
+  let sum = 0;
+  for (let n = 1; n <= count; n++) sum += inputs[`extraLoss${n}`] ?? 0;
+  return sum;
+}
 function calculateLinkBudget(inputs) {
   const {
     txPower,
@@ -250,16 +259,18 @@ function calculateLinkBudget(inputs) {
     rxCableLoss,
     rxSensitivity
   } = inputs;
-  const c2 = 3e8;
-  const lambda = c2 / (frequency * 1e6);
+  const targetMargin = inputs.targetMargin ?? 10;
+  const lambda = C0 / (frequency * 1e6);
   const distM = distance * 1e3;
   const fspl = 20 * Math.log10(4 * Math.PI * distM / lambda);
-  const totalAdditionalLoss = rainFade + atmosphericLoss + pointingLoss;
+  const totalAdditionalLoss = rainFade + atmosphericLoss + pointingLoss + extraLossSum(inputs);
   const eirp = txPower + txGain - txCableLoss;
   const rxPower = eirp - fspl - totalAdditionalLoss + rxGain - rxCableLoss;
   const linkMargin2 = rxPower - rxSensitivity;
   const maxRangeM = lambda / (4 * Math.PI) * Math.pow(10, (eirp - totalAdditionalLoss + rxGain - rxCableLoss - rxSensitivity) / 20);
   const maxRangeKm = maxRangeM / 1e3;
+  const maxRangeAtTarget = maxRangeKm * Math.pow(10, -targetMargin / 20);
+  const fresnelRadius = Math.sqrt(lambda * distM / 4);
   return {
     values: {
       fspl,
@@ -267,7 +278,11 @@ function calculateLinkBudget(inputs) {
       rxPower,
       linkMargin: linkMargin2,
       maxRangeKm,
-      totalAdditionalLoss
+      totalAdditionalLoss,
+      wavelength: lambda * 1e3,
+      // mm
+      fresnelRadius,
+      maxRangeAtTarget
     }
   };
 }
@@ -289,9 +304,15 @@ var rfLinkBudget = {
     { key: "rainFade", label: "Rain Fade", symbol: "L_rain", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "Rain attenuation per ITU-R P.838. Use 0 for line-of-sight ground links; 3\u201320 dB for satellite links above 10 GHz in heavy rain zones." },
     { key: "atmosphericLoss", label: "Atmospheric Loss", symbol: "L_atm", unit: "dB", defaultValue: 0.5, min: 0, max: 20, group: "Channel", tooltip: "Gaseous absorption (O\u2082 at 60 GHz: ~15 dB/km; H\u2082O at 22 GHz: ~0.2 dB/km). Use 0.5 dB typical for sub-6 GHz terrestrial links." },
     { key: "pointingLoss", label: "Pointing Loss", symbol: "L_pt", unit: "dB", defaultValue: 0, min: 0, max: 10, group: "Channel", tooltip: "Antenna misalignment loss. Pencil-beam dishes: 0.5\u20133 dB. Omnidirectional or wide-beam antennas: 0 dB." },
+    { key: "extraLossCount", label: "Extra Loss Terms", unit: "", defaultValue: 0, min: 0, max: MAX_EXTRA_LOSSES, step: 1, group: "Channel", tooltip: "How many extra loss terms the budget includes, such as polarisation mismatch, body loss or foliage" },
+    { key: "extraLoss1", label: "Extra Loss 1", symbol: "L_1", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss2", label: "Extra Loss 2", symbol: "L_2", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss3", label: "Extra Loss 3", symbol: "L_3", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss4", label: "Extra Loss 4", symbol: "L_4", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
     { key: "rxGain", label: "RX Antenna Gain", symbol: "G\u1D63\u2093", unit: "dBi", defaultValue: 3, min: -30, max: 60, group: "Receiver", tooltip: "RX antenna gain in dBi" },
     { key: "rxCableLoss", label: "RX Cable Loss", symbol: "L\u1D63\u2093", unit: "dB", defaultValue: 1, min: 0, max: 20, group: "Receiver", tooltip: "RX cable + connector losses" },
-    { key: "rxSensitivity", label: "RX Sensitivity", symbol: "S\u1D63\u2093", unit: "dBm", defaultValue: -90, min: -160, max: 0, group: "Receiver", tooltip: "Minimum receivable signal level" }
+    { key: "rxSensitivity", label: "RX Sensitivity", symbol: "S\u1D63\u2093", unit: "dBm", defaultValue: -90, min: -160, max: 0, group: "Receiver", tooltip: "Minimum receivable signal level" },
+    { key: "targetMargin", label: "Target Link Margin", symbol: "M_t", unit: "dB", defaultValue: 10, min: 0, max: 60, group: "Receiver", tooltip: "The fade margin the link must keep above the receiver sensitivity. The status passes at or above it and fails below 0 dB." }
   ],
   outputs: [
     {
@@ -318,6 +339,8 @@ var rfLinkBudget = {
     },
     {
       key: "linkMargin",
+      primary: true,
+      signed: "explicit",
       label: "Link Margin",
       symbol: "LM",
       unit: "dB",
@@ -341,7 +364,30 @@ var rfLinkBudget = {
       symbol: "L_total",
       unit: "dB",
       precision: 2,
-      tooltip: "Sum of rain fade + atmospheric loss + pointing loss"
+      tooltip: "Sum of rain fade, atmospheric loss, pointing loss and any extra loss terms"
+    },
+    {
+      key: "maxRangeAtTarget",
+      label: "Range at Target Margin",
+      symbol: "d_t",
+      unit: "km",
+      precision: 2,
+      tooltip: "The distance at which the link margin falls to the target margin"
+    },
+    {
+      key: "wavelength",
+      label: "Wavelength",
+      symbol: "\u03BB",
+      unit: "mm",
+      precision: 2
+    },
+    {
+      key: "fresnelRadius",
+      label: "First Fresnel Zone Radius",
+      symbol: "r\u2081",
+      unit: "m",
+      precision: 2,
+      tooltip: "Radius of the first Fresnel zone at the middle of the path. Keep at least 60 % of it clear of obstacles."
     }
   ],
   calculate: calculateLinkBudget,
@@ -352,13 +398,48 @@ var rfLinkBudget = {
       { symbol: "d", description: "Distance", unit: "m" },
       { symbol: "\u03BB", description: "Wavelength (c/f)", unit: "m" },
       { symbol: "EIRP", description: "P\u209C\u2093 + G\u209C\u2093 \u2212 L\u209C\u2093", unit: "dBm" },
-      { symbol: "P\u1D63\u2093", description: "EIRP \u2212 FSPL \u2212 L_rain \u2212 L_atm \u2212 L_pt + G\u1D63\u2093 \u2212 L\u1D63\u2093", unit: "dBm" },
+      { symbol: "P\u1D63\u2093", description: "EIRP \u2212 FSPL \u2212 L_rain \u2212 L_atm \u2212 L_pt \u2212 \u03A3L\u2099 + G\u1D63\u2093 \u2212 L\u1D63\u2093", unit: "dBm" },
       { symbol: "L_rain", description: "Rain fade (ITU-R P.838)", unit: "dB" },
       { symbol: "L_atm", description: "Atmospheric / gaseous absorption", unit: "dB" },
       { symbol: "L_pt", description: "Antenna pointing / misalignment loss", unit: "dB" }
     ],
-    reference: 'Friis, "A Note on a Simple Transmission Formula" (1946)'
+    reference: 'Friis, "A Note on a Simple Transmission Formula" (1946)',
+    substitution: [
+      { symbol: "FSPL", expression: "20\xB7log\u2081\u2080(4\u03C0 \xD7 {distance} \xD7 {frequency} / c)", output: "fspl" },
+      { symbol: "EIRP", expression: "{txPower} + {txGain} \u2212 {txCableLoss}", output: "eirp" },
+      { symbol: "P\u1D63\u2093", expression: "EIRP \u2212 FSPL \u2212 L_total + {rxGain} \u2212 {rxCableLoss}", output: "rxPower" },
+      { symbol: "LM", expression: "P\u1D63\u2093 \u2212 ({rxSensitivity})", output: "linkMargin" }
+    ]
   },
+  sweep: {
+    input: "distance",
+    output: "rxPower",
+    range: [0.01, 100],
+    scale: "log",
+    lines: [
+      { id: "rx-sensitivity", kind: "limit", label: "Rx sensitivity", value: (i) => i.rxSensitivity, fails: "below" },
+      { id: "target-margin", kind: "target", label: "Target", value: (i) => i.rxSensitivity + i.targetMargin }
+    ]
+  },
+  target: { output: "linkMargin", input: "targetMargin", sense: "min", failAt: 0 },
+  terms: { count: "extraLossCount", keys: ["extraLoss{n}"], maxRows: MAX_EXTRA_LOSSES, label: "loss term" },
+  examples: [
+    {
+      id: "wifi-bridge-2g4",
+      label: "2.4 GHz Wi-Fi bridge, 2 km",
+      values: { txPower: 20, txGain: 16, txCableLoss: 1, frequency: 2437, distance: 2, rainFade: 0, atmosphericLoss: 0.5, pointingLoss: 0.5, rxGain: 16, rxCableLoss: 1, rxSensitivity: -80 }
+    },
+    {
+      id: "lora-915-10km",
+      label: "915 MHz LoRa node, 10 km",
+      values: { txPower: 20, txGain: 2.15, txCableLoss: 0.5, frequency: 915, distance: 10, rainFade: 0, atmosphericLoss: 0, pointingLoss: 0, rxGain: 6, rxCableLoss: 2, rxSensitivity: -137, extraLossCount: 1, extraLoss1: 20 }
+    },
+    {
+      id: "ku-vsat-downlink",
+      label: "Ku-band VSAT downlink",
+      values: { txPower: 50, txGain: 32, txCableLoss: 1, frequency: 11700, distance: 38e3, rainFade: 3, atmosphericLoss: 0.5, pointingLoss: 0.5, rxGain: 41, rxCableLoss: 0.5, rxSensitivity: -96 }
+    }
+  ],
   visualization: { type: "signal-chain" },
   relatedCalculators: ["db-converter", "vswr-return-loss", "eirp-calculator", "free-space-path-loss"],
   relatedTools: ["sat-link-budget", "rf-cascade"],
@@ -437,6 +518,7 @@ var vswrReturnLoss = {
   outputs: [
     {
       key: "returnLoss",
+      primary: true,
       label: "Return Loss",
       symbol: "RL",
       unit: "dB",
@@ -597,7 +679,7 @@ var dbConverter = {
   ],
   outputs: [
     { key: "dbw", label: "Power", symbol: "P", unit: "dBW", precision: 3 },
-    { key: "watts", label: "Power", symbol: "P", unit: "W", precision: 6, format: "engineering" },
+    { key: "watts", label: "Power", symbol: "P", unit: "W", precision: 6, format: "engineering", primary: true },
     { key: "mwatts", label: "Power", symbol: "P", unit: "mW", precision: 4 },
     { key: "uwatts", label: "Power", symbol: "P", unit: "\u03BCW", precision: 2 },
     { key: "vrms", label: "Voltage", symbol: "V", unit: "V RMS", precision: 5 },
@@ -875,6 +957,7 @@ var noiseFigureCascade = {
   outputs: [
     {
       key: "cascadedNF",
+      primary: true,
       label: "Cascaded Noise Figure",
       symbol: "NF_total",
       unit: "dB",
@@ -1095,6 +1178,7 @@ var skinDepth = {
   outputs: [
     {
       key: "skinDepthUm",
+      primary: true,
       label: "Skin Depth",
       symbol: "\u03B4",
       unit: "\u03BCm",
@@ -1130,8 +1214,19 @@ var skinDepth = {
       { symbol: "\u03BC", description: "Magnetic permeability (\u03BC\u2080\xB7\u03BC\u1D63)", unit: "H/m" },
       { symbol: "\u03C3", description: "Electrical conductivity", unit: "S/m" }
     ],
-    reference: 'Griffiths, "Introduction to Electrodynamics" 4th ed., Chapter 9'
+    reference: 'Griffiths, "Introduction to Electrodynamics" 4th ed., Chapter 9',
+    substitution: [
+      { symbol: "\u03B4", expression: "1 / \u221A(\u03C0 \xD7 {frequency} \xD7 \u03BC\u2080 \xD7 {relativePermeability} \xD7 {conductivity})", output: "skinDepthUm" },
+      { symbol: "R_s", expression: "1 / ({conductivity} \xD7 \u03B4)", output: "surfaceResistance" }
+    ]
   },
+  sweep: { input: "frequency", range: [0.01, 1e5], scale: "log" },
+  examples: [
+    { id: "copper-2g4", label: "Copper at 2.4 GHz", values: { frequency: 2400, conductivity: 58e6, relativePermeability: 1 } },
+    { id: "aluminium-100m", label: "Aluminium at 100 MHz", values: { frequency: 100, conductivity: 377e5, relativePermeability: 1 } },
+    { id: "steel-50k", label: "Mild steel at 50 kHz", values: { frequency: 0.05, conductivity: 6e6, relativePermeability: 200 } },
+    { id: "copper-13m56", label: "Copper at 13.56 MHz (RFID)", values: { frequency: 13.56, conductivity: 58e6, relativePermeability: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "skin-depth-percentage",
@@ -1203,7 +1298,7 @@ var wavelengthFrequency = {
       symbol: "f",
       unit: "MHz",
       unitOptions: [
-        { label: "Hz", factor: 1e-3 },
+        { label: "Hz", factor: 1e-6 },
         { label: "kHz", factor: 1e-3 },
         { label: "MHz", factor: 1 },
         { label: "GHz", factor: 1e3 }
@@ -1253,6 +1348,7 @@ var wavelengthFrequency = {
     },
     {
       key: "actualWavelengthMm",
+      primary: true,
       label: "Wavelength in Medium",
       symbol: "\u03BB",
       unit: "mm",
@@ -1431,6 +1527,7 @@ var coaxImpedance = {
   outputs: [
     {
       key: "impedance",
+      primary: true,
       label: "Characteristic Impedance",
       symbol: "Z\u2080",
       unit: "\u03A9",
@@ -1478,6 +1575,13 @@ var coaxImpedance = {
       format: "standard",
       tooltip: "Frequency above which higher-order modes can propagate (TE11 mode)"
     }
+  ],
+  examples: [
+    { id: "rg-58", label: "RG-58", values: { innerDiameter: 0.9, outerDiameter: 2.95, dielectricConstant: 2.3 } },
+    { id: "rg-59", label: "RG-59", values: { innerDiameter: 0.584, outerDiameter: 3.66, dielectricConstant: 2.3 } },
+    { id: "rg-174", label: "RG-174", values: { innerDiameter: 0.48, outerDiameter: 1.8, dielectricConstant: 2.3 } },
+    { id: "rg-213", label: "RG-213", values: { innerDiameter: 2.26, outerDiameter: 7.24, dielectricConstant: 2.26 } },
+    { id: "lmr-400", label: "LMR-400", values: { innerDiameter: 2.74, outerDiameter: 8.13, dielectricConstant: 1.38 } }
   ],
   calculate: calculateCoaxImpedance,
   formula: {
@@ -1576,8 +1680,9 @@ var coaxLoss = {
       min: 0,
       max: CABLES.length - 1,
       step: 1,
-      tooltip: `0=${CABLES[0].name}, 1=${CABLES[1].name}, ... ${CABLES.length - 1}=${CABLES[CABLES.length - 1].name}`,
-      presets: CABLES.map((c2, i) => ({ label: c2.name, values: { cableIndex: i } }))
+      tooltip: "Loss is interpolated from the cable's datasheet attenuation table",
+      presets: CABLES.map((c2, i) => ({ label: c2.name, values: { cableIndex: i } })),
+      options: CABLES.map((c2, i) => ({ value: i, label: c2.name }))
     },
     {
       key: "frequencyMHz",
@@ -1702,7 +1807,8 @@ var ismCoexistence = {
       min: 0,
       max: BANDS.length - 1,
       step: 1,
-      presets: BANDS.map((b, i) => ({ label: b.name, values: { bandIndex: i } }))
+      presets: BANDS.map((b, i) => ({ label: b.name, values: { bandIndex: i } })),
+      options: BANDS.map((b, i) => ({ value: i, label: b.name }))
     },
     {
       key: "dutyCycle1_pct",
@@ -1862,6 +1968,7 @@ var attenuatorDesigner = {
   outputs: [
     {
       key: "piR1",
+      primary: true,
       label: "Pi Shunt Resistor (exact)",
       symbol: "R1\u03C0",
       unit: "\u03A9",
@@ -2119,6 +2226,7 @@ var smithChart = {
   outputs: [
     {
       key: "gamma_mag",
+      primary: true,
       label: "Reflection Coefficient |\u0393|",
       symbol: "|\u0393|",
       unit: "",
@@ -2185,6 +2293,14 @@ var smithChart = {
       unit: "",
       precision: 4
     }
+  ],
+  examples: [
+    { id: "matched-50-ohm", label: "Matched (50 \u03A9)", values: { resistance: 50, reactance: 0, referenceImpedance: 50 } },
+    { id: "25-ohm-vswr-2", label: "25 \u03A9 (VSWR 2)", values: { resistance: 25, reactance: 0, referenceImpedance: 50 } },
+    { id: "100-ohm-vswr-2", label: "100 \u03A9 (VSWR 2)", values: { resistance: 100, reactance: 0, referenceImpedance: 50 } },
+    { id: "short-circuit", label: "Short (0 \u03A9)", values: { resistance: 0, reactance: 0, referenceImpedance: 50 } },
+    { id: "75-ohm-cable", label: "75 \u03A9 Cable", values: { resistance: 75, reactance: 0, referenceImpedance: 50 } },
+    { id: "reactive-50-j50", label: "Reactive (50+j50)", values: { resistance: 50, reactance: 50, referenceImpedance: 50 } }
   ],
   calculate: calculateSmithChart,
   formula: {
@@ -2369,10 +2485,14 @@ var traceWidthCurrent = {
       defaultValue: 1,
       min: 0,
       max: 1,
-      tooltip: "1 = external (outer) layer, 0 = internal layer",
+      tooltip: "Internal layers carry less current than external ones for the same width and temperature rise",
       presets: [
         { label: "External layer", values: { isExternal: 1 } },
         { label: "Internal layer", values: { isExternal: 0 } }
+      ],
+      options: [
+        { value: 1, label: "External (outer) layer" },
+        { value: 0, label: "Internal layer" }
       ]
     }
   ],
@@ -2386,6 +2506,7 @@ var traceWidthCurrent = {
     },
     {
       key: "width2152mm",
+      primary: true,
       label: "Min Width (IPC-2152)",
       unit: "mm",
       precision: 3
@@ -2532,6 +2653,7 @@ var traceResistance = {
   outputs: [
     {
       key: "resistance",
+      primary: true,
       label: "Resistance",
       unit: "\u03A9",
       precision: 6,
@@ -3012,6 +3134,7 @@ var differentialPair = {
   outputs: [
     {
       key: "zdiff",
+      primary: true,
       label: "Differential Impedance",
       symbol: "Z_diff",
       unit: "\u03A9",
@@ -3373,16 +3496,20 @@ var viaCalculator = {
       defaultValue: 0,
       min: 0,
       max: 1,
-      tooltip: "0 = inner layer, 1 = outer layer",
       presets: [
         { label: "Inner layer", values: { signalLayer: 0 } },
         { label: "Outer layer", values: { signalLayer: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Inner layer" },
+        { value: 1, label: "Outer layer" }
       ]
     }
   ],
   outputs: [
     {
       key: "impedance",
+      primary: true,
       label: "Via Impedance",
       symbol: "Z_via",
       unit: "\u03A9",
@@ -3677,6 +3804,7 @@ var stackupBuilder = {
   outputs: [
     {
       key: "traceWidthL1mm",
+      primary: true,
       label: "Trace Width L1 (surface)",
       symbol: "W_L1",
       unit: "mm",
@@ -3837,6 +3965,7 @@ var voltageDivider = {
   outputs: [
     {
       key: "vout",
+      primary: true,
       label: "Output Voltage",
       symbol: "V\u2092\u1D64\u209C",
       unit: "V",
@@ -4011,7 +4140,7 @@ var ledResistor = {
     }
   ],
   outputs: [
-    { key: "rExact", label: "Exact Resistance", unit: "\u03A9", precision: 2 },
+    { key: "rExact", label: "Exact Resistance", unit: "\u03A9", precision: 2, primary: true },
     { key: "rNearest", label: "Nearest E24", unit: "\u03A9", precision: 0 },
     { key: "iActual", label: "Actual Current", unit: "mA", precision: 2 },
     { key: "power", label: "Power (exact R)", unit: "W", precision: 4, format: "engineering" },
@@ -4164,6 +4293,7 @@ var buckConverter = {
     },
     {
       key: "inductorUH",
+      primary: true,
       label: "Minimum Inductance",
       symbol: "L\u2098\u1D62\u2099",
       unit: "\u03BCH",
@@ -4319,7 +4449,8 @@ var ldoThermal = {
         { label: "150\xB0C", values: { tjMax: 150 } },
         { label: "175\xB0C", values: { tjMax: 175 } }
       ]
-    }
+    },
+    { key: "targetTj", label: "Target Junction Temperature", symbol: "T_J,t", unit: "\xB0C", defaultValue: 100, min: 25, max: 175, tooltip: "The junction temperature the design should stay at or below, usually derated from the maximum. The status fails above 125 \xB0C." }
   ],
   outputs: [
     {
@@ -4336,6 +4467,7 @@ var ldoThermal = {
     },
     {
       key: "tj",
+      primary: true,
       label: "Junction Temperature",
       symbol: "TJ",
       unit: "\xB0C",
@@ -4348,6 +4480,7 @@ var ldoThermal = {
     },
     {
       key: "margin",
+      signed: "explicit",
       label: "Thermal Headroom",
       symbol: "\u0394T",
       unit: "\xB0C",
@@ -4389,8 +4522,28 @@ var ldoThermal = {
       { symbol: "T\u2090\u2098b", description: "Ambient temperature", unit: "\xB0C" },
       { symbol: "\u03B8JA", description: "Thermal resistance junction-to-ambient", unit: "\xB0C/W" }
     ],
-    reference: "Texas Instruments Application Note SLVA061; IEC 60747-6"
+    reference: "Texas Instruments Application Note SLVA061; IEC 60747-6",
+    substitution: [
+      { symbol: "P_D", expression: "({vin} \u2212 {vout}) \xD7 {iload}", output: "pdiss" },
+      { symbol: "T_J", expression: "{tamb} + {thetaJA} \xD7 P_D", output: "tj" },
+      { symbol: "\u0394T", expression: "{tjMax} \u2212 T_J", output: "margin" }
+    ]
   },
+  sweep: {
+    input: "iload",
+    range: [1, 1200],
+    scale: "linear",
+    lines: [
+      { id: "tj-max", kind: "limit", label: "Max junction temperature", value: (i) => i.tjMax, fails: "above" },
+      { id: "tj-target", kind: "target", label: "Target", value: (i) => i.targetTj }
+    ]
+  },
+  target: { output: "tj", input: "targetTj", sense: "max", failAt: 125 },
+  examples: [
+    { id: "sot223-5v-3v3", label: "5 V to 3.3 V at 500 mA, SOT-223", values: { vin: 5, vout: 3.3, iload: 500, thetaJA: 61, tamb: 40, tjMax: 125 } },
+    { id: "to220-12v-5v", label: "12 V to 5 V at 200 mA, TO-220 without heatsink", values: { vin: 12, vout: 5, iload: 200, thetaJA: 50, tamb: 50, tjMax: 150 } },
+    { id: "sot23-liion-3v3", label: "Li-ion cell to 3.3 V at 300 mA, SOT-23-5", values: { vin: 3.7, vout: 3.3, iload: 300, thetaJA: 180, tamb: 25, tjMax: 125 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["buck-converter", "voltage-divider"],
   relatedBlogPosts: ["buck-converter-design-guide", "smps-control-loop-stability-buck-converter"],
@@ -4512,6 +4665,7 @@ var batteryLife = {
   outputs: [
     {
       key: "runtimeHours",
+      primary: true,
       label: "Runtime",
       symbol: "t",
       unit: "h",
@@ -4767,7 +4921,11 @@ var filterDesigner = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = Butterworth (maximally flat), 1 = Chebyshev Type I (0.5 dB ripple, steeper rolloff)"
+      tooltip: "Butterworth is maximally flat; Chebyshev Type I trades 0.5 dB of passband ripple for a steeper rolloff",
+      options: [
+        { value: 0, label: "Butterworth" },
+        { value: 1, label: "Chebyshev (0.5 dB ripple)" }
+      ]
     },
     {
       key: "filterType",
@@ -4778,7 +4936,11 @@ var filterDesigner = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0 = Low-pass, 1 = High-pass, 2 = Band-pass"
+      options: [
+        { value: 0, label: "Low-pass" },
+        { value: 1, label: "High-pass" },
+        { value: 2, label: "Band-pass" }
+      ]
     },
     {
       key: "fc",
@@ -4825,7 +4987,7 @@ var filterDesigner = {
       defaultValue: 1,
       min: 0.1,
       max: 100,
-      tooltip: "Higher Q = narrower bandwidth. Relevant for band-pass filter type (type=2)."
+      tooltip: "Higher Q = narrower bandwidth. Used only by the band-pass filter type."
     },
     {
       key: "eSeries",
@@ -4836,7 +4998,14 @@ var filterDesigner = {
       min: 0,
       max: 96,
       step: 1,
-      tooltip: "0 = Ideal values, 12 = E12 (10%), 24 = E24 (5%), 48 = E48 (2%), 96 = E96 (1%). Snaps component values to nearest standard value.",
+      tooltip: "Snaps component values to the nearest standard value.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
       presets: [
         { label: "Ideal", values: { eSeries: 0 } },
         { label: "E12 (10%)", values: { eSeries: 12 } },
@@ -4849,6 +5018,7 @@ var filterDesigner = {
   outputs: [
     {
       key: "C1_nF",
+      primary: true,
       label: "Element 1 (C\u2081)",
       symbol: "C\u2081",
       unit: "nF",
@@ -5229,6 +5399,7 @@ var samplingNyquist = {
   outputs: [
     {
       key: "nyquistRate_Hz",
+      primary: true,
       label: "Nyquist Rate",
       symbol: "f_N",
       unit: "Hz",
@@ -5414,6 +5585,7 @@ var dipoleAntenna = {
   outputs: [
     {
       key: "halfWaveLength_mm",
+      primary: true,
       label: "Half-Wave Length",
       symbol: "L_{\u03BB/2}",
       unit: "mm",
@@ -5430,6 +5602,7 @@ var dipoleAntenna = {
     },
     {
       key: "gainDbi",
+      signed: "explicit",
       label: "Antenna Gain",
       symbol: "G",
       unit: "dBi",
@@ -5654,6 +5827,7 @@ var patchAntenna = {
     },
     {
       key: "patchLength_mm",
+      primary: true,
       label: "Patch Length",
       symbol: "L",
       unit: "mm",
@@ -5682,6 +5856,7 @@ var patchAntenna = {
     },
     {
       key: "gainDbi",
+      signed: "explicit",
       label: "Nominal Gain",
       symbol: "G",
       unit: "dBi",
@@ -5836,6 +6011,7 @@ var eirpCalculator = {
   outputs: [
     {
       key: "eirp_dbm",
+      primary: true,
       label: "EIRP",
       symbol: "EIRP",
       unit: "dBm",
@@ -5860,6 +6036,7 @@ var eirpCalculator = {
     },
     {
       key: "margin_db",
+      signed: "explicit",
       label: "Regulatory Margin",
       symbol: "M",
       unit: "dB",
@@ -5868,11 +6045,12 @@ var eirpCalculator = {
       thresholds: {
         good: { min: 3 },
         warning: { min: 0 },
-        danger: { max: 0 }
+        danger: { min: 0 }
       }
     },
     {
       key: "maxPermittedGain_dbi",
+      signed: "explicit",
       label: "Max Permitted Antenna Gain",
       symbol: "G_{max}",
       unit: "dBi",
@@ -5898,8 +6076,26 @@ var eirpCalculator = {
       "Margin [dB] = EIRP_limit \u2212 EIRP",
       "G_max [dBi] = EIRP_limit \u2212 P_TX + L_cable"
     ],
-    reference: "FCC Part 15 \xA715.247; ETSI EN 300 328; IEEE Std 149-1979"
+    reference: "FCC Part 15 \xA715.247; ETSI EN 300 328; IEEE Std 149-1979",
+    substitution: [
+      { symbol: "EIRP", expression: "{txPower_dbm} \u2212 {cableLoss_db} + {antennaGain_dbi}", output: "eirp_dbm" },
+      { symbol: "M", expression: "{regulatoryLimit_dbm} \u2212 EIRP", output: "margin_db" },
+      { symbol: "G_max", expression: "{regulatoryLimit_dbm} \u2212 {txPower_dbm} + {cableLoss_db}", output: "maxPermittedGain_dbi" }
+    ]
   },
+  sweep: {
+    input: "antennaGain_dbi",
+    range: [-5, 30],
+    scale: "linear",
+    lines: [
+      { id: "regulatory-limit", kind: "limit", label: "Regulatory limit", value: (i) => i.regulatoryLimit_dbm, fails: "above" }
+    ]
+  },
+  examples: [
+    { id: "wifi-ap-fcc", label: "2.4 GHz Wi-Fi access point, FCC Part 15.247", values: { txPower_dbm: 27, cableLoss_db: 1, antennaGain_dbi: 6, regulatoryLimit_dbm: 36 } },
+    { id: "srd-868-etsi", label: "868 MHz SRD at the ETSI 25 mW ERP limit", values: { txPower_dbm: 14, cableLoss_db: 0.5, antennaGain_dbi: 2.15, regulatoryLimit_dbm: 16.15 } },
+    { id: "wifi-etsi-100mw", label: "2.4 GHz radio against the ETSI 100 mW EIRP limit", values: { txPower_dbm: 17, cableLoss_db: 1, antennaGain_dbi: 5, regulatoryLimit_dbm: 20 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "rf-link-budget",
@@ -5986,7 +6182,7 @@ var ohmsLaw = {
   ],
   outputs: [
     { key: "voltage", label: "Voltage", symbol: "V", unit: "V", precision: 4 },
-    { key: "current", label: "Current", symbol: "I", unit: "A", precision: 4, format: "engineering" },
+    { key: "current", label: "Current", symbol: "I", unit: "A", precision: 4, format: "engineering", primary: true },
     { key: "resistance", label: "Resistance", symbol: "R", unit: "\u03A9", precision: 4, format: "engineering" },
     { key: "power", label: "Power", symbol: "P", unit: "W", precision: 4, format: "engineering" }
   ],
@@ -6039,6 +6235,9 @@ var TOLERANCES = {
   10: 5,
   11: 10
 };
+var COLOURS = ["Black", "Brown", "Red", "Orange", "Yellow", "Green", "Blue", "Violet", "Grey", "White", "Gold", "Silver"];
+var MULTIPLIER_LABELS = ["\xD71", "\xD710", "\xD7100", "\xD71k", "\xD710k", "\xD7100k", "\xD71M", "\xD710M", "\xD7100M", "\xD71G", "\xD70.1", "\xD70.01"];
+var DIGIT_OPTIONS = COLOURS.slice(0, 10).map((name, value) => ({ value, label: `${name} (${value})` }));
 function calculateColorCode(inputs) {
   const { band1, band2, band3, multiplier, tolerance, numBands } = inputs;
   const is5band = numBands >= 5;
@@ -6091,7 +6290,7 @@ var resistorColorCode = {
       // Brown
       min: 0,
       max: 9,
-      tooltip: "Color: 0=Blk 1=Brn 2=Red 3=Org 4=Yel 5=Grn 6=Blu 7=Vio 8=Gry 9=Wht"
+      options: DIGIT_OPTIONS
     },
     {
       key: "band2",
@@ -6100,17 +6299,19 @@ var resistorColorCode = {
       defaultValue: 0,
       // Black
       min: 0,
-      max: 9
+      max: 9,
+      options: DIGIT_OPTIONS
     },
     {
       key: "band3",
-      label: "Band 3 (3rd digit / multiplier for 4-band)",
+      label: "Band 3 (3rd digit, 5- and 6-band)",
       unit: "",
       defaultValue: 4,
-      // Yellow → ×10000 for 4-band use multiplier field
+      // Yellow; ignored for 4-band, whose multiplier is the multiplier field
       min: 0,
       max: 11,
-      tooltip: "For 4-band resistors this is actually the multiplier; for 5-band it is the 3rd digit"
+      tooltip: "The third digit of a 5- or 6-band resistor. Ignored for 4-band resistors, whose third band is the multiplier band.",
+      options: DIGIT_OPTIONS
     },
     {
       key: "multiplier",
@@ -6120,7 +6321,7 @@ var resistorColorCode = {
       // ×100
       min: 0,
       max: 11,
-      tooltip: "10=Gold(\xD70.1) 11=Silver(\xD70.01)"
+      options: COLOURS.map((name, value) => ({ value, label: `${name} (${MULTIPLIER_LABELS[value]})` }))
     },
     {
       key: "tolerance",
@@ -6135,11 +6336,12 @@ var resistorColorCode = {
         { label: "Silver (10%)", values: { tolerance: 11 } },
         { label: "Brown (1%)", values: { tolerance: 1 } },
         { label: "Red (2%)", values: { tolerance: 2 } }
-      ]
+      ],
+      options: Object.entries(TOLERANCES).map(([code, pct]) => ({ value: Number(code), label: `${COLOURS[Number(code)]} (\xB1${pct}%)` }))
     }
   ],
   outputs: [
-    { key: "resistance", label: "Resistance", unit: "\u03A9", precision: 3, format: "engineering" },
+    { key: "resistance", label: "Resistance", unit: "\u03A9", precision: 3, format: "engineering", primary: true },
     { key: "tolerance", label: "Tolerance", unit: "%", precision: 2 },
     { key: "minResistance", label: "Min Value", unit: "\u03A9", precision: 3, format: "engineering" },
     { key: "maxResistance", label: "Max Value", unit: "\u03A9", precision: 3, format: "engineering" }
@@ -6223,7 +6425,7 @@ var rcTimeConstant = {
     }
   ],
   outputs: [
-    { key: "tauUs", label: "Time Constant \u03C4", symbol: "\u03C4", unit: "\u03BCs", precision: 3 },
+    { key: "tauUs", label: "Time Constant \u03C4", symbol: "\u03C4", unit: "\u03BCs", precision: 3, primary: true },
     { key: "t63us", label: "Time to 63.2%", unit: "\u03BCs", precision: 3 },
     { key: "t99us", label: "Time to 99%", unit: "\u03BCs", precision: 2 },
     { key: "f3db", label: "\u22123dB Frequency", unit: "Hz", precision: 2, format: "engineering" }
@@ -6341,12 +6543,17 @@ var seriesParallelResistor = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0=Resistor (\u03A9), 1=Capacitor (nF), 2=Inductor (\u03BCH)"
+      options: [
+        { value: 0, label: "Resistor (\u03A9)" },
+        { value: 1, label: "Capacitor (nF)" },
+        { value: 2, label: "Inductor (\u03BCH)" }
+      ]
     }
   ],
   outputs: [
     {
       key: "seriesTotal",
+      primary: true,
       label: "Series Total",
       unit: "\u03A9 / nF / \u03BCH",
       precision: 4,
@@ -6502,12 +6709,16 @@ var lcResonance = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0=Series LC, 1=Parallel LC (tank)"
+      options: [
+        { value: 0, label: "Series LC" },
+        { value: 1, label: "Parallel LC (tank)" }
+      ]
     }
   ],
   outputs: [
     {
       key: "f0_MHz",
+      primary: true,
       label: "Resonant Frequency",
       symbol: "f\u2080",
       unit: "MHz",
@@ -6531,7 +6742,7 @@ var lcResonance = {
       thresholds: {
         good: { min: 10 },
         warning: { min: 1, max: 10 },
-        danger: { max: 1 }
+        danger: { min: 1 }
       }
     },
     {
@@ -6594,8 +6805,19 @@ var lcResonance = {
       "Parallel Q: Q = R/Z\u2080 = R\u221A(C/L)",
       "Bandwidth: BW = f\u2080/Q"
     ],
-    reference: "Terman, Radio Engineers' Handbook, McGraw-Hill, 1943"
+    reference: "Terman, Radio Engineers' Handbook, McGraw-Hill, 1943",
+    substitution: [
+      { symbol: "f\u2080", expression: "1 / (2\u03C0 \u221A({inductance} \xD7 {capacitance}))", output: "f0_MHz" },
+      { symbol: "Z\u2080", expression: "\u221A({inductance} / {capacitance})", output: "characteristicImpedance_ohm" },
+      { symbol: "\u03BB", expression: "c / f\u2080", output: "wavelength_m" }
+    ]
   },
+  sweep: { input: "capacitance", range: [1, 1e4], scale: "log" },
+  examples: [
+    { id: "am-tank-1mhz", label: "AM broadcast tank, 1 MHz", values: { inductance: 250, capacitance: 100, resistance: 1e4, circuitType: 1 } },
+    { id: "nfc-13m56", label: "13.56 MHz NFC antenna", values: { inductance: 1, capacitance: 138, resistance: 1, circuitType: 0 } },
+    { id: "uhf-433-trap", label: "433 MHz series resonator", values: { inductance: 0.033, capacitance: 4, resistance: 0.5, circuitType: 0 } }
+  ],
   visualization: { type: "bode-plot", freqRange: [1e3, 1e9] },
   relatedCalculators: ["rc-time-constant", "filter-designer", "series-parallel-resistor", "coax-impedance"],
   relatedBlogPosts: ["capacitor-code", "equalizer-q-factor", "filter-design-butterworth-chebyshev"],
@@ -6676,7 +6898,11 @@ var opampGain = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0=Inverting, 1=Non-inverting, 2=Differential"
+      options: [
+        { value: 0, label: "Inverting" },
+        { value: 1, label: "Non-inverting" },
+        { value: 2, label: "Differential" }
+      ]
     },
     {
       key: "r1",
@@ -6720,6 +6946,8 @@ var opampGain = {
   outputs: [
     {
       key: "gain",
+      primary: true,
+      signed: "explicit",
       label: "Voltage Gain (V/V)",
       symbol: "Av",
       unit: "V/V",
@@ -6728,6 +6956,7 @@ var opampGain = {
     },
     {
       key: "gainDb",
+      signed: "explicit",
       label: "Voltage Gain",
       symbol: "Av",
       unit: "dB",
@@ -6910,10 +7139,13 @@ var uartBaudRate = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0 = None, 1 = Even or Odd parity (1 bit), 2 = Mark/Space (rare)",
       presets: [
         { label: "None (0 bits)", values: { parity: 0 } },
         { label: "Even/Odd (1 bit)", values: { parity: 1 } }
+      ],
+      options: [
+        { value: 0, label: "None" },
+        { value: 1, label: "Even or odd (1 bit)" }
       ]
     },
     {
@@ -6938,6 +7170,7 @@ var uartBaudRate = {
   outputs: [
     {
       key: "frameBits",
+      display: { integer: true },
       label: "Bits per Frame",
       symbol: "N_{frame}",
       unit: "bits",
@@ -6991,6 +7224,8 @@ var uartBaudRate = {
     },
     {
       key: "baudRateError_pct",
+      primary: true,
+      display: { decimals: 2 },
       label: "Baud Rate Error",
       symbol: "\u03B5_B",
       unit: "%",
@@ -7139,11 +7374,15 @@ var i2cPullup = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0 = Standard 100 kHz, 1 = Fast 400 kHz, 2 = Fast-Plus 1 MHz",
       presets: [
         { label: "Standard (100 kHz)", values: { speedMode: 0 } },
         { label: "Fast (400 kHz)", values: { speedMode: 1 } },
         { label: "Fast-Plus (1 MHz)", values: { speedMode: 2 } }
+      ],
+      options: [
+        { value: 0, label: "Standard (100 kHz)" },
+        { value: 1, label: "Fast (400 kHz)" },
+        { value: 2, label: "Fast-Plus (1 MHz)" }
       ]
     },
     {
@@ -7188,6 +7427,7 @@ var i2cPullup = {
     },
     {
       key: "R_recommended_ohm",
+      primary: true,
       label: "Recommended R_pull",
       symbol: "R_{rec}",
       unit: "\u03A9",
@@ -7321,6 +7561,7 @@ var clockJitter = {
       unit: "ps",
       precision: 1,
       primary: true,
+      signed: "explicit",
       thresholds: { good: { min: 100 }, warning: { min: 0, max: 100 }, danger: { max: 0 } }
     },
     { key: "totalJitter_ps", label: "Total Jitter", unit: "ps", precision: 1 },
@@ -7435,6 +7676,7 @@ var heatsinkCalculator = {
   outputs: [
     {
       key: "thetaSA_required",
+      primary: true,
       label: "Required \u03B8_SA",
       symbol: "\u03B8_SA",
       unit: "\xB0C/W",
@@ -7579,6 +7821,7 @@ var pcbTraceTemp = {
   outputs: [
     {
       key: "tempRise",
+      primary: true,
       label: "Temperature Rise",
       symbol: "\u0394T",
       unit: "\xB0C",
@@ -7745,6 +7988,7 @@ var dcMotorSpeed = {
     },
     {
       key: "loadSpeed",
+      primary: true,
       label: "Speed Under Load",
       symbol: "\u03C9_L",
       unit: "RPM",
@@ -7801,8 +8045,19 @@ var dcMotorSpeed = {
       { symbol: "K_e", description: "Back-EMF constant", unit: "V/RPM" },
       { symbol: "K_t", description: "Torque constant", unit: "N\xB7m/A" }
     ],
-    reference: "Chapman, Electric Machinery Fundamentals"
+    reference: "Chapman, Electric Machinery Fundamentals",
+    substitution: [
+      { symbol: "I_a", expression: "{loadTorque} / {torqueConst}", output: "current" },
+      { symbol: "\u03C9", expression: "({voltage} \u2212 I_a \xD7 {resistance}) / {backEmfConst}", output: "loadSpeed" },
+      { symbol: "\u03C9\u2080", expression: "{voltage} / {backEmfConst}", output: "noLoadSpeed" }
+    ]
   },
+  sweep: { input: "loadTorque", range: [0, 2], scale: "linear" },
+  examples: [
+    { id: "hobby-gearmotor-12v", label: "12 V hobby gearmotor", values: { voltage: 12, resistance: 2, backEmfConst: 55e-4, torqueConst: 0.05, loadTorque: 0.02, efficiency: 70 } },
+    { id: "pmdc-24v", label: "24 V industrial PMDC motor", values: { voltage: 24, resistance: 0.4, backEmfConst: 8e-3, torqueConst: 0.076, loadTorque: 0.5, efficiency: 85 } },
+    { id: "drill-18v", label: "18 V cordless drill motor", values: { voltage: 18, resistance: 0.1, backEmfConst: 86e-5, torqueConst: 82e-4, loadTorque: 0.1, efficiency: 75 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["stepper-motor", "power-factor", "buck-converter"],
   relatedBlogPosts: ["battery-runtime-motor", "dc-motor-control-pwm-drivers", "motor-driver-power"]
@@ -7877,6 +8132,7 @@ var stepperMotor = {
   outputs: [
     {
       key: "stepFrequency",
+      primary: true,
       label: "Step Frequency",
       symbol: "f_step",
       unit: "Hz",
@@ -7884,6 +8140,7 @@ var stepperMotor = {
     },
     {
       key: "effectiveSteps",
+      display: { integer: true },
       label: "Effective Steps/Rev",
       symbol: "steps/rev",
       unit: "steps",
@@ -7913,8 +8170,19 @@ var stepperMotor = {
       { symbol: "steps/rev", description: "Full steps per revolution", unit: "steps" },
       { symbol: "microstepping", description: "Microstepping divisor", unit: "" }
     ],
-    reference: "Microchip AN2164 \u2014 Stepper Motor Control"
+    reference: "Microchip AN2164 \u2014 Stepper Motor Control",
+    substitution: [
+      { symbol: "f_step", expression: "{targetRPM} \xD7 {stepsPerRev} \xD7 {microstepping} / 60", output: "stepFrequency" },
+      { symbol: "v", expression: "{targetRPM} \xD7 {leadScrewPitch} / 60", output: "linearSpeed" },
+      { symbol: "\u03B8", expression: "360\xB0 / ({stepsPerRev} \xD7 {microstepping})", output: "stepAngle" }
+    ]
   },
+  sweep: { input: "targetRPM", range: [1, 1e3], scale: "linear" },
+  examples: [
+    { id: "printer-gt2-axis", label: "3D printer axis, NEMA 17 on a GT2 belt", values: { stepsPerRev: 200, microstepping: 16, targetRPM: 300, leadScrewPitch: 40 } },
+    { id: "cnc-t8-screw", label: "CNC router, T8 lead screw", values: { stepsPerRev: 200, microstepping: 8, targetRPM: 375, leadScrewPitch: 8 } },
+    { id: "telescope-0p9deg", label: "Telescope drive, 0.9\xB0 motor", values: { stepsPerRev: 400, microstepping: 32, targetRPM: 1, leadScrewPitch: 0 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "uart-baud-rate"],
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "torque-unit-converter"]
@@ -7997,7 +8265,8 @@ var shieldingEffectiveness = {
       unit: "",
       defaultValue: 1,
       min: 1
-    }
+    },
+    { key: "targetSE", label: "Target Shielding Effectiveness", symbol: "SE_t", unit: "dB", defaultValue: 40, min: 0, max: 200, tooltip: "The shielding effectiveness the enclosure must reach. The status fails below 20 dB." }
   ],
   outputs: [
     {
@@ -8009,7 +8278,7 @@ var shieldingEffectiveness = {
       thresholds: {
         good: { min: 20 },
         warning: { min: 6, max: 20 },
-        danger: { max: 6 }
+        danger: { min: 6 }
       }
     },
     {
@@ -8021,6 +8290,7 @@ var shieldingEffectiveness = {
     },
     {
       key: "totalSE",
+      primary: true,
       label: "Total Shielding Effectiveness",
       symbol: "SE_total",
       unit: "dB",
@@ -8028,7 +8298,7 @@ var shieldingEffectiveness = {
       thresholds: {
         good: { min: 40 },
         warning: { min: 20, max: 40 },
-        danger: { max: 20 }
+        danger: { min: 20 }
       }
     },
     {
@@ -8046,6 +8316,12 @@ var shieldingEffectiveness = {
       precision: 2
     }
   ],
+  examples: [
+    { id: "copper", label: "Copper", values: { conductivity: 59.6, permeability: 1 } },
+    { id: "aluminum", label: "Aluminum", values: { conductivity: 35, permeability: 1 } },
+    { id: "steel", label: "Steel", values: { conductivity: 10, permeability: 1e3 } },
+    { id: "mu-metal", label: "Mu-metal", values: { conductivity: 1.6, permeability: 2e4 } }
+  ],
   calculate: calculateShieldingEffectiveness,
   formula: {
     primary: "SE = A + R = 8.686\xD7(t/\u03B4) + 20\xD7log\u2081\u2080(|1+\u03B7\u2080/\u03B7_s|/2)",
@@ -8058,8 +8334,24 @@ var shieldingEffectiveness = {
       { symbol: "\u03C3", description: "Conductivity", unit: "S/m" },
       { symbol: "\u03BC_r", description: "Relative permeability", unit: "" }
     ],
-    reference: "MIL-STD-285, Schulz et al."
+    reference: "MIL-STD-285, Schulz et al.",
+    substitution: [
+      { symbol: "\u03B4", expression: "1 / \u221A(\u03C0 \xD7 {frequency} \xD7 \u03BC\u2080 \xD7 {permeability} \xD7 {conductivity})", output: "skinDepth" },
+      { symbol: "A", expression: "8.686 \xD7 {thickness} / \u03B4", output: "absorptionLoss" },
+      { symbol: "R", expression: "20\xB7log\u2081\u2080(\u221A({conductivity} / (2\u03C0 \xD7 {frequency} \xD7 {permeability} \xD7 \u03BC\u2080)) / 2)", output: "reflectionLoss" },
+      { symbol: "SE", expression: "A + R", output: "totalSE" }
+    ]
   },
+  sweep: {
+    input: "frequency",
+    range: [1e-3, 100],
+    scale: "log",
+    lines: [
+      { id: "se-floor", kind: "limit", label: "Minimum", value: () => 20, fails: "below" },
+      { id: "se-target", kind: "target", label: "Target", value: (i) => i.targetSE }
+    ]
+  },
+  target: { output: "totalSE", input: "targetSE", sense: "min", failAt: 20 },
   visualization: { type: "none" },
   relatedCalculators: ["skin-depth", "vswr-return-loss", "db-converter"],
   relatedBlogPosts: ["chassis-resonance", "emc-fcc-ce-testing-guide", "emi-radiated-emissions-pcb-fcc-compliance"]
@@ -8145,6 +8437,7 @@ var wireGauge = {
     },
     {
       key: "crossSection",
+      primary: true,
       label: "Cross-Section Area",
       symbol: "A",
       unit: "mm\xB2",
@@ -8242,6 +8535,7 @@ var capacitorEnergy = {
   outputs: [
     {
       key: "energy",
+      primary: true,
       label: "Stored Energy",
       symbol: "E",
       unit: "mJ",
@@ -8280,8 +8574,19 @@ var capacitorEnergy = {
       { symbol: "I_avg", description: "Average charge current", unit: "A" },
       { symbol: "t", description: "Charge time", unit: "s" }
     ],
-    reference: "Horowitz & Hill, The Art of Electronics"
+    reference: "Horowitz & Hill, The Art of Electronics",
+    substitution: [
+      { symbol: "E", expression: "\xBD \xD7 {capacitance} \xD7 {voltage}\xB2", output: "energy" },
+      { symbol: "Q", expression: "{capacitance} \xD7 {voltage}", output: "charge" },
+      { symbol: "I_avg", expression: "Q / {chargeTime}", output: "avgChargeCurrent" }
+    ]
   },
+  sweep: { input: "voltage", range: [0, 50], scale: "linear" },
+  examples: [
+    { id: "camera-flash", label: "Camera flash, 330 \xB5F at 300 V", values: { capacitance: 330, voltage: 300, chargeTime: 2e3 } },
+    { id: "supercap-holdup", label: "Supercapacitor hold-up, 1 F at 5 V", values: { capacitance: 1e6, voltage: 5, chargeTime: 1e4 } },
+    { id: "bulk-12v", label: "Bulk capacitor, 1000 \xB5F at 12 V", values: { capacitance: 1e3, voltage: 12, chargeTime: 50 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["rc-time-constant", "lc-resonance", "power-factor"],
   relatedBlogPosts: ["capacitive-proximity", "inrush-current-limiter"]
@@ -8395,6 +8700,7 @@ var powerFactor = {
     },
     {
       key: "correctionCapacitor",
+      primary: true,
       label: "Correction Capacitor",
       symbol: "C",
       unit: "\u03BCF",
@@ -8414,8 +8720,19 @@ var powerFactor = {
       { symbol: "f", description: "Supply frequency", unit: "Hz" },
       { symbol: "V", description: "Supply voltage", unit: "V" }
     ],
-    reference: "IEC 60038 standard voltages"
+    reference: "IEC 60038 standard voltages",
+    substitution: [
+      { symbol: "P", expression: "{apparentPower} \xD7 {powerFactor}", output: "realPower" },
+      { symbol: "Q", expression: "{apparentPower} \xD7 sin(acos({powerFactor}))", output: "reactivePower" },
+      { symbol: "C", expression: "(Q \u2212 P \xD7 tan(acos({targetPF}))) / (2\u03C0 \xD7 {frequency} \xD7 {voltage}\xB2)", output: "correctionCapacitor" }
+    ]
   },
+  sweep: { input: "powerFactor", range: [0.5, 1], scale: "linear" },
+  examples: [
+    { id: "workshop-motor-230v", label: "Workshop motor, 230 V 50 Hz", values: { apparentPower: 5e3, powerFactor: 0.75, voltage: 230, frequency: 50, targetPF: 0.95 } },
+    { id: "plant-load-480v", label: "Plant load, 480 V 60 Hz", values: { apparentPower: 1e5, powerFactor: 0.7, voltage: 480, frequency: 60, targetPF: 0.95 } },
+    { id: "lighting-120v", label: "Fluorescent lighting bank, 120 V 60 Hz", values: { apparentPower: 2e3, powerFactor: 0.6, voltage: 120, frequency: 60, targetPF: 0.9 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["capacitor-energy", "ldo-thermal", "buck-converter"]
 };
@@ -8477,6 +8794,10 @@ var qFactor = {
       presets: [
         { label: "Inductor", values: { componentType: 0 } },
         { label: "Capacitor", values: { componentType: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Inductor" },
+        { value: 1, label: "Capacitor" }
       ]
     },
     {
@@ -8503,11 +8824,13 @@ var qFactor = {
       unit: "MHz",
       defaultValue: 10,
       min: 1e-3
-    }
+    },
+    { key: "targetQ", label: "Target Q", symbol: "Q_t", unit: "", defaultValue: 50, min: 1, max: 1e4, tooltip: "The quality factor the component must reach, for example from a filter design. The status fails below 10." }
   ],
   outputs: [
     {
       key: "qFactor",
+      primary: true,
       label: "Q Factor",
       symbol: "Q",
       unit: "",
@@ -8556,8 +8879,28 @@ var qFactor = {
       { symbol: "ESR", description: "Equivalent Series Resistance", unit: "\u03A9" },
       { symbol: "\u03C9", description: "Angular frequency (2\u03C0f)", unit: "rad/s" },
       { symbol: "BW", description: "Bandwidth", unit: "Hz" }
+    ],
+    substitution: [
+      { symbol: "X", expression: "2\u03C0 \xD7 {frequency} \xD7 L (inductor) or 1 / (2\u03C0 \xD7 {frequency} \xD7 C) (capacitor), L or C = {value}", output: "reactance" },
+      { symbol: "Q", expression: "X / {esr}", output: "qFactor" },
+      { symbol: "BW", expression: "{frequency} / Q", output: "bandwidth" }
     ]
   },
+  sweep: {
+    input: "frequency",
+    range: [0.01, 1e3],
+    scale: "log",
+    lines: [
+      { id: "q-floor", kind: "limit", label: "Minimum", value: () => 10, fails: "below" },
+      { id: "q-target", kind: "target", label: "Target", value: (i) => i.targetQ }
+    ]
+  },
+  target: { output: "qFactor", input: "targetQ", sense: "min", failAt: 10 },
+  examples: [
+    { id: "air-core-1uh-30m", label: "Air-core inductor, 1 \xB5H at 30 MHz", values: { componentType: 0, value: 1, esr: 0.5, frequency: 30 } },
+    { id: "c0g-100pf-100m", label: "C0G capacitor, 100 pF at 100 MHz", values: { componentType: 1, value: 0.1, esr: 0.1, frequency: 100 } },
+    { id: "power-inductor-1m", label: "Power inductor, 10 \xB5H at 1 MHz", values: { componentType: 0, value: 10, esr: 0.5, frequency: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["lc-resonance", "vswr-return-loss", "filter-designer"],
   relatedBlogPosts: ["equalizer-q-factor", "impedance-matching-wideband-lna", "lc-resonance"],
@@ -8578,7 +8921,7 @@ function calculateWaveguideCutoff(inputs) {
       errors: ["TEM00 mode invalid for rectangular waveguide"]
     };
   }
-  const c2 = 3e8;
+  const c2 = 299792458;
   const a = width * 1e-3;
   const b = height * 1e-3;
   const cutoffFreq_Hz = c2 / 2 * Math.sqrt(Math.pow(modeM / a, 2) + Math.pow(modeN / b, 2));
@@ -8681,6 +9024,7 @@ var waveguideCutoff = {
   outputs: [
     {
       key: "cutoffFreq",
+      primary: true,
       label: "Cutoff Frequency",
       symbol: "f_c",
       unit: "GHz",
@@ -8714,6 +9058,12 @@ var waveguideCutoff = {
       unit: "(1=yes)",
       precision: 0
     }
+  ],
+  examples: [
+    { id: "wr-90", label: "WR-90 (X-band)", values: { width: 22.86, height: 10.16 } },
+    { id: "wr-62", label: "WR-62 (Ku-band)", values: { width: 15.8, height: 7.9 } },
+    { id: "wr-42", label: "WR-42 (K-band)", values: { width: 10.668, height: 4.318 } },
+    { id: "wr-28", label: "WR-28 (Ka-band)", values: { width: 7.112, height: 3.556 } }
   ],
   calculate: calculateWaveguideCutoff,
   formula: {
@@ -8849,6 +9199,7 @@ var zenerDiode = {
   outputs: [
     {
       key: "seriesResistor",
+      primary: true,
       label: "Series Resistor",
       symbol: "R_S",
       unit: "\u03A9",
@@ -8979,6 +9330,7 @@ var inductorEnergy = {
   outputs: [
     {
       key: "energy",
+      primary: true,
       label: "Stored Energy",
       symbol: "E",
       unit: "\u03BCJ",
@@ -9152,6 +9504,7 @@ var boostConverter = {
     },
     {
       key: "inductorValue",
+      primary: true,
       label: "Inductor Value",
       symbol: "L",
       unit: "\u03BCH",
@@ -9240,6 +9593,10 @@ var threePhasePower = {
       presets: [
         { label: "Wye (Star)", values: { connectionType: 0 } },
         { label: "Delta", values: { connectionType: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Wye (star)" },
+        { value: 1, label: "Delta" }
       ]
     },
     {
@@ -9279,6 +9636,7 @@ var threePhasePower = {
     },
     {
       key: "realPower",
+      primary: true,
       label: "Real Power",
       symbol: "P",
       unit: "kW",
@@ -9316,8 +9674,19 @@ var threePhasePower = {
       { symbol: "V_L", description: "Line voltage", unit: "V" },
       { symbol: "I", description: "Line current", unit: "A" },
       { symbol: "PF", description: "Power factor", unit: "" }
+    ],
+    substitution: [
+      { symbol: "S", expression: "\u221A3 \xD7 {lineVoltage} \xD7 {current}", output: "apparentPower" },
+      { symbol: "P", expression: "S \xD7 {powerFactor}", output: "realPower" },
+      { symbol: "Q", expression: "S \xD7 sin(acos({powerFactor}))", output: "reactivePower" }
     ]
   },
+  sweep: { input: "current", range: [0, 100], scale: "linear" },
+  examples: [
+    { id: "eu-motor-400v", label: "400 V motor at 28 A", values: { connectionType: 0, lineVoltage: 400, current: 28, powerFactor: 0.86 } },
+    { id: "us-feeder-480v", label: "480 V plant feeder at 100 A", values: { connectionType: 1, lineVoltage: 480, current: 100, powerFactor: 0.9 } },
+    { id: "dc-pdu-208v", label: "208 V data centre PDU at 24 A", values: { connectionType: 0, lineVoltage: 208, current: 24, powerFactor: 0.95 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["power-factor", "voltage-divider", "dc-motor-speed"]
 };
@@ -9401,6 +9770,7 @@ var antennaBeamwidth = {
   outputs: [
     {
       key: "beamwidthHPBW",
+      primary: true,
       label: "3 dB Beamwidth",
       symbol: "\u03B8_3dB",
       unit: "\xB0",
@@ -9429,6 +9799,7 @@ var antennaBeamwidth = {
     },
     {
       key: "gainFromAperture",
+      signed: "explicit",
       label: "Gain from Aperture",
       symbol: "G_aperture",
       unit: "dBi",
@@ -9444,8 +9815,19 @@ var antennaBeamwidth = {
       { symbol: "D", description: "Aperture diameter", unit: "m" },
       { symbol: "\u03B7_a", description: "Aperture efficiency", unit: "" },
       { symbol: "G", description: "Gain", unit: "dBi" }
+    ],
+    substitution: [
+      { symbol: "\u03BB", expression: "c / {frequency}", output: "wavelength" },
+      { symbol: "\u03B8\u2083dB", expression: "70\xB0 \xD7 \u03BB / {apertureDiameter}", output: "beamwidthHPBW" },
+      { symbol: "G", expression: "10\xB7log\u2081\u2080({apertureEfficiency} \xD7 (\u03C0 \xD7 {apertureDiameter} / \u03BB)\xB2)", output: "gainFromAperture" }
     ]
   },
+  sweep: { input: "apertureDiameter", range: [0.1, 10], scale: "log" },
+  examples: [
+    { id: "ku-60cm-dish", label: "Ku-band 60 cm TV dish", values: { gain: 36, frequency: 12, apertureDiameter: 0.6, apertureEfficiency: 65 } },
+    { id: "c-band-2m4", label: "C-band 2.4 m earth station", values: { gain: 38, frequency: 4, apertureDiameter: 2.4, apertureEfficiency: 65 } },
+    { id: "x-band-30cm", label: "X-band 30 cm radar dish", values: { gain: 28, frequency: 10, apertureDiameter: 0.3, apertureEfficiency: 55 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["eirp-calculator", "dipole-antenna", "patch-antenna"],
   relatedBlogPosts: ["power-density"],
@@ -9534,11 +9916,13 @@ var snrCalculator = {
       unit: "K",
       defaultValue: 290,
       min: 1
-    }
+    },
+    { key: "targetSnr", label: "Target SNR", symbol: "SNR_t", unit: "dB", defaultValue: 20, min: -20, max: 100, tooltip: "The signal-to-noise ratio the demodulator needs. The status fails below 10 dB." }
   ],
   outputs: [
     {
       key: "snr",
+      primary: true,
       label: "Signal-to-Noise Ratio",
       symbol: "SNR",
       unit: "dB",
@@ -9588,8 +9972,28 @@ var snrCalculator = {
       { symbol: "NF", description: "Noise figure", unit: "dB" },
       { symbol: "SNR", description: "Signal-to-noise ratio", unit: "dB" }
     ],
-    reference: "Friis, 'Noise Figures of Radio Receivers', Proc. IRE, 1944"
+    reference: "Friis, 'Noise Figures of Radio Receivers', Proc. IRE, 1944",
+    substitution: [
+      { symbol: "kTB", expression: "10\xB7log\u2081\u2080(k \xD7 {temperature} \xD7 {bandwidth}) + 30", output: "thermalNoise" },
+      { symbol: "N", expression: "kTB + {noiseFigure}", output: "noiseFloor" },
+      { symbol: "SNR", expression: "{signalPower} \u2212 N", output: "snr" }
+    ]
   },
+  sweep: {
+    input: "signalPower",
+    range: [-140, -20],
+    scale: "linear",
+    lines: [
+      { id: "snr-floor", kind: "limit", label: "Minimum", value: () => 10, fails: "below" },
+      { id: "snr-target", kind: "target", label: "Target", value: (i) => i.targetSnr }
+    ]
+  },
+  target: { output: "snr", input: "targetSnr", sense: "min", failAt: 10 },
+  examples: [
+    { id: "wifi-20mhz", label: "Wi-Fi 20 MHz channel at \u221270 dBm", values: { bandwidth: 20, noiseFigure: 6, signalPower: -70, temperature: 290 } },
+    { id: "lora-125k", label: "LoRa 125 kHz channel at \u2212120 dBm", values: { bandwidth: 0.125, noiseFigure: 6, signalPower: -120, temperature: 290 } },
+    { id: "gnss-l1", label: "GNSS L1 front end, 2 MHz", values: { bandwidth: 2, noiseFigure: 2, signalPower: -125, temperature: 290 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["noise-figure-cascade", "rf-link-budget", "filter-designer"],
   relatedBlogPosts: ["am-modulation-index", "ber-snr", "ber-vs-snr-digital-communications"]
@@ -9670,6 +10074,11 @@ var controlledImpedance = {
         { label: "Surface Microstrip", values: { traceType: 0 } },
         { label: "Embedded Microstrip", values: { traceType: 1 } },
         { label: "Stripline", values: { traceType: 2 } }
+      ],
+      options: [
+        { value: 0, label: "Surface microstrip" },
+        { value: 1, label: "Embedded microstrip" },
+        { value: 2, label: "Stripline" }
       ]
     },
     {
@@ -9739,6 +10148,7 @@ var controlledImpedance = {
   outputs: [
     {
       key: "impedance",
+      primary: true,
       label: "Characteristic Impedance",
       symbol: "Z\u2080",
       unit: "\u03A9",
@@ -9890,6 +10300,7 @@ var ferriteBead = {
     },
     {
       key: "insertionLoss",
+      primary: true,
       label: "Insertion Loss",
       symbol: "IL",
       unit: "dB",
@@ -9918,8 +10329,18 @@ var ferriteBead = {
       { symbol: "Z_bead", description: "Bead impedance at frequency", unit: "\u03A9" },
       { symbol: "R_L", description: "Load impedance", unit: "\u03A9" },
       { symbol: "Z_100", description: "Bead impedance at 100 MHz", unit: "\u03A9" }
+    ],
+    substitution: [
+      { symbol: "Z", expression: "{impedance100MHz} \xD7 \u221A({frequency} / 100 MHz)", output: "beadImpedance" },
+      { symbol: "IL", expression: "20\xB7log\u2081\u2080(1 + Z / {loadImpedance})", output: "insertionLoss" }
     ]
   },
+  sweep: { input: "frequency", range: [1, 1e3], scale: "log" },
+  examples: [
+    { id: "bead-600-50ohm", label: "600 \u03A9 bead on a 50 \u03A9 line", values: { impedance100MHz: 600, dcResistance: 0.3, loadImpedance: 50, frequency: 100 } },
+    { id: "bead-220-rail", label: "220 \u03A9 bead feeding a 10 \u03A9 supply load", values: { impedance100MHz: 220, dcResistance: 0.05, loadImpedance: 10, frequency: 100 } },
+    { id: "bead-usb-480m", label: "90 \u03A9 bead on a USB 2.0 line at 480 MHz", values: { impedance100MHz: 90, dcResistance: 0.2, loadImpedance: 90, frequency: 480 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["shielding-effectiveness", "filter-designer", "microstrip-impedance"],
   relatedBlogPosts: ["emc-fcc-ce-testing-guide"]
@@ -9930,7 +10351,7 @@ function calculateFreeSpacePathLoss(inputs) {
   const { frequency, distance } = inputs;
   const f_Hz = frequency * 1e6;
   const d_m = distance * 1e3;
-  const c2 = 3e8;
+  const c2 = 299792458;
   const fspl_linear = Math.pow(4 * Math.PI * d_m * f_Hz / c2, 2);
   const fspl_dB = 20 * Math.log10(4 * Math.PI * Math.max(d_m, 1e-3) * Math.max(f_Hz, 1) / c2);
   return {
@@ -9987,6 +10408,7 @@ var freeSpacePathLoss = {
   outputs: [
     {
       key: "fspl_dB",
+      primary: true,
       label: "Free-Space Path Loss",
       symbol: "FSPL",
       unit: "dB",
@@ -10015,8 +10437,18 @@ var freeSpacePathLoss = {
       { symbol: "f", description: "Signal frequency", unit: "Hz" },
       { symbol: "c", description: "Speed of light (3\xD710\u2078)", unit: "m/s" },
       { symbol: "\u03BB", description: "Wavelength (c/f)", unit: "m" }
+    ],
+    substitution: [
+      { symbol: "FSPL", expression: "20\xB7log\u2081\u2080(4\u03C0 \xD7 {distance} \xD7 {frequency} / c)", output: "fspl_dB" }
     ]
   },
+  sweep: { input: "distance", range: [1e-3, 1e3], scale: "log" },
+  examples: [
+    { id: "wifi-100m", label: "2.4 GHz Wi-Fi, 100 m", values: { frequency: 2400, distance: 0.1 } },
+    { id: "lora-868-15km", label: "868 MHz LoRa, 15 km", values: { frequency: 868, distance: 15 } },
+    { id: "mmwave-28g-200m", label: "28 GHz 5G small cell, 200 m", values: { frequency: 28e3, distance: 0.2 } },
+    { id: "geo-ku-downlink", label: "Geostationary Ku-band downlink", values: { frequency: 12e3, distance: 35786 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "eirp-calculator", "wavelength-frequency"],
   relatedTools: ["sat-link-budget"],
@@ -10040,12 +10472,12 @@ function calculateRadarRangeEquation(inputs) {
   const Pt = peakPower * 1e3;
   const G_linear = Math.pow(10, gain / 10);
   const f_Hz = frequency * 1e9;
-  const c2 = 3e8;
+  const c2 = 299792458;
   const lambda = c2 / f_Hz;
   const sigma = rcs;
   const F_linear = Math.pow(10, noiseFigure / 10);
   const B_Hz = bandwidth * 1e6;
-  const k = 138e-25;
+  const k = 1380649e-29;
   const T = 290;
   const Pmin = k * T * B_Hz * F_linear;
   const numerator = Pt * G_linear * G_linear * lambda * lambda * sigma;
@@ -10143,6 +10575,7 @@ var radarRangeEquation = {
   outputs: [
     {
       key: "maxRange",
+      primary: true,
       label: "Maximum Detection Range",
       symbol: "R_max",
       unit: "km",
@@ -10174,8 +10607,18 @@ var radarRangeEquation = {
       { symbol: "\u03BB", description: "Wavelength", unit: "m" },
       { symbol: "\u03C3", description: "Radar cross section", unit: "m\xB2" },
       { symbol: "Pmin", description: "Minimum detectable signal (kTBF)", unit: "W" }
+    ],
+    substitution: [
+      { symbol: "R_max", expression: "({peakPower} \xD7 G\xB2 \xD7 \u03BB\xB2 \xD7 {rcs} / ((4\u03C0)\xB3 \xD7 k \xD7 290 K \xD7 {bandwidth} \xD7 F))^\xBC, G = {gain}, F = {noiseFigure}, \u03BB = c / {frequency}", output: "maxRange" },
+      { symbol: "P_r", expression: "10\xB7log\u2081\u2080({peakPower} \xD7 G\xB2 \xD7 \u03BB\xB2 \xD7 {rcs} / ((4\u03C0)\xB3 \xD7 (1 km)\u2074))", output: "receivedPower" }
     ]
   },
+  sweep: { input: "rcs", range: [0.01, 100], scale: "log" },
+  examples: [
+    { id: "s-band-surveillance", label: "S-band air surveillance, 2 m\xB2 aircraft", values: { peakPower: 1e3, gain: 33, frequency: 3, rcs: 2, noiseFigure: 4, bandwidth: 1 } },
+    { id: "x-band-marine", label: "X-band marine radar, small boat", values: { peakPower: 25, gain: 30, frequency: 9.4, rcs: 10, noiseFigure: 6, bandwidth: 20 } },
+    { id: "automotive-77g", label: "77 GHz automotive radar, car ahead", values: { peakPower: 1e-3, gain: 25, frequency: 77, rcs: 10, noiseFigure: 12, bandwidth: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "noise-figure-cascade", "eirp-calculator"],
   relatedBlogPosts: ["radar-detection-monte-carlo-pulsed-radar", "radar-detection-monte-carlo"],
@@ -10268,11 +10711,13 @@ var powerAmplifierEfficiency = {
       defaultValue: 500,
       min: 0.1,
       tooltip: "DC current draw from supply in mA"
-    }
+    },
+    { key: "targetPae", label: "Target PAE", symbol: "PAE_t", unit: "%", defaultValue: 40, min: 0, max: 100, tooltip: "The power-added efficiency the amplifier must reach. The status fails below 20 %." }
   ],
   outputs: [
     {
       key: "gain",
+      signed: "explicit",
       label: "Gain",
       symbol: "G",
       unit: "dB",
@@ -10287,6 +10732,7 @@ var powerAmplifierEfficiency = {
     },
     {
       key: "pae",
+      primary: true,
       label: "Power-Added Efficiency",
       symbol: "PAE",
       unit: "%",
@@ -10326,8 +10772,28 @@ var powerAmplifierEfficiency = {
       { symbol: "Pin", description: "RF input power", unit: "mW" },
       { symbol: "Pdc", description: "DC supply power (Vdc \xD7 Idc)", unit: "mW" },
       { symbol: "\u03B7_D", description: "Drain efficiency (Pout/Pdc)", unit: "%" }
+    ],
+    substitution: [
+      { symbol: "P_DC", expression: "{dcVoltage} \xD7 {dcCurrent}", output: "dcPower" },
+      { symbol: "PAE", expression: "(10^({outputPower}/10) \u2212 10^({inputPower}/10)) mW / P_DC", output: "pae" },
+      { symbol: "\u03B7_D", expression: "10^({outputPower}/10) mW / P_DC", output: "drainEfficiency" }
     ]
   },
+  sweep: {
+    input: "dcCurrent",
+    range: [250, 2500],
+    scale: "log",
+    lines: [
+      { id: "pae-floor", kind: "limit", label: "Minimum", value: () => 20, fails: "below" },
+      { id: "pae-target", kind: "target", label: "Target", value: (i) => i.targetPae }
+    ]
+  },
+  target: { output: "pae", input: "targetPae", sense: "min", failAt: 20 },
+  examples: [
+    { id: "class-ab-1w-900m", label: "Class-AB 1 W PA at 900 MHz", values: { outputPower: 30, inputPower: 10, dcVoltage: 5, dcCurrent: 450 } },
+    { id: "gan-10w-28v", label: "GaN 10 W PA on 28 V", values: { outputPower: 40, inputPower: 27, dcVoltage: 28, dcCurrent: 600 } },
+    { id: "lte-handset-pa", label: "LTE handset PA on 3.4 V", values: { outputPower: 27, inputPower: 0, dcVoltage: 3.4, dcCurrent: 300 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "db-converter", "noise-figure-cascade"],
   relatedBlogPosts: ["class-d-efficiency", "current-mirror", "heatsink-selection"],
@@ -10469,6 +10935,7 @@ var intermodulationDistortion = {
     },
     {
       key: "im3Ratio",
+      primary: true,
       label: "IM3 to Carrier Ratio",
       symbol: "IM3",
       unit: "dBc",
@@ -10711,7 +11178,11 @@ var phaseNoiseToJitter = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = Single flat phase noise, 1 = Multi-point profile for accurate integration"
+      tooltip: "Multi-point integrates a four-point L(f) profile instead of one flat level",
+      options: [
+        { value: 0, label: "Single flat level" },
+        { value: 1, label: "Multi-point profile" }
+      ]
     },
     {
       key: "offset2",
@@ -10771,6 +11242,7 @@ var phaseNoiseToJitter = {
   outputs: [
     {
       key: "rmsJitter",
+      primary: true,
       label: "RMS Jitter",
       symbol: "J_rms",
       unit: "ps",
@@ -10947,6 +11419,7 @@ var vibrationPhaseNoise = {
   outputs: [
     {
       key: "lvib",
+      primary: true,
       label: "Sinusoidal Vibration Phase Noise",
       symbol: "L_vib",
       unit: "dBc/Hz",
@@ -10973,6 +11446,7 @@ var vibrationPhaseNoise = {
     },
     {
       key: "degradation",
+      signed: "explicit",
       label: "Degradation vs Quiescent",
       symbol: "\u0394L",
       unit: "dB",
@@ -11102,7 +11576,8 @@ var returnLossError = {
       max: 60,
       step: 0.5,
       tooltip: "Return loss of the measurement source port (how well the source is matched)"
-    }
+    },
+    { key: "targetUncertainty", label: "Target Uncertainty", symbol: "\u0394RL_t", unit: "dB", defaultValue: 3, min: 0.01, max: 30, tooltip: "The largest return loss uncertainty the measurement may have. The status fails above 6 dB." }
   ],
   outputs: [
     {
@@ -11123,6 +11598,7 @@ var returnLossError = {
     },
     {
       key: "uncertaintyDb",
+      primary: true,
       label: "Measurement Uncertainty",
       symbol: "\\Delta RL",
       unit: "dB",
@@ -11172,8 +11648,28 @@ var returnLossError = {
       "Additionally, some of the reflected signal re-reflects off the imperfect source match, traverses the DUT twice (hence rho_DUT squared), and adds to the measurement.",
       "Since the phases of these error terms are generally unknown, we compute the worst-case bounds assuming all vectors align (maximum error) or oppose (minimum error)."
     ],
-    reference: "Agilent AN 1287-3: Applying Error Correction to VNA Measurements"
+    reference: "Agilent AN 1287-3: Applying Error Correction to VNA Measurements",
+    substitution: [
+      { symbol: "RL_worst", expression: "\u221220\xB7log\u2081\u2080(10^(\u2212{dutReturnLoss}/20) + 10^(\u2212{directivity}/20) + \u03C1_DUT\xB2 \xD7 10^(\u2212{sourceMatch}/20))", output: "rlMin" },
+      { symbol: "RL_best", expression: "\u221220\xB7log\u2081\u2080(|10^(\u2212{dutReturnLoss}/20) \u2212 10^(\u2212{directivity}/20) \u2212 \u03C1_DUT\xB2 \xD7 10^(\u2212{sourceMatch}/20)|)", output: "rlMax" },
+      { symbol: "\u0394RL", expression: "RL_best \u2212 RL_worst", output: "uncertaintyDb" }
+    ]
   },
+  sweep: {
+    input: "directivity",
+    range: [20, 50],
+    scale: "linear",
+    lines: [
+      { id: "uncertainty-ceiling", kind: "limit", label: "Maximum", value: () => 6, fails: "above" },
+      { id: "uncertainty-target", kind: "target", label: "Target", value: (i) => i.targetUncertainty }
+    ]
+  },
+  target: { output: "uncertaintyDb", input: "targetUncertainty", sense: "max", failAt: 6 },
+  examples: [
+    { id: "bridge-40db", label: "Return-loss bridge, 40 dB directivity", values: { dutReturnLoss: 20, directivity: 40, sourceMatch: 30 } },
+    { id: "coupler-25db", label: "Low-cost coupler, 25 dB directivity", values: { dutReturnLoss: 15, directivity: 25, sourceMatch: 20 } },
+    { id: "calibrated-vna", label: "Calibrated VNA, 46 dB effective directivity", values: { dutReturnLoss: 30, directivity: 46, sourceMatch: 40 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["vswr-return-loss", "noise-figure-cascade", "rf-link-budget"],
   liveWidgets: [
@@ -11286,7 +11782,8 @@ var adcSnr = {
       defaultValue: 1,
       min: 1e-3,
       tooltip: "RMS aperture jitter of the ADC sampling clock in picoseconds"
-    }
+    },
+    { key: "targetSnr", label: "Target SNR", symbol: "SNR_t", unit: "dB", defaultValue: 60, min: 0, max: 200, tooltip: "The signal-to-noise ratio the converter must reach. The status fails below 40 dB." }
   ],
   outputs: [
     {
@@ -11298,6 +11795,7 @@ var adcSnr = {
     },
     {
       key: "snrWithJitter",
+      primary: true,
       label: "Effective SNR (with Jitter)",
       symbol: "SNR_eff",
       unit: "dB",
@@ -11339,8 +11837,28 @@ var adcSnr = {
       { symbol: "ENOB", description: "Effective number of bits", unit: "bits" },
       { symbol: "t_j", description: "Aperture jitter (RMS)", unit: "s" },
       { symbol: "f_in", description: "Input signal frequency", unit: "Hz" }
+    ],
+    substitution: [
+      { symbol: "SNR_q", expression: "20\xB7log\u2081\u2080(2) \xD7 {bits} + 10\xB7log\u2081\u2080(1.5)", output: "theoreticalSnr" },
+      { symbol: "SNR", expression: "\u221210\xB7log\u2081\u2080(10^(\u2212SNR_q/10) + (2\u03C0 \xD7 {inputFreq} \xD7 {jitter})\xB2)", output: "snrWithJitter" },
+      { symbol: "ENOB", expression: "(SNR \u2212 10\xB7log\u2081\u2080(1.5)) / (20\xB7log\u2081\u2080 2)", output: "enob" }
     ]
   },
+  sweep: {
+    input: "inputFreq",
+    range: [0.01, 1e3],
+    scale: "log",
+    lines: [
+      { id: "snr-floor", kind: "limit", label: "Minimum", value: () => 40, fails: "below" },
+      { id: "snr-target", kind: "target", label: "Target", value: (i) => i.targetSnr }
+    ]
+  },
+  target: { output: "snrWithJitter", input: "targetSnr", sense: "min", failAt: 40 },
+  examples: [
+    { id: "if-sampling-12b", label: "12-bit, 100 MSPS IF sampling at 70 MHz", values: { bits: 12, inputFreq: 70, samplingFreq: 100, jitter: 0.2 } },
+    { id: "precision-16b-audio", label: "16-bit audio-band converter", values: { bits: 16, inputFreq: 0.02, samplingFreq: 0.192, jitter: 10 } },
+    { id: "rf-sampling-14b", label: "14-bit, 250 MSPS undersampling a 1 GHz input", values: { bits: 14, inputFreq: 1e3, samplingFreq: 250, jitter: 0.1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["sampling-nyquist", "snr-calculator", "johnson-noise"],
   relatedBlogPosts: ["accelerometer-sensitivity", "ber-snr", "pressure-bridge-output"]
@@ -11428,12 +11946,18 @@ var fftBinResolution = {
         { label: "Rectangular", values: { windowType: 0 } },
         { label: "Hann", values: { windowType: 1 } },
         { label: "Blackman", values: { windowType: 2 } }
+      ],
+      options: [
+        { value: 0, label: "Rectangular" },
+        { value: 1, label: "Hann" },
+        { value: 2, label: "Blackman" }
       ]
     }
   ],
   outputs: [
     {
       key: "binResolution",
+      primary: true,
       label: "Frequency Bin Resolution",
       symbol: "\u0394f",
       unit: "Hz",
@@ -11455,6 +11979,7 @@ var fftBinResolution = {
     },
     {
       key: "noiseFloor",
+      signed: "explicit",
       label: "FFT Processing Gain",
       symbol: "G_proc",
       unit: "dB",
@@ -11565,6 +12090,7 @@ var johnsonNoise = {
   outputs: [
     {
       key: "noiseVoltage",
+      primary: true,
       label: "RMS Noise Voltage",
       symbol: "V_n",
       unit: "nV",
@@ -11602,8 +12128,18 @@ var johnsonNoise = {
       { symbol: "T", description: "Absolute temperature", unit: "K" },
       { symbol: "R", description: "Resistance", unit: "\u03A9" },
       { symbol: "B", description: "Noise bandwidth", unit: "Hz" }
+    ],
+    substitution: [
+      { symbol: "V\u2099", expression: "\u221A(4 \xD7 k \xD7 ({temperature} + 273.15) \xD7 {resistance} \xD7 {bandwidth})", output: "noiseVoltage" },
+      { symbol: "P\u2099", expression: "10\xB7log\u2081\u2080(k \xD7 T \xD7 {bandwidth}) + 30", output: "noisePower" }
     ]
   },
+  sweep: { input: "resistance", range: [1, 1e6], scale: "log" },
+  examples: [
+    { id: "rf-50ohm-1m", label: "50 \u03A9 RF input, 1 MHz", values: { resistance: 50, temperature: 25, bandwidth: 1 } },
+    { id: "scope-1meg-20m", label: "1 M\u03A9 oscilloscope input, 20 MHz", values: { resistance: 1e6, temperature: 25, bandwidth: 20 } },
+    { id: "audio-10k-20k", label: "10 k\u03A9 audio source, 20 kHz", values: { resistance: 1e4, temperature: 25, bandwidth: 0.02 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["noise-figure-cascade", "snr-calculator", "adc-snr"],
   relatedBlogPosts: ["quantization-noise"]
@@ -11690,6 +12226,7 @@ var amModulationIndex = {
   outputs: [
     {
       key: "modulationIndex",
+      primary: true,
       label: "Modulation Index",
       symbol: "m",
       unit: "%",
@@ -11823,6 +12360,7 @@ var fmModulationIndex = {
   outputs: [
     {
       key: "modulationIndex",
+      primary: true,
       label: "Modulation Index (\u03B2)",
       symbol: "\u03B2",
       unit: "",
@@ -11844,6 +12382,7 @@ var fmModulationIndex = {
     },
     {
       key: "snrImprovement",
+      signed: "explicit",
       label: "SNR Improvement",
       symbol: "\u0394SNR",
       unit: "dB",
@@ -11944,7 +12483,7 @@ var oversamplingSnr = {
       min: 0,
       max: 5,
       step: 1,
-      tooltip: "0 = no shaping (simple oversampling), 1 = 1st order, 2 = 2nd order, etc.",
+      tooltip: "Order of the noise-shaping loop; 0 is plain oversampling with no shaping",
       presets: [
         { label: "None (0)", values: { noiseShapingOrder: 0 } },
         { label: "1st order", values: { noiseShapingOrder: 1 } },
@@ -11963,6 +12502,7 @@ var oversamplingSnr = {
     },
     {
       key: "oversampledSnr",
+      primary: true,
       label: "Oversampled SNR",
       symbol: "SNR_os",
       unit: "dB",
@@ -11977,6 +12517,7 @@ var oversamplingSnr = {
     },
     {
       key: "snrImprovement",
+      signed: "explicit",
       label: "SNR Improvement",
       symbol: "\u0394SNR",
       unit: "dB",
@@ -12085,6 +12626,8 @@ var digitalFilterOrder = {
   outputs: [
     {
       key: "butterworthOrder",
+      primary: true,
+      display: { integer: true },
       label: "Butterworth Order",
       symbol: "n_BW",
       unit: "",
@@ -12092,6 +12635,7 @@ var digitalFilterOrder = {
     },
     {
       key: "chebyshevOrder",
+      display: { integer: true },
       label: "Chebyshev Order",
       symbol: "n_CH",
       unit: "",
@@ -12099,6 +12643,7 @@ var digitalFilterOrder = {
     },
     {
       key: "ellipticOrder",
+      display: { integer: true },
       label: "Elliptic Order (approx)",
       symbol: "n_EL",
       unit: "",
@@ -12208,6 +12753,8 @@ var yagiAntenna = {
   outputs: [
     {
       key: "gain",
+      primary: true,
+      signed: "explicit",
       label: "Estimated Gain",
       symbol: "G",
       unit: "dBi",
@@ -12357,6 +12904,8 @@ var hornAntenna = {
   outputs: [
     {
       key: "gain",
+      primary: true,
+      signed: "explicit",
       label: "Gain",
       symbol: "G",
       unit: "dBi",
@@ -12493,6 +13042,8 @@ var parabolicDishAntenna = {
   outputs: [
     {
       key: "gain",
+      primary: true,
+      signed: "explicit",
       label: "Antenna Gain",
       symbol: "G",
       unit: "dBi",
@@ -12638,6 +13189,7 @@ var loopAntenna = {
     },
     {
       key: "radiation_resistance",
+      primary: true,
       label: "Radiation Resistance",
       symbol: "R_rad",
       unit: "\u03A9",
@@ -12653,6 +13205,7 @@ var loopAntenna = {
     },
     {
       key: "gain",
+      signed: "explicit",
       label: "Gain (small loop)",
       symbol: "G",
       unit: "dBi",
@@ -12799,6 +13352,7 @@ var spiTiming = {
     },
     {
       key: "maxFreqCapacitive",
+      primary: true,
       label: "Max Freq (RC-limited)",
       symbol: "f_max",
       unit: "MHz",
@@ -12937,6 +13491,7 @@ var canBusTiming = {
     },
     {
       key: "nominalBitTime",
+      display: { integer: true },
       label: "Nominal Bit Time",
       symbol: "NBT",
       unit: "tq",
@@ -12944,6 +13499,7 @@ var canBusTiming = {
     },
     {
       key: "syncSeg",
+      display: { integer: true },
       label: "Sync Segment",
       symbol: "SS",
       unit: "tq",
@@ -12951,6 +13507,7 @@ var canBusTiming = {
     },
     {
       key: "propSeg",
+      display: { integer: true },
       label: "Propagation Segment",
       symbol: "PROP",
       unit: "tq",
@@ -12958,6 +13515,7 @@ var canBusTiming = {
     },
     {
       key: "phase1",
+      display: { integer: true },
       label: "Phase Buffer 1 (BS1)",
       symbol: "BS1",
       unit: "tq",
@@ -12965,6 +13523,7 @@ var canBusTiming = {
     },
     {
       key: "phase2",
+      display: { integer: true },
       label: "Phase Buffer 2 (BS2)",
       symbol: "BS2",
       unit: "tq",
@@ -12972,6 +13531,8 @@ var canBusTiming = {
     },
     {
       key: "prescaler",
+      primary: true,
+      display: { integer: true },
       label: "Prescaler",
       symbol: "BRP",
       unit: "",
@@ -13044,6 +13605,10 @@ var usbTermination = {
       presets: [
         { label: "USB 2.0 (HS 480 Mbps)", values: { usbVersion: 0 } },
         { label: "USB 3.0 (SS 2.5 Gbps)", values: { usbVersion: 1 } }
+      ],
+      options: [
+        { value: 0, label: "USB 2.0 (High Speed, 480 Mbps)" },
+        { value: 1, label: "USB 3.0 (SuperSpeed, 5 Gbps)" }
       ]
     },
     {
@@ -13074,6 +13639,7 @@ var usbTermination = {
   outputs: [
     {
       key: "terminationResistor",
+      primary: true,
       label: "Termination Resistor",
       symbol: "R_term",
       unit: "\u03A9",
@@ -13219,6 +13785,7 @@ var rs485Termination = {
   outputs: [
     {
       key: "terminationResistor",
+      primary: true,
       label: "Termination Resistor",
       symbol: "R_term",
       unit: "\u03A9",
@@ -13349,6 +13916,7 @@ var pwmDutyCycle = {
   outputs: [
     {
       key: "dutyCycle",
+      primary: true,
       label: "Duty Cycle",
       symbol: "D",
       unit: "%",
@@ -13543,6 +14111,7 @@ var mosfetPowerDissipation = {
     },
     {
       key: "totalLoss",
+      primary: true,
       label: "Total Power Loss",
       symbol: "P_total",
       unit: "mW",
@@ -13700,6 +14269,7 @@ var solarPanelSizing = {
     },
     {
       key: "panelWattage",
+      primary: true,
       label: "Required Panel Wattage",
       symbol: "P_panel",
       unit: "W",
@@ -13848,6 +14418,7 @@ var batteryChargeTime = {
   outputs: [
     {
       key: "chargeTime",
+      primary: true,
       label: "Total Charge Time",
       symbol: "t_total",
       unit: "hr",
@@ -13980,6 +14551,7 @@ var inrushCurrentLimiter = {
   outputs: [
     {
       key: "ntcResistanceCold",
+      primary: true,
       label: "Required NTC Cold Resistance",
       symbol: "R_cold",
       unit: "\u03A9",
@@ -14137,6 +14709,7 @@ var chargePumpVoltage = {
     },
     {
       key: "loadedVoltage",
+      primary: true,
       label: "Loaded Output Voltage",
       symbol: "V_out",
       unit: "V",
@@ -14306,6 +14879,7 @@ var switchingRegulatorRipple = {
     },
     {
       key: "peakToPeakRipple",
+      primary: true,
       label: "Total Peak-to-Peak Ripple",
       symbol: "\u0394V_out",
       unit: "mV",
@@ -14411,7 +14985,8 @@ var linearRegulatorDropout = {
       defaultValue: 50,
       min: 1,
       tooltip: "Junction-to-ambient thermal resistance (from datasheet)"
-    }
+    },
+    { key: "targetHeadroom", label: "Target Headroom", symbol: "V_H,t", unit: "mV", defaultValue: 500, min: 0, max: 1e4, tooltip: "The headroom above dropout the design should keep for ripple and transients. The status fails below 0 mV, where the regulator is in dropout." }
   ],
   outputs: [
     {
@@ -14459,6 +15034,8 @@ var linearRegulatorDropout = {
     },
     {
       key: "headroom",
+      primary: true,
+      signed: "explicit",
       label: "Input Headroom",
       symbol: "V_head",
       unit: "mV",
@@ -14479,8 +15056,28 @@ var linearRegulatorDropout = {
       { symbol: "I_load", description: "Load current", unit: "A" },
       { symbol: "V_DO", description: "Dropout voltage", unit: "V" },
       { symbol: "\u03B8_JA", description: "Thermal resistance", unit: "\xB0C/W" }
+    ],
+    substitution: [
+      { symbol: "V_H", expression: "({inputVoltage} \u2212 {outputVoltage}) \u2212 {dropoutVoltage}", output: "headroom" },
+      { symbol: "P_D", expression: "({inputVoltage} \u2212 {outputVoltage}) \xD7 {loadCurrent}", output: "powerDissipation" },
+      { symbol: "\u03B7", expression: "{outputVoltage} / {inputVoltage}", output: "efficiency" }
     ]
   },
+  sweep: {
+    input: "inputVoltage",
+    range: [3, 6],
+    scale: "linear",
+    lines: [
+      { id: "dropout", kind: "limit", label: "Dropout", value: () => 0, fails: "below" },
+      { id: "headroom-target", kind: "target", label: "Target", value: (i) => i.targetHeadroom }
+    ]
+  },
+  target: { output: "headroom", input: "targetHeadroom", sense: "min", failAt: 0 },
+  examples: [
+    { id: "liion-to-3v3", label: "Li-ion cell to 3.3 V, low-dropout part", values: { inputVoltage: 3.7, outputVoltage: 3.3, loadCurrent: 200, dropoutVoltage: 150, thetaJA: 180 } },
+    { id: "lm1117-5v-3v3", label: "5 V to 3.3 V at 1 A, LM1117-class", values: { inputVoltage: 5, outputVoltage: 3.3, loadCurrent: 1e3, dropoutVoltage: 1200, thetaJA: 61 } },
+    { id: "7805-from-12v", label: "7805 from 12 V at 500 mA", values: { inputVoltage: 12, outputVoltage: 5, loadCurrent: 500, dropoutVoltage: 2e3, thetaJA: 65 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["mosfet-power-dissipation", "thermal-resistance-network", "switching-regulator-ripple"]
 };
@@ -14596,6 +15193,7 @@ var pcbCrosstalk = {
     },
     {
       key: "next_dB",
+      primary: true,
       label: "NEXT",
       symbol: "NEXT",
       unit: "dB",
@@ -14749,7 +15347,7 @@ var decouplingCapacitor = {
       thresholds: {
         good: { max: 50 },
         warning: { max: 100 },
-        danger: { min: 100 }
+        danger: { max: 100 }
       }
     },
     {
@@ -14768,6 +15366,8 @@ var decouplingCapacitor = {
     },
     {
       key: "numCapacitors",
+      primary: true,
+      display: { integer: true },
       label: "Capacitors Needed",
       symbol: "N_cap",
       unit: "",
@@ -14794,8 +15394,19 @@ var decouplingCapacitor = {
       { symbol: "ESL", description: "Equivalent series inductance", unit: "H" },
       { symbol: "f_SRF", description: "Self-resonant frequency", unit: "Hz" },
       { symbol: "Z", description: "Impedance", unit: "\u03A9" }
+    ],
+    substitution: [
+      { symbol: "f_SRF", expression: "1 / (2\u03C0 \u221A({esl} \xD7 {capacitance}))", output: "selfResonantFreq" },
+      { symbol: "|Z|", expression: "\u221A({esr}\xB2 + (1/(2\u03C0 \xD7 {targetFreq} \xD7 {capacitance}) \u2212 2\u03C0 \xD7 {targetFreq} \xD7 {esl})\xB2)", output: "impedanceAtTarget" },
+      { symbol: "N", expression: "\u2308|Z| / {supplyImpedance}\u2309", output: "numCapacitors" }
     ]
   },
+  sweep: { input: "targetFreq", range: [0.1, 1e3], scale: "log" },
+  examples: [
+    { id: "fpga-0402-100n", label: "100 nF 0402 on an FPGA core rail", values: { capacitance: 100, esr: 30, esl: 0.5, targetFreq: 100, supplyImpedance: 10 } },
+    { id: "bulk-10u-0805", label: "10 \xB5F 0805 bulk capacitor at 1 MHz", values: { capacitance: 1e4, esr: 5, esl: 1, targetFreq: 1, supplyImpedance: 10 } },
+    { id: "serdes-0201-1n", label: "1 nF 0201 for a GHz SerDes rail", values: { capacitance: 1, esr: 100, esl: 0.3, targetFreq: 1e3, supplyImpedance: 20 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["switching-regulator-ripple", "pcb-trace-inductance", "lc-resonance"],
   relatedTools: ["pdn-impedance"],
@@ -14874,6 +15485,7 @@ var pcbTraceInductance = {
   outputs: [
     {
       key: "inductance",
+      primary: true,
       label: "Total Inductance",
       symbol: "L",
       unit: "nH",
@@ -15017,6 +15629,10 @@ var viaThermalResistance = {
       presets: [
         { label: "Unfilled (plated)", values: { viaFill: 0 } },
         { label: "Copper filled", values: { viaFill: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Unfilled (plated)" },
+        { value: 1, label: "Copper filled" }
       ]
     }
   ],
@@ -15030,6 +15646,7 @@ var viaThermalResistance = {
     },
     {
       key: "arrayResistance",
+      primary: true,
       label: "Array Thermal Resistance",
       symbol: "\u03B8_array",
       unit: "\xB0C/W",
@@ -15205,6 +15822,7 @@ var bjtBiasPoint = {
     },
     {
       key: "ic",
+      primary: true,
       label: "Collector Current",
       symbol: "I_C",
       unit: "mA",
@@ -15226,7 +15844,7 @@ var bjtBiasPoint = {
       thresholds: {
         good: { min: 1 },
         warning: { min: 0.2 },
-        danger: { max: 0.2 }
+        danger: { min: 0.2 }
       }
     },
     {
@@ -15253,8 +15871,19 @@ var bjtBiasPoint = {
       { symbol: "I_C", description: "Collector current", unit: "A" },
       { symbol: "V_CE", description: "Collector-emitter voltage", unit: "V" },
       { symbol: "\u03B2", description: "Current gain", unit: "" }
+    ],
+    substitution: [
+      { symbol: "I_C", expression: "({vcc} \xD7 {r2}/({r1} + {r2}) \u2212 {vbe}) / ({re} + ({r1} \u2225 {r2}) / {beta})", output: "ic" },
+      { symbol: "V_C", expression: "{vcc} \u2212 I_C \xD7 {rc}", output: "vc" },
+      { symbol: "V_CE", expression: "V_C \u2212 I_C \xD7 {re}", output: "vce" }
     ]
   },
+  sweep: { input: "re", range: [100, 1e4], scale: "log" },
+  examples: [
+    { id: "small-signal-1ma", label: "Small-signal stage at 1 mA, 12 V", values: { vcc: 12, r1: 82, r2: 15, rc: 4.7, re: 1e3, beta: 100, vbe: 0.65 } },
+    { id: "audio-preamp-9v", label: "Audio preamp on a 9 V battery", values: { vcc: 9, r1: 47, r2: 10, rc: 3.3, re: 680, beta: 200, vbe: 0.65 } },
+    { id: "driver-10ma", label: "Driver stage at 10 mA", values: { vcc: 12, r1: 10, r2: 3.3, rc: 0.47, re: 220, beta: 100, vbe: 0.7 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["transistor-switch", "mosfet-operating-point", "opamp-gain"],
   relatedBlogPosts: ["current-mirror"]
@@ -15361,6 +15990,7 @@ var mosfetOperatingPoint = {
   outputs: [
     {
       key: "id",
+      primary: true,
       label: "Drain Current",
       symbol: "I_D",
       unit: "mA",
@@ -15404,8 +16034,19 @@ var mosfetOperatingPoint = {
       { symbol: "k_n", description: "Process transconductance parameter", unit: "A/V\xB2" },
       { symbol: "V_DS", description: "Drain-source voltage", unit: "V" },
       { symbol: "g_m", description: "Transconductance", unit: "A/V" }
+    ],
+    substitution: [
+      { symbol: "I_D", expression: "{kn}/2 \xD7 ({vgs} \u2212 {vth})\xB2 in saturation ({vds} \u2265 {vgs} \u2212 {vth}), else {kn} \xD7 (({vgs} \u2212 {vth}) \xD7 {vds} \u2212 {vds}\xB2/2)", output: "id" },
+      { symbol: "g_m", expression: "{kn} \xD7 ({vgs} \u2212 {vth}) in saturation, else {kn} \xD7 {vds}", output: "gm" },
+      { symbol: "P_D", expression: "I_D \xD7 {vds}", output: "powerDissipation" }
     ]
   },
+  sweep: { input: "vgs", range: [0, 10], scale: "linear" },
+  examples: [
+    { id: "small-signal-switch", label: "Small-signal switch, 5 V gate", values: { vgs: 5, vth: 2.1, kn: 200, vds: 0.5, vdd: 5, rdLoad: 0.1 } },
+    { id: "logic-level-power", label: "Logic-level power MOSFET, 4.5 V gate", values: { vgs: 4.5, vth: 1.5, kn: 2e4, vds: 0.2, vdd: 12, rdLoad: 0.01 } },
+    { id: "common-source-bias", label: "Common-source amplifier bias", values: { vgs: 2.8, vth: 2, kn: 50, vds: 6, vdd: 12, rdLoad: 3.3 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["bjt-bias-point", "mosfet-power-dissipation", "transistor-switch"]
 };
@@ -15511,6 +16152,7 @@ var comparatorHysteresis = {
     },
     {
       key: "hysteresis",
+      primary: true,
       label: "Hysteresis Band",
       symbol: "\u0394V_hyst",
       unit: "mV",
@@ -15614,6 +16256,10 @@ var timer555 = {
       presets: [
         { label: "Astable (oscillator)", values: { mode: 0 } },
         { label: "Monostable (one-shot)", values: { mode: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Astable (oscillator)" },
+        { value: 1, label: "Monostable (one-shot)" }
       ]
     },
     {
@@ -15655,6 +16301,7 @@ var timer555 = {
   outputs: [
     {
       key: "frequency",
+      primary: true,
       label: "Frequency",
       symbol: "f",
       unit: "Hz",
@@ -15834,6 +16481,7 @@ var transistorSwitch = {
     },
     {
       key: "rb",
+      primary: true,
       label: "Base Resistor",
       symbol: "R_B",
       unit: "k\u03A9",
@@ -15980,6 +16628,7 @@ var currentMirror = {
   outputs: [
     {
       key: "outputCurrent",
+      primary: true,
       label: "Output Current (with \u03B2 error)",
       symbol: "I_out",
       unit: "mA",
@@ -16001,6 +16650,7 @@ var currentMirror = {
     },
     {
       key: "error",
+      signed: "explicit",
       label: "\u03B2 Error",
       symbol: "\u03B5_\u03B2",
       unit: "%",
@@ -16128,6 +16778,7 @@ var thermalResistanceNetwork = {
   outputs: [
     {
       key: "junctionTemp",
+      primary: true,
       label: "Junction Temperature",
       symbol: "T_J",
       unit: "\xB0C",
@@ -16161,6 +16812,7 @@ var thermalResistanceNetwork = {
     },
     {
       key: "thermalMargin",
+      signed: "explicit",
       label: "Thermal Margin (to 150\xB0C)",
       symbol: "\u0394T_margin",
       unit: "\xB0C",
@@ -16293,6 +16945,7 @@ var bldcMotor = {
   outputs: [
     {
       key: "noLoadRpm",
+      primary: true,
       label: "No-Load RPM",
       symbol: "N_0",
       unit: "RPM",
@@ -16361,8 +17014,19 @@ var bldcMotor = {
       { symbol: "N_0", description: "No-load speed", unit: "RPM" },
       { symbol: "I_stall", description: "Stall current", unit: "A" },
       { symbol: "R_m", description: "Winding resistance", unit: "\u03A9" }
+    ],
+    substitution: [
+      { symbol: "N\u2080", expression: "{kvRating} \xD7 {voltage}", output: "noLoadRpm" },
+      { symbol: "I_stall", expression: "{voltage} / {motorResistance}", output: "stallCurrent" },
+      { symbol: "\u03B7_max", expression: "(1 \u2212 \u221A({noLoadCurrent} / I_stall))\xB2", output: "maxEfficiency" }
     ]
   },
+  sweep: { input: "voltage", range: [3, 50], scale: "linear" },
+  examples: [
+    { id: "fpv-2400kv-4s", label: "5-inch FPV quad, 2400 Kv on 4S", values: { kvRating: 2400, voltage: 14.8, motorResistance: 60, noLoadCurrent: 1.2, propDiameter: 5 } },
+    { id: "camera-drone-920kv", label: "Camera drone, 920 Kv on 4S", values: { kvRating: 920, voltage: 14.8, motorResistance: 120, noLoadCurrent: 0.4, propDiameter: 10 } },
+    { id: "fixed-wing-1000kv-3s", label: "Fixed-wing, 1000 Kv on 3S", values: { kvRating: 1e3, voltage: 11.1, motorResistance: 50, noLoadCurrent: 0.5, propDiameter: 9 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["bldc-winding", "bldc-efficiency", "bldc-thermal", "dc-motor-speed", "stepper-motor"],
   relatedBlogPosts: ["bldc-efficiency", "bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"]
@@ -16587,16 +17251,19 @@ var bldcWinding = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = Wye (Y), 1 = Delta (\u0394)",
       presets: [
         { label: "Wye (Y)", values: { windingType: 0 } },
         { label: "Delta (\u0394)", values: { windingType: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Wye (Y)" },
+        { value: 1, label: "Delta (\u0394)" }
       ]
     }
   ],
   outputs: [
-    { key: "turnsPerCoil", label: "Turns per Coil", symbol: "N", unit: "turns", precision: 0, tooltip: "Number of wire turns per stator coil" },
-    { key: "wireAwg", label: "Recommended Wire AWG", symbol: "AWG", unit: "", precision: 0, tooltip: "American Wire Gauge for target current density of 6.5 A/mm\xB2" },
+    { key: "turnsPerCoil", label: "Turns per Coil", symbol: "N", unit: "turns", precision: 0, tooltip: "Number of wire turns per stator coil", primary: true, display: { integer: true } },
+    { key: "wireAwg", label: "Recommended Wire AWG", symbol: "AWG", unit: "", precision: 0, tooltip: "American Wire Gauge for target current density of 6.5 A/mm\xB2", display: { integer: true } },
     { key: "wireDiameter", label: "Wire Diameter", symbol: "d_w", unit: "mm", precision: 3 },
     {
       key: "fillFactor",
@@ -16608,7 +17275,7 @@ var bldcWinding = {
       tooltip: "Ratio of copper area to slot area \u2014 above 75% is very difficult to wind"
     },
     { key: "phaseResistance", label: "Phase Resistance", symbol: "R_ph", unit: "m\u03A9", precision: 1 },
-    { key: "coilSpan", label: "Coil Span", symbol: "", unit: "slots", precision: 0 },
+    { key: "coilSpan", label: "Coil Span", symbol: "", unit: "slots", precision: 0, display: { integer: true } },
     { key: "windingFactor", label: "Winding Factor (Kw1)", symbol: "K_{w1}", unit: "", precision: 4, tooltip: "Fundamental winding factor = pitch factor \xD7 distribution factor" },
     { key: "actualKv", label: "Achieved Kv", symbol: "K_v", unit: "RPM/V", precision: 1, tooltip: "Actual Kv with integer turns (may differ from target)" },
     {
@@ -16619,6 +17286,13 @@ var bldcWinding = {
       precision: 1,
       tooltip: "Equivalent Kv if winding connection type were changed (Kv_delta = Kv_wye \xD7 \u221A3)"
     }
+  ],
+  examples: [
+    { id: "12n14p-drone", label: "12N14P (drone)", values: { slotCount: 12, poleCount: 14 } },
+    { id: "9n6p-small", label: "9N6P (small)", values: { slotCount: 9, poleCount: 6 } },
+    { id: "12n16p-hub", label: "12N16P (hub)", values: { slotCount: 12, poleCount: 16 } },
+    { id: "24n22p-gimbal", label: "24N22P (gimbal)", values: { slotCount: 24, poleCount: 22 } },
+    { id: "36n42p-direct-drive", label: "36N42P (DD)", values: { slotCount: 36, poleCount: 42 } }
   ],
   calculate: calculateBldcWinding,
   formula: {
@@ -16725,7 +17399,8 @@ var bldcEfficiency = {
       ]
     },
     { key: "operatingCurrent", label: "Operating Current", symbol: "I", unit: "A", defaultValue: 10, min: 0.01, tooltip: "Actual load current to analyze" },
-    { key: "polePairs", label: "Pole Pairs", symbol: "p", unit: "", defaultValue: 7, min: 1, max: 30 }
+    { key: "polePairs", label: "Pole Pairs", symbol: "p", unit: "", defaultValue: 7, min: 1, max: 30 },
+    { key: "targetEfficiency", label: "Target Efficiency", symbol: "\u03B7_t", unit: "%", defaultValue: 85, min: 0, max: 100, tooltip: "The efficiency the motor must reach at the operating current. The status fails below 50 %." }
   ],
   outputs: [
     { key: "copperLoss", label: "Copper Loss", symbol: "P_Cu", unit: "W", precision: 2 },
@@ -16739,6 +17414,7 @@ var bldcEfficiency = {
       symbol: "\u03B7",
       unit: "%",
       precision: 1,
+      primary: true,
       thresholds: { good: { min: 85 }, warning: { min: 70 }, danger: { min: 50 } }
     },
     { key: "optimalCurrent", label: "Optimal Current", symbol: "I_opt", unit: "A", precision: 2, tooltip: "Current that maximizes efficiency: \u221A(I\u2080 \xD7 I_stall)" },
@@ -16757,8 +17433,28 @@ var bldcEfficiency = {
       { symbol: "P_Fe", description: "Iron (core) losses", unit: "W" },
       { symbol: "I_opt", description: "Current for peak efficiency", unit: "A" }
     ],
-    reference: "Hanselman, D. \u2014 Brushless Permanent Magnet Motor Design"
+    reference: "Hanselman, D. \u2014 Brushless Permanent Magnet Motor Design",
+    substitution: [
+      { symbol: "P_Cu", expression: "1.5 \xD7 {operatingCurrent}\xB2 \xD7 {phaseResistance}", output: "copperLoss" },
+      { symbol: "P_out", expression: "{supplyVoltage} \xD7 {operatingCurrent} \u2212 P_Cu \u2212 P_Fe \u2212 P_mech", output: "outputPower" },
+      { symbol: "\u03B7", expression: "P_out / ({supplyVoltage} \xD7 {operatingCurrent})", output: "efficiency" }
+    ]
   },
+  sweep: {
+    input: "operatingCurrent",
+    range: [1, 60],
+    scale: "linear",
+    lines: [
+      { id: "efficiency-floor", kind: "limit", label: "Minimum", value: () => 50, fails: "below" },
+      { id: "efficiency-target", kind: "target", label: "Target", value: (i) => i.targetEfficiency }
+    ]
+  },
+  target: { output: "efficiency", input: "targetEfficiency", sense: "min", failAt: 50 },
+  examples: [
+    { id: "drone-920kv-6s", label: "Drone motor, 920 Kv on 6S", values: { kvRating: 920, phaseResistance: 45, noLoadCurrent: 1.5, supplyVoltage: 22.2, operatingCurrent: 10, polePairs: 7 } },
+    { id: "gimbal-100kv", label: "Gimbal motor, 100 Kv on 12 V", values: { kvRating: 100, phaseResistance: 5e3, noLoadCurrent: 0.05, supplyVoltage: 12, operatingCurrent: 0.5, polePairs: 7 } },
+    { id: "ebike-hub-48v", label: "E-bike hub motor on 48 V", values: { kvRating: 10, phaseResistance: 150, noLoadCurrent: 1, supplyVoltage: 48, operatingCurrent: 15, polePairs: 23 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["bldc-motor", "bldc-winding", "bldc-thermal", "motor-efficiency"],
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-motor", "bldc-winding-turns-wire-gauge-patterns"]
@@ -16853,13 +17549,14 @@ var bldcThermal = {
   ],
   outputs: [
     { key: "tempRise", label: "Temperature Rise", symbol: "\u0394T", unit: "\xB0C", precision: 1 },
-    { key: "steadyStateTemp", label: "Steady-State Winding Temp", symbol: "T_w", unit: "\xB0C", precision: 1 },
+    { key: "steadyStateTemp", label: "Steady-State Winding Temp", symbol: "T_w", unit: "\xB0C", precision: 1, primary: true },
     {
       key: "thermalMargin",
       label: "Thermal Margin",
       symbol: "\u0394T_m",
       unit: "\xB0C",
       precision: 1,
+      signed: "explicit",
       thresholds: { good: { min: 30 }, warning: { min: 10 }, danger: { min: 0 } },
       tooltip: "Remaining temperature headroom before insulation limit"
     },
@@ -16877,8 +17574,26 @@ var bldcThermal = {
       { symbol: "\u03B1", description: "Copper temperature coefficient (0.00393/\xB0C)", unit: "1/\xB0C" },
       { symbol: "I_derated", description: "Maximum safe continuous current", unit: "A" }
     ],
-    reference: "IEC 60034-1 \u2014 Rotating electrical machines; NEMA MG-1"
+    reference: "IEC 60034-1 \u2014 Rotating electrical machines; NEMA MG-1",
+    substitution: [
+      { symbol: "\u0394T", expression: "1.5 \xD7 {operatingCurrent}\xB2 \xD7 {phaseResistance} \xD7 ({thermalResWC} + {thermalResCA})", output: "tempRise" },
+      { symbol: "T", expression: "{ambientTemp} + \u0394T", output: "steadyStateTemp" },
+      { symbol: "I_cont", expression: "\u221A(({maxWindingTemp} \u2212 {ambientTemp}) / (1.5 \xD7 {phaseResistance} \xD7 ({thermalResWC} + {thermalResCA})))", output: "deratedCurrent" }
+    ]
   },
+  sweep: {
+    input: "operatingCurrent",
+    range: [1, 30],
+    scale: "linear",
+    lines: [
+      { id: "max-winding", kind: "limit", label: "Max winding temperature", value: (i) => i.maxWindingTemp, fails: "above" }
+    ]
+  },
+  examples: [
+    { id: "drone-class-f", label: "Drone motor, class F, 10 A", values: { phaseResistance: 45, continuousCurrent: 20, peakCurrent: 40, thermalResWC: 2.5, thermalResCA: 8, ambientTemp: 25, maxWindingTemp: 155, operatingCurrent: 10 } },
+    { id: "servo-enclosure-60c", label: "Servo motor in a 60 \xB0C enclosure", values: { phaseResistance: 300, continuousCurrent: 5, peakCurrent: 15, thermalResWC: 1.5, thermalResCA: 4, ambientTemp: 60, maxWindingTemp: 155, operatingCurrent: 4 } },
+    { id: "robot-joint-class-h", label: "Robot joint motor, class H", values: { phaseResistance: 80, continuousCurrent: 12, peakCurrent: 36, thermalResWC: 1, thermalResCA: 3, ambientTemp: 40, maxWindingTemp: 180, operatingCurrent: 10 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["bldc-winding", "bldc-efficiency", "motor-heat-dissipation", "bldc-motor"],
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"]
@@ -16982,7 +17697,7 @@ var servoMotor = {
     { key: "armRes", label: "Winding Resistance", symbol: "R_a", unit: "\u03A9", defaultValue: 2, min: 0.1 }
   ],
   outputs: [
-    { key: "torque", label: "Operating Torque", symbol: "T", unit: "N\xB7m", precision: 4 },
+    { key: "torque", label: "Operating Torque", symbol: "T", unit: "N\xB7m", precision: 4, primary: true },
     { key: "operatingSpeed", label: "Operating Speed", symbol: "n", unit: "RPM", precision: 1 },
     { key: "backEmf", label: "Back-EMF", symbol: "V_emf", unit: "V", precision: 2 },
     { key: "inputPower", label: "Input Power", symbol: "P_in", unit: "W", precision: 2 },
@@ -17008,8 +17723,19 @@ var servoMotor = {
       { symbol: "\u03C9", description: "Angular speed at the operating point", unit: "rad/s" },
       { symbol: "T_stall", description: "Stall torque at this supply voltage", unit: "N\xB7m" }
     ],
-    reference: "Hughes & Drury, Electric Motors and Drives, ch. 3 (d.c. motors); maxon, Key information on maxon DC motors"
+    reference: "Hughes & Drury, Electric Motors and Drives, ch. 3 (d.c. motors); maxon, Key information on maxon DC motors",
+    substitution: [
+      { symbol: "K_t", expression: "{voltage} / ({speed} \xD7 2\u03C0/60)", output: "torqueConstant" },
+      { symbol: "T", expression: "K_t \xD7 {current}", output: "torque" },
+      { symbol: "n", expression: "{speed} \xD7 ({voltage} \u2212 {current} \xD7 {armRes}) / {voltage}", output: "operatingSpeed" }
+    ]
   },
+  sweep: { input: "current", range: [0, 2.4], scale: "linear" },
+  examples: [
+    { id: "hobby-servo-5v", label: "Hobby servo on 5 V", values: { voltage: 5, current: 0.5, speed: 500, loadTorque: 0.05, armRes: 2 } },
+    { id: "brushed-servo-24v", label: "24 V brushed servo motor", values: { voltage: 24, current: 2, speed: 3e3, loadTorque: 0.1, armRes: 1.2 } },
+    { id: "gearmotor-servo-12v", label: "12 V gearmotor servo", values: { voltage: 12, current: 0.8, speed: 300, loadTorque: 0.2, armRes: 4 } }
+  ],
   assumptions: [
     {
       code: "linear-dc-motor",
@@ -17055,7 +17781,7 @@ var gearRatio = {
     { key: "efficiency", label: "Gear Efficiency", symbol: "\u03B7", unit: "%", defaultValue: 95, min: 10, max: 100 }
   ],
   outputs: [
-    { key: "gearRatio", label: "Gear Ratio", symbol: "GR", unit: ":1", precision: 2 },
+    { key: "gearRatio", label: "Gear Ratio", symbol: "GR", unit: ":1", precision: 2, primary: true },
     { key: "outputSpeed", label: "Output Speed", symbol: "n\u2082", unit: "RPM", precision: 1 },
     { key: "outputTorque", label: "Output Torque", symbol: "T\u2082", unit: "N\xB7m", precision: 3 },
     { key: "inputPower", label: "Input Power", symbol: "P_in", unit: "W", precision: 2 },
@@ -17100,7 +17826,7 @@ var pwmDutyCycleMotor = {
     { key: "motorResistance", label: "Winding Resistance", symbol: "R", unit: "\u03A9", defaultValue: 1.5, min: 0.01 }
   ],
   outputs: [
-    { key: "effectiveVoltage", label: "Effective Voltage", symbol: "V_eff", unit: "V", precision: 2 },
+    { key: "effectiveVoltage", label: "Effective Voltage", symbol: "V_eff", unit: "V", precision: 2, primary: true },
     { key: "noLoadSpeed", label: "No-Load Speed", symbol: "n\u2080", unit: "RPM", precision: 0 },
     { key: "stallCurrent", label: "Stall Current", symbol: "I_s", unit: "A", precision: 2, thresholds: { good: { max: 10 }, warning: { max: 20 } } },
     { key: "peakPower", label: "Peak Power (stall)", symbol: "P_s", unit: "W", precision: 1 },
@@ -17112,8 +17838,19 @@ var pwmDutyCycleMotor = {
     variables: [
       { symbol: "D", description: "Duty cycle (0\u20131)", unit: "" },
       { symbol: "Kv", description: "Motor speed constant", unit: "RPM/V" }
+    ],
+    substitution: [
+      { symbol: "V_eff", expression: "{supplyVoltage} \xD7 {dutyCycle}", output: "effectiveVoltage" },
+      { symbol: "n\u2080", expression: "V_eff \xD7 {motorKv}", output: "noLoadSpeed" },
+      { symbol: "I_stall", expression: "V_eff / {motorResistance}", output: "stallCurrent" }
     ]
   },
+  sweep: { input: "dutyCycle", range: [0, 100], scale: "linear" },
+  examples: [
+    { id: "fan-12v-60pct", label: "12 V DC fan at 60 % duty", values: { supplyVoltage: 12, dutyCycle: 60, motorKv: 400, motorResistance: 20 } },
+    { id: "conveyor-24v", label: "24 V conveyor motor at 80 % duty", values: { supplyVoltage: 24, dutyCycle: 80, motorKv: 125, motorResistance: 2 } },
+    { id: "rc-car-2s", label: "RC car motor on 2S at half throttle", values: { supplyVoltage: 7.4, dutyCycle: 50, motorKv: 3e3, motorResistance: 0.1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "h-bridge-selection", "motor-driver-power"],
   relatedBlogPosts: ["dc-motor-control-pwm-drivers", "motor-driver-power", "pid-tuning"]
@@ -17156,7 +17893,7 @@ var torqueUnitConverter = {
     }
   ],
   outputs: [
-    { key: "lbFt", label: "Pound-feet", symbol: "lb\xB7ft", unit: "lb\xB7ft", precision: 4 },
+    { key: "lbFt", label: "Pound-feet", symbol: "lb\xB7ft", unit: "lb\xB7ft", precision: 4, primary: true },
     { key: "lbIn", label: "Pound-inches", symbol: "lb\xB7in", unit: "lb\xB7in", precision: 3 },
     { key: "ozIn", label: "Oz-inches", symbol: "oz\xB7in", unit: "oz\xB7in", precision: 2 },
     { key: "kgCm", label: "Kilogram-cm", symbol: "kg\xB7cm", unit: "kg\xB7cm", precision: 3 },
@@ -17195,11 +17932,12 @@ var motorEfficiency = {
   inputs: [
     { key: "inputVoltage", label: "Supply Voltage", symbol: "V", unit: "V", defaultValue: 12, min: 0.1 },
     { key: "inputCurrent", label: "Supply Current", symbol: "I", unit: "A", defaultValue: 2, min: 0 },
-    { key: "outputPowerW", label: "Mechanical Output Power", symbol: "P_out", unit: "W", defaultValue: 18, min: 0, tooltip: "Measure with a torque + speed sensor, or use P = T \xD7 \u03C9" }
+    { key: "outputPowerW", label: "Mechanical Output Power", symbol: "P_out", unit: "W", defaultValue: 18, min: 0, tooltip: "Measure with a torque + speed sensor, or use P = T \xD7 \u03C9" },
+    { key: "targetEfficiency", label: "Target Efficiency", symbol: "\u03B7_t", unit: "%", defaultValue: 75, min: 0, max: 100, tooltip: "The efficiency the motor must reach. The status fails below 50 %." }
   ],
   outputs: [
     { key: "inputPower", label: "Input Power", symbol: "P_in", unit: "W", precision: 2 },
-    { key: "efficiency", label: "Efficiency", symbol: "\u03B7", unit: "%", precision: 1, thresholds: { good: { min: 75 }, warning: { min: 50 } } },
+    { key: "efficiency", label: "Efficiency", symbol: "\u03B7", unit: "%", precision: 1, thresholds: { good: { min: 75 }, warning: { min: 50 } }, primary: true },
     { key: "losses", label: "Total Losses", symbol: "P_loss", unit: "W", precision: 2 },
     { key: "heatDissipation", label: "Heat Dissipated", symbol: "Q", unit: "W", precision: 2 }
   ],
@@ -17210,8 +17948,28 @@ var motorEfficiency = {
       { symbol: "\u03B7", description: "Efficiency", unit: "%" },
       { symbol: "P_in", description: "Electrical input power", unit: "W" },
       { symbol: "P_out", description: "Mechanical output power", unit: "W" }
+    ],
+    substitution: [
+      { symbol: "P_in", expression: "{inputVoltage} \xD7 {inputCurrent}", output: "inputPower" },
+      { symbol: "\u03B7", expression: "{outputPowerW} / P_in", output: "efficiency" },
+      { symbol: "P_loss", expression: "P_in \u2212 {outputPowerW}", output: "losses" }
     ]
   },
+  sweep: {
+    input: "outputPowerW",
+    range: [0, 24],
+    scale: "linear",
+    lines: [
+      { id: "efficiency-floor", kind: "limit", label: "Minimum", value: () => 50, fails: "below" },
+      { id: "efficiency-target", kind: "target", label: "Target", value: (i) => i.targetEfficiency }
+    ]
+  },
+  target: { output: "efficiency", input: "targetEfficiency", sense: "min", failAt: 50 },
+  examples: [
+    { id: "gearmotor-12v", label: "12 V brushed gearmotor", values: { inputVoltage: 12, inputCurrent: 2, outputPowerW: 18 } },
+    { id: "bldc-fan-24v", label: "24 V BLDC fan", values: { inputVoltage: 24, inputCurrent: 1.5, outputPowerW: 28 } },
+    { id: "ebike-48v", label: "48 V e-bike motor", values: { inputVoltage: 48, inputCurrent: 10, outputPowerW: 400 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "motor-heat-dissipation", "bldc-motor"],
   relatedBlogPosts: ["motor-heat-dissipation"]
@@ -17258,7 +18016,7 @@ var inductionMotorSlip = {
   ],
   outputs: [
     { key: "effectiveSyncSpeed", label: "Synchronous Speed", symbol: "n_s", unit: "RPM", precision: 0 },
-    { key: "slipPercent", label: "Slip", symbol: "s", unit: "%", precision: 2, thresholds: { good: { max: 5 }, warning: { max: 10 } } },
+    { key: "slipPercent", label: "Slip", symbol: "s", unit: "%", precision: 2, thresholds: { good: { max: 5 }, warning: { max: 10 } }, primary: true },
     { key: "slipRPM", label: "Speed Difference", symbol: "\u0394n", unit: "RPM", precision: 0 },
     { key: "slipFrequency", label: "Rotor Frequency", symbol: "f_r", unit: "Hz", precision: 2 },
     { key: "slip", label: "Slip (per-unit)", symbol: "s", unit: "", precision: 4 }
@@ -17271,8 +18029,19 @@ var inductionMotorSlip = {
       { symbol: "n_r", description: "Rotor speed", unit: "RPM" },
       { symbol: "f", description: "Supply frequency", unit: "Hz" },
       { symbol: "p", description: "Number of poles", unit: "" }
+    ],
+    substitution: [
+      { symbol: "n_s", expression: "120 \xD7 {frequency} / {poles}", output: "effectiveSyncSpeed" },
+      { symbol: "s", expression: "(n_s \u2212 {rotorSpeed}) / n_s", output: "slipPercent" },
+      { symbol: "f_r", expression: "s \xD7 {frequency}", output: "slipFrequency" }
     ]
   },
+  sweep: { input: "rotorSpeed", range: [1500, 1800], scale: "linear" },
+  examples: [
+    { id: "four-pole-60hz", label: "4-pole 60 Hz motor at full load", values: { frequency: 60, poles: 4, rotorSpeed: 1750, syncSpeed: 0 } },
+    { id: "two-pole-50hz-pump", label: "2-pole 50 Hz pump motor", values: { frequency: 50, poles: 2, rotorSpeed: 2900, syncSpeed: 0 } },
+    { id: "six-pole-50hz-fan", label: "6-pole 50 Hz fan motor", values: { frequency: 50, poles: 6, rotorSpeed: 960, syncSpeed: 0 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "motor-efficiency", "three-phase-power"]
 };
@@ -17303,7 +18072,7 @@ var motorInrushCurrent = {
     { key: "lineResistance", label: "Line Resistance", symbol: "R_line", unit: "\u03A9", defaultValue: 0.5, min: 0, step: 0.01 }
   ],
   outputs: [
-    { key: "inrushCurrent", label: "Inrush Current", symbol: "I_inrush", unit: "A", precision: 1 },
+    { key: "inrushCurrent", label: "Inrush Current", symbol: "I_inrush", unit: "A", precision: 1, primary: true },
     { key: "voltageDropAtInrush", label: "Voltage Drop", symbol: "\u0394V", unit: "V", precision: 2 },
     { key: "voltageDropPercent", label: "Voltage Drop", symbol: "\u0394V%", unit: "%", precision: 1, thresholds: { good: { max: 3 }, warning: { max: 10 } } },
     { key: "fuseISquaredT", label: "I\xB2t (fuse energy)", symbol: "I\xB2t", unit: "A\xB2s", precision: 0 },
@@ -17345,7 +18114,7 @@ var motorHeatDissipation = {
     { key: "thermalResistance", label: "Thermal Resistance (motor)", symbol: "R\u03B8", unit: "\xB0C/W", defaultValue: 2.5, min: 0.01, tooltip: "Motor winding to ambient thermal resistance from datasheet" }
   ],
   outputs: [
-    { key: "losses", label: "Power Losses", symbol: "P_loss", unit: "W", precision: 2 },
+    { key: "losses", label: "Power Losses", symbol: "P_loss", unit: "W", precision: 2, primary: true },
     { key: "tempRise", label: "Temperature Rise", symbol: "\u0394T", unit: "\xB0C", precision: 1 },
     { key: "motorTemp", label: "Motor Operating Temp", symbol: "T_m", unit: "\xB0C", precision: 1, thresholds: { good: { max: 80 }, warning: { max: 100 }, danger: { max: 130 } } },
     { key: "outputPower", label: "Output Power", symbol: "P_out", unit: "W", precision: 2 }
@@ -17356,8 +18125,19 @@ var motorHeatDissipation = {
     variables: [
       { symbol: "R\u03B8", description: "Winding-to-ambient thermal resistance", unit: "\xB0C/W" },
       { symbol: "\u0394T", description: "Temperature rise above ambient", unit: "\xB0C" }
+    ],
+    substitution: [
+      { symbol: "P_loss", expression: "{inputPower} \xD7 (1 \u2212 {efficiency})", output: "losses" },
+      { symbol: "\u0394T", expression: "P_loss \xD7 {thermalResistance}", output: "tempRise" },
+      { symbol: "T", expression: "{ambientTemp} + \u0394T", output: "motorTemp" }
     ]
   },
+  sweep: { input: "efficiency", range: [50, 98], scale: "linear" },
+  examples: [
+    { id: "gearmotor-50w", label: "50 W gearmotor", values: { inputPower: 50, efficiency: 80, ambientTemp: 25, thermalResistance: 2.5 } },
+    { id: "servo-750w", label: "750 W servo motor in a 40 \xB0C cabinet", values: { inputPower: 750, efficiency: 88, ambientTemp: 40, thermalResistance: 0.15 } },
+    { id: "small-fan-10w", label: "10 W shaded-pole fan motor", values: { inputPower: 10, efficiency: 60, ambientTemp: 25, thermalResistance: 8 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["motor-efficiency", "junction-temperature", "heatsink-calculator"]
 };
@@ -17394,13 +18174,22 @@ var encoderResolution = {
         { label: "4096 PPR", values: { ppr: 4096 } }
       ]
     },
-    { key: "quadrature", label: "Quadrature (\xD74)", symbol: "\xD74", unit: "", defaultValue: 1, min: 0, max: 1, tooltip: "Set 1 for quadrature (4\xD7 edge count), 0 for single channel" },
+    {
+      key: "quadrature",
+      label: "Quadrature (\xD74)",
+      symbol: "\xD74",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 1,
+      options: [{ value: 0, label: "Single channel (\xD71)" }, { value: 1, label: "Quadrature (\xD74)" }]
+    },
     { key: "gearRatio", label: "Gear Ratio", symbol: "GR", unit: ":1", defaultValue: 1, min: 0.01 },
     { key: "motorMaxRpm", label: "Max Motor Speed", symbol: "n_max", unit: "RPM", defaultValue: 3e3, min: 1 }
   ],
   outputs: [
-    { key: "countsMechanicalRev", label: "Counts/Motor Rev", symbol: "CPR", unit: "counts", precision: 0 },
-    { key: "countsPerOutputRev", label: "Counts/Output Rev", symbol: "CPR_out", unit: "counts", precision: 0 },
+    { key: "countsMechanicalRev", label: "Counts/Motor Rev", symbol: "CPR", unit: "counts", precision: 0, display: { integer: true } },
+    { key: "countsPerOutputRev", label: "Counts/Output Rev", symbol: "CPR_out", unit: "counts", precision: 0, primary: true },
     { key: "degreePerCount", label: "Angular Resolution", symbol: "\u03B8/count", unit: "\xB0/count", precision: 4 },
     { key: "maxFrequency", label: "Max Pulse Frequency", symbol: "f_max", unit: "Hz", precision: 0 }
   ],
@@ -17410,8 +18199,19 @@ var encoderResolution = {
     variables: [
       { symbol: "PPR", description: "Pulses per revolution", unit: "pulses" },
       { symbol: "CPR", description: "Counts per revolution (\xD74 for quadrature)", unit: "counts" }
+    ],
+    substitution: [
+      { symbol: "CPR", expression: "{ppr} \xD7 4 (quadrature; \xD7 1 single channel) \xD7 {gearRatio}", output: "countsPerOutputRev" },
+      { symbol: "\u03B8", expression: "360\xB0 / CPR", output: "degreePerCount" },
+      { symbol: "f_max", expression: "{motorMaxRpm} / 60 \xD7 {ppr}", output: "maxFrequency" }
     ]
   },
+  sweep: { input: "ppr", range: [10, 1e4], scale: "log" },
+  examples: [
+    { id: "servo-2500-line", label: "Servo motor with a 2500-line encoder", values: { ppr: 2500, quadrature: 1, gearRatio: 1, motorMaxRpm: 3e3 } },
+    { id: "gearmotor-hall-30to1", label: "Gearmotor, 12 PPR Hall encoder, 30:1", values: { ppr: 12, quadrature: 1, gearRatio: 30, motorMaxRpm: 6e3 } },
+    { id: "optical-1024-single", label: "1024 PPR optical encoder, single channel", values: { ppr: 1024, quadrature: 0, gearRatio: 1, motorMaxRpm: 1500 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "servo-motor", "gear-ratio"],
   relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
@@ -17441,7 +18241,7 @@ var motorStartingTorque = {
     { key: "backEmfConst", label: "Back-EMF Constant", symbol: "Ke", unit: "V/RPM", defaultValue: 0.01, min: 1e-4, step: 1e-3 }
   ],
   outputs: [
-    { key: "startingTorque", label: "Starting (Stall) Torque", symbol: "T_s", unit: "N\xB7m", precision: 3 },
+    { key: "startingTorque", label: "Starting (Stall) Torque", symbol: "T_s", unit: "N\xB7m", precision: 3, primary: true },
     { key: "stallCurrent", label: "Stall Current", symbol: "I_s", unit: "A", precision: 2 },
     { key: "noLoadSpeed", label: "No-Load Speed", symbol: "n\u2080", unit: "RPM", precision: 0 },
     { key: "powerAtStall", label: "Power at Stall", symbol: "P_s", unit: "W", precision: 1 }
@@ -17452,8 +18252,19 @@ var motorStartingTorque = {
     variables: [
       { symbol: "Kt", description: "Torque constant", unit: "N\xB7m/A" },
       { symbol: "R", description: "Winding resistance", unit: "\u03A9" }
+    ],
+    substitution: [
+      { symbol: "I_s", expression: "{voltage} / {resistance}", output: "stallCurrent" },
+      { symbol: "T_s", expression: "{torqueConst} \xD7 I_s", output: "startingTorque" },
+      { symbol: "\u03C9\u2080", expression: "{voltage} / {backEmfConst}", output: "noLoadSpeed" }
     ]
   },
+  sweep: { input: "voltage", range: [1, 48], scale: "linear" },
+  examples: [
+    { id: "wiper-12v", label: "12 V wiper motor", values: { voltage: 12, resistance: 0.3, torqueConst: 0.03, backEmfConst: 3e-3 } },
+    { id: "pmdc-24v-200w", label: "24 V 200 W PMDC motor", values: { voltage: 24, resistance: 0.25, torqueConst: 0.07, backEmfConst: 73e-4 } },
+    { id: "toy-6v", label: "6 V toy motor", values: { voltage: 6, resistance: 3, torqueConst: 5e-3, backEmfConst: 5e-4 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "motor-inrush-current", "gear-ratio"],
   relatedBlogPosts: ["torque-units"]
@@ -17490,7 +18301,7 @@ var batteryRuntimeMotor = {
     { key: "depthOfDischarge", label: "Depth of Discharge", symbol: "DoD", unit: "%", defaultValue: 80, min: 1, max: 100 }
   ],
   outputs: [
-    { key: "runtimeHours", label: "Runtime", symbol: "t", unit: "h", precision: 2 },
+    { key: "runtimeHours", label: "Runtime", symbol: "t", unit: "h", precision: 2, primary: true },
     { key: "runtimeMinutes", label: "Runtime", symbol: "t", unit: "min", precision: 0 },
     { key: "usableCapacityMah", label: "Usable Capacity", symbol: "C_use", unit: "mAh", precision: 0 },
     { key: "energyWh", label: "Battery Energy (est.)", symbol: "E", unit: "Wh", precision: 2 }
@@ -17531,9 +18342,9 @@ var motorWindingResistance = {
     { key: "tempCoeff", label: "Temperature Coefficient", symbol: "\u03B1", unit: "/\xB0C", defaultValue: 393e-5, min: 0, step: 1e-4, tooltip: "Copper: 0.00393/\xB0C, Aluminium: 0.00429/\xB0C" }
   ],
   outputs: [
-    { key: "resistanceAtTemp", label: "Resistance at Temp", symbol: "R(T)", unit: "\u03A9", precision: 4 },
-    { key: "resistanceChange", label: "Resistance Change", symbol: "\u0394R", unit: "\u03A9", precision: 4 },
-    { key: "resistanceChangePercent", label: "Change", symbol: "\u0394R%", unit: "%", precision: 1 }
+    { key: "resistanceAtTemp", label: "Resistance at Temp", symbol: "R(T)", unit: "\u03A9", precision: 4, primary: true },
+    { key: "resistanceChange", label: "Resistance Change", symbol: "\u0394R", unit: "\u03A9", precision: 4, signed: "explicit" },
+    { key: "resistanceChangePercent", label: "Change", symbol: "\u0394R%", unit: "%", precision: 1, signed: "explicit" }
   ],
   calculate: calculateMotorWindingResistance,
   formula: {
@@ -17541,8 +18352,18 @@ var motorWindingResistance = {
     variables: [
       { symbol: "\u03B1", description: "Temperature coefficient (Cu: 0.00393)", unit: "/\xB0C" },
       { symbol: "T", description: "Operating temperature", unit: "\xB0C" }
+    ],
+    substitution: [
+      { symbol: "R(T)", expression: "{resistance25} \xD7 (1 + {tempCoeff} \xD7 ({temperature} \u2212 25 \xB0C))", output: "resistanceAtTemp" },
+      { symbol: "\u0394R", expression: "R(T) \u2212 {resistance25}", output: "resistanceChange" }
     ]
   },
+  sweep: { input: "temperature", range: [-40, 200], scale: "linear" },
+  examples: [
+    { id: "copper-80c", label: "Copper winding at 80 \xB0C", values: { resistance25: 1, temperature: 80, tempCoeff: 393e-5 } },
+    { id: "class-f-hot-spot", label: "Copper winding at the 155 \xB0C class F limit", values: { resistance25: 0.5, temperature: 155, tempCoeff: 393e-5 } },
+    { id: "aluminium-100c", label: "Aluminium winding at 100 \xB0C", values: { resistance25: 2, temperature: 100, tempCoeff: 403e-5 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["motor-heat-dissipation", "motor-efficiency", "dc-motor-speed"],
   relatedBlogPosts: ["bldc-motor"]
@@ -17586,7 +18407,7 @@ var hBridgeSelection = {
   ],
   outputs: [
     { key: "peakCurrent", label: "Peak Current", symbol: "I_peak", unit: "A", precision: 1 },
-    { key: "mosfetCurrentRating", label: "Min. MOSFET Current Rating", symbol: "I_DS_min", unit: "A", precision: 1 },
+    { key: "mosfetCurrentRating", label: "Min. MOSFET Current Rating", symbol: "I_DS_min", unit: "A", precision: 1, primary: true },
     { key: "conductionLoss", label: "Conduction Loss (per FET)", symbol: "P_cond", unit: "W", precision: 3 },
     { key: "switchingLoss", label: "Switching Loss (per FET)", symbol: "P_sw", unit: "W", precision: 3 },
     { key: "totalLoss", label: "Total Bridge Loss (est.)", symbol: "P_total", unit: "W", precision: 2 }
@@ -17634,7 +18455,7 @@ var motorDriverPower = {
     { key: "conductionLoss", label: "Conduction Loss / FET", symbol: "P_cond", unit: "W", precision: 3 },
     { key: "switchingLoss", label: "Switching Loss / FET", symbol: "P_sw", unit: "W", precision: 3 },
     { key: "totalLossPerFet", label: "Total Loss / FET", symbol: "P_FET", unit: "W", precision: 3 },
-    { key: "totalLossBridge", label: "Total Bridge Loss", symbol: "P_bridge", unit: "W", precision: 2 },
+    { key: "totalLossBridge", label: "Total Bridge Loss", symbol: "P_bridge", unit: "W", precision: 2, primary: true },
     { key: "efficiency", label: "Driver Efficiency (est.)", symbol: "\u03B7", unit: "%", precision: 1 }
   ],
   calculate: calculateMotorDriverPower,
@@ -17676,7 +18497,7 @@ var pidTuning = {
     { key: "timeConstant", label: "Time Constant (\u03C4)", symbol: "\u03C4", unit: "s", defaultValue: 1, min: 1e-3, step: 0.1, tooltip: "Time for 63.2% of final step response" }
   ],
   outputs: [
-    { key: "kpPID", label: "Kp (PID)", symbol: "Kp", unit: "", precision: 3 },
+    { key: "kpPID", label: "Kp (PID)", symbol: "Kp", unit: "", precision: 3, primary: true },
     { key: "kiPID", label: "Ki (PID)", symbol: "Ki", unit: "1/s", precision: 3 },
     { key: "kdPID", label: "Kd (PID)", symbol: "Kd", unit: "s", precision: 4 },
     { key: "kpPI", label: "Kp (PI only)", symbol: "Kp_PI", unit: "", precision: 3 },
@@ -17783,6 +18604,7 @@ var ntcThermistor = {
   outputs: [
     {
       key: "temperature",
+      primary: true,
       label: "Temperature",
       symbol: "T",
       unit: "\xB0C",
@@ -17894,6 +18716,7 @@ var rtdTemperature = {
   outputs: [
     {
       key: "temperature",
+      primary: true,
       label: "Temperature",
       symbol: "T",
       unit: "\xB0C",
@@ -17908,6 +18731,11 @@ var rtdTemperature = {
       precision: 3,
       tooltip: "Calculated resistance at 100\xB0C for this RTD type"
     }
+  ],
+  examples: [
+    { id: "pt100-50c", label: "PT100 at 50\xB0C (119.4\u03A9)", values: { resistance: 119.4, r0: 100 } },
+    { id: "pt1000-50c", label: "PT1000 at 50\xB0C (1194\u03A9)", values: { resistance: 1194, r0: 1e3 } },
+    { id: "pt100-100c", label: "PT100 at 100\xB0C (138.5\u03A9)", values: { resistance: 138.5, r0: 100 } }
   ],
   calculate: calculateRtdTemperature,
   formula: {
@@ -18011,6 +18839,8 @@ var wheatstoneBridge = {
   outputs: [
     {
       key: "vout",
+      primary: true,
+      signed: "explicit",
       label: "Output Voltage",
       symbol: "V_out",
       unit: "V",
@@ -18019,6 +18849,7 @@ var wheatstoneBridge = {
     },
     {
       key: "voutMv",
+      signed: "explicit",
       label: "Output Voltage",
       symbol: "V_out",
       unit: "mV",
@@ -18148,6 +18979,7 @@ var hallEffectSensor = {
   outputs: [
     {
       key: "hallVoltage",
+      primary: true,
       label: "Hall Voltage",
       symbol: "V_H",
       unit: "mV",
@@ -18269,17 +19101,24 @@ var strainGaugeBridge = {
       min: 1,
       max: 4,
       step: 1,
-      tooltip: "Number of active gauge arms: 1=quarter bridge, 2=half bridge, 4=full bridge",
+      tooltip: "Number of active gauge arms",
       presets: [
         { label: "Quarter bridge (1 active)", values: { bridgeConfig: 1 } },
         { label: "Half bridge (2 active)", values: { bridgeConfig: 2 } },
         { label: "Full bridge (4 active)", values: { bridgeConfig: 4 } }
+      ],
+      options: [
+        { value: 1, label: "Quarter bridge (1 active arm)" },
+        { value: 2, label: "Half bridge (2 active arms)" },
+        { value: 4, label: "Full bridge (4 active arms)" }
       ]
     }
   ],
   outputs: [
     {
       key: "vout",
+      primary: true,
+      signed: "explicit",
       label: "Bridge Output",
       symbol: "V_out",
       unit: "mV",
@@ -18288,6 +19127,7 @@ var strainGaugeBridge = {
     },
     {
       key: "resistance_change",
+      signed: "explicit",
       label: "Resistance Change",
       symbol: "\u0394R/R",
       unit: "%",
@@ -18374,7 +19214,7 @@ var pt100Resistance = {
     }
   ],
   outputs: [
-    { key: "resistance", label: "Resistance", symbol: "R(T)", unit: "\u03A9", precision: 3 },
+    { key: "resistance", label: "Resistance", symbol: "R(T)", unit: "\u03A9", precision: 3, primary: true },
     { key: "sensitivityOhmPerDeg", label: "Sensitivity", symbol: "dR/dT", unit: "\u03A9/\xB0C", precision: 4 }
   ],
   calculate: calculatePt100Resistance,
@@ -18429,7 +19269,13 @@ var thermocoupleVoltage = {
       min: 0,
       max: 3,
       step: 1,
-      tooltip: "0=K (41 \u03BCV/\xB0C), 1=J (51 \u03BCV/\xB0C), 2=T (43 \u03BCV/\xB0C), 3=E (68 \u03BCV/\xB0C)"
+      tooltip: "Each type is modelled by a constant Seebeck coefficient",
+      options: [
+        { value: 0, label: "Type K (41 \u03BCV/\xB0C)" },
+        { value: 1, label: "Type J (51 \u03BCV/\xB0C)" },
+        { value: 2, label: "Type T (43 \u03BCV/\xB0C)" },
+        { value: 3, label: "Type E (68 \u03BCV/\xB0C)" }
+      ]
     },
     {
       key: "temperature",
@@ -18451,10 +19297,10 @@ var thermocoupleVoltage = {
     }
   ],
   outputs: [
-    { key: "voltage", label: "Output Voltage", symbol: "E", unit: "\u03BCV", precision: 0 },
-    { key: "coldJunctionCorrection", label: "Cold Junction Correction", symbol: "E_cjc", unit: "\u03BCV", precision: 0 },
+    { key: "voltage", label: "Output Voltage", symbol: "E", unit: "\u03BCV", precision: 0, primary: true },
+    { key: "coldJunctionCorrection", label: "Cold Junction Correction", symbol: "E_cjc", unit: "\u03BCV", precision: 0, signed: "explicit" },
     { key: "seebeck", label: "Seebeck Coefficient", symbol: "S", unit: "\u03BCV/\xB0C", precision: 0 },
-    { key: "deltaT", label: "Temperature Difference", symbol: "\u0394T", unit: "\xB0C", precision: 0 }
+    { key: "deltaT", label: "Temperature Difference", symbol: "\u0394T", unit: "\xB0C", precision: 0, signed: "explicit" }
   ],
   calculate: calculateThermocoupleVoltage,
   formula: {
@@ -18529,7 +19375,7 @@ var loadCellAmplifier = {
     { key: "fullScaleOutputMv", label: "Full-Scale Output", symbol: "V_FS", unit: "mV", precision: 2 },
     { key: "amplifiedOutput", label: "Amplified Full-Scale", symbol: "V_amp", unit: "V", precision: 3 },
     { key: "sensitivityPerUnit", label: "Sensitivity", symbol: "S_per_unit", unit: "mV/kg", precision: 4 },
-    { key: "requiredGain", label: "Gain for 5V ADC", symbol: "G_5V", unit: "V/V", precision: 0 }
+    { key: "requiredGain", label: "Gain for 5V ADC", symbol: "G_5V", unit: "V/V", precision: 0, primary: true }
   ],
   calculate: calculateLoadCellAmplifier,
   formula: {
@@ -18583,7 +19429,7 @@ var photodiodeTransimpedance = {
     }
   ],
   outputs: [
-    { key: "outputVoltageV", label: "Output Voltage", symbol: "V_out", unit: "mV", precision: 2 },
+    { key: "outputVoltageV", label: "Output Voltage", symbol: "V_out", unit: "mV", precision: 2, primary: true },
     { key: "bandwidth", label: "Bandwidth (\u22123 dB)", symbol: "BW", unit: "kHz", precision: 1 },
     { key: "noiseVoltage", label: "Johnson Noise", symbol: "e_n", unit: "nV/\u221AHz", precision: 1 }
   ],
@@ -18657,7 +19503,7 @@ var capacitiveProximity = {
     }
   ],
   outputs: [
-    { key: "capacitancePf", label: "Capacitance", symbol: "C", unit: "pF", precision: 3 },
+    { key: "capacitancePf", label: "Capacitance", symbol: "C", unit: "pF", precision: 3, primary: true },
     { key: "sensitivity", label: "Sensitivity", symbol: "dC/dd", unit: "pF/mm", precision: 4 }
   ],
   calculate: calculateCapacitiveProximity,
@@ -18718,7 +19564,7 @@ var currentShunt = {
     }
   ],
   outputs: [
-    { key: "shuntVoltage", label: "Shunt Voltage Drop", symbol: "V_sh", unit: "mV", precision: 2 },
+    { key: "shuntVoltage", label: "Shunt Voltage Drop", symbol: "V_sh", unit: "mV", precision: 2, primary: true },
     { key: "amplifiedVoltage", label: "Amplified Voltage", symbol: "V_amp", unit: "V", precision: 3 },
     { key: "powerDissipation", label: "Shunt Power Dissipation", symbol: "P_sh", unit: "mW", precision: 2 },
     { key: "adcResolutionCurrent", label: "ADC Resolution (12-bit)", symbol: "\u0394I", unit: "mA/LSB", precision: 3 }
@@ -18807,7 +19653,7 @@ var accelerometerSensitivity = {
   outputs: [
     { key: "fullScaleVoltage", label: "Full-Scale Output Swing", symbol: "V_FS", unit: "mV", precision: 0 },
     { key: "voltagePerCount", label: "Voltage per LSB", symbol: "mV/LSB", unit: "mV", precision: 3 },
-    { key: "accelerationMgPerCount", label: "Acceleration per LSB", symbol: "mg/LSB", unit: "mg", precision: 2 }
+    { key: "accelerationMgPerCount", label: "Acceleration per LSB", symbol: "mg/LSB", unit: "mg", precision: 2, primary: true }
   ],
   calculate: calculateAccelerometerSensitivity,
   formula: {
@@ -18866,7 +19712,7 @@ var pressureBridgeOutput = {
     }
   ],
   outputs: [
-    { key: "bridgeOutputMv", label: "Bridge Output", symbol: "V_out", unit: "mV", precision: 2 },
+    { key: "bridgeOutputMv", label: "Bridge Output", symbol: "V_out", unit: "mV", precision: 2, primary: true },
     { key: "fullScaleOutput", label: "Full-Scale Output", symbol: "V_FS", unit: "mV", precision: 2 },
     { key: "fractionalDeflection", label: "Fractional Deflection", symbol: "P/P_FS", unit: "%", precision: 1 }
   ],
@@ -18961,7 +19807,7 @@ var sensorAccuracyBudget = {
   ],
   outputs: [
     { key: "tempError", label: "Temperature Error", symbol: "e_temp", unit: "% FS", precision: 3 },
-    { key: "totalRss", label: "Total Accuracy (RSS)", symbol: "e_RSS", unit: "% FS", precision: 3 },
+    { key: "totalRss", label: "Total Accuracy (RSS)", symbol: "e_RSS", unit: "% FS", precision: 3, primary: true },
     { key: "totalWorstCase", label: "Total Accuracy (Worst Case)", symbol: "e_WC", unit: "% FS", precision: 3 }
   ],
   calculate: calculateSensorAccuracyBudget,
@@ -19038,7 +19884,7 @@ var opticalSensorRange = {
     }
   ],
   outputs: [
-    { key: "maxRange", label: "Relative Detection Factor", symbol: "D_rel", unit: "", precision: 3 },
+    { key: "maxRange", label: "Relative Detection Factor", symbol: "D_rel", unit: "", precision: 3, primary: true },
     { key: "normalizedRange", label: "Nominal Detection Factor", symbol: "D_nom", unit: "", precision: 3 }
   ],
   calculate: calculateOpticalSensorRange,
@@ -19112,7 +19958,7 @@ var lvdtSensitivity = {
     }
   ],
   outputs: [
-    { key: "outputVoltage", label: "Output Voltage (RMS)", symbol: "V_out", unit: "mV", precision: 2 },
+    { key: "outputVoltage", label: "Output Voltage (RMS)", symbol: "V_out", unit: "mV", precision: 2, primary: true },
     { key: "fullScaleOutput", label: "Full-Scale Output", symbol: "V_FS", unit: "mV", precision: 1 },
     { key: "sensitivityMvMm", label: "Sensitivity", symbol: "S", unit: "mV/mm", precision: 3 },
     { key: "linearRange", label: "Linear Range (est.)", symbol: "x_lin", unit: "mm", precision: 0 }
@@ -19195,7 +20041,7 @@ var loopTransmitter420ma = {
     }
   ],
   outputs: [
-    { key: "sensorValue", label: "Sensor Value", symbol: "X", unit: "eng units", precision: 2 },
+    { key: "sensorValue", label: "Sensor Value", symbol: "X", unit: "eng units", precision: 2, primary: true },
     { key: "voltageAtLoad", label: "Voltage at Load", symbol: "V_load", unit: "V", precision: 2 },
     { key: "availableVoltage", label: "Transmitter Voltage", symbol: "V_tx", unit: "V", precision: 2 },
     { key: "maxLoopResistance", label: "Max Loop Resistance", symbol: "R_max", unit: "\u03A9", precision: 0 }
@@ -19290,6 +20136,7 @@ var frequencyWavelength = {
   outputs: [
     {
       key: "wavelength",
+      primary: true,
       label: "Wavelength",
       symbol: "\u03BB",
       unit: "m",
@@ -19407,6 +20254,7 @@ var dbmWatts = {
   outputs: [
     {
       key: "watts",
+      primary: true,
       label: "Power",
       symbol: "P",
       unit: "W",
@@ -19519,6 +20367,7 @@ var temperatureConverter = {
   outputs: [
     {
       key: "fahrenheit",
+      primary: true,
       label: "Fahrenheit",
       symbol: "\xB0F",
       unit: "\xB0F",
@@ -19630,6 +20479,7 @@ var awgWire = {
   outputs: [
     {
       key: "diameterMm",
+      primary: true,
       label: "Diameter",
       symbol: "d",
       unit: "mm",
@@ -19758,6 +20608,7 @@ var capacitorCode = {
   outputs: [
     {
       key: "picofarads",
+      primary: true,
       label: "Capacitance",
       symbol: "C",
       unit: "pF",
@@ -19844,10 +20695,10 @@ var inductanceUnits = {
     }
   ],
   outputs: [
-    { key: "millihenry", label: "Millihenries", symbol: "mH", unit: "mH", precision: 6 },
-    { key: "microhenry", label: "Microhenries", symbol: "\u03BCH", unit: "\u03BCH", precision: 4 },
-    { key: "nanohenry", label: "Nanohenries", symbol: "nH", unit: "nH", precision: 2 },
-    { key: "picohenry", label: "Picohenries", symbol: "pH", unit: "pH", precision: 0 }
+    { key: "millihenry", label: "Millihenries", symbol: "mH", unit: "mH", precision: 6, display: { unit: "mH" } },
+    { key: "microhenry", label: "Microhenries", symbol: "\u03BCH", unit: "\u03BCH", precision: 4, primary: true, display: { unit: "\u03BCH" } },
+    { key: "nanohenry", label: "Nanohenries", symbol: "nH", unit: "nH", precision: 2, display: { unit: "nH" } },
+    { key: "picohenry", label: "Picohenries", symbol: "pH", unit: "pH", precision: 0, display: { unit: "pH" } }
   ],
   calculate: calculateInductanceUnits,
   formula: {
@@ -19898,10 +20749,10 @@ var capacitanceUnits = {
     }
   ],
   outputs: [
-    { key: "millifarad", label: "Millifarads", symbol: "mF", unit: "mF", precision: 6 },
-    { key: "microfarad", label: "Microfarads", symbol: "\u03BCF", unit: "\u03BCF", precision: 4 },
-    { key: "nanofarad", label: "Nanofarads", symbol: "nF", unit: "nF", precision: 3 },
-    { key: "picofarad", label: "Picofarads", symbol: "pF", unit: "pF", precision: 1 }
+    { key: "millifarad", label: "Millifarads", symbol: "mF", unit: "mF", precision: 6, display: { unit: "mF" } },
+    { key: "microfarad", label: "Microfarads", symbol: "\u03BCF", unit: "\u03BCF", precision: 4, display: { unit: "\u03BCF" } },
+    { key: "nanofarad", label: "Nanofarads", symbol: "nF", unit: "nF", precision: 3, primary: true, display: { unit: "nF" } },
+    { key: "picofarad", label: "Picofarads", symbol: "pF", unit: "pF", precision: 1, display: { unit: "pF" } }
   ],
   calculate: calculateCapacitanceUnits,
   formula: {
@@ -19952,10 +20803,10 @@ var resistanceUnits = {
     }
   ],
   outputs: [
-    { key: "milliohm", label: "Milliohms", symbol: "m\u03A9", unit: "m\u03A9", precision: 3 },
-    { key: "kilohm", label: "Kilohms", symbol: "k\u03A9", unit: "k\u03A9", precision: 4 },
-    { key: "megaohm", label: "Megaohms", symbol: "M\u03A9", unit: "M\u03A9", precision: 6 },
-    { key: "gigaohm", label: "Gigaohms", symbol: "G\u03A9", unit: "G\u03A9", precision: 9 }
+    { key: "milliohm", label: "Milliohms", symbol: "m\u03A9", unit: "m\u03A9", precision: 3, display: { unit: "m\u03A9" } },
+    { key: "kilohm", label: "Kilohms", symbol: "k\u03A9", unit: "k\u03A9", precision: 4, primary: true, display: { unit: "k\u03A9" } },
+    { key: "megaohm", label: "Megaohms", symbol: "M\u03A9", unit: "M\u03A9", precision: 6, display: { unit: "M\u03A9" } },
+    { key: "gigaohm", label: "Gigaohms", symbol: "G\u03A9", unit: "G\u03A9", precision: 9, display: { unit: "G\u03A9" } }
   ],
   calculate: calculateResistanceUnits,
   formula: {
@@ -20007,10 +20858,10 @@ var currentUnits = {
     }
   ],
   outputs: [
-    { key: "milliampere", label: "Milliamperes", symbol: "mA", unit: "mA", precision: 4 },
-    { key: "microampere", label: "Microamperes", symbol: "\u03BCA", unit: "\u03BCA", precision: 3 },
-    { key: "nanoampere", label: "Nanoamperes", symbol: "nA", unit: "nA", precision: 2 },
-    { key: "picoampere", label: "Picoamperes", symbol: "pA", unit: "pA", precision: 1 }
+    { key: "milliampere", label: "Milliamperes", symbol: "mA", unit: "mA", precision: 4, primary: true, display: { unit: "mA" } },
+    { key: "microampere", label: "Microamperes", symbol: "\u03BCA", unit: "\u03BCA", precision: 3, display: { unit: "\u03BCA" } },
+    { key: "nanoampere", label: "Nanoamperes", symbol: "nA", unit: "nA", precision: 2, display: { unit: "nA" } },
+    { key: "picoampere", label: "Picoamperes", symbol: "pA", unit: "pA", precision: 1, display: { unit: "pA" } }
   ],
   calculate: calculateCurrentUnits,
   formula: {
@@ -20061,10 +20912,10 @@ var voltageUnits = {
     }
   ],
   outputs: [
-    { key: "microvolt", label: "Microvolts", symbol: "\u03BCV", unit: "\u03BCV", precision: 2 },
-    { key: "millivolt", label: "Millivolts", symbol: "mV", unit: "mV", precision: 4 },
-    { key: "kilovolt", label: "Kilovolts", symbol: "kV", unit: "kV", precision: 6 },
-    { key: "megavolt", label: "Megavolts", symbol: "MV", unit: "MV", precision: 9 }
+    { key: "microvolt", label: "Microvolts", symbol: "\u03BCV", unit: "\u03BCV", precision: 2, display: { unit: "\u03BCV" } },
+    { key: "millivolt", label: "Millivolts", symbol: "mV", unit: "mV", precision: 4, primary: true, display: { unit: "mV" } },
+    { key: "kilovolt", label: "Kilovolts", symbol: "kV", unit: "kV", precision: 6, display: { unit: "kV" } },
+    { key: "megavolt", label: "Megavolts", symbol: "MV", unit: "MV", precision: 9, display: { unit: "MV" } }
   ],
   calculate: calculateVoltageUnits,
   formula: {
@@ -20116,11 +20967,11 @@ var timeUnits = {
     }
   ],
   outputs: [
-    { key: "millisecond", label: "Milliseconds", symbol: "ms", unit: "ms", precision: 6 },
-    { key: "microsecond", label: "Microseconds", symbol: "\u03BCs", unit: "\u03BCs", precision: 4 },
-    { key: "nanosecond", label: "Nanoseconds", symbol: "ns", unit: "ns", precision: 2 },
-    { key: "picosecond", label: "Picoseconds", symbol: "ps", unit: "ps", precision: 0 },
-    { key: "femtosecond", label: "Femtoseconds", symbol: "fs", unit: "fs", precision: 0 }
+    { key: "millisecond", label: "Milliseconds", symbol: "ms", unit: "ms", precision: 6, display: { unit: "ms" } },
+    { key: "microsecond", label: "Microseconds", symbol: "\u03BCs", unit: "\u03BCs", precision: 4, primary: true, display: { unit: "\u03BCs" } },
+    { key: "nanosecond", label: "Nanoseconds", symbol: "ns", unit: "ns", precision: 2, display: { unit: "ns" } },
+    { key: "picosecond", label: "Picoseconds", symbol: "ps", unit: "ps", precision: 0, display: { unit: "ps" } },
+    { key: "femtosecond", label: "Femtoseconds", symbol: "fs", unit: "fs", precision: 0, display: { unit: "fs" } }
   ],
   calculate: calculateTimeUnits,
   formula: {
@@ -20169,9 +21020,9 @@ var magneticFluxUnits = {
     }
   ],
   outputs: [
-    { key: "millitesla", label: "Millitesla", symbol: "mT", unit: "mT", precision: 4 },
-    { key: "microtesla", label: "Microtesla", symbol: "\u03BCT", unit: "\u03BCT", precision: 2 },
-    { key: "nanotesla", label: "Nanotesla", symbol: "nT", unit: "nT", precision: 0 },
+    { key: "millitesla", label: "Millitesla", symbol: "mT", unit: "mT", precision: 4, primary: true, display: { unit: "mT" } },
+    { key: "microtesla", label: "Microtesla", symbol: "\u03BCT", unit: "\u03BCT", precision: 2, display: { unit: "\u03BCT" } },
+    { key: "nanotesla", label: "Nanotesla", symbol: "nT", unit: "nT", precision: 0, display: { unit: "nT" } },
     { key: "gauss", label: "Gauss", symbol: "G", unit: "G", precision: 2 }
   ],
   calculate: calculateMagneticFluxUnits,
@@ -20223,9 +21074,9 @@ var dataRateUnits = {
     }
   ],
   outputs: [
-    { key: "kbps", label: "Kilobits/sec", symbol: "kbps", unit: "kbps", precision: 3 },
-    { key: "mbps", label: "Megabits/sec", symbol: "Mbps", unit: "Mbps", precision: 4 },
-    { key: "gbps", label: "Gigabits/sec", symbol: "Gbps", unit: "Gbps", precision: 5 },
+    { key: "kbps", label: "Kilobits/sec", symbol: "kbps", unit: "kbps", precision: 3, display: { unit: "kbps" } },
+    { key: "mbps", label: "Megabits/sec", symbol: "Mbps", unit: "Mbps", precision: 4, primary: true, display: { unit: "Mbps" } },
+    { key: "gbps", label: "Gigabits/sec", symbol: "Gbps", unit: "Gbps", precision: 5, display: { unit: "Gbps" } },
     { key: "bytesPerSecond", label: "Bytes/sec", symbol: "B/s", unit: "B/s", precision: 0 },
     { key: "kBps", label: "Kilobytes/sec", symbol: "kB/s", unit: "kB/s", precision: 2 },
     { key: "mBps", label: "Megabytes/sec", symbol: "MB/s", unit: "MB/s", precision: 3 }
@@ -20275,7 +21126,7 @@ var angleUnits = {
     }
   ],
   outputs: [
-    { key: "radian", label: "Radians", symbol: "rad", unit: "rad", precision: 6 },
+    { key: "radian", label: "Radians", symbol: "rad", unit: "rad", precision: 6, primary: true },
     { key: "gradian", label: "Gradians", symbol: "grad", unit: "grad", precision: 3 },
     { key: "arcminute", label: "Arcminutes", symbol: "'", unit: "'", precision: 1 },
     { key: "arcsecond", label: "Arcseconds", symbol: '"', unit: '"', precision: 0 },
@@ -20330,8 +21181,8 @@ var energyUnits = {
     }
   ],
   outputs: [
-    { key: "millijoule", label: "Millijoules", symbol: "mJ", unit: "mJ", precision: 3 },
-    { key: "microjoule", label: "Microjoules", symbol: "\u03BCJ", unit: "\u03BCJ", precision: 2 },
+    { key: "millijoule", label: "Millijoules", symbol: "mJ", unit: "mJ", precision: 3, primary: true, display: { unit: "mJ" } },
+    { key: "microjoule", label: "Microjoules", symbol: "\u03BCJ", unit: "\u03BCJ", precision: 2, display: { unit: "\u03BCJ" } },
     { key: "electronvolt", label: "Electron-Volts", symbol: "eV", unit: "eV", precision: 3 },
     { key: "kwh", label: "Kilowatt-Hours", symbol: "kWh", unit: "kWh", precision: 8 },
     { key: "calorie", label: "Calories", symbol: "cal", unit: "cal", precision: 4 },
@@ -20387,7 +21238,7 @@ var torqueUnitsConv = {
     }
   ],
   outputs: [
-    { key: "lbFt", label: "Pound-feet", symbol: "lb\xB7ft", unit: "lb\xB7ft", precision: 4 },
+    { key: "lbFt", label: "Pound-feet", symbol: "lb\xB7ft", unit: "lb\xB7ft", precision: 4, primary: true },
     { key: "lbIn", label: "Pound-inches", symbol: "lb\xB7in", unit: "lb\xB7in", precision: 3 },
     { key: "ozIn", label: "Oz-inches", symbol: "oz\xB7in", unit: "oz\xB7in", precision: 2 },
     { key: "kgCm", label: "Kg-centimetres", symbol: "kg\xB7cm", unit: "kg\xB7cm", precision: 3 },
@@ -20441,7 +21292,7 @@ var illuminanceUnits = {
     }
   ],
   outputs: [
-    { key: "footcandle", label: "Foot-candles", symbol: "fc", unit: "fc", precision: 3 },
+    { key: "footcandle", label: "Foot-candles", symbol: "fc", unit: "fc", precision: 3, primary: true },
     { key: "millilux", label: "Millilux", symbol: "mlux", unit: "mlux", precision: 0 },
     { key: "kilolux", label: "Kilolux", symbol: "klux", unit: "klux", precision: 3 },
     { key: "phot", label: "Phot", symbol: "ph", unit: "ph", precision: 5 }
@@ -20571,6 +21422,7 @@ var junctionTemperature = {
     },
     {
       key: "tj",
+      primary: true,
       label: "Junction Temperature",
       symbol: "T_J",
       unit: "\xB0C",
@@ -20600,6 +21452,7 @@ var junctionTemperature = {
     },
     {
       key: "margin",
+      signed: "explicit",
       label: "Thermal Margin",
       symbol: "\u0394T",
       unit: "\xB0C",
@@ -20722,6 +21575,7 @@ var heatsinkSelection = {
   outputs: [
     {
       key: "thetaSARequired",
+      primary: true,
       label: "Required \u03B8_SA",
       symbol: "\u03B8_SA",
       unit: "\xB0C/W",
@@ -20743,6 +21597,7 @@ var heatsinkSelection = {
     },
     {
       key: "deltaTJ",
+      signed: "explicit",
       label: "Thermal Margin",
       symbol: "\u0394T_J",
       unit: "\xB0C",
@@ -20898,7 +21753,7 @@ var thermalViaArray = {
       min: 0,
       max: 1,
       step: 0.1,
-      tooltip: "0 = hollow plated via, 1 = fully filled with copper. Filled vias offer best thermal performance.",
+      tooltip: "Fraction of the drill filled with copper: 0 is a hollow plated via, 1 is fully filled. Filled vias offer the best thermal performance.",
       presets: [
         { label: "Hollow plated (0)", values: { drillFill: 0 } },
         { label: "Solid copper fill (1)", values: { drillFill: 1 } }
@@ -20916,6 +21771,7 @@ var thermalViaArray = {
     },
     {
       key: "thetaArray",
+      primary: true,
       label: "Array Thermal Resistance",
       symbol: "\u03B8_array",
       unit: "\xB0C/W",
@@ -21075,6 +21931,7 @@ var pllLoopFilter = {
   outputs: [
     {
       key: "c1",
+      primary: true,
       label: "C1 (primary capacitor)",
       symbol: "C\u2081",
       unit: "nF",
@@ -21099,6 +21956,7 @@ var pllLoopFilter = {
     },
     {
       key: "pmActual",
+      signed: "explicit",
       label: "Actual Phase Margin",
       symbol: "PM",
       unit: "\xB0",
@@ -21267,18 +22125,25 @@ var berSnr = {
       min: 1,
       max: 4,
       step: 1,
-      tooltip: "Modulation type: 1=BPSK, 2=QPSK, 3=8PSK, 4=16QAM",
+      options: [
+        { value: 1, label: "BPSK" },
+        { value: 2, label: "QPSK" },
+        { value: 3, label: "8PSK" },
+        { value: 4, label: "16QAM" }
+      ],
       presets: [
         { label: "BPSK (1)", values: { modulation: 1 } },
         { label: "QPSK (2)", values: { modulation: 2 } },
         { label: "8PSK (3)", values: { modulation: 3 } },
         { label: "16QAM (4)", values: { modulation: 4 } }
       ]
-    }
+    },
+    { key: "targetBer", label: "Target BER", symbol: "BER_t", unit: "", defaultValue: 1e-6, min: 1e-12, max: 0.5, tooltip: "The bit error rate the link must reach at or below. The status fails above 0.001." }
   ],
   outputs: [
     {
       key: "ber",
+      primary: true,
       label: "Bit Error Rate",
       symbol: "BER",
       unit: "",
@@ -21288,7 +22153,7 @@ var berSnr = {
       thresholds: {
         good: { max: 1e-6 },
         warning: { min: 1e-6, max: 1e-3 },
-        danger: { min: 1e-3 }
+        danger: { max: 1e-3 }
       }
     },
     {
@@ -21301,6 +22166,7 @@ var berSnr = {
     },
     {
       key: "bitsPerSymbol",
+      display: { integer: true },
       label: "Bits per Symbol",
       symbol: "k",
       unit: "bits/symbol",
@@ -21316,8 +22182,28 @@ var berSnr = {
       { symbol: "BER", description: "Bit error rate", unit: "" },
       { symbol: "Eb/N0", description: "Energy per bit to noise density", unit: "dB" },
       { symbol: "erfc", description: "Complementary error function", unit: "" }
+    ],
+    substitution: [
+      { symbol: "BER", expression: "\xBD\xB7erfc(\u221A(10^({ebN0dB}/10))) for BPSK and QPSK; \u2153\xB7erfc(\u221A(3 sin\xB2(\u03C0/8) E_b/N_0)) for 8PSK; \u215C\xB7erfc(\u221A(0.4 E_b/N_0)) for 16QAM", output: "ber" },
+      { symbol: "log\u2081\u2080 BER", expression: "log\u2081\u2080(BER)", output: "berLog10" }
     ]
   },
+  sweep: {
+    input: "ebN0dB",
+    output: "berLog10",
+    range: [-5, 20],
+    scale: "linear",
+    lines: [
+      { id: "ber-ceiling", kind: "limit", label: "Maximum", value: () => -3, fails: "above" },
+      { id: "ber-target", kind: "target", label: "Target", value: (i) => Math.log10(i.targetBer) }
+    ]
+  },
+  target: { output: "ber", input: "targetBer", sense: "max", failAt: 1e-3 },
+  examples: [
+    { id: "bpsk-1e-5", label: "BPSK at 9.6 dB", values: { ebN0dB: 9.6, modulation: 1 } },
+    { id: "qpsk-satellite", label: "QPSK satellite link at 6 dB", values: { ebN0dB: 6, modulation: 2 } },
+    { id: "16qam-14db", label: "16QAM at 14 dB", values: { ebN0dB: 14, modulation: 4 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["snr-calculator", "quantization-noise", "adc-snr", "rf-link-budget"],
   relatedBlogPosts: ["am-modulation-index", "ber-vs-snr-digital-communications"]
@@ -21437,6 +22323,7 @@ var quantizationNoise = {
     },
     {
       key: "sqnr",
+      primary: true,
       label: "Theoretical SQNR",
       symbol: "SQNR",
       unit: "dB",
@@ -21445,6 +22332,7 @@ var quantizationNoise = {
     },
     {
       key: "enob",
+      display: { integer: true },
       label: "ENOB (theoretical)",
       symbol: "ENOB",
       unit: "bits",
@@ -21477,8 +22365,19 @@ var quantizationNoise = {
       { symbol: "SQNR", description: "Signal-to-quantization-noise ratio", unit: "dB" },
       { symbol: "LSB", description: "Least significant bit voltage", unit: "V" },
       { symbol: "V_ref", description: "ADC reference voltage", unit: "V" }
+    ],
+    substitution: [
+      { symbol: "SQNR", expression: "20\xB7log\u2081\u2080(2) \xD7 {bits} + 10\xB7log\u2081\u2080(1.5)", output: "sqnr" },
+      { symbol: "LSB", expression: "{vref} / 2^{bits}", output: "lsb" },
+      { symbol: "e_n", expression: "(LSB / \u221A12) / \u221A({sampleRate} / 2)", output: "noiseDensity" }
     ]
   },
+  sweep: { input: "bits", range: [4, 24], scale: "linear" },
+  examples: [
+    { id: "mcu-12b-3v3", label: "12-bit microcontroller ADC, 3.3 V", values: { bits: 12, vref: 3.3, frequency: 1, sampleRate: 100 } },
+    { id: "audio-16b", label: "16-bit audio converter, 48 kHz", values: { bits: 16, vref: 2.5, frequency: 1, sampleRate: 48 } },
+    { id: "sigma-delta-24b", label: "24-bit sigma-delta, 5 V reference", values: { bits: 24, vref: 5, frequency: 0.01, sampleRate: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["adc-snr", "ber-snr", "snr-calculator"],
   relatedBlogPosts: ["ber-snr", "ber-vs-snr-digital-communications"]
@@ -21490,7 +22389,7 @@ function calculateFresnelZone(inputs) {
   if (frequency <= 0 || distance <= 0 || n < 1) {
     return { values: { radiusM: 0, clearanceM: 0, wavelengthM: 0 }, errors: ["Frequency, distance, and zone number must be positive"] };
   }
-  const c2 = 3e8;
+  const c2 = 299792458;
   const f_Hz = frequency * 1e9;
   const d_m = distance * 1e3;
   const wavelengthM = c2 / f_Hz;
@@ -21565,6 +22464,7 @@ var fresnelZone = {
   outputs: [
     {
       key: "radiusM",
+      primary: true,
       label: "Zone Radius at Midpoint",
       symbol: "r_n",
       unit: "m",
@@ -21691,6 +22591,7 @@ var powerDensity = {
   outputs: [
     {
       key: "powerDensity",
+      primary: true,
       label: "Power Density",
       symbol: "S",
       unit: "mW/m\xB2",
@@ -21841,6 +22742,7 @@ var balunTransformer = {
   outputs: [
     {
       key: "turnsRatio",
+      primary: true,
       label: "Turns Ratio (N)",
       symbol: "N",
       unit: ":1",
@@ -21880,8 +22782,19 @@ var balunTransformer = {
       { symbol: "N", description: "Turns ratio (secondary:primary)", unit: "" },
       { symbol: "Z_L", description: "Load impedance", unit: "\u03A9" },
       { symbol: "Z_S", description: "Source impedance", unit: "\u03A9" }
+    ],
+    substitution: [
+      { symbol: "N", expression: "\u221A({zLoad} / {zSource})", output: "turnsRatio" },
+      { symbol: "Z_L/Z_S", expression: "{zLoad} / {zSource}", output: "impedanceRatio" }
     ]
   },
+  sweep: { input: "zLoad", range: [10, 1e3], scale: "log" },
+  examples: [
+    { id: "four-to-one", label: "4:1 balun, 50 \u03A9 to 200 \u03A9", values: { zSource: 50, zLoad: 200, frequency: 100, bandwidth: 10 } },
+    { id: "dipole-current-balun", label: "Dipole feed, 50 \u03A9 to 73 \u03A9", values: { zSource: 50, zLoad: 73, frequency: 14, bandwidth: 0.35 } },
+    { id: "end-fed-9to1", label: "9:1 unun for an end-fed wire", values: { zSource: 50, zLoad: 450, frequency: 7, bandwidth: 20 } },
+    { id: "twin-lead-300", label: "300 \u03A9 twin-lead to 75 \u03A9 coax", values: { zSource: 75, zLoad: 300, frequency: 100, bandwidth: 50 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["vswr-return-loss", "rf-link-budget", "microstrip-impedance"],
   relatedTools: ["impedance-matching"],
@@ -21899,16 +22812,23 @@ var balunTransformer = {
 };
 
 // src/lib/calculators/rf/link-margin.ts
+var C02 = 299792458;
+var MAX_EXTRA_LOSSES2 = 4;
+function extraLossSum2(inputs) {
+  const count = Math.max(0, Math.min(MAX_EXTRA_LOSSES2, Math.round(inputs.extraLossCount ?? 0)));
+  let sum = 0;
+  for (let n = 1; n <= count; n++) sum += inputs[`extraLoss${n}`] ?? 0;
+  return sum;
+}
 function calculateLinkMargin(inputs) {
   const { txPower, txGain, rxGain, distance, frequency, sensitivity, cableLoss } = inputs;
   if (distance <= 0 || frequency <= 0) {
     return { values: { fspl: 0, receivedPower: 0, linkMargin: 0, maxRange: 0 }, errors: ["Distance and frequency must be positive"] };
   }
-  const c2 = 3e8;
   const d_m = distance * 1e3;
   const f_Hz = frequency * 1e9;
-  const fspl = 20 * Math.log10(d_m) + 20 * Math.log10(f_Hz) + 20 * Math.log10(4 * Math.PI / c2);
-  const receivedPower = txPower + txGain + rxGain - fspl - cableLoss;
+  const fspl = 20 * Math.log10(d_m) + 20 * Math.log10(f_Hz) + 20 * Math.log10(4 * Math.PI / C02);
+  const receivedPower = txPower + txGain + rxGain - fspl - cableLoss - extraLossSum2(inputs);
   const linkMargin2 = receivedPower - sensitivity;
   const maxRange = distance * Math.pow(10, linkMargin2 / 20);
   return {
@@ -22016,7 +22936,13 @@ var linkMargin = {
       defaultValue: 1,
       min: 0,
       tooltip: "Total cable and connector losses on TX and RX sides combined"
-    }
+    },
+    { key: "extraLossCount", label: "Extra Loss Terms", unit: "", defaultValue: 0, min: 0, max: MAX_EXTRA_LOSSES2, step: 1, tooltip: "How many extra loss terms the budget includes, such as polarisation mismatch, body loss or foliage" },
+    { key: "extraLoss1", label: "Extra Loss 1", symbol: "L_1", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss2", label: "Extra Loss 2", symbol: "L_2", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss3", label: "Extra Loss 3", symbol: "L_3", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss4", label: "Extra Loss 4", symbol: "L_4", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "targetMargin", label: "Target Link Margin", symbol: "M_t", unit: "dB", defaultValue: 10, min: 0, max: 60, tooltip: "The fade margin the link must keep above the receiver sensitivity. The status passes at or above it and fails below 0 dB." }
   ],
   outputs: [
     {
@@ -22037,6 +22963,8 @@ var linkMargin = {
     },
     {
       key: "linkMargin",
+      primary: true,
+      signed: "explicit",
       label: "Link Margin",
       symbol: "M",
       unit: "dB",
@@ -22059,16 +22987,37 @@ var linkMargin = {
   ],
   calculate: calculateLinkMargin,
   formula: {
-    primary: "M = P_TX + G_TX + G_RX \u2212 FSPL \u2212 L_cable \u2212 P_sens",
-    latex: "M = P_{TX} + G_{TX} + G_{RX} - FSPL - L_{cable} - P_{sens}",
+    primary: "M = P_TX + G_TX + G_RX \u2212 FSPL \u2212 L_cable \u2212 \u03A3L\u2099 \u2212 P_sens",
+    latex: "M = P_{TX} + G_{TX} + G_{RX} - FSPL - L_{cable} - \\sum L_n - P_{sens}",
     variables: [
       { symbol: "M", description: "Link margin", unit: "dB" },
       { symbol: "FSPL", description: "20\xB7log\u2081\u2080(4\u03C0df/c)", unit: "dB" },
       { symbol: "P_TX", description: "Transmit power", unit: "dBm" },
       { symbol: "G_TX, G_RX", description: "Antenna gains", unit: "dBi" },
       { symbol: "P_sens", description: "Receiver sensitivity", unit: "dBm" }
+    ],
+    substitution: [
+      { symbol: "FSPL", expression: "20\xB7log\u2081\u2080(4\u03C0 \xD7 {distance} \xD7 {frequency} / c)", output: "fspl" },
+      { symbol: "P_RX", expression: "{txPower} + {txGain} + {rxGain} \u2212 FSPL \u2212 {cableLoss} \u2212 \u03A3L\u2099", output: "receivedPower" },
+      { symbol: "M", expression: "P_RX \u2212 ({sensitivity})", output: "linkMargin" }
     ]
   },
+  sweep: {
+    input: "distance",
+    range: [0.01, 100],
+    scale: "log",
+    lines: [
+      { id: "sensitivity", kind: "limit", label: "Sensitivity limit", value: () => 0, fails: "below" },
+      { id: "target-margin", kind: "target", label: "Target", value: (i) => i.targetMargin }
+    ]
+  },
+  target: { output: "linkMargin", input: "targetMargin", sense: "min", failAt: 0 },
+  terms: { count: "extraLossCount", keys: ["extraLoss{n}"], maxRows: MAX_EXTRA_LOSSES2, label: "loss term" },
+  examples: [
+    { id: "zigbee-indoor", label: "Zigbee 2.4 GHz indoor, 50 m", values: { txPower: 8, txGain: 2, rxGain: 2, distance: 0.05, frequency: 2.44, sensitivity: -100, cableLoss: 0, extraLossCount: 1, extraLoss1: 20 } },
+    { id: "lorawan-868-rural", label: "LoRaWAN 868 MHz rural, 8 km", values: { txPower: 14, txGain: 2.15, rxGain: 6, distance: 8, frequency: 0.868, sensitivity: -137, cableLoss: 1, extraLossCount: 1, extraLoss1: 15 } },
+    { id: "ptp-5g8-backhaul", label: "5.8 GHz point-to-point backhaul, 15 km", values: { txPower: 25, txGain: 30, rxGain: 30, distance: 15, frequency: 5.8, sensitivity: -78, cableLoss: 2 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["free-space-path-loss", "rf-link-budget", "fresnel-zone"],
   relatedBlogPosts: ["rf-link-budget-calculator-guide", "cubesat-uhf-link-budget-walkthrough"],
@@ -22232,6 +23181,7 @@ var mixerSpurCalculator = {
     },
     {
       key: "totalSpurs",
+      display: { integer: true },
       label: "Total Spur Products",
       symbol: "Ntot",
       unit: "",
@@ -22239,6 +23189,8 @@ var mixerSpurCalculator = {
     },
     {
       key: "spursNearIf",
+      primary: true,
+      display: { integer: true },
       label: "Spurs Near IF (\xB110%)",
       symbol: "Nnear",
       unit: "",
@@ -22249,6 +23201,12 @@ var mixerSpurCalculator = {
         danger: { max: 4 }
       }
     }
+  ],
+  examples: [
+    { id: "ism-433-mhz", label: "433 MHz ISM", values: { rfFreq: 433, loFreq: 443.95 } },
+    { id: "ism-915-mhz", label: "915 MHz ISM", values: { rfFreq: 915, loFreq: 1e3 } },
+    { id: "ism-2-4-ghz", label: "2.4 GHz ISM", values: { rfFreq: 2400, loFreq: 2870 } },
+    { id: "ism-5-8-ghz", label: "5.8 GHz ISM", values: { rfFreq: 5800, loFreq: 6270 } }
   ],
   calculate: calculateMixerSpurs,
   formula: {
@@ -22371,6 +23329,7 @@ var schmittTrigger = {
     },
     {
       key: "hysteresis",
+      primary: true,
       label: "Hysteresis",
       symbol: "V_hyst",
       unit: "V",
@@ -22485,6 +23444,7 @@ var crystalLoadCapacitance = {
   outputs: [
     {
       key: "clActual",
+      primary: true,
       label: "Actual Load Capacitance",
       symbol: "CL_actual",
       unit: "pF",
@@ -22493,6 +23453,7 @@ var crystalLoadCapacitance = {
     },
     {
       key: "clError",
+      signed: "explicit",
       label: "Load Capacitance Error",
       symbol: "\u0394CL",
       unit: "pF",
@@ -22501,6 +23462,7 @@ var crystalLoadCapacitance = {
     },
     {
       key: "freqError",
+      signed: "explicit",
       label: "Estimated Frequency Error",
       symbol: "\u0394f",
       unit: "ppm",
@@ -22601,6 +23563,7 @@ var opampBandwidth = {
   outputs: [
     {
       key: "bandwidth",
+      primary: true,
       label: "-3dB Bandwidth",
       symbol: "BW",
       unit: "kHz",
@@ -22625,6 +23588,7 @@ var opampBandwidth = {
     },
     {
       key: "gainDb",
+      signed: "explicit",
       label: "Gain",
       symbol: "A_CL",
       unit: "dB",
@@ -22641,8 +23605,19 @@ var opampBandwidth = {
       { symbol: "BW", description: "-3dB bandwidth", unit: "Hz" },
       { symbol: "t_r", description: "10-90% rise time", unit: "s" }
     ],
-    reference: 'Texas Instruments, "Op Amp Applications Handbook"'
+    reference: 'Texas Instruments, "Op Amp Applications Handbook"',
+    substitution: [
+      { symbol: "BW", expression: "{gbw} / {gain}", output: "bandwidth" },
+      { symbol: "t_r", expression: "0.35 / BW", output: "riseTime" },
+      { symbol: "A", expression: "20\xB7log\u2081\u2080({gain})", output: "gainDb" }
+    ]
   },
+  sweep: { input: "gain", range: [1, 1e4], scale: "log" },
+  examples: [
+    { id: "general-purpose-x10", label: "General-purpose 1 MHz op-amp, gain of 10", values: { gbw: 1, gain: 10, phase_margin: 60 } },
+    { id: "audio-preamp-x20", label: "Audio preamp, 8 MHz op-amp, gain of 20", values: { gbw: 8, gain: 20, phase_margin: 60 } },
+    { id: "video-x10", label: "Video amplifier, 3.9 GHz op-amp, gain of 10", values: { gbw: 3900, gain: 10, phase_margin: 50 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["opamp-gain", "comparator-hysteresis", "schmitt-trigger"],
   relatedBlogPosts: ["filter-design-butterworth-chebyshev"]
@@ -22717,6 +23692,7 @@ var lm317Resistors = {
   outputs: [
     {
       key: "r2",
+      primary: true,
       label: "Required R2",
       symbol: "R2",
       unit: "\u03A9",
@@ -22867,6 +23843,7 @@ var voltageRegulatorDropout = {
   outputs: [
     {
       key: "vinMin",
+      primary: true,
       label: "Minimum Input Voltage",
       symbol: "Vin_min",
       unit: "V",
@@ -22912,8 +23889,26 @@ var voltageRegulatorDropout = {
       { symbol: "Vdropout", description: "LDO dropout voltage", unit: "V" },
       { symbol: "Iload", description: "Load current", unit: "A" },
       { symbol: "Rds(on)", description: "Pass MOSFET on-resistance", unit: "\u03A9" }
+    ],
+    substitution: [
+      { symbol: "V_in,min", expression: "{vout} + {vdropout} + {iload} \xD7 {rds_on}", output: "vinMin" },
+      { symbol: "V_in,rec", expression: "1.1 \xD7 V_in,min", output: "vinRec" },
+      { symbol: "P_D", expression: "({vin} \u2212 {vout}) \xD7 {iload}", output: "powerDiss" }
     ]
   },
+  sweep: {
+    input: "vdropout",
+    range: [10, 2500],
+    scale: "linear",
+    lines: [
+      { id: "supply-voltage", kind: "limit", label: "Supply voltage", value: (i) => i.vin, fails: "above" }
+    ]
+  },
+  examples: [
+    { id: "usb-5v-to-3v3", label: "3.3 V LDO from 5 V USB", values: { vout: 3.3, iload: 500, vdropout: 300, rds_on: 0, vin: 5 } },
+    { id: "pmos-ldo-1v8", label: "1.8 V PMOS LDO from 2.5 V, 1 A", values: { vout: 1.8, iload: 1e3, vdropout: 50, rds_on: 200, vin: 2.5 } },
+    { id: "linear-5v-from-12v", label: "5 V linear regulator from 12 V", values: { vout: 5, iload: 1e3, vdropout: 2e3, rds_on: 0, vin: 12 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["ldo-thermal", "lm317-resistors", "linear-regulator-dropout"],
   relatedBlogPosts: ["linear-regulator-dropout", "solar-panel-sizing"]
@@ -22997,6 +23992,7 @@ var transformerTurnsRatio = {
   outputs: [
     {
       key: "turnsRatio",
+      primary: true,
       label: "Turns Ratio (Np/Ns)",
       symbol: "N",
       unit: "",
@@ -23045,8 +24041,19 @@ var transformerTurnsRatio = {
       { symbol: "Ip, Is", description: "Primary/secondary currents", unit: "A" },
       { symbol: "\u03B7", description: "Transformer efficiency", unit: "" }
     ],
-    reference: "Faraday's Law of Electromagnetic Induction"
+    reference: "Faraday's Law of Electromagnetic Induction",
+    substitution: [
+      { symbol: "N", expression: "{vPrimary} / {vSecondary}", output: "turnsRatio" },
+      { symbol: "I_s", expression: "{iPrimary} \xD7 N \xD7 {efficiency}", output: "iSecondary" },
+      { symbol: "P", expression: "{vPrimary} \xD7 {iPrimary} \xD7 {efficiency}", output: "realPower" }
+    ]
   },
+  sweep: { input: "vSecondary", range: [1, 100], scale: "log" },
+  examples: [
+    { id: "mains-230-to-12", label: "230 V to 12 V mains transformer", values: { vPrimary: 230, vSecondary: 12, iPrimary: 0.1, efficiency: 92 } },
+    { id: "control-120-to-24", label: "120 V to 24 V control transformer", values: { vPrimary: 120, vSecondary: 24, iPrimary: 0.5, efficiency: 95 } },
+    { id: "inverter-12-to-240", label: "Inverter step-up, 12 V to 240 V", values: { vPrimary: 12, vSecondary: 240, iPrimary: 10, efficiency: 90 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["flyback-converter", "buck-converter", "three-phase-power"],
   relatedTools: ["magnetics-optimizer"],
@@ -23157,6 +24164,7 @@ var flybackConverter = {
   outputs: [
     {
       key: "turnsRatio",
+      primary: true,
       label: "Turns Ratio (Np/Ns)",
       symbol: "N",
       unit: "",
@@ -23305,6 +24313,7 @@ var supercapacitorBackup = {
     },
     {
       key: "backupTime",
+      primary: true,
       label: "Backup Time",
       symbol: "t_backup",
       unit: "s",
@@ -23433,6 +24442,7 @@ var batteryInternalResistance = {
   outputs: [
     {
       key: "rinternal",
+      primary: true,
       label: "Internal Resistance",
       symbol: "Rint",
       unit: "m\u03A9",
@@ -23477,8 +24487,19 @@ var batteryInternalResistance = {
       { symbol: "Vload", description: "Loaded terminal voltage", unit: "V" },
       { symbol: "Iload", description: "Load current", unit: "A" },
       { symbol: "Rint", description: "Internal resistance", unit: "\u03A9" }
+    ],
+    substitution: [
+      { symbol: "R_int", expression: "({vocv} \u2212 {vLoad}) / {iLoad}", output: "rinternal" },
+      { symbol: "P_loss", expression: "R_int \xD7 {iLoad}\xB2", output: "powerLoss" },
+      { symbol: "I_sc", expression: "{vocv} / R_int", output: "maxCurrentShort" }
     ]
   },
+  sweep: { input: "vLoad", range: [10, 12.5], scale: "linear" },
+  examples: [
+    { id: "lead-acid-12v", label: "12 V lead-acid battery under a 4 A load", values: { vocv: 12.6, vLoad: 11.8, iLoad: 4, temperature: 25 } },
+    { id: "liion-18650", label: "18650 Li-ion cell under a 2 A load", values: { vocv: 4.15, vLoad: 4.05, iLoad: 2, temperature: 25 } },
+    { id: "alkaline-aa", label: "AA alkaline cell under a 500 mA load", values: { vocv: 1.55, vLoad: 1.4, iLoad: 0.5, temperature: 25 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["battery-life", "supercapacitor-backup", "battery-charge-time"],
   relatedBlogPosts: ["battery-runtime-motor"]
@@ -23557,12 +24578,13 @@ var i2sTiming = {
       defaultValue: 2,
       min: 1,
       max: 32,
-      tooltip: "Number of audio channels (1=mono, 2=stereo)"
+      tooltip: "Number of audio channels (1 for mono, 2 for stereo)"
     }
   ],
   outputs: [
     {
       key: "bclk",
+      primary: true,
       label: "Bit Clock (BCLK)",
       symbol: "BCLK",
       unit: "MHz",
@@ -23691,6 +24713,7 @@ var linBusTiming = {
     },
     {
       key: "frameTime",
+      primary: true,
       label: "Frame Time",
       symbol: "T_frame",
       unit: "\u03BCs",
@@ -23796,7 +24819,10 @@ var modbusFrameTiming = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "Parity bits: 0=None, 1=Even or Odd"
+      options: [
+        { value: 0, label: "None" },
+        { value: 1, label: "Even or odd (1 bit)" }
+      ]
     },
     {
       key: "stopBits",
@@ -23821,6 +24847,7 @@ var modbusFrameTiming = {
     },
     {
       key: "t35",
+      primary: true,
       label: "Inter-Frame Gap (3.5T)",
       symbol: "T_3.5",
       unit: "ms",
@@ -23918,7 +24945,12 @@ var ethernetCable = {
       min: 1,
       max: 4,
       step: 1,
-      tooltip: "1=Cat5e, 2=Cat6, 3=Cat6a, 4=Cat8",
+      options: [
+        { value: 1, label: "Cat5e" },
+        { value: 2, label: "Cat6" },
+        { value: 3, label: "Cat6a" },
+        { value: 4, label: "Cat8" }
+      ],
       presets: [
         { label: "Cat5e", values: { cableType: 1 } },
         { label: "Cat6", values: { cableType: 2 } },
@@ -23945,7 +24977,11 @@ var ethernetCable = {
       min: 1,
       max: 3,
       step: 1,
-      tooltip: "1=100Mbps (100BASE-TX), 2=1Gbps (1000BASE-T), 3=10Gbps (10GBASE-T)",
+      options: [
+        { value: 1, label: "100 Mbps (100BASE-TX)" },
+        { value: 2, label: "1 Gbps (1000BASE-T)" },
+        { value: 3, label: "10 Gbps (10GBASE-T)" }
+      ],
       presets: [
         { label: "100 Mbps", values: { speed: 1 } },
         { label: "1 Gbps", values: { speed: 2 } },
@@ -23956,6 +24992,7 @@ var ethernetCable = {
   outputs: [
     {
       key: "attenuation",
+      primary: true,
       label: "Cable Attenuation",
       symbol: "Att",
       unit: "dB",
@@ -23972,6 +25009,7 @@ var ethernetCable = {
     },
     {
       key: "headroom",
+      signed: "explicit",
       label: "Length Headroom",
       symbol: "Margin",
       unit: "m",
@@ -24007,9 +25045,9 @@ var ethernetCable = {
 // src/lib/calculators/pcb/power-plane-impedance.ts
 var EPS0 = 88541878128e-22;
 var MU0 = 125663706212e-17;
-var C0 = 299792458;
+var C03 = 299792458;
 function cavityModeHz(m, n, lengthM, widthM, er) {
-  return C0 / (2 * Math.sqrt(er)) * Math.sqrt((m / lengthM) ** 2 + (n / widthM) ** 2);
+  return C03 / (2 * Math.sqrt(er)) * Math.sqrt((m / lengthM) ** 2 + (n / widthM) ** 2);
 }
 function calculatePowerPlaneImpedance(inputs) {
   const { length, width, dielectric, er, frequency } = inputs;
@@ -24107,6 +25145,7 @@ var powerPlaneImpedance = {
   outputs: [
     {
       key: "capacitance",
+      primary: true,
       label: "Plane Capacitance",
       symbol: "C",
       unit: "nF",
@@ -24166,8 +25205,19 @@ var powerPlaneImpedance = {
       { symbol: "f_mn", description: "Cavity resonance of mode TMmn: m half-waves along the length l, n across the width w (TM\u2081\u2080: m = 1, n = 0)", unit: "Hz" },
       { symbol: "c", description: "Speed of light in vacuum, 299 792 458 m/s", unit: "m/s" }
     ],
-    reference: "Swaminathan & Engin, Power Integrity Modeling and Design for Semiconductors and Systems (cavity resonances of a rectangular plane pair); Novak & Miller, Frequency-Domain Characterization of Power Distribution Networks; Bogatin, Signal and Power Integrity \u2014 Simplified (sheet inductance of a plane pair, \u03BC0\xB7h per square)"
+    reference: "Swaminathan & Engin, Power Integrity Modeling and Design for Semiconductors and Systems (cavity resonances of a rectangular plane pair); Novak & Miller, Frequency-Domain Characterization of Power Distribution Networks; Bogatin, Signal and Power Integrity \u2014 Simplified (sheet inductance of a plane pair, \u03BC0\xB7h per square)",
+    substitution: [
+      { symbol: "C", expression: "{er} \xD7 \u03B5\u2080 \xD7 {length} \xD7 {width} / {dielectric}", output: "capacitance" },
+      { symbol: "L", expression: "\u03BC\u2080 \xD7 {dielectric} \xD7 {length} / {width}", output: "inductance" },
+      { symbol: "f\u2081\u2080", expression: "c / (2 \xD7 {length} \xD7 \u221A{er})", output: "cavityResonanceTM10" }
+    ]
   },
+  sweep: { input: "dielectric", range: [0.025, 1.6], scale: "log" },
+  examples: [
+    { id: "fr4-100x80-0p1", label: "100 \xD7 80 mm plane pair on 0.1 mm FR4", values: { length: 100, width: 80, dielectric: 0.1, er: 4.4, frequency: 100 } },
+    { id: "embedded-capacitance", label: "Embedded-capacitance laminate, 14 \xB5m", values: { length: 100, width: 80, dielectric: 0.014, er: 16, frequency: 100 } },
+    { id: "phone-board-60x40", label: "60 \xD7 40 mm phone board, 76 \xB5m prepreg", values: { length: 60, width: 40, dielectric: 0.076, er: 3.9, frequency: 500 } }
+  ],
   assumptions: [
     {
       code: "parallel-plate",
@@ -24292,6 +25342,7 @@ var viaStubResonance = {
     },
     {
       key: "resonantFreq",
+      primary: true,
       label: "Stub Resonant Frequency",
       symbol: "f_res",
       unit: "GHz",
@@ -24438,6 +25489,7 @@ var solderPasteVolume = {
     },
     {
       key: "pasteVolume",
+      primary: true,
       label: "Paste Volume",
       symbol: "V_paste",
       unit: "mm\xB3",
@@ -24562,6 +25614,7 @@ var emiFilterLc = {
   outputs: [
     {
       key: "inductance",
+      primary: true,
       label: "Inductance",
       symbol: "L",
       unit: "\u03BCH",
@@ -24578,6 +25631,7 @@ var emiFilterLc = {
     },
     {
       key: "filterOrder",
+      display: { integer: true },
       label: "Filter Order",
       symbol: "n",
       unit: "",
@@ -24718,7 +25772,12 @@ var esdTvsDiode = {
       min: 1,
       max: 4,
       step: 1,
-      tooltip: "1=2kV HBM, 2=4kV HBM, 3=8kV HBM, 4=15kV IEC 61000-4-2",
+      options: [
+        { value: 1, label: "2 kV HBM" },
+        { value: 2, label: "4 kV HBM" },
+        { value: 3, label: "8 kV HBM" },
+        { value: 4, label: "15 kV IEC 61000-4-2" }
+      ],
       presets: [
         { label: "2kV HBM", values: { esd_level: 1 } },
         { label: "4kV HBM", values: { esd_level: 2 } },
@@ -24740,6 +25799,7 @@ var esdTvsDiode = {
   outputs: [
     {
       key: "vclamp",
+      primary: true,
       label: "Clamp Voltage",
       symbol: "Vc",
       unit: "V",
@@ -24819,7 +25879,7 @@ var commonModeChoke = {
     { key: "dcr", label: "DC Resistance (DCR)", symbol: "R_DC", unit: "\u03A9", defaultValue: 0.5, min: 1e-3 }
   ],
   outputs: [
-    { key: "impedance", label: "Impedance |Z|", symbol: "Z", unit: "\u03A9", precision: 0 },
+    { key: "impedance", label: "Impedance |Z|", symbol: "Z", unit: "\u03A9", precision: 0, primary: true },
     { key: "attenuation", label: "Insertion Loss", symbol: "IL", unit: "dB", precision: 1 },
     { key: "qualityFactor", label: "Q Factor", symbol: "Q", unit: "", precision: 1 }
   ],
@@ -24829,8 +25889,19 @@ var commonModeChoke = {
     variables: [
       { symbol: "L", description: "Inductance", unit: "H" },
       { symbol: "f", description: "Frequency", unit: "Hz" }
+    ],
+    substitution: [
+      { symbol: "|Z|", expression: "2\u03C0 \xD7 {frequency} \xD7 {inductance}", output: "impedance" },
+      { symbol: "IL", expression: "20\xB7log\u2081\u2080((|Z| + 50 \u03A9) / 50 \u03A9)", output: "attenuation" },
+      { symbol: "Q", expression: "|Z| / {dcr}", output: "qualityFactor" }
     ]
   },
+  sweep: { input: "frequency", range: [1e4, 1e8], scale: "log" },
+  examples: [
+    { id: "mains-10mh-150k", label: "Mains filter choke, 10 mH at 150 kHz", values: { inductance: 1e4, frequency: 15e4, dcr: 0.1 } },
+    { id: "usb-data-choke", label: "USB data-line choke at 100 MHz", values: { inductance: 0.15, frequency: 1e8, dcr: 0.3 } },
+    { id: "dcdc-input-1mh", label: "DC-DC input choke, 1 mH at 1 MHz", values: { inductance: 1e3, frequency: 1e6, dcr: 0.05 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["ferrite-bead", "emi-filter-lc", "differential-mode-filter"],
   relatedBlogPosts: ["emi-radiated-emissions-pcb-fcc-compliance"]
@@ -24867,7 +25938,7 @@ var decouplingCapacitorEmc = {
   ],
   outputs: [
     { key: "xc", label: "Capacitive Reactance", symbol: "Xc", unit: "\u03A9", precision: 3 },
-    { key: "impedance", label: "Total Impedance |Z|", symbol: "|Z|", unit: "\u03A9", precision: 3 },
+    { key: "impedance", label: "Total Impedance |Z|", symbol: "|Z|", unit: "\u03A9", precision: 3, primary: true },
     { key: "srf", label: "Self-Resonant Freq.", symbol: "f_SRF", unit: "MHz", precision: 1 }
   ],
   calculate: (inputs) => {
@@ -24886,8 +25957,19 @@ var decouplingCapacitorEmc = {
     variables: [
       { symbol: "C", description: "Capacitance", unit: "F" },
       { symbol: "L", description: "Package inductance (varies by package)", unit: "H" }
+    ],
+    substitution: [
+      { symbol: "X_C", expression: "1 / (2\u03C0 \xD7 {frequency} \xD7 {capacitance})", output: "xc" },
+      { symbol: "|Z|", expression: "\u221A((2\u03C0 \xD7 {frequency} \xD7 {packageInductance} \u2212 X_C)\xB2 + {esr}\xB2)", output: "impedance" },
+      { symbol: "f_SRF", expression: "1 / (2\u03C0 \u221A({packageInductance} \xD7 {capacitance}))", output: "srf" }
     ]
   },
+  sweep: { input: "frequency", range: [1, 1e6], scale: "log" },
+  examples: [
+    { id: "mlcc-100n-100k", label: "100 nF 0603 at 100 kHz", values: { capacitance: 100, esr: 0.05, frequency: 100, packageInductance: 1 } },
+    { id: "mlcc-10n-100m", label: "10 nF 0402 at 100 MHz", values: { capacitance: 10, esr: 0.1, frequency: 1e5, packageInductance: 0.5 } },
+    { id: "bulk-10u-10k", label: "10 \xB5F bulk capacitor at 10 kHz", values: { capacitance: 1e4, esr: 0.01, frequency: 10, packageInductance: 2 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["emi-filter-lc", "common-mode-choke", "conducted-emissions-filter"],
   relatedBlogPosts: ["emi-radiated-emissions-pcb-fcc-compliance"]
@@ -24922,9 +26004,9 @@ var esdClampSelection = {
     { key: "lineImpedance", label: "Line Impedance", symbol: "Z", unit: "\u03A9", defaultValue: 330, min: 0.1, tooltip: "Series resistance in ESD discharge path" }
   ],
   outputs: [
-    { key: "peakCurrent", label: "Peak Clamp Current", symbol: "I_pk", unit: "A", precision: 1 },
+    { key: "peakCurrent", label: "Peak Clamp Current", symbol: "I_pk", unit: "A", precision: 1, primary: true },
     { key: "clampPower", label: "Peak Power Dissipation", symbol: "P_pk", unit: "W", precision: 0 },
-    { key: "voltageMargin", label: "Voltage Margin", symbol: "\u0394V", unit: "V", precision: 0 },
+    { key: "voltageMargin", label: "Voltage Margin", symbol: "\u0394V", unit: "V", precision: 0, signed: "explicit" },
     { key: "clampingRatio", label: "Clamping Ratio", symbol: "V_cl/V_ESD", unit: "", precision: 3 }
   ],
   calculate: calculateEsdClampSelection,
@@ -24955,8 +26037,8 @@ var radiatedEmissionEstimate = {
     { key: "distance", label: "Measurement Distance", symbol: "r", unit: "m", defaultValue: 3, min: 0.1, tooltip: "CISPR 22 standard: 3 m or 10 m" }
   ],
   outputs: [
-    { key: "eFieldDbuvM", label: "E-Field", symbol: "E", unit: "dB\u03BCV/m", precision: 1 },
-    { key: "margin", label: "Margin vs CISPR 22 Class B", symbol: "M", unit: "dB", precision: 1, thresholds: { good: { min: 6 }, warning: { min: 0 } } }
+    { key: "eFieldDbuvM", label: "E-Field", symbol: "E", unit: "dB\u03BCV/m", precision: 1, primary: true },
+    { key: "margin", label: "Margin vs CISPR 22 Class B", symbol: "M", unit: "dB", precision: 1, thresholds: { good: { min: 6 }, warning: { min: 0 } }, signed: "explicit" }
   ],
   calculate: (inputs) => {
     const { current, loopArea, frequency, distance } = inputs;
@@ -25048,7 +26130,7 @@ var groundPlaneImpedance = {
     { key: "skinDepth", label: "Skin Depth", symbol: "\u03B4", unit: "\u03BCm", precision: 2 },
     { key: "acResistance", label: "AC Resistance", symbol: "R_AC", unit: "m\u03A9", precision: 2 },
     { key: "inductance", label: "Plane Inductance", symbol: "L", unit: "nH", precision: 2 },
-    { key: "totalImpedance", label: "Total Impedance |Z|", symbol: "|Z|", unit: "m\u03A9", precision: 2 }
+    { key: "totalImpedance", label: "Total Impedance |Z|", symbol: "|Z|", unit: "m\u03A9", precision: 2, primary: true }
   ],
   calculate: calculateGroundPlaneImpedance,
   formula: {
@@ -25056,8 +26138,19 @@ var groundPlaneImpedance = {
     variables: [
       { symbol: "\u03B4", description: "Skin depth", unit: "m" },
       { symbol: "\u03C3", description: "Conductivity", unit: "S/m" }
+    ],
+    substitution: [
+      { symbol: "R_DC", expression: "{length} / ({conductivity} \xD7 {width} \xD7 {thickness})", output: "dcResistance" },
+      { symbol: "L", expression: "\u03BC\u2080 \xD7 {length} / {width}", output: "inductance" },
+      { symbol: "|Z|", expression: "\u221A(R_AC\xB2 + (2\u03C0 \xD7 {frequency} \xD7 L)\xB2)", output: "totalImpedance" }
     ]
   },
+  sweep: { input: "frequency", range: [1e-3, 1e3], scale: "log" },
+  examples: [
+    { id: "plane-100x50-10m", label: "100 \xD7 50 mm 1 oz plane at 10 MHz", values: { length: 100, width: 50, thickness: 35, frequency: 10, conductivity: 58 } },
+    { id: "return-strip-100m", label: "50 \xD7 5 mm return strip at 100 MHz", values: { length: 50, width: 5, thickness: 35, frequency: 100, conductivity: 58 } },
+    { id: "power-ground-2oz", label: "200 \xD7 100 mm 2 oz ground at 1 MHz", values: { length: 200, width: 100, thickness: 70, frequency: 1, conductivity: 58 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["radiated-emission-estimate", "shielding-effectiveness", "emi-margin-budget"]
 };
@@ -25097,7 +26190,7 @@ var pcbCrosstalkEmc = {
   outputs: [
     { key: "capacitiveCoupling", label: "Capacitive Coupling", symbol: "V_cap", unit: "mV", precision: 2 },
     { key: "inductiveCoupling", label: "Inductive Coupling", symbol: "V_ind", unit: "mV", precision: 2 },
-    { key: "totalCrosstalk", label: "Total Crosstalk", symbol: "V_xt", unit: "mV", precision: 2 },
+    { key: "totalCrosstalk", label: "Total Crosstalk", symbol: "V_xt", unit: "mV", precision: 2, primary: true },
     { key: "crosstalkDb", label: "Crosstalk Coupling", symbol: "XT", unit: "dB", precision: 1 }
   ],
   calculate: calculatePcbCrosstalkEmc,
@@ -25127,7 +26220,7 @@ var powerSupplyRippleFilter = {
   outputs: [
     { key: "resonantFreq", label: "Filter Resonant Frequency", symbol: "f\u2080", unit: "kHz", precision: 1 },
     { key: "attenuation", label: "Attenuation", symbol: "A", unit: "dB", precision: 1 },
-    { key: "outputRipple", label: "Output Ripple", symbol: "V_out", unit: "mV", precision: 3 }
+    { key: "outputRipple", label: "Output Ripple", symbol: "V_out", unit: "mV", precision: 3, primary: true }
   ],
   calculate: (inputs) => {
     const { inputRipple, frequency, inductance, capacitance } = inputs;
@@ -25161,10 +26254,11 @@ var cableShieldEffectiveness = {
   inputs: [
     { key: "shieldResistance", label: "Shield DC Resistance", symbol: "R_sh", unit: "m\u03A9/m", defaultValue: 10, min: 1e-3, tooltip: "Per metre, from cable datasheet" },
     { key: "cableLength", label: "Cable Length", symbol: "l", unit: "m", defaultValue: 2, min: 0.01 },
-    { key: "frequency", label: "Frequency", symbol: "f", unit: "MHz", defaultValue: 10, min: 1e-3 }
+    { key: "frequency", label: "Frequency", symbol: "f", unit: "MHz", defaultValue: 10, min: 1e-3 },
+    { key: "targetSE", label: "Target Shielding Effectiveness", symbol: "SE_t", unit: "dB", defaultValue: 40, min: 0, max: 120, tooltip: "The shielding effectiveness the cable must reach. The status fails below 20 dB." }
   ],
   outputs: [
-    { key: "shieldingEffectDb", label: "Shielding Effectiveness", symbol: "SE", unit: "dB", precision: 1, thresholds: { good: { min: 40 }, warning: { min: 20 } } },
+    { key: "shieldingEffectDb", label: "Shielding Effectiveness", symbol: "SE", unit: "dB", precision: 1, thresholds: { good: { min: 40 }, warning: { min: 20 }, danger: { min: 20 } }, primary: true },
     { key: "transferImpedance", label: "Transfer Impedance", symbol: "Z_t", unit: "m\u03A9", precision: 2 }
   ],
   calculate: (inputs) => {
@@ -25177,8 +26271,27 @@ var cableShieldEffectiveness = {
   },
   formula: {
     primary: "SE = 20\xB7log\u2081\u2080(V_no-shield / V_shield)",
-    variables: []
+    variables: [],
+    substitution: [
+      { symbol: "Z_t", expression: "{shieldResistance} \xD7 {cableLength} \xD7 \u221A(1 + ({frequency} / 10 MHz)\xB2)", output: "transferImpedance" },
+      { symbol: "SE", expression: "max(0, 40 \u2212 20\xB7log\u2081\u2080(Z_t / 10 m\u03A9))", output: "shieldingEffectDb" }
+    ]
   },
+  sweep: {
+    input: "frequency",
+    range: [0.01, 1e3],
+    scale: "log",
+    lines: [
+      { id: "se-floor", kind: "limit", label: "Minimum", value: () => 20, fails: "below" },
+      { id: "se-target", kind: "target", label: "Target", value: (i) => i.targetSE }
+    ]
+  },
+  target: { output: "shieldingEffectDb", input: "targetSE", sense: "min", failAt: 20 },
+  examples: [
+    { id: "braided-coax-2m", label: "2 m of single-braid coax at 10 MHz", values: { shieldResistance: 14, cableLength: 2, frequency: 10 } },
+    { id: "foil-braid-30m", label: "1 m of foil-and-braid cable at 30 MHz", values: { shieldResistance: 15, cableLength: 1, frequency: 30 } },
+    { id: "double-braid-1m", label: "1 m of double-braid coax at 1 MHz", values: { shieldResistance: 6, cableLength: 1, frequency: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["shielding-effectiveness", "radiated-emission-estimate", "emi-margin-budget"],
   relatedBlogPosts: ["emi-filter-design-cispr-compliance"]
@@ -25199,7 +26312,7 @@ var chassisResonance = {
     { key: "height", label: "Height", symbol: "c", unit: "cm", defaultValue: 10, min: 0.1 }
   ],
   outputs: [
-    { key: "fLowest", label: "Lowest Resonant Frequency", symbol: "f_min", unit: "MHz", precision: 0 },
+    { key: "fLowest", label: "Lowest Resonant Frequency", symbol: "f_min", unit: "MHz", precision: 0, primary: true },
     { key: "f101MHz", label: "TE\u2081\u2080\u2081 Mode", symbol: "f_TE101", unit: "MHz", precision: 0 },
     { key: "f110MHz", label: "TE\u2081\u2081\u2080 Mode", symbol: "f_TE110", unit: "MHz", precision: 0 },
     { key: "wavelengthAtResonance", label: "Wavelength at f_min", symbol: "\u03BB", unit: "cm", precision: 0 }
@@ -25247,8 +26360,8 @@ var emiMarginBudget = {
     { key: "safetyMargin", label: "Design Safety Margin", symbol: "SM", unit: "dB", defaultValue: 6, min: 0 }
   ],
   outputs: [
-    { key: "rawMargin", label: "Raw Margin", symbol: "M_raw", unit: "dB", precision: 1 },
-    { key: "adjustedMargin", label: "Adjusted Margin", symbol: "M_adj", unit: "dB", precision: 1, thresholds: { good: { min: 0 } } },
+    { key: "rawMargin", label: "Raw Margin", symbol: "M_raw", unit: "dB", precision: 1, signed: "explicit" },
+    { key: "adjustedMargin", label: "Adjusted Margin", symbol: "M_adj", unit: "dB", precision: 1, thresholds: { good: { min: 0 } }, primary: true, signed: "explicit" },
     { key: "requiredReduction", label: "Reduction Required", symbol: "\u0394E", unit: "dB", precision: 1 }
   ],
   calculate: calculateEmiMarginBudget,
@@ -25293,7 +26406,7 @@ var conductedEmissionsFilter = {
     { key: "loadImpedance", label: "Load Impedance", symbol: "Z_L", unit: "\u03A9", defaultValue: 50, min: 0.1 }
   ],
   outputs: [
-    { key: "requiredF0", label: "Filter Corner Frequency", symbol: "f\u2080", unit: "kHz", precision: 1 },
+    { key: "requiredF0", label: "Filter Corner Frequency", symbol: "f\u2080", unit: "kHz", precision: 1, primary: true },
     { key: "cValue", label: "Capacitor Value", symbol: "C", unit: "\u03BCF", precision: 3 },
     { key: "lValue", label: "Inductor Value", symbol: "L", unit: "\u03BCH", precision: 2 },
     { key: "outputLevel", label: "Output Emission Level", symbol: "V_out", unit: "dB\u03BCV", precision: 1 }
@@ -25346,7 +26459,7 @@ var differentialModeFilter = {
   ],
   outputs: [
     { key: "cornerFreq", label: "Corner Frequency", symbol: "f\u2080", unit: "kHz", precision: 1 },
-    { key: "attenuation", label: "Attenuation at f", symbol: "A", unit: "dB", precision: 1 },
+    { key: "attenuation", label: "Attenuation at f", symbol: "A", unit: "dB", precision: 1, primary: true },
     { key: "characteristicImpedance", label: "Characteristic Impedance", symbol: "Z\u2080", unit: "\u03A9", precision: 1 }
   ],
   calculate: calculateDifferentialModeFilter,
@@ -25458,6 +26571,7 @@ var audioPowerAmplifier = {
   outputs: [
     {
       key: "poutMax",
+      primary: true,
       label: "Maximum Output Power",
       symbol: "Pout_max",
       unit: "W",
@@ -25506,8 +26620,19 @@ var audioPowerAmplifier = {
       { symbol: "Vout_peak", description: "Peak output voltage swing", unit: "V" },
       { symbol: "\u03B7", description: "Amplifier efficiency", unit: "%" }
     ],
-    reference: 'Cordell, "Designing Audio Power Amplifiers" 2nd ed.'
+    reference: 'Cordell, "Designing Audio Power Amplifiers" 2nd ed.',
+    substitution: [
+      { symbol: "P_max", expression: "(0.9 \xD7 {vcc} / 2)\xB2 / (2 \xD7 {rl})", output: "poutMax" },
+      { symbol: "P_RMS", expression: "P_max / 2", output: "poutRMS" },
+      { symbol: "V_in", expression: "(0.9 \xD7 {vcc} / 2 / \u221A2) / 10^({gain}/20)", output: "inputSensitivity" }
+    ]
   },
+  sweep: { input: "vcc", range: [5, 100], scale: "linear" },
+  examples: [
+    { id: "car-amp-12v-4ohm", label: "12 V car amplifier into 4 \u03A9", values: { vcc: 12, rl: 4, efficiency: 70, gain: 26 } },
+    { id: "class-d-24v-8ohm", label: "Class-D amplifier on 24 V into 8 \u03A9", values: { vcc: 24, rl: 8, efficiency: 90, gain: 26 } },
+    { id: "class-ab-70v-8ohm", label: "Class-AB amplifier on a 70 V rail into 8 \u03A9", values: { vcc: 70, rl: 8, efficiency: 60, gain: 32 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["speaker-crossover", "opamp-gain", "opamp-bandwidth"],
   relatedBlogPosts: ["audio-amplifier-design-guide", "class-d-efficiency", "room-modes"]
@@ -25609,7 +26734,10 @@ var speakerCrossover = {
       min: 1,
       max: 2,
       step: 1,
-      tooltip: "1 = 1st order 6dB/octave, 2 = 2nd order Butterworth 12dB/octave",
+      options: [
+        { value: 1, label: "1st order (6 dB/oct)" },
+        { value: 2, label: "2nd order Butterworth (12 dB/oct)" }
+      ],
       presets: [
         { label: "1st order (6dB/oct)", values: { order: 1 } },
         { label: "2nd order (12dB/oct)", values: { order: 2 } }
@@ -25619,6 +26747,7 @@ var speakerCrossover = {
   outputs: [
     {
       key: "wooferL",
+      primary: true,
       label: "Woofer Inductor",
       symbol: "Lw",
       unit: "mH",
@@ -25714,7 +26843,7 @@ var roomModes = {
     { key: "rt60", label: "Reverberation Time (RT60)", symbol: "T\u2086\u2080", unit: "s", defaultValue: 0.4, min: 0.05, max: 5, step: 0.05, tooltip: "Typical rooms 0.3\u20130.8 s" }
   ],
   outputs: [
-    { key: "flLength", label: "Length Mode (1st)", symbol: "f_L", unit: "Hz", precision: 1 },
+    { key: "flLength", label: "Length Mode (1st)", symbol: "f_L", unit: "Hz", precision: 1, primary: true },
     { key: "flWidth", label: "Width Mode (1st)", symbol: "f_W", unit: "Hz", precision: 1 },
     { key: "flHeight", label: "Height Mode (1st)", symbol: "f_H", unit: "Hz", precision: 1 },
     { key: "schroeder", label: "Schroeder Frequency", symbol: "f_S", unit: "Hz", precision: 0 },
@@ -25762,7 +26891,7 @@ var speakerSensitivity = {
   ],
   outputs: [
     { key: "splAtPower", label: "SPL at Full Power (1m)", symbol: "SPL_P", unit: "dB", precision: 1 },
-    { key: "splAtDistance", label: "SPL at Distance", symbol: "SPL_d", unit: "dB", precision: 1 }
+    { key: "splAtDistance", label: "SPL at Distance", symbol: "SPL_d", unit: "dB", precision: 1, primary: true }
   ],
   calculate: calculateSpeakerSensitivity,
   formula: {
@@ -25771,8 +26900,18 @@ var speakerSensitivity = {
       { symbol: "S", description: "Sensitivity (dB/W/m)", unit: "dB" },
       { symbol: "P", description: "Power", unit: "W" },
       { symbol: "d", description: "Distance", unit: "m" }
+    ],
+    substitution: [
+      { symbol: "SPL\u2081", expression: "{sensitivity} + 10\xB7log\u2081\u2080({power})", output: "splAtPower" },
+      { symbol: "SPL", expression: "SPL\u2081 \u2212 20\xB7log\u2081\u2080({distance})", output: "splAtDistance" }
     ]
   },
+  sweep: { input: "distance", range: [0.5, 50], scale: "log" },
+  examples: [
+    { id: "bookshelf-living-room", label: "Bookshelf speaker, 50 W at 3 m", values: { sensitivity: 89, power: 50, distance: 3 } },
+    { id: "pa-horn-20m", label: "PA horn, 500 W at 20 m", values: { sensitivity: 100, power: 500, distance: 20 } },
+    { id: "studio-monitor-nearfield", label: "Near-field studio monitor, 10 W at 1.5 m", values: { sensitivity: 85, power: 10, distance: 1.5 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "room-modes", "headphone-power"],
   relatedBlogPosts: ["audio-amplifier-design-guide", "decibels-explained-db-dbm-dbi"]
@@ -25817,8 +26956,8 @@ var headphonePower = {
     { key: "targetSpl", label: "Target SPL", symbol: "SPL", unit: "dB", defaultValue: 110, min: 70, max: 140 }
   ],
   outputs: [
-    { key: "requiredPowerMw", label: "Required Power", symbol: "P_req", unit: "mW", precision: 3 },
-    { key: "requiredPowerW", label: "Required Power (W)", symbol: "P_W", unit: "W", precision: 4, tooltip: "Power in watts (for amplifier datasheet comparison)" },
+    { key: "requiredPowerMw", label: "Required Power", symbol: "P_req", unit: "mW", precision: 3, primary: true },
+    { key: "requiredPowerW", label: "Required Power (W)", symbol: "P_W", unit: "W", precision: 4, tooltip: "Power in watts (for amplifier datasheet comparison)", display: { unit: "W" } },
     { key: "requiredVoltageRms", label: "Required Voltage (RMS)", symbol: "V_rms", unit: "V", precision: 3 },
     { key: "requiredCurrentMa", label: "Required Current", symbol: "I_req", unit: "mA", precision: 2 }
   ],
@@ -25828,8 +26967,19 @@ var headphonePower = {
     variables: [
       { symbol: "S", description: "Headphone sensitivity", unit: "dB/mW" },
       { symbol: "Z", description: "Headphone impedance", unit: "\u03A9" }
+    ],
+    substitution: [
+      { symbol: "P", expression: "10^(({targetSpl} \u2212 {sensitivity})/10) mW", output: "requiredPowerMw" },
+      { symbol: "V", expression: "\u221A(P \xD7 {impedance})", output: "requiredVoltageRms" },
+      { symbol: "I", expression: "V / {impedance}", output: "requiredCurrentMa" }
     ]
   },
+  sweep: { input: "targetSpl", range: [80, 130], scale: "linear" },
+  examples: [
+    { id: "studio-300ohm", label: "300 \u03A9 studio headphones at 110 dB", values: { impedance: 300, sensitivity: 97, targetSpl: 110 } },
+    { id: "earbuds-32ohm", label: "32 \u03A9 earbuds at 100 dB", values: { impedance: 32, sensitivity: 105, targetSpl: 100 } },
+    { id: "planar-50ohm", label: "50 \u03A9 planar-magnetic headphones at 115 dB", values: { impedance: 50, sensitivity: 90, targetSpl: 115 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["speaker-sensitivity", "audio-power-amplifier", "power-amplifier-gain"],
   relatedBlogPosts: ["audio-amplifier-design-guide"]
@@ -25855,10 +27005,11 @@ var audioSnr = {
   keywords: ["audio SNR", "signal to noise ratio audio", "dynamic range audio", "noise floor audio", "audio quality", "ENOB audio"],
   inputs: [
     { key: "signalLevel", label: "Signal Level", symbol: "V_sig", unit: "dBV", defaultValue: 0, min: -80, max: 30 },
-    { key: "noiseFloor", label: "Noise Floor", symbol: "V_noise", unit: "dBV", defaultValue: -90, min: -140, max: 0 }
+    { key: "noiseFloor", label: "Noise Floor", symbol: "V_noise", unit: "dBV", defaultValue: -90, min: -140, max: 0 },
+    { key: "targetSnr", label: "Target SNR", symbol: "SNR_t", unit: "dB", defaultValue: 90, min: 0, max: 160, tooltip: "The signal-to-noise ratio the chain must reach. The status fails below 60 dB." }
   ],
   outputs: [
-    { key: "snr", label: "SNR", symbol: "SNR", unit: "dB", precision: 1, thresholds: { good: { min: 90 }, warning: { min: 60 } } },
+    { key: "snr", label: "SNR", symbol: "SNR", unit: "dB", precision: 1, thresholds: { good: { min: 90 }, warning: { min: 60 }, danger: { min: 60 } }, primary: true },
     { key: "dynamicRange", label: "Dynamic Range", symbol: "DR", unit: "dB", precision: 1, tooltip: "Span from noise floor to 0 dBFS maximum level" },
     { key: "snrLinear", label: "SNR (linear voltage ratio)", symbol: "SNR_V", unit: ":1", precision: 0 },
     { key: "noiseBits", label: "Effective Noise Bits", symbol: "ENOB", unit: "bits", precision: 1 }
@@ -25868,8 +27019,28 @@ var audioSnr = {
     primary: "SNR = V_signal \u2212 V_noise (dB)",
     variables: [
       { symbol: "SNR", description: "Signal-to-noise ratio", unit: "dB" }
+    ],
+    substitution: [
+      { symbol: "SNR", expression: "{signalLevel} \u2212 ({noiseFloor})", output: "snr" },
+      { symbol: "DR", expression: "0 dBV \u2212 ({noiseFloor})", output: "dynamicRange" },
+      { symbol: "N_bits", expression: "SNR / (20\xB7log\u2081\u2080 2)", output: "noiseBits" }
     ]
   },
+  sweep: {
+    input: "noiseFloor",
+    range: [-140, -40],
+    scale: "linear",
+    lines: [
+      { id: "snr-floor", kind: "limit", label: "Minimum", value: () => 60, fails: "below" },
+      { id: "snr-target", kind: "target", label: "Target", value: (i) => i.targetSnr }
+    ]
+  },
+  target: { output: "snr", input: "targetSnr", sense: "min", failAt: 60 },
+  examples: [
+    { id: "consumer-line", label: "Consumer line level, \u221210 dBV", values: { signalLevel: -10, noiseFloor: -100 } },
+    { id: "pro-line", label: "Professional line level, +4 dBu", values: { signalLevel: 1.78, noiseFloor: -95 } },
+    { id: "phono-stage", label: "Phono preamp output", values: { signalLevel: -20, noiseFloor: -85 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-adc-snr", "audio-power-amplifier", "amplifier-clipping"],
   relatedBlogPosts: ["audio-amplifier-design-guide", "decibels-explained-db-dbm-dbi"]
@@ -25899,9 +27070,9 @@ var opAmpSlewRate = {
     { key: "frequency", label: "Signal Frequency", symbol: "f", unit: "Hz", defaultValue: 2e4, min: 1 }
   ],
   outputs: [
-    { key: "fullPowerBandwidth", label: "Full-Power Bandwidth", symbol: "FPBW", unit: "Hz", precision: 0 },
+    { key: "fullPowerBandwidth", label: "Full-Power Bandwidth", symbol: "FPBW", unit: "Hz", precision: 0, primary: true },
     { key: "minSlewRateRequired", label: "Min. Slew Rate Required", symbol: "SR_min", unit: "V/\u03BCs", precision: 3 },
-    { key: "slewMargin", label: "Slew Rate Margin", symbol: "SR_margin", unit: "V/\u03BCs", precision: 3, thresholds: { good: { min: 0 } } }
+    { key: "slewMargin", label: "Slew Rate Margin", symbol: "SR_margin", unit: "V/\u03BCs", precision: 3, thresholds: { good: { min: 0 } }, signed: "explicit" }
   ],
   calculate: calculateOpAmpSlewRate,
   formula: {
@@ -25909,8 +27080,26 @@ var opAmpSlewRate = {
     variables: [
       { symbol: "SR", description: "Slew rate", unit: "V/\u03BCs" },
       { symbol: "V_peak", description: "Peak output voltage", unit: "V" }
+    ],
+    substitution: [
+      { symbol: "f_FP", expression: "{slewRate} / (2\u03C0 \xD7 {amplitude})", output: "fullPowerBandwidth" },
+      { symbol: "SR_min", expression: "2\u03C0 \xD7 {frequency} \xD7 {amplitude}", output: "minSlewRateRequired" },
+      { symbol: "SR_margin", expression: "{slewRate} \u2212 SR_min", output: "slewMargin" }
     ]
   },
+  sweep: {
+    input: "amplitude",
+    range: [0.1, 20],
+    scale: "log",
+    lines: [
+      { id: "signal-frequency", kind: "limit", label: "Signal frequency", value: (i) => i.frequency, fails: "below" }
+    ]
+  },
+  examples: [
+    { id: "jfet-opamp-10vpk", label: "13 V/\xB5s JFET op-amp, 10 V peak at 20 kHz", values: { slewRate: 13, amplitude: 10, frequency: 2e4 } },
+    { id: "line-driver-9vus", label: "9 V/\xB5s line driver, 7 V peak at 20 kHz", values: { slewRate: 9, amplitude: 7, frequency: 2e4 } },
+    { id: "slow-opamp-5k", label: "0.3 V/\xB5s general-purpose op-amp, 5 V peak at 5 kHz", values: { slewRate: 0.3, amplitude: 5, frequency: 5e3 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "audio-snr", "equalizer-q-factor"],
   relatedBlogPosts: ["opamp-gain"]
@@ -25943,7 +27132,7 @@ var audioTransformer = {
     { key: "primaryCurrent", label: "Primary Current (RMS)", symbol: "I\u2081", unit: "A", defaultValue: 1e-3, min: 0, step: 1e-4 }
   ],
   outputs: [
-    { key: "turnsRatio", label: "Turns Ratio (n)", symbol: "n", unit: ":1", precision: 3 },
+    { key: "turnsRatio", label: "Turns Ratio (n)", symbol: "n", unit: ":1", precision: 3, primary: true },
     { key: "secondaryVoltage", label: "Secondary Voltage", symbol: "V\u2082", unit: "V", precision: 4 },
     { key: "secondaryCurrent", label: "Secondary Current", symbol: "I\u2082", unit: "A", precision: 4 },
     { key: "powerTransferred", label: "Power Transferred", symbol: "P", unit: "W", precision: 4 }
@@ -25954,8 +27143,19 @@ var audioTransformer = {
     variables: [
       { symbol: "n", description: "Turns ratio", unit: "" },
       { symbol: "Z", description: "Impedance", unit: "\u03A9" }
+    ],
+    substitution: [
+      { symbol: "n", expression: "\u221A({primaryImpedance} / {secondaryImpedance})", output: "turnsRatio" },
+      { symbol: "V\u2082", expression: "{primaryVoltage} / n", output: "secondaryVoltage" },
+      { symbol: "I\u2082", expression: "{primaryCurrent} \xD7 n", output: "secondaryCurrent" }
     ]
   },
+  sweep: { input: "secondaryImpedance", range: [2, 1e3], scale: "log" },
+  examples: [
+    { id: "line-600-to-8", label: "600 \u03A9 line to an 8 \u03A9 speaker", values: { primaryImpedance: 600, secondaryImpedance: 8, primaryVoltage: 1, primaryCurrent: 1e-3 } },
+    { id: "valve-output-5k-8", label: "Valve output transformer, 5 k\u03A9 to 8 \u03A9", values: { primaryImpedance: 5e3, secondaryImpedance: 8, primaryVoltage: 100, primaryCurrent: 0.02 } },
+    { id: "mic-step-up-150-15k", label: "Microphone step-up, 150 \u03A9 to 15 k\u03A9", values: { primaryImpedance: 150, secondaryImpedance: 15e3, primaryVoltage: 2e-3, primaryCurrent: 133e-7 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "speaker-sensitivity", "tweeter-capacitor"],
   relatedBlogPosts: ["transformer-turns-ratio"]
@@ -25995,11 +27195,12 @@ var cableCapacitanceRolloff = {
       ]
     },
     { key: "cableCapacitancePf", label: "Cable Capacitance", symbol: "C/m", unit: "pF/m", defaultValue: 100, min: 1, tooltip: "Per metre, from cable datasheet (typical: 80\u2013150 pF/m)" },
-    { key: "cableLengthM", label: "Cable Length", symbol: "l", unit: "m", defaultValue: 5, min: 0.1 }
+    { key: "cableLengthM", label: "Cable Length", symbol: "l", unit: "m", defaultValue: 5, min: 0.1 },
+    { key: "targetCutoff", label: "Target \u22123 dB Frequency", symbol: "f_c,t", unit: "Hz", defaultValue: 1e5, min: 1e3, max: 1e7, tooltip: "The \u22123 dB frequency the cable must stay above. Five times 20 kHz keeps the audio band within 0.2 dB. The status fails below 20 kHz." }
   ],
   outputs: [
     { key: "totalCapacitancePf", label: "Total Cable Capacitance", symbol: "C_total", unit: "pF", precision: 0 },
-    { key: "cutoffFrequency", label: "-3 dB Frequency", symbol: "f_c", unit: "Hz", precision: 0 },
+    { key: "cutoffFrequency", label: "-3 dB Frequency", symbol: "f_c", unit: "Hz", precision: 0, primary: true },
     { key: "rolloffAt20k", label: "Rolloff at 20 kHz", symbol: "\u0394dB", unit: "dB", precision: 1 }
   ],
   calculate: calculateCableCapacitanceRolloff,
@@ -26008,8 +27209,28 @@ var cableCapacitanceRolloff = {
     variables: [
       { symbol: "Z_s", description: "Source impedance", unit: "\u03A9" },
       { symbol: "C_total", description: "Total cable capacitance", unit: "F" }
+    ],
+    substitution: [
+      { symbol: "C", expression: "{cableCapacitancePf} \xD7 {cableLengthM}", output: "totalCapacitancePf" },
+      { symbol: "f_c", expression: "1 / (2\u03C0 \xD7 {sourceImpedance} \xD7 C)", output: "cutoffFrequency" },
+      { symbol: "A\u2082\u2080\u2096", expression: "\u221220\xB7log\u2081\u2080(\u221A(1 + (2\u03C0 \xD7 20 kHz \xD7 {sourceImpedance} \xD7 C)\xB2))", output: "rolloffAt20k" }
     ]
   },
+  sweep: {
+    input: "cableLengthM",
+    range: [0.5, 100],
+    scale: "log",
+    lines: [
+      { id: "audio-band-edge", kind: "limit", label: "Audio band edge", value: () => 2e4, fails: "below" },
+      { id: "cutoff-target", kind: "target", label: "Target", value: (i) => i.targetCutoff }
+    ]
+  },
+  target: { output: "cutoffFrequency", input: "targetCutoff", sense: "min", failAt: 2e4 },
+  examples: [
+    { id: "guitar-6m", label: "Guitar pickup into a 6 m cable", values: { sourceImpedance: 1e4, cableCapacitancePf: 100, cableLengthM: 6 } },
+    { id: "line-600-30m", label: "600 \u03A9 line output into a 30 m snake", values: { sourceImpedance: 600, cableCapacitancePf: 100, cableLengthM: 30 } },
+    { id: "valve-preamp-3m", label: "50 k\u03A9 valve preamp output, 3 m", values: { sourceImpedance: 5e4, cableCapacitancePf: 150, cableLengthM: 3 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-transformer", "op-amp-slew-rate", "audio-snr"],
   relatedBlogPosts: ["capacitive-proximity"]
@@ -26052,7 +27273,7 @@ var subwooferBox = {
     { key: "fs", label: "Fs (Resonant Frequency)", symbol: "Fs", unit: "Hz", defaultValue: 35, min: 5, max: 200 }
   ],
   outputs: [
-    { key: "vbSealed", label: "Sealed Box Volume", symbol: "Vb_s", unit: "L", precision: 1 },
+    { key: "vbSealed", label: "Sealed Box Volume", symbol: "Vb_s", unit: "L", precision: 1, primary: true },
     { key: "vbVented", label: "Ported Box Volume", symbol: "Vb_v", unit: "L", precision: 1 },
     { key: "portTuning", label: "Port Tuning Frequency", symbol: "Fb", unit: "Hz", precision: 1 },
     { key: "f3Sealed", label: "-3 dB (Sealed)", symbol: "f_3", unit: "Hz", precision: 1 }
@@ -26106,7 +27327,7 @@ var tweeterCapacitor = {
     { key: "crossoverFreq", label: "Crossover Frequency", symbol: "f_c", unit: "Hz", defaultValue: 3e3, min: 100 }
   ],
   outputs: [
-    { key: "capacitanceMicroF", label: "Capacitor Value", symbol: "C", unit: "\u03BCF", precision: 2 },
+    { key: "capacitanceMicroF", label: "Capacitor Value", symbol: "C", unit: "\u03BCF", precision: 2, primary: true },
     { key: "reactanceAt1k", label: "Reactance at 1 kHz", symbol: "Xc", unit: "\u03A9", precision: 1 },
     { key: "rolloffAt100Hz", label: "Rolloff at 100 Hz", symbol: "\u0394dB", unit: "dB", precision: 0 }
   ],
@@ -26165,7 +27386,7 @@ var classDEfficiency = {
     { key: "quiescentCurrent", label: "Quiescent Current", symbol: "I_q", unit: "mA", defaultValue: 30, min: 0 }
   ],
   outputs: [
-    { key: "efficiency", label: "Efficiency", symbol: "\u03B7", unit: "%", precision: 1, thresholds: { good: { min: 85 }, warning: { min: 70 } } },
+    { key: "efficiency", label: "Efficiency", symbol: "\u03B7", unit: "%", precision: 1, thresholds: { good: { min: 85 }, warning: { min: 70 } }, primary: true },
     { key: "conductionLoss", label: "Conduction Loss", symbol: "P_cond", unit: "W", precision: 2 },
     { key: "quiescentLoss", label: "Quiescent Loss", symbol: "P_q", unit: "W", precision: 2 },
     { key: "totalLoss", label: "Total Power Loss", symbol: "P_loss", unit: "W", precision: 2, tooltip: "Total heat dissipated \u2014 use for heatsink sizing" },
@@ -26235,9 +27456,9 @@ var audioAdcSnr = {
   ],
   outputs: [
     { key: "theoreticalSnr", label: "Theoretical SNR", symbol: "SNR_ideal", unit: "dB", precision: 1 },
-    { key: "oversamplingGain", label: "Oversampling Gain", symbol: "G_OS", unit: "dB", precision: 1 },
+    { key: "oversamplingGain", label: "Oversampling Gain", symbol: "G_OS", unit: "dB", precision: 1, signed: "explicit" },
     { key: "totalSnr", label: "Total SNR", symbol: "SNR_total", unit: "dB", precision: 1, thresholds: { good: { min: 96 } } },
-    { key: "dynamicRange", label: "Dynamic Range", symbol: "DR", unit: "dB", precision: 1 }
+    { key: "dynamicRange", label: "Dynamic Range", symbol: "DR", unit: "dB", precision: 1, primary: true }
   ],
   calculate: calculateAudioAdcSnr,
   formula: {
@@ -26245,8 +27466,19 @@ var audioAdcSnr = {
     variables: [
       { symbol: "N", description: "Bit depth", unit: "bits" },
       { symbol: "OSR", description: "Oversampling ratio", unit: "\xD7" }
+    ],
+    substitution: [
+      { symbol: "DR", expression: "20\xB7log\u2081\u2080(2) \xD7 {bitDepth} + 10\xB7log\u2081\u2080(1.5)", output: "dynamicRange" },
+      { symbol: "G_OS", expression: "10\xB7log\u2081\u2080({oversamplingRatio})", output: "oversamplingGain" },
+      { symbol: "SNR", expression: "DR + G_OS", output: "totalSnr" }
     ]
   },
+  sweep: { input: "bitDepth", range: [8, 32], scale: "linear" },
+  examples: [
+    { id: "cd-16bit", label: "CD audio, 16-bit", values: { bitDepth: 16, oversamplingRatio: 1 } },
+    { id: "studio-24bit", label: "Studio converter, 24-bit", values: { bitDepth: 24, oversamplingRatio: 1 } },
+    { id: "oversampled-12bit", label: "12-bit converter with 64\xD7 oversampling", values: { bitDepth: 12, oversamplingRatio: 64 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-snr", "amplifier-clipping"]
 };
@@ -26277,7 +27509,7 @@ var equalizerQFactor = {
     { key: "bandwidth", label: "Bandwidth (\u22123 dB)", symbol: "BW", unit: "Hz", defaultValue: 200, min: 0.1 }
   ],
   outputs: [
-    { key: "qFactor", label: "Q Factor", symbol: "Q", unit: "", precision: 2 },
+    { key: "qFactor", label: "Q Factor", symbol: "Q", unit: "", precision: 2, primary: true },
     { key: "octaves", label: "Bandwidth", symbol: "BW", unit: "octaves", precision: 2 },
     { key: "lowerFreq", label: "Lower \u22123 dB Frequency", symbol: "f_L", unit: "Hz", precision: 0 },
     { key: "upperFreq", label: "Upper \u22123 dB Frequency", symbol: "f_H", unit: "Hz", precision: 0 }
@@ -26331,7 +27563,7 @@ var amplifierClipping = {
     { key: "headroom", label: "Headroom Reserve", symbol: "H", unit: "%", defaultValue: 100, min: 10, max: 100, tooltip: "100% = maximum output, lower to add headroom margin" }
   ],
   outputs: [
-    { key: "maxOutputVoltage", label: "Max Output Voltage (peak)", symbol: "V_peak", unit: "V", precision: 2 },
+    { key: "maxOutputVoltage", label: "Max Output Voltage (peak)", symbol: "V_peak", unit: "V", precision: 2, primary: true },
     { key: "rmsVoltage", label: "Max Output Voltage (RMS)", symbol: "V_rms", unit: "V", precision: 2 },
     { key: "clippingPower", label: "Continuous Power at Clipping", symbol: "P_clip_rms", unit: "W", precision: 1 },
     { key: "clippingLevel", label: "Clipping Level", symbol: "dBV", unit: "dBV", precision: 1 }
@@ -26341,8 +27573,19 @@ var amplifierClipping = {
     primary: "V_peak \u2248 0.9 \xD7 V_cc,  P_clip = V_peak\xB2 / (2 \xD7 Z_L)",
     variables: [
       { symbol: "V_cc", description: "Supply rail voltage", unit: "V" }
+    ],
+    substitution: [
+      { symbol: "V_pk", expression: "0.9 \xD7 {supplyVoltage} \xD7 {headroom}", output: "maxOutputVoltage" },
+      { symbol: "P_clip", expression: "V_pk\xB2 / (2 \xD7 {loadImpedance})", output: "clippingPower" },
+      { symbol: "L_clip", expression: "20\xB7log\u2081\u2080(V_pk / \u221A2)", output: "clippingLevel" }
     ]
   },
+  sweep: { input: "supplyVoltage", range: [5, 100], scale: "linear" },
+  examples: [
+    { id: "class-ab-36v-8ohm", label: "Class-AB amplifier on 36 V into 8 \u03A9", values: { supplyVoltage: 36, loadImpedance: 8, headroom: 100 } },
+    { id: "car-12v-4ohm", label: "12 V car amplifier into 4 \u03A9", values: { supplyVoltage: 12, loadImpedance: 4, headroom: 100 } },
+    { id: "class-d-48v-4ohm", label: "Class-D amplifier on 48 V into 4 \u03A9, 80 % headroom", values: { supplyVoltage: 48, loadImpedance: 4, headroom: 80 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "audio-snr", "power-amplifier-gain"],
   relatedBlogPosts: ["audio-amplifier-design-guide", "db-converter", "opamp-gain"]
@@ -26388,7 +27631,7 @@ var audioDelayTime = {
   ],
   outputs: [
     { key: "beatMs", label: "Quarter-Note Delay", symbol: "t_beat", unit: "ms", precision: 1 },
-    { key: "noteDelayMs", label: "Selected Note Delay", symbol: "t_note", unit: "ms", precision: 1 },
+    { key: "noteDelayMs", label: "Selected Note Delay", symbol: "t_note", unit: "ms", precision: 1, primary: true },
     { key: "propagationMs", label: "Propagation Delay", symbol: "t_prop", unit: "ms", precision: 1 }
   ],
   calculate: calculateAudioDelayTime,
@@ -26434,9 +27677,9 @@ var powerAmplifierGain = {
   ],
   outputs: [
     { key: "voltageGain", label: "Voltage Gain", symbol: "Av", unit: "V/V", precision: 1 },
-    { key: "voltageGainDb", label: "Voltage Gain", symbol: "Av_dB", unit: "dB", precision: 1 },
+    { key: "voltageGainDb", label: "Voltage Gain", symbol: "Av_dB", unit: "dB", precision: 1, primary: true, signed: "explicit" },
     { key: "powerGain", label: "Power Gain", symbol: "Ap", unit: "W/W", precision: 0 },
-    { key: "powerGainDb", label: "Power Gain", symbol: "Ap_dB", unit: "dB", precision: 1 }
+    { key: "powerGainDb", label: "Power Gain", symbol: "Ap_dB", unit: "dB", precision: 1, signed: "explicit" }
   ],
   calculate: calculatePowerAmplifierGain,
   formula: {
@@ -26602,8 +27845,19 @@ var reactanceCalculator = {
       "Capacitive reactance decreases with frequency: XC = 1/(\u03C9C) = 1/(2\u03C0fC)",
       "At resonance XL = XC: 2\u03C0f_res\xB7L = 1/(2\u03C0f_res\xB7C) \u2192 f_res = 1/(2\u03C0\u221ALC)"
     ],
-    reference: "Pozar, Microwave Engineering, 4th ed."
+    reference: "Pozar, Microwave Engineering, 4th ed.",
+    substitution: [
+      { symbol: "X_L", expression: "2\u03C0 \xD7 {frequency} \xD7 {inductance}", output: "XL" },
+      { symbol: "X_C", expression: "1 / (2\u03C0 \xD7 {frequency} \xD7 {capacitance})", output: "XC" },
+      { symbol: "f_res", expression: "1 / (2\u03C0 \u221A({inductance} \xD7 {capacitance}))", output: "f_res_MHz" }
+    ]
   },
+  sweep: { input: "frequency", range: [1e3, 1e9], scale: "log" },
+  examples: [
+    { id: "choke-10uh-1m", label: "10 \xB5H choke and 100 pF at 1 MHz", values: { frequency: 1e6, inductance: 10, capacitance: 100 } },
+    { id: "rf-100nh-2g4", label: "100 nH and 1 pF at 2.4 GHz", values: { frequency: 24e8, inductance: 0.1, capacitance: 1 } },
+    { id: "mains-1h-10uf", label: "1 H and 10 \xB5F at 50 Hz", values: { frequency: 50, inductance: 1e6, capacitance: 1e7 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["lc-resonance", "filter-designer", "coax-impedance", "series-parallel-resistor", "q-factor"],
   verificationData: [
@@ -26797,8 +28051,19 @@ var currentDivider = {
       "Similarly: I2 = V/R2 = I_total \xD7 R1/(R1+R2)",
       "Verification: I1 + I2 = I_total (KCL satisfied)"
     ],
-    reference: "Hayt & Kemmerly, Engineering Circuit Analysis, 8th ed."
+    reference: "Hayt & Kemmerly, Engineering Circuit Analysis, 8th ed.",
+    substitution: [
+      { symbol: "I\u2081", expression: "{totalCurrent} \xD7 {r2} / ({r1} + {r2})", output: "i1" },
+      { symbol: "I\u2082", expression: "{totalCurrent} \xD7 {r1} / ({r1} + {r2})", output: "i2" },
+      { symbol: "V", expression: "{totalCurrent} \xD7 {r1} \xD7 {r2} / ({r1} + {r2})", output: "voltage" }
+    ]
   },
+  sweep: { input: "r1", range: [10, 1e5], scale: "log" },
+  examples: [
+    { id: "ammeter-shunt", label: "Ammeter shunt, 10 A through 10 m\u03A9 beside a 50 \u03A9 meter", values: { totalCurrent: 10, r1: 50, r2: 0.01 } },
+    { id: "parallel-1k-2k", label: "1 A into 1 k\u03A9 and 2 k\u03A9 in parallel", values: { totalCurrent: 1, r1: 1e3, r2: 2e3 } },
+    { id: "led-strings", label: "100 mA shared by 10 \u03A9 and 12 \u03A9 strings", values: { totalCurrent: 0.1, r1: 10, r2: 12 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["ohms-law", "voltage-divider", "series-parallel-resistor", "delta-wye-conversion"],
   verificationData: [
@@ -26889,7 +28154,10 @@ var deltaWyeConversion = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = Delta \u2192 Wye, 1 = Wye \u2192 Delta"
+      options: [
+        { value: 0, label: "Delta \u2192 Wye" },
+        { value: 1, label: "Wye \u2192 Delta" }
+      ]
     },
     {
       key: "ra",
@@ -26994,6 +28262,10 @@ var deltaWyeConversion = {
       format: "engineering",
       tooltip: "Wye\u2192Delta: Rc = (R1R2+R2R3+R3R1)/R3 \u2014 Rc opposite R3"
     }
+  ],
+  examples: [
+    { id: "balanced-10-ohm", label: "10 \u03A9 (balanced)", values: { ra: 10, rb: 10, rc: 10 } },
+    { id: "1k-2k-3k", label: "1 k\u03A9 / 2 k\u03A9 / 3 k\u03A9", values: { ra: 1e3, rb: 2e3, rc: 3e3 } }
   ],
   calculate: calculateDeltaWye,
   formula: {
@@ -27135,7 +28407,10 @@ var dopplerShift = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = m/s, 1 = km/h"
+      options: [
+        { value: 0, label: "m/s" },
+        { value: 1, label: "km/h" }
+      ]
     },
     {
       key: "angle",
@@ -27152,6 +28427,7 @@ var dopplerShift = {
   outputs: [
     {
       key: "f_d_Hz",
+      signed: "explicit",
       label: "Doppler Shift",
       symbol: "f_d",
       unit: "Hz",
@@ -27161,6 +28437,7 @@ var dopplerShift = {
     },
     {
       key: "f_d_kHz",
+      signed: "explicit",
       label: "Doppler Shift",
       symbol: "f_d",
       unit: "kHz",
@@ -27208,8 +28485,18 @@ var dopplerShift = {
       "Velocity from shift: v = f_d\xB7c/(2f\xB7cos\u03B8)",
       "At 10 GHz, 1 m/s velocity produces 66.7 Hz of Doppler shift"
     ],
-    reference: "Skolnik, Introduction to Radar Systems, 3rd ed., Ch.3"
+    reference: "Skolnik, Introduction to Radar Systems, 3rd ed., Ch.3",
+    substitution: [
+      { symbol: "f_d", expression: "2 \xD7 v \xD7 {frequency} \xD7 cos({angle}) / c, v = {velocity}", output: "f_d_Hz" },
+      { symbol: "v_r", expression: "v \xD7 cos({angle})", output: "radialVelocity" }
+    ]
   },
+  sweep: { input: "velocity", range: [0, 100], scale: "linear" },
+  examples: [
+    { id: "k-band-police-100kmh", label: "K-band traffic radar, car at 100 km/h", values: { frequency: 24.15, velocity: 100, velocityUnit: 1, angle: 10 } },
+    { id: "automotive-77g", label: "77 GHz automotive radar, 30 m/s closing speed", values: { frequency: 77, velocity: 30, velocityUnit: 0, angle: 0 } },
+    { id: "x-band-weather", label: "X-band weather radar, 20 m/s wind at 30\xB0", values: { frequency: 9.4, velocity: 20, velocityUnit: 0, angle: 30 } }
+  ],
   visualization: { type: "none" },
   liveWidgets: [
     { type: "space-weather", position: "below-outputs" }
@@ -27293,7 +28580,7 @@ var rt60Reverberation = {
     { key: "avgAbsorption", label: "Avg. Absorption Coefficient", symbol: "\u1FB1", unit: "", defaultValue: 0.2, min: 0.01, max: 0.99, step: 0.01, tooltip: "Bare concrete ~0.03, carpet ~0.3, acoustic panels ~0.8" }
   ],
   outputs: [
-    { key: "rt60Sabine", label: "RT60 (Sabine)", symbol: "T\u2086\u2080", unit: "s", precision: 2 },
+    { key: "rt60Sabine", label: "RT60 (Sabine)", symbol: "T\u2086\u2080", unit: "s", precision: 2, primary: true },
     { key: "rt60Eyring", label: "RT60 (Eyring)", symbol: "T\u2086\u2080\u2091", unit: "s", precision: 2 },
     { key: "criticalDistance", label: "Critical Distance", symbol: "D\u1D9C", unit: "m", precision: 2 },
     { key: "schroederFreq", label: "Schroeder Frequency", symbol: "f_S", unit: "Hz", precision: 0 },
@@ -27372,7 +28659,7 @@ var vfdMotorSpeed = {
     { key: "ratedSlip", label: "Rated Slip", symbol: "s", unit: "%", defaultValue: 3, min: 0, max: 15, step: 0.5, tooltip: "Typical: 2\u20135% for standard motors" }
   ],
   outputs: [
-    { key: "actualSpeedDrive", label: "Actual Motor Speed", symbol: "n", unit: "RPM", precision: 0 },
+    { key: "actualSpeedDrive", label: "Actual Motor Speed", symbol: "n", unit: "RPM", precision: 0, primary: true },
     { key: "syncSpeedDrive", label: "Synchronous Speed", symbol: "n_s", unit: "RPM", precision: 0 },
     { key: "actualSpeedLine", label: "Speed at Line Frequency", symbol: "n_rated", unit: "RPM", precision: 0 },
     { key: "torqueDerating", label: "Available Torque", symbol: "T_%", unit: "%", precision: 1 },
@@ -27390,8 +28677,18 @@ var vfdMotorSpeed = {
       { symbol: "n_s", description: "Synchronous speed", unit: "RPM" },
       { symbol: "s", description: "Slip (typically 0.02\u20130.05)", unit: "" },
       { symbol: "n", description: "Actual rotor speed", unit: "RPM" }
+    ],
+    substitution: [
+      { symbol: "n_s", expression: "120 \xD7 {driveFrequency} / {poles}", output: "syncSpeedDrive" },
+      { symbol: "n", expression: "n_s \xD7 (1 \u2212 {ratedSlip})", output: "actualSpeedDrive" }
     ]
   },
+  sweep: { input: "driveFrequency", range: [5, 120], scale: "linear" },
+  examples: [
+    { id: "pump-4p-45hz", label: "4-pole 60 Hz pump slowed to 45 Hz", values: { poles: 4, lineFrequency: 60, driveFrequency: 45, ratedSlip: 3 } },
+    { id: "fan-2p-30hz", label: "2-pole 50 Hz fan at 30 Hz", values: { poles: 2, lineFrequency: 50, driveFrequency: 30, ratedSlip: 3 } },
+    { id: "spindle-2p-400hz", label: "2-pole spindle on a 400 Hz drive", values: { poles: 2, lineFrequency: 50, driveFrequency: 400, ratedSlip: 2 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["induction-motor-slip", "motor-efficiency", "dc-motor-speed", "bldc-motor"]
 };
@@ -27460,10 +28757,20 @@ var voltageDrop = {
     { key: "current", label: "Load Current", symbol: "I", unit: "A", defaultValue: 15, min: 0.1, max: 1e3, step: 0.1 },
     { key: "wireGauge", label: "Wire Gauge (AWG)", symbol: "AWG", unit: "", defaultValue: 12, min: 0, max: 24, step: 2, tooltip: "12 AWG typical for 20A circuits" },
     { key: "cableLength", label: "One-Way Distance", symbol: "d", unit: "m", defaultValue: 30, min: 0.5, max: 5e3, step: 0.5, tooltip: "Distance from panel to load (not round-trip)" },
-    { key: "conductorType", label: "Conductor (0=Cu, 1=Al)", symbol: "", unit: "", defaultValue: 0, min: 0, max: 1, step: 1, tooltip: "0 = Copper, 1 = Aluminum" }
+    {
+      key: "conductorType",
+      label: "Conductor",
+      symbol: "",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      options: [{ value: 0, label: "Copper" }, { value: 1, label: "Aluminum" }]
+    }
   ],
   outputs: [
-    { key: "voltageDrop", label: "Voltage Drop", symbol: "V_drop", unit: "V", precision: 2 },
+    { key: "voltageDrop", label: "Voltage Drop", symbol: "V_drop", unit: "V", precision: 2, primary: true },
     { key: "voltageDropPercent", label: "Voltage Drop", symbol: "V_%", unit: "%", precision: 2 },
     { key: "voltageAtLoad", label: "Voltage at Load", symbol: "V_load", unit: "V", precision: 2 },
     { key: "powerLoss", label: "Cable Power Loss", symbol: "P_loss", unit: "W", precision: 1 },
@@ -27579,6 +28886,10 @@ var coplanarWaveguide = {
       presets: [
         { label: "Grounded CPW (GCPW)", values: { structure: 1 } },
         { label: "CPW (no backing plane)", values: { structure: 0 } }
+      ],
+      options: [
+        { value: 1, label: "Grounded CPW (GCPW)" },
+        { value: 0, label: "CPW (no backing plane)" }
       ]
     },
     {
@@ -27928,6 +29239,7 @@ var asymmetricStriplineCalc = {
     },
     {
       key: "offsetPenalty",
+      signed: "explicit",
       label: "Impedance Shift from Offset",
       symbol: "\u0394Z",
       unit: "%",
@@ -28466,6 +29778,10 @@ var broadsideCoupledPair = {
       presets: [
         { label: "Shielded (between planes)", values: { shielded: 1 } },
         { label: "Unshielded (no planes)", values: { shielded: 0 } }
+      ],
+      options: [
+        { value: 1, label: "Shielded (between planes)" },
+        { value: 0, label: "Unshielded (no planes)" }
       ]
     },
     {
@@ -28713,6 +30029,10 @@ var riseTimeBandwidth = {
       presets: [
         { label: "10\u201390%", values: { riseTimeConvention: 0 } },
         { label: "20\u201380%", values: { riseTimeConvention: 1 } }
+      ],
+      options: [
+        { value: 0, label: "10\u201390%" },
+        { value: 1, label: "20\u201380%" }
       ]
     },
     {
@@ -28897,6 +30217,10 @@ var criticalTraceLength = {
       presets: [
         { label: "Microstrip (outer layer)", values: { traceType: 0 } },
         { label: "Stripline (inner layer)", values: { traceType: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Microstrip (outer layer)" },
+        { value: 1, label: "Stripline (inner layer)" }
       ]
     },
     {
@@ -28937,6 +30261,10 @@ var criticalTraceLength = {
       presets: [
         { label: "Conservative (t_d < 0.2\xB7t_r)", values: { criterion: 0 } },
         { label: "Permissive (t_r > 3\xB7t_d)", values: { criterion: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Conservative (t_d < 0.2\xB7t_r)" },
+        { value: 1, label: "Permissive (t_r > 3\xB7t_d)" }
       ]
     }
   ],
@@ -28962,7 +30290,7 @@ var criticalTraceLength = {
       symbol: "L/L_crit",
       unit: "\xD7",
       precision: 3,
-      thresholds: { good: { max: 0.7 }, warning: { max: 1 }, danger: { min: 1 } }
+      thresholds: { good: { max: 0.7 }, warning: { max: 1 }, danger: { max: 1 } }
     },
     {
       key: "traceDelay",
@@ -29003,8 +30331,27 @@ var criticalTraceLength = {
       'Bogatin gives two thresholds. Keeping the trace delay under 20% of the rise time makes reflections "virtually invisible" \u2014 that is k = 5. The looser form asks only that the rise time exceed three times the delay, which is k = 3.',
       "Microstrip carries part of its field in air, so \u03B5r_eff is well below \u03B5r and the same trace can run noticeably longer than an inner-layer stripline. The microstrip \u03B5r_eff here assumes W/h = 2; across a realistic W/h span of 0.5 to 10 the delay varies by about \u22125% to +7%."
     ],
-    reference: 'E. Bogatin, "Signal and Power Integrity \u2014 Simplified", 2nd ed. (20% rule); E. Bogatin, "The Critical Length of a Transmission Line", Polar Instruments'
+    reference: 'E. Bogatin, "Signal and Power Integrity \u2014 Simplified", 2nd ed. (20% rule); E. Bogatin, "The Critical Length of a Transmission Line", Polar Instruments',
+    substitution: [
+      { symbol: "\u03B5r_eff", expression: "({dielectricConst} + 1)/2 + ({dielectricConst} \u2212 1)/2 \xD7 7^(\u2212\xBD) for microstrip, {dielectricConst} for stripline", output: "effectiveDielectric" },
+      { symbol: "t_pd", expression: "\u221A\u03B5r_eff / c", output: "propagationDelay" },
+      { symbol: "L_crit", expression: "{riseTime} / (k \xD7 t_pd), k = 5 conservative or 3 permissive", output: "criticalLength" },
+      { symbol: "L/L_crit", expression: "{traceLength} / L_crit", output: "lengthRatio" }
+    ]
   },
+  sweep: {
+    input: "riseTime",
+    range: [10, 5e3],
+    scale: "log",
+    lines: [
+      { id: "trace-length", kind: "limit", label: "Actual trace length", value: (i) => i.traceLength, fails: "below" }
+    ]
+  },
+  examples: [
+    { id: "ddr4-stripline", label: "DDR4 data line, 100 ps edge, FR4 stripline", values: { riseTime: 100, traceType: 1, dielectricConst: 4.2, traceLength: 40, criterion: 0 } },
+    { id: "usb2-microstrip", label: "USB 2.0 high-speed, 500 ps edge, microstrip", values: { riseTime: 500, traceType: 0, dielectricConst: 4.2, traceLength: 80, criterion: 0 } },
+    { id: "slow-cmos-5ns", label: "Slow CMOS, 5 ns edge, microstrip", values: { riseTime: 5e3, traceType: 0, dielectricConst: 4.4, traceLength: 150, criterion: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "rise-time-bandwidth",
@@ -29204,7 +30551,7 @@ var fusingCurrent = {
       symbol: "I_fuse/I_op",
       unit: "\xD7",
       precision: 2,
-      thresholds: { good: { min: 4 }, warning: { min: 2 }, danger: { max: 2 } }
+      thresholds: { good: { min: 4 }, warning: { min: 2 }, danger: { min: 2 } }
     },
     {
       key: "crossSectionArea",
@@ -29238,8 +30585,26 @@ var fusingCurrent = {
       "The constant 33 collects copper's density, specific heat, and resistivity for A expressed in circular mils and S in seconds.",
       "Etched traces are trapezoidal rather than rectangular: each sidewall pulls in by t/EF, so the mean width is used for the area."
     ],
-    reference: 'I. M. Onderdonk, as published in E. R. Stauffacher, "Short-time Current Carrying Capacity of Copper Wire", General Electric Review, 1928; IPC-2152 Appendix A'
+    reference: 'I. M. Onderdonk, as published in E. R. Stauffacher, "Short-time Current Carrying Capacity of Copper Wire", General Electric Review, 1928; IPC-2152 Appendix A',
+    substitution: [
+      { symbol: "I_fuse", expression: "A \xD7 \u221A(log\u2081\u2080((1083 \u2212 {ambientTemp}) / (234 + {ambientTemp}) + 1) / (33 \xD7 {duration})), A = mean width \xD7 thickness in circular mils, from {traceWidth}, {copperThickness} and etch factor {etchFactor}", output: "fusingCurrent" },
+      { symbol: "t_fuse", expression: "(A / {operatingCurrent})\xB2 \xD7 log\u2081\u2080((1083 \u2212 {ambientTemp}) / (234 + {ambientTemp}) + 1) / 33", output: "timeToFuse" },
+      { symbol: "k", expression: "I_fuse / {operatingCurrent}", output: "currentMargin" }
+    ]
   },
+  sweep: {
+    input: "traceWidth",
+    range: [0.05, 5],
+    scale: "log",
+    lines: [
+      { id: "operating-current", kind: "limit", label: "Operating current", value: (i) => i.operatingCurrent, fails: "below" }
+    ]
+  },
+  examples: [
+    { id: "signal-0p25-10ms", label: "0.25 mm 1 oz signal trace, 10 ms fault", values: { traceWidth: 0.25, copperThickness: 35, duration: 0.01, ambientTemp: 25, etchFactor: 0, operatingCurrent: 5 } },
+    { id: "power-2mm-1s", label: "2 mm 2 oz power trace, 1 s fault", values: { traceWidth: 2, copperThickness: 70, duration: 1, ambientTemp: 40, etchFactor: 0, operatingCurrent: 20 } },
+    { id: "fine-0p1-1ms", label: "0.1 mm 0.5 oz trace, 1 ms pulse", values: { traceWidth: 0.1, copperThickness: 17.5, duration: 1e-3, ambientTemp: 25, etchFactor: 0, operatingCurrent: 2 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "trace-width-current",
@@ -29317,11 +30682,11 @@ var lengthUnits = {
     }
   ],
   outputs: [
-    { key: "mil", label: "Mils (thou)", symbol: "mil", unit: "mil", precision: 4 },
-    { key: "micrometer", label: "Micrometres", symbol: "\u03BCm", unit: "\u03BCm", precision: 3 },
+    { key: "mil", label: "Mils (thou)", symbol: "mil", unit: "mil", precision: 4, primary: true },
+    { key: "micrometer", label: "Micrometres", symbol: "\u03BCm", unit: "\u03BCm", precision: 3, display: { unit: "\u03BCm" } },
     { key: "inch", label: "Inches", symbol: "in", unit: "in", precision: 6 },
     { key: "centimeter", label: "Centimetres", symbol: "cm", unit: "cm", precision: 5 },
-    { key: "meter", label: "Metres", symbol: "m", unit: "m", precision: 6 },
+    { key: "meter", label: "Metres", symbol: "m", unit: "m", precision: 6, display: { unit: "m" } },
     {
       key: "ounceCopperEquivalent",
       label: "Copper Weight Equivalent",
@@ -29449,7 +30814,11 @@ var padstackAnnularRing = {
       defaultValue: 2,
       min: 2,
       max: 3,
-      step: 1
+      step: 1,
+      options: [
+        { value: 2, label: "Class 2" },
+        { value: 3, label: "Class 3" }
+      ]
     },
     {
       key: "boardThickness",
@@ -29589,30 +30958,43 @@ var bgaLandPad = {
     },
     {
       key: "densityLevel",
-      label: "Density Level (0=Most, 1=Nominal, 2=Least)",
+      label: "Density Level",
       unit: "",
       defaultValue: 1,
       min: 0,
       max: 2,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "Most (A)" },
+        { value: 1, label: "Nominal (B)" },
+        { value: 2, label: "Least (C)" }
+      ]
     },
     {
       key: "solderMaskDefined",
-      label: "Solder Mask Defined (0=NSMD, 1=SMD)",
+      label: "Solder Mask Defined",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 1,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "No (NSMD)" },
+        { value: 1, label: "Yes (SMD)" }
+      ]
     },
     {
       key: "viaInPad",
-      label: "Via-in-Pad (0=No, 1=Yes)",
+      label: "Via-in-Pad",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 1,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "No" },
+        { value: 1, label: "Yes" }
+      ]
     }
   ],
   outputs: [
@@ -29620,7 +31002,7 @@ var bgaLandPad = {
     { key: "maskOpening", label: "Solder Mask Opening", unit: "mm" },
     { key: "maxViaDrill", label: "Max Via Drill (via-in-pad)", unit: "mm" },
     { key: "channelWidth", label: "Channel Width", unit: "mm" },
-    { key: "escapeRoutes", label: "Escape Routes per Channel", unit: "" },
+    { key: "escapeRoutes", label: "Escape Routes per Channel", unit: "", display: { integer: true } },
     { key: "maxTraceWidth", label: "Max Trace Width in Channel", unit: "mm" },
     { key: "stencilAperture", label: "Stencil Aperture", unit: "mm" },
     { key: "padToPadGap", label: "Pad-to-Pad Gap", unit: "mm" }
@@ -29745,12 +31127,18 @@ var minimumConductorSpacing = {
     },
     {
       key: "condition",
-      label: "Condition (0=B1 Internal, 1=B2 Ext Uncoated, 2=B3 Polymer, 3=B4 Conformal)",
+      label: "Condition",
       unit: "",
       defaultValue: 1,
       min: 0,
       max: 3,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "B1 Internal" },
+        { value: 1, label: "B2 External, uncoated" },
+        { value: 2, label: "B3 External, polymer coated" },
+        { value: 3, label: "B4 External, conformal coated" }
+      ]
     },
     {
       key: "altitude",
@@ -29926,12 +31314,18 @@ var planarSpiralInductor = {
     },
     {
       key: "shape",
-      label: "Shape (0=Square, 1=Hex, 2=Octagonal, 3=Circular)",
+      label: "Shape",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 3,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "Square" },
+        { value: 1, label: "Hexagonal" },
+        { value: 2, label: "Octagonal" },
+        { value: 3, label: "Circular" }
+      ]
     }
   ],
   outputs: [
@@ -30084,12 +31478,19 @@ var embeddedResistor = {
     },
     {
       key: "material",
-      label: "Material (0=NiP 25\u03A9, 1=NiP 100\u03A9, 2=TaN, 3=CrSiO, 4=Carbon)",
+      label: "Material",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 4,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "NiP 25 \u03A9/sq (Ohmega-Ply)" },
+        { value: 1, label: "NiP 100 \u03A9/sq" },
+        { value: 2, label: "TaN (100 \u03A9/sq)" },
+        { value: 3, label: "CrSiO (1000 \u03A9/sq)" },
+        { value: 4, label: "Carbon (100 \u03A9/sq)" }
+      ]
     }
   ],
   outputs: [
@@ -30252,9 +31653,9 @@ var viaVoltageDrop = {
     }
   ],
   outputs: [
-    { key: "rSingleMOhm", label: "Single Via Resistance", unit: "m\u03A9", primary: true },
+    { key: "rSingleMOhm", label: "Single Via Resistance", unit: "m\u03A9" },
     { key: "rTotalMOhm", label: "Total Resistance (parallel)", unit: "m\u03A9" },
-    { key: "vDropMV", label: "Voltage Drop", unit: "mV" },
+    { key: "vDropMV", label: "Voltage Drop", unit: "mV", primary: true },
     { key: "pDissipationMW", label: "Power Dissipation", unit: "mW" },
     { key: "areaMm2", label: "Via Cross-Section", unit: "mm\xB2" },
     { key: "deltaT", label: "Temperature Rise (est.)", unit: "\xB0C" },
@@ -30398,6 +31799,18 @@ var rectangularPolar = {
     { key: "angleDeg360", label: "Angle (0\u2026360\xB0)", symbol: "\u03B8", unit: "\xB0" },
     { key: "realOut", label: "Real Part from r\u2220\u03B8", symbol: "a", unit: "" },
     { key: "imagOut", label: "Imaginary Part from r\u2220\u03B8", symbol: "b", unit: "" }
+  ],
+  examples: [
+    { id: "rect-3-j4", label: "3 + j4 (magnitude 5)", values: { real: 3, imaginary: 4 } },
+    { id: "rect-50-j0", label: "50 + j0 (matched load)", values: { real: 50, imaginary: 0 } },
+    { id: "rect-50-minus-j25", label: "50 \u2212 j25 (capacitive)", values: { real: 50, imaginary: -25 } },
+    { id: "rect-minus-30-j40", label: "\u221230 + j40 (quadrant II)", values: { real: -30, imaginary: 40 } },
+    { id: "rect-0-j1", label: "0 + j1 (pure reactance)", values: { real: 0, imaginary: 1 } },
+    { id: "polar-1-0-deg", label: "1 \u2220 0\xB0 (unit vector)", values: { magnitude: 1, angleDeg: 0 } },
+    { id: "polar-5-53-deg", label: "5 \u2220 53.13\xB0", values: { magnitude: 5, angleDeg: 53.13010235415598 } },
+    { id: "polar-1-90-deg", label: "1 \u2220 90\xB0 (pure +j)", values: { magnitude: 1, angleDeg: 90 } },
+    { id: "polar-0-5-180-deg", label: "0.5 \u2220 180\xB0 (\u0393 real negative)", values: { magnitude: 0.5, angleDeg: 180 } },
+    { id: "polar-100-minus-45-deg", label: "100 \u2220 \u221245\xB0", values: { magnitude: 100, angleDeg: -45 } }
   ],
   calculate: calculateRectangularPolar,
   formula: {
@@ -30601,6 +32014,13 @@ var frequencyPpmTolerance = {
     { key: "spanHz", label: "Total Frequency Span", symbol: "\u0394f_pp", unit: "Hz" },
     { key: "driftSecPerDay", label: "Clock Drift", symbol: "", unit: "s/day" },
     { key: "driftMinPerYear", label: "Clock Drift", symbol: "", unit: "min/year" }
+  ],
+  examples: [
+    { id: "rtc-32-768-khz", label: "32.768 kHz RTC (\xB120 ppm)", values: { nominalFrequency: 0.032768, initialTolerance: 20, tempStability: 10, agingPerYear: 3, years: 10 } },
+    { id: "mcu-8-mhz", label: "8 MHz MCU (\xB130 ppm)", values: { nominalFrequency: 8, initialTolerance: 30, tempStability: 20, agingPerYear: 5, years: 5 } },
+    { id: "ethernet-25-mhz", label: "25 MHz Ethernet (\xB150 ppm)", values: { nominalFrequency: 25, initialTolerance: 30, tempStability: 15, agingPerYear: 3, years: 5 } },
+    { id: "lte-tcxo-26-mhz", label: "26 MHz LTE TCXO (\xB10.5 ppm)", values: { nominalFrequency: 26, initialTolerance: 0.5, tempStability: 0.5, agingPerYear: 1, years: 3 } },
+    { id: "usb-12-mhz", label: "12 MHz USB (\xB10.25%)", values: { nominalFrequency: 12, initialTolerance: 50, tempStability: 30, agingPerYear: 5, years: 10 } }
   ],
   calculate: calculateFrequencyPpmTolerance,
   formula: {
@@ -30817,6 +32237,12 @@ var effectiveDielectricConstant = {
     { key: "propDelayPsPerInch", label: "Propagation Delay", symbol: "t\u209Ad", unit: "ps/inch" },
     { key: "wavelengthMm", label: "Guided Wavelength", symbol: "\u03BBg", unit: "mm" },
     { key: "quarterWaveMm", label: "Quarter Wavelength", symbol: "\u03BBg/4", unit: "mm" }
+  ],
+  examples: [
+    { id: "fr4-0-2-mm-50-ohm", label: "50 \u03A9 on 0.2 mm FR-4", values: { traceWidth: 0.36, dielectricHeight: 0.2, dielectricConst: 4.3 } },
+    { id: "ro4350b-0-508-mm-50-ohm", label: "50 \u03A9 on 0.508 mm RO4350B", values: { traceWidth: 1.1, dielectricHeight: 0.508, dielectricConst: 3.48 } },
+    { id: "rt-duroid-5880-50-ohm", label: "50 \u03A9 on 0.254 mm RT/duroid 5880", values: { traceWidth: 0.78, dielectricHeight: 0.254, dielectricConst: 2.2 } },
+    { id: "narrow-0-1-mm-trace", label: "Narrow 0.1 mm signal trace", values: { traceWidth: 0.1, dielectricHeight: 0.2, dielectricConst: 4.3 } }
   ],
   calculate: calculateEffectiveDielectricConstant,
   formula: {
@@ -31092,8 +32518,8 @@ var viaStepResponse = {
     { key: "reflectionPercent", label: "Peak Reflection", symbol: "|\u03C1|", unit: "%" },
     { key: "inductanceNH", label: "Via Inductance", symbol: "L", unit: "nH" },
     { key: "capacitancePF", label: "Via Capacitance", symbol: "C", unit: "pF" },
-    { key: "excessCapacitancePF", label: "Excess Capacitance", symbol: "C_exc", unit: "pF" },
-    { key: "excessInductanceNH", label: "Excess Inductance", symbol: "L_exc", unit: "nH" },
+    { key: "excessCapacitancePF", label: "Excess Capacitance", symbol: "C_exc", unit: "pF", signed: "explicit" },
+    { key: "excessInductanceNH", label: "Excess Inductance", symbol: "L_exc", unit: "nH", signed: "explicit" },
     { key: "zViaOhm", label: "Via Impedance \u221A(L/C)", symbol: "Z_via", unit: "\u03A9" },
     { key: "fResonanceGHz", label: "LC Self-Resonance", symbol: "f\u2080", unit: "GHz" },
     { key: "kneeFrequencyGHz", label: "Signal Knee Frequency", symbol: "f_knee", unit: "GHz" }
@@ -31372,6 +32798,12 @@ var microviaCurrentCapacity = {
     { key: "deltaTSelfHeat", label: "Barrel Self-Heating", symbol: "\u0394T", unit: "\xB0C" },
     { key: "currentDensityAPerMm2", label: "Current Density", symbol: "J", unit: "A/mm\xB2" },
     { key: "aspectRatio", label: "Aspect Ratio (depth : diameter)", symbol: "", unit: ":1" }
+  ],
+  examples: [
+    { id: "hdi-75-um", label: "75 \xB5m advanced HDI", values: { viaDiameter: 0.075, viaDepth: 0.06, platingThickness: 15 } },
+    { id: "hdi-100-um", label: "100 \xB5m standard HDI", values: { viaDiameter: 0.1, viaDepth: 0.075, platingThickness: 18 } },
+    { id: "hdi-125-um", label: "125 \xB5m relaxed HDI", values: { viaDiameter: 0.125, viaDepth: 0.1, platingThickness: 20 } },
+    { id: "microvia-150-um", label: "150 \xB5m max microvia", values: { viaDiameter: 0.15, viaDepth: 0.125, platingThickness: 25 } }
   ],
   calculate: calculateMicroviaCurrentCapacity,
   formula: {
@@ -32570,7 +34002,8 @@ var skinDepthPercentage = {
       defaultValue: 20,
       min: -55,
       step: 1
-    }
+    },
+    { key: "targetPercentage", label: "Target Skin Depth Share", symbol: "\u03B4/t_t", unit: "%", defaultValue: 50, min: 1, max: 1e3, tooltip: "The skin depth, as a share of the conductor thickness, the design should reach so that most of the copper carries current. The status fails below 33 %." }
   ],
   outputs: [
     {
@@ -32580,7 +34013,7 @@ var skinDepthPercentage = {
       unit: "%",
       precision: 2,
       primary: true,
-      thresholds: { good: { min: 50 }, warning: { min: 33, max: 50 }, danger: { max: 33 } }
+      thresholds: { good: { min: 50 }, warning: { min: 33, max: 50 }, danger: { min: 33 } }
     },
     { key: "skinDepth", label: "Skin Depth", symbol: "\u03B4", unit: "\u03BCm", precision: 3 },
     {
@@ -32619,8 +34052,28 @@ var skinDepthPercentage = {
       "The AC to DC resistance ratio is then the thickness divided by that effective depth, which tends to 1 when the skin depth is large and grows as the square root of frequency when it is small.",
       "Resistivity is corrected for temperature with \u03B1 = 0.00393/\xB0C for copper, so the ratio is meaningful at operating temperature and not only at 20 \xB0C."
     ],
-    reference: "Standard skin-effect result; \u03C1\u2082\u2080(Cu) = 1.724\xD710\u207B\u2078 \u03A9\xB7m, \u03B1 = 0.00393/\xB0C."
+    reference: "Standard skin-effect result; \u03C1\u2082\u2080(Cu) = 1.724\xD710\u207B\u2078 \u03A9\xB7m, \u03B1 = 0.00393/\xB0C.",
+    substitution: [
+      { symbol: "\u03B4", expression: "\u221A(\u03C1 / (\u03C0 \xD7 {frequency} \xD7 \u03BC\u2080)), \u03C1 = 1.724\xD710\u207B\u2078 \u03A9\xB7m \xD7 {resistivityRatio} \xD7 (1 + 0.00393 \xD7 ({temperature} \u2212 20 \xB0C))", output: "skinDepth" },
+      { symbol: "\u03B4/t", expression: "\u03B4 / {conductorThickness}", output: "skinDepthPercentage" },
+      { symbol: "R_ac/R_dc", expression: "{conductorThickness} / min(2\u03B4(1 \u2212 e^(\u2212t/2\u03B4)), t)", output: "acDcRatio" }
+    ]
   },
+  sweep: {
+    input: "frequency",
+    range: [0.01, 1e4],
+    scale: "log",
+    lines: [
+      { id: "share-floor", kind: "limit", label: "Minimum", value: () => 33, fails: "below" },
+      { id: "share-target", kind: "target", label: "Target", value: (i) => i.targetPercentage }
+    ]
+  },
+  target: { output: "skinDepthPercentage", input: "targetPercentage", sense: "min", failAt: 33 },
+  examples: [
+    { id: "one-oz-1ghz", label: "1 oz copper at 1 GHz", values: { frequency: 1e3, conductorThickness: 35, resistivityRatio: 1, temperature: 20 } },
+    { id: "two-oz-500khz", label: "2 oz power trace at 500 kHz, 60 \xB0C", values: { frequency: 0.5, conductorThickness: 70, resistivityRatio: 1, temperature: 60 } },
+    { id: "half-oz-100mhz", label: "0.5 oz copper at 100 MHz", values: { frequency: 100, conductorThickness: 17.5, resistivityRatio: 1, temperature: 25 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["skin-depth", "trace-resistance", "trace-width-current", "coax-loss"],
   relatedBlogPosts: ["ground-plane-impedance"],
@@ -32979,6 +34432,10 @@ var bgaBreakoutWidth = {
       presets: [
         { label: "Orthogonal (between adjacent lands)", values: { diagonalRoute: 0 } },
         { label: "Diagonal (through the \u221A2 gap)", values: { diagonalRoute: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Orthogonal" },
+        { value: 1, label: "Diagonal (\u221A2 gap)" }
       ]
     }
   ],
@@ -32996,6 +34453,7 @@ var bgaBreakoutWidth = {
     { key: "effectivePitch", label: "Effective Pitch", symbol: "p_eff", unit: "mm", precision: 4 },
     {
       key: "escapeRows",
+      display: { integer: true },
       label: "Rows Escapable per Layer",
       symbol: "rows",
       unit: "",
@@ -35331,7 +36789,7 @@ var pdn_impedance_default = {
   "x-jobType": "pdn_impedance",
   "x-slug": "pdn-impedance",
   "x-title": "PDN Impedance Analyzer & Decoupling Capacitor Optimizer",
-  "x-formulaRef": null,
+  "x-formulaRef": "Frequency-Domain Characterization of Power Distribution Networks, Istv\xE1n Novak and Jason R. Miller, Artech House (2007)",
   "x-checks": [
     "port_within_board",
     "sweep_stop_after_start"
@@ -35388,18 +36846,28 @@ var pdn_impedance_default = {
       type: "number",
       minimum: 0,
       maximum: 500,
-      "x-derived": "board centre (boardWidth_mm / 2)",
+      "x-derived": "one-third point (boardWidth_mm / 3)",
       "x-label": "Port X location",
       "x-unit": "mm",
-      "x-tooltip": "Location where PDN impedance is evaluated (e.g. IC power pin)"
+      "x-tooltip": "Where the IC draws current (its power pins). Leave blank for the one-third point, where every cavity mode is visible; the board centre hides every mode with an odd index."
     },
     portY_mm: {
       type: "number",
       minimum: 0,
       maximum: 500,
-      "x-derived": "board centre (boardLength_mm / 2)",
+      "x-derived": "one-third point (boardLength_mm / 3)",
       "x-label": "Port Y location",
       "x-unit": "mm"
+    },
+    portSize_mm: {
+      type: "number",
+      minimum: 0.25,
+      maximum: 20,
+      default: 1,
+      "x-label": "Port Size",
+      "x-unit": "mm",
+      "x-step": 0.25,
+      "x-tooltip": "Side of the square through which the IC current enters the planes (roughly its power-pin field). The plane spreading inductance depends on it. A port over an edge is modelled with its image."
     },
     vrmBandwidth_hz: {
       type: "number",
@@ -35417,6 +36885,16 @@ var pdn_impedance_default = {
       default: 5,
       "x-label": "VRM DC Resistance",
       "x-unit": "m\u03A9"
+    },
+    boardInductance_nh: {
+      type: "number",
+      minimum: 0,
+      maximum: 20,
+      default: 1,
+      "x-label": "Board Inductance",
+      "x-unit": "nH",
+      "x-step": 0.1,
+      "x-tooltip": "Inductance between the regulator and the planes (vias, traces, connector), in series with the VRM."
     },
     targetImpedance_mohm: {
       type: "number",
