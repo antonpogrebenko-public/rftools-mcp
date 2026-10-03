@@ -2,8 +2,11 @@
 // tools, and the bounded convenience call.
 //
 // Everything a caller sees — the tool names, the parameters, the counts, the
-// tier bounds, the time budgets — is derived from shared/job-schemas. Nothing
-// about a job type is described in prose here.
+// tier bounds, the time budgets — is derived from shared/job-schemas, and what
+// each simulate_* tool answers, returns and takes as an example comes from
+// shared/mcp/agent-copy.json, generated from the tools registry (openspec
+// agent-surface, design D2). Nothing about a job type is described in prose
+// here.
 
 import { readFile as readFileFs } from 'node:fs/promises';
 import path from 'node:path';
@@ -29,6 +32,23 @@ import {
 } from './job-schemas.ts';
 import { shapeForJob, strictObject, validateParams } from './json-schema-to-zod.ts';
 import { summariseResult } from './summarize.ts';
+import { READS, SPENDS_ALLOWANCE, annotate, composeDescription } from './tool-copy.ts';
+// Read from vendor/, as the job schemas are (see src/job-schemas.ts):
+// scripts/vendor_shared.sh copies it from ../shared/mcp/.
+import agentCopyJson from '../vendor/shared/mcp/agent-copy.json' with { type: 'json' };
+
+/** What the tools registry says about one job type, for its simulate_* description. */
+export interface AgentCopy {
+  slug: string;
+  title: string;
+  question: string;
+  description: string;
+  returns: string;
+  example: { source: 'preset' | 'defaults'; label?: string; arguments: Record<string, unknown> };
+}
+
+export const AGENT_COPY: Record<string, AgentCopy> =
+  (agentCopyJson as unknown as { jobTypes: Record<string, AgentCopy> }).jobTypes;
 
 /** Default and maximum bound on a waiting call, in seconds. */
 export const WAIT_DEFAULT_SECONDS = 90;
@@ -47,6 +67,16 @@ export const RESULT_URL_LIFETIME = '15 minutes';
 
 /** Identical submissions inside this window return the first job. */
 export const DEDUP_WINDOW_SECONDS = 60;
+
+/** What a caller without a key can do, in the words list_simulation_tools and the manifest use. */
+export const KEYLESS_STATEMENT =
+  'Without RFTOOLS_API_KEY a job still runs, on the free lane — but only '
+  + 'a job that takes no file. ' + UPLOAD_NEEDS_KEY;
+
+/** What every simulate_* result carries besides its own values. */
+const RESULT_TAIL =
+  'Also warnings, provenance and the result page link; series are described, not listed (full: true returns '
+  + 'everything). If waitSeconds runs out first: the jobId and progress, and the job keeps running.';
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 
@@ -545,9 +575,7 @@ export function handleListTools(): ToolText {
   return ok({
     count: JOB_TYPES.length,
     tiers: TIER_LIMITS,
-    keyless:
-      'Without RFTOOLS_API_KEY a job still runs, on the free lane — but only '
-      + 'a job that takes no file. ' + UPLOAD_NEEDS_KEY,
+    keyless: KEYLESS_STATEMENT,
     fileToolsNeedKey: UPLOAD_NEEDS_KEY,
     resultLifetime: `A result link lives ${RESULT_URL_LIFETIME}; ask for the status again for a fresh one.`,
     dedupWindowSeconds: DEDUP_WINDOW_SECONDS,
@@ -604,23 +632,53 @@ function waitFields(deps: SimulationDeps): Record<string, z.ZodTypeAny> {
   };
 }
 
-/** The description an agent reads when it lists a per-job tool. */
+/** The example call a simulate_* description shows: the registry's, plus a file when one is required. */
+export function exampleArgumentsFor(jobType: string): Record<string, unknown> {
+  const copy = AGENT_COPY[jobType];
+  if (!copy) throw new Error(`agent-copy.json has no entry for ${jobType}; regenerate it with scripts/sync_job_schemas.ts`);
+  const args: Record<string, unknown> = { ...copy.example.arguments };
+  const spec = JOB_SCHEMAS[jobType]['x-files'];
+  if (spec && spec.min > 0) args.inputPaths = [`/path/to/file${spec.extensions[0]}`];
+  return args;
+}
+
+/**
+ * The description an agent reads when it lists a per-job tool: the registry's
+ * question, example and returns (agent-copy.json), around what the contract
+ * itself says — files, free-lane bounds, checks and the time budget.
+ */
 export function toolDescriptionFor(jobType: string): string {
   const entry = JOB_INDEX[jobType];
   const schema = JOB_SCHEMAS[jobType];
-  const parts = [`${entry.title}. Runs server-side on rftools.io as an async job.`];
+  const copy = AGENT_COPY[jobType];
+  if (!copy) throw new Error(`agent-copy.json has no entry for ${jobType}; regenerate it with scripts/sync_job_schemas.ts`);
+
+  const inputs = ["Units, ranges and defaults are in each parameter's schema; one left out takes its default."];
   const spec = schema['x-files'];
   if (spec) {
-    parts.push(
+    inputs.push(
       `Takes ${spec.min === 0 ? 'up to' : `${spec.min} to`} ${spec.max} ${spec.extensions.join('/')} file(s) ` +
-        'via inputFiles (inline) or inputPaths (local paths); the server uploads them.',
+        `via inputFiles (inline) or inputPaths (local paths); the server uploads them. ${UPLOAD_NEEDS_KEY}`,
     );
   }
   const bounds = freeLaneBounds(jobType);
-  if (bounds.length) parts.push(`Free lane: ${bounds.join('; ')}.`);
-  parts.push(`Time budget ${entry.timeoutSeconds} s. Returns a summarised result; ask for full for everything.`);
-  if (schema['x-checks']?.length) parts.push(`Cross-parameter checks: ${schema['x-checks'].join(', ')}.`);
-  return parts.join(' ');
+  if (bounds.length) inputs.push(`Free lane: ${bounds.join('; ')}.`);
+  if (schema['x-checks']?.length) inputs.push(`Cross-parameter checks: ${schema['x-checks'].join(', ')}.`);
+  inputs.push(
+    `Time budget ${entry.timeoutSeconds} s; waitSeconds (default ${WAIT_DEFAULT_SECONDS}, max ${WAIT_MAX_SECONDS}) ` +
+      'bounds the wait.',
+  );
+
+  const example = exampleArgumentsFor(jobType);
+  return composeDescription({
+    question: copy.question,
+    inputs: inputs.join(' '),
+    example: copy.example.source === 'preset' && copy.example.label
+      ? `${JSON.stringify(example)} (the "${copy.example.label}" preset)`
+      : example,
+    returns: `${copy.returns} ${RESULT_TAIL}`,
+    notes: 'Runs as a job on rftools.io and counts against the monthly run allowance (free lane without a key).',
+  });
 }
 
 /** A progress reporter bound to the request, when the caller sent a token. */
@@ -688,6 +746,7 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
         title: JOB_INDEX[jobType].title,
         description: toolDescriptionFor(jobType),
         inputSchema: strictObject(shape, name),
+        annotations: annotate(JOB_INDEX[jobType].title, SPENDS_ALLOWANCE),
       },
       async (args: Record<string, unknown>, extra: ExtraLike) => {
         const { waitSeconds, full, inputFiles, inputPaths, ...params } = args as Record<string, unknown> & {
@@ -709,15 +768,36 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
     );
   }
 
+  // The lifecycle tools' example job: the first job type that takes no file,
+  // with the first two arguments of its registry example. Derived, so it can
+  // never name a job type or a parameter the contract does not have.
+  const sampleType = JOB_TYPES.find((jt) => !JOB_SCHEMAS[jt]['x-files']) ?? JOB_TYPES[0];
+  const sampleParams = Object.fromEntries(Object.entries(AGENT_COPY[sampleType]?.example.arguments ?? {}).slice(0, 2));
+  const sampleJobId = '0b7c6f3e-5d1a-4c2e-9f8a-2a4e6b1d9c07';
+  const jobTypeInput =
+    `jobType, one of the ${JOB_TYPES.length} job types list_simulation_tools names; params, that job type's ` +
+    "parameters, validated here against its contract before anything is sent (each one's unit, range and default " +
+    'is in the matching simulate_* tool\'s schema); inputFiles or inputPaths for a job type that takes files. ' +
+    UPLOAD_NEEDS_KEY;
+
   server.registerTool(
     'list_simulation_tools',
     {
       title: 'List Simulation Tools',
-      description:
-        `List the ${JOB_TYPES.length} server-side simulation job types, their tool names, parameters, file rules and ` +
-        `time budgets. ${TIER_LIMITS} A job runs without a key on the free lane; a job that takes a file does not. ` +
-        UPLOAD_NEEDS_KEY,
+      description: composeDescription({
+        question:
+          `List the ${JOB_TYPES.length} server-side simulation job types with their tool names, parameters, ` +
+          'file rules, free-lane bounds and time budgets.',
+        inputs: 'none.',
+        example: {},
+        returns:
+          'count; the tier allowances; what runs without a key; how long a result link lives; the duplicate-' +
+          'submission window; and for each job type its simulate_* tool name, jobType, title, parameter names, time ' +
+          'budget, file rules and free-lane bounds.',
+        notes: `${TIER_LIMITS} A job runs without a key on the free lane; a job that takes a file does not. ${UPLOAD_NEEDS_KEY}`,
+      }),
       inputSchema: z.object({}),
+      annotations: annotate('List Simulation Tools', READS),
     },
     async () => handleListTools() as never,
   );
@@ -726,9 +806,18 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
     'submit_simulation',
     {
       title: 'Submit Simulation',
-      description:
-        'Submit a simulation job and return at once with its id, queue position and time budget. ' +
-        'Use the per-job simulate_* tool when you know which job you want; this one takes the job type by name.',
+      description: composeDescription({
+        question: 'Start a simulation job named by its job type and return at once with its id, without waiting for the result.',
+        inputs: jobTypeInput,
+        example: { jobType: sampleType, params: sampleParams },
+        returns:
+          'jobId, jobType, status, queue position, the time budget, a suggested wait and the result page URL. An ' +
+          `identical submission inside ${DEDUP_WINDOW_SECONDS} s returns the same job.`,
+        notes:
+          'Counts against the monthly run allowance. The typed simulate_* tool for a job type does the same and ' +
+          'waits for the result.',
+      }),
+      annotations: annotate('Submit Simulation', SPENDS_ALLOWANCE),
       inputSchema: strictObject(
         {
           jobType: z.enum(JOB_TYPES as [string, ...string[]]).describe('Which job type to run'),
@@ -755,9 +844,17 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
     'get_simulation_status',
     {
       title: 'Get Simulation Status',
-      description:
-        'Progress, stage, queue position and elapsed time for a submitted job. Poll this rather than holding a call open.',
+      description: composeDescription({
+        question: 'Report how far a submitted simulation job has got.',
+        inputs: 'jobId, as submit_simulation or a simulate_* tool returned it.',
+        example: { jobId: sampleJobId },
+        returns:
+          'status, progress from 0 to 1, stage, queue position, start and finish times, whether a result is ready, ' +
+          'when the job expires, the result page URL, and for a failed job the error and its kind.',
+        notes: 'Poll this rather than holding a call open; it spends nothing.',
+      }),
       inputSchema: strictObject({ jobId: z.string().describe('The id submit_simulation returned') }, 'get_simulation_status'),
+      annotations: annotate('Get Simulation Status', READS),
     },
     async (args: { jobId: string }) => (await handleStatus(deps, args.jobId)) as never,
   );
@@ -766,9 +863,16 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
     'get_simulation_result',
     {
       title: 'Get Simulation Result',
-      description:
-        'The result of a finished job: headline values, warnings and provenance, with every series described rather than ' +
-        'listed, plus links to the full payload. Pass full: true for the whole payload.',
+      description: composeDescription({
+        question: 'Fetch the result of a finished simulation job.',
+        inputs: 'jobId; full, optional, true for the whole payload instead of the summary (default false).',
+        example: { jobId: sampleJobId },
+        returns:
+          'The headline values, warnings and provenance, with every series described rather than listed, the result ' +
+          `page URL and a result link that lives ${RESULT_URL_LIFETIME}. A job that has not finished returns its ` +
+          'status and progress instead.',
+      }),
+      annotations: annotate('Get Simulation Result', READS),
       inputSchema: strictObject(
         {
           jobId: z.string().describe('The id submit_simulation returned'),
@@ -784,10 +888,20 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
     'run_simulation',
     {
       title: 'Run Simulation',
-      description:
-        `Submit a job by job type and wait up to waitSeconds (default ${deps.waitDefaultSeconds}, max ${deps.waitMaxSeconds}) ` +
-        'for its result, reporting progress while it waits. On reaching the bound it returns the job id and current progress; ' +
-        'the job keeps running. Prefer the typed simulate_* tool for the job you want.',
+      description: composeDescription({
+        question: 'Run a simulation job named by its job type and wait a bounded time for its result.',
+        inputs:
+          `${jobTypeInput} waitSeconds, 0 to ${deps.waitMaxSeconds} (default ${deps.waitDefaultSeconds}); full, ` +
+          'optional, true for the whole payload.',
+        example: { jobType: sampleType, params: sampleParams, waitSeconds: 60 },
+        returns:
+          "The same result the job type's simulate_* tool returns. If the wait runs out first, the jobId and current " +
+          'progress instead, and the job keeps running.',
+        notes:
+          'Counts against the monthly run allowance. Sends progress notifications while it waits. The typed ' +
+          'simulate_* tool for a job type takes the same parameters with their units in its schema.',
+      }),
+      annotations: annotate('Run Simulation', SPENDS_ALLOWANCE),
       inputSchema: strictObject(
         {
           jobType: z.enum(JOB_TYPES as [string, ...string[]]).describe('Which job type to run'),

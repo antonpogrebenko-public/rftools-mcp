@@ -1,0 +1,68 @@
+{
+  "slug": "microstrip-impedance",
+  "title": "Microstrip Impedance Calculator",
+  "category": "rf",
+  "url": "https://rftools.io/calculators/rf/microstrip-impedance/",
+  "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "traceWidth": {
+        "type": "number",
+        "title": "Trace Width",
+        "description": "Trace Width (mm). Width of the copper trace on top of the substrate",
+        "default": 1.2,
+        "minimum": 0.01,
+        "maximum": 50,
+        "x-unit": "mm"
+      },
+      "substrateHeight": {
+        "type": "number",
+        "title": "Substrate Height",
+        "description": "Substrate Height (mm). Dielectric thickness between trace and ground plane",
+        "default": 1.6,
+        "minimum": 0.05,
+        "maximum": 10,
+        "x-unit": "mm"
+      },
+      "dielectricConstant": {
+        "type": "number",
+        "title": "Dielectric Constant",
+        "description": "Dielectric Constant (dimensionless). Relative permittivity of the substrate material",
+        "default": 4.2,
+        "minimum": 1,
+        "maximum": 100
+      },
+      "copperThickness": {
+        "type": "number",
+        "title": "Copper Thickness",
+        "description": "Copper Thickness (μm). Thickness of the copper trace",
+        "default": 35,
+        "minimum": 1,
+        "maximum": 200,
+        "x-unit": "μm"
+      }
+    }
+  },
+  "outputs": [
+    {
+      "key": "impedance",
+      "label": "Characteristic Impedance",
+      "unit": "Ω"
+    },
+    {
+      "key": "effectiveDielectric",
+      "label": "Effective Dielectric",
+      "unit": ""
+    },
+    {
+      "key": "propagationDelay",
+      "label": "Propagation Delay",
+      "unit": "ps/mm"
+    }
+  ],
+  "formula": {
+    "primary": "Z_0 = \\frac{60}{\\sqrt{\\varepsilon_{eff}}} \\ln\\!\\left(\\frac{F}{u} + \\sqrt{1 + \\frac{4}{u^2}}\\right)",
+    "reference": "Hammerstad & Jensen (1980); Wadell, \"Transmission Line Design Handbook\" 1991"
+  }
+}

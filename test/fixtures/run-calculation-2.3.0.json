@@ -1,0 +1,134 @@
+{
+  "source": "run_calculation answers from the published 2.3.0 bundle (rftools-mcp 673b685, dist/mcp-server.cjs), captured 2026-10-01 for openspec agent-surface task 2.8",
+  "calls": {
+    "microstrip-impedance": {
+      "inputs": {
+        "traceWidth": 1.284,
+        "substrateHeight": 1.7120000000000002,
+        "dielectricConstant": 4.494000000000001,
+        "copperThickness": 37.45
+      },
+      "results": [
+        {
+          "key": "impedance",
+          "label": "Characteristic Impedance",
+          "value": 78.60255079831443,
+          "unit": "Ω"
+        },
+        {
+          "key": "effectiveDielectric",
+          "label": "Effective Dielectric",
+          "value": 3.178896614661576,
+          "unit": ""
+        },
+        {
+          "key": "propagationDelay",
+          "label": "Propagation Delay",
+          "value": 5.9472678571692565,
+          "unit": "ps/mm"
+        }
+      ],
+      "warnings": []
+    },
+    "rf-link-budget": {
+      "inputs": {
+        "txPower": 32.1,
+        "txGain": 3.21,
+        "txCableLoss": 1.07,
+        "frequency": 2568,
+        "distance": 1.07,
+        "rainFade": 0,
+        "atmosphericLoss": 0.535,
+        "pointingLoss": 0,
+        "rxGain": 3.21,
+        "rxCableLoss": 1.07,
+        "rxSensitivity": -96.30000000000001
+      },
+      "results": [
+        {
+          "key": "fspl",
+          "label": "Free Space Path Loss",
+          "value": 101.22134812768918,
+          "unit": "dB"
+        },
+        {
+          "key": "eirp",
+          "label": "EIRP",
+          "value": 34.24,
+          "unit": "dBm"
+        },
+        {
+          "key": "rxPower",
+          "label": "Received Power",
+          "value": -65.37634812768918,
+          "unit": "dBm"
+        },
+        {
+          "key": "linkMargin",
+          "label": "Link Margin",
+          "value": 30.923651872310828,
+          "unit": "dB"
+        },
+        {
+          "key": "maxRangeKm",
+          "label": "Max Range",
+          "value": 37.632786039220775,
+          "unit": "km"
+        },
+        {
+          "key": "totalAdditionalLoss",
+          "label": "Total Additional Loss",
+          "value": 0.535,
+          "unit": "dB"
+        }
+      ],
+      "warnings": []
+    },
+    "voltage-divider": {
+      "inputs": {
+        "vin": 5.3500000000000005,
+        "r1": 10700,
+        "r2": 10700
+      },
+      "results": [
+        {
+          "key": "vout",
+          "label": "Output Voltage",
+          "value": 2.6750000000000003,
+          "unit": "V"
+        },
+        {
+          "key": "ratio",
+          "label": "Division Ratio",
+          "value": 0.5,
+          "unit": ""
+        },
+        {
+          "key": "current",
+          "label": "Quiescent Current",
+          "value": 0.00025,
+          "unit": "A"
+        },
+        {
+          "key": "rThev",
+          "label": "Thévenin Impedance",
+          "value": 5350,
+          "unit": "Ω"
+        },
+        {
+          "key": "powerR1",
+          "label": "Power in R1",
+          "value": 0.00066875,
+          "unit": "W"
+        },
+        {
+          "key": "powerR2",
+          "label": "Power in R2",
+          "value": 0.00066875,
+          "unit": "W"
+        }
+      ],
+      "warnings": []
+    }
+  }
+}

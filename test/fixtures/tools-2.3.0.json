@@ -1,0 +1,356 @@
+{
+  "source": "tools/list of the published 2.3.0 bundle (rftools-mcp 673b685), captured 2026-10-01 for openspec agent-surface (spec: existing tool names and arguments keep working)",
+  "tools": {
+    "list_calculators": {
+      "arguments": [
+        "category"
+      ],
+      "required": []
+    },
+    "get_calculator_info": {
+      "arguments": [
+        "slug"
+      ],
+      "required": [
+        "slug"
+      ]
+    },
+    "run_calculation": {
+      "arguments": [
+        "slug",
+        "inputs"
+      ],
+      "required": [
+        "slug",
+        "inputs"
+      ]
+    },
+    "solve_calculation": {
+      "arguments": [
+        "slug",
+        "inputs",
+        "solveFor",
+        "target",
+        "grid",
+        "range"
+      ],
+      "required": [
+        "slug",
+        "inputs",
+        "solveFor",
+        "target"
+      ]
+    },
+    "simulate_antenna_sim": {
+      "arguments": [
+        "solveMode",
+        "freq",
+        "referenceImpedance",
+        "wires",
+        "feed",
+        "ground",
+        "conductor",
+        "optimize",
+        "freqStart",
+        "freqStop",
+        "freqPoints",
+        "antennaType",
+        "groundType",
+        "randomSeed",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_emi_radiated": {
+      "arguments": [
+        "standard",
+        "measDist",
+        "dmCurrent_mA",
+        "loopArea_cm2",
+        "cmCurrent_uA",
+        "cableLen_m",
+        "fClk_MHz",
+        "dutyCycle",
+        "tRise_ns",
+        "nTrials",
+        "randomSeed",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_eye_diagram": {
+      "arguments": [
+        "dataRate",
+        "prbs",
+        "samplesPerUI",
+        "inputFiles",
+        "inputPaths",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_fdtd_sparam": {
+      "arguments": [
+        "structureType",
+        "substrateName",
+        "subEr",
+        "subH",
+        "subTanD",
+        "traceW",
+        "traceL",
+        "stubL",
+        "gapW",
+        "viaDia",
+        "viaAR",
+        "w2",
+        "freqCenter",
+        "freqSpan",
+        "solveMode",
+        "copperT",
+        "roughness",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_filter_monte_carlo": {
+      "arguments": [
+        "filterType",
+        "bandType",
+        "order",
+        "freqCutoff",
+        "ripple",
+        "impedance",
+        "componentTolerance",
+        "toleranceDistribution",
+        "rippleSpec_db",
+        "rejectionSpec_db",
+        "monteCarloIterations",
+        "randomSeed",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_impedance_matching": {
+      "arguments": [
+        "sourceR",
+        "sourceX",
+        "loadR",
+        "loadX",
+        "freqStart",
+        "freqStop",
+        "topology",
+        "maxQ",
+        "componentSeries",
+        "targetRL",
+        "sourceFileRole",
+        "inputFiles",
+        "inputPaths",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_magnetics_optimizer": {
+      "arguments": [
+        "topology",
+        "Vin",
+        "Vout",
+        "Iout",
+        "fSw",
+        "dutyCycle",
+        "inductance_uH",
+        "iPeak_A",
+        "Tamb",
+        "Tmax",
+        "objectiveWeight",
+        "population",
+        "generations",
+        "randomSeed",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_pdn_impedance": {
+      "arguments": [
+        "boardWidth_mm",
+        "boardLength_mm",
+        "dielectricEr",
+        "lossTangent",
+        "boardThickness_mm",
+        "portX_mm",
+        "portY_mm",
+        "portSize_mm",
+        "vrmBandwidth_hz",
+        "vrmDcr_mohm",
+        "boardInductance_nh",
+        "targetImpedance_mohm",
+        "freqMin_hz",
+        "freqMax_hz",
+        "maxCapCount",
+        "randomSeed",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_radar_detection": {
+      "arguments": [
+        "frequency_hz",
+        "peakPower_w",
+        "antGainTx_dbi",
+        "antGainRx_dbi",
+        "noiseFig_db",
+        "lossesTx_db",
+        "lossesRx_db",
+        "pulseWidth_s",
+        "nPulses",
+        "swerlingModel",
+        "pfa",
+        "targetRcs_dbsm",
+        "rangeMax_km",
+        "rainRate_mmhr",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_rf_cascade": {
+      "arguments": [
+        "stages",
+        "nfSpec_db",
+        "gainSpec_db",
+        "iip3Spec_dbm",
+        "inputPower_dbm",
+        "bandwidth_hz",
+        "analysisFreq_hz",
+        "snrMin_db",
+        "inputFiles",
+        "inputPaths",
+        "waitSeconds",
+        "full"
+      ],
+      "required": [
+        "stages"
+      ]
+    },
+    "simulate_sat_link_budget": {
+      "arguments": [
+        "linkType",
+        "frequency_ghz",
+        "eirp_dbw",
+        "gt_db_k",
+        "distance_km",
+        "elevationAngle_deg",
+        "latitude_deg",
+        "longitude_deg",
+        "stationHeight_km",
+        "polarization",
+        "modulation",
+        "reqEbN0_db",
+        "dataRate_bps",
+        "targetAvailability_pct",
+        "waitSeconds",
+        "full"
+      ],
+      "required": [
+        "latitude_deg",
+        "longitude_deg"
+      ]
+    },
+    "simulate_smps_control_loop": {
+      "arguments": [
+        "topology",
+        "controlMode",
+        "Vin",
+        "Vout",
+        "Iout",
+        "L",
+        "C",
+        "ESR",
+        "Fsw",
+        "Vramp",
+        "Rsense",
+        "externalRamp",
+        "compensatorType",
+        "compK",
+        "compFz1",
+        "compFz2",
+        "compFp1",
+        "compFp2",
+        "monteCarloTrials",
+        "tolL",
+        "tolC",
+        "tolESR",
+        "tolRsense",
+        "tolLoad",
+        "toleranceDistribution",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "simulate_sparam_pipeline": {
+      "arguments": [
+        "refImpedance",
+        "freqStart",
+        "freqStop",
+        "inputFiles",
+        "inputPaths",
+        "waitSeconds",
+        "full"
+      ],
+      "required": []
+    },
+    "list_simulation_tools": {
+      "arguments": [],
+      "required": []
+    },
+    "submit_simulation": {
+      "arguments": [
+        "jobType",
+        "params",
+        "inputFiles",
+        "inputPaths"
+      ],
+      "required": [
+        "jobType"
+      ]
+    },
+    "get_simulation_status": {
+      "arguments": [
+        "jobId"
+      ],
+      "required": [
+        "jobId"
+      ]
+    },
+    "get_simulation_result": {
+      "arguments": [
+        "jobId",
+        "full"
+      ],
+      "required": [
+        "jobId"
+      ]
+    },
+    "run_simulation": {
+      "arguments": [
+        "jobType",
+        "params",
+        "inputFiles",
+        "inputPaths",
+        "waitSeconds",
+        "full"
+      ],
+      "required": [
+        "jobType"
+      ]
+    }
+  }
+}

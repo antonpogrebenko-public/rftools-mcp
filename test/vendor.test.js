@@ -24,6 +24,10 @@ const VENDOR_JOB_SCHEMAS = here('../vendor/shared/job-schemas');
 const VENDOR_PROVENANCE = here('../vendor/shared/result-provenance.schema.json');
 const VENDOR_FIXTURES = here('../vendor/frontend-fixtures');
 
+// What each simulate_* description says about its job type (src/simulation-tools.ts).
+const MONOREPO_AGENT_COPY = here('../../shared/mcp/agent-copy.json');
+const VENDOR_AGENT_COPY = here('../vendor/shared/mcp/agent-copy.json');
+
 // The fixtures test/results.test.js reads — see FIXTURE_DIR there and
 // scripts/vendor_shared.sh's FIXTURE_NAMES, which must list the same files.
 const FIXTURE_NAMES = [
@@ -78,6 +82,18 @@ test(
       readFileSync(VENDOR_PROVENANCE),
       readFileSync(MONOREPO_PROVENANCE),
       'vendor/shared/result-provenance.schema.json is out of date — run `npm run vendor` in rftools-mcp',
+    );
+  },
+);
+
+test(
+  'vendor/shared/mcp/agent-copy.json is byte-identical to ../shared/mcp/agent-copy.json',
+  { skip: !existsSync(MONOREPO_AGENT_COPY) && noSharedReason },
+  () => {
+    assert.deepEqual(
+      readFileSync(VENDOR_AGENT_COPY),
+      readFileSync(MONOREPO_AGENT_COPY),
+      'vendor/shared/mcp/agent-copy.json is out of date — run `npm run vendor` in rftools-mcp',
     );
   },
 );

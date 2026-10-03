@@ -37,7 +37,31 @@ if [ ! -d "$FRONTEND/src/lib/calculators" ]; then
   exit 1
 fi
 
+# search_calculators indexes the translated titles, short titles and keywords
+# (src/calculator-search.ts). The translation modules also hold every
+# translated description, which search does not read, so the three fields are
+# extracted first into .build/ (gitignored) and the bundle imports that,
+# instead of shipping the descriptions too. Deterministic: same sources, same
+# bytes, so --check below rebuilds it and compares the bundle as before.
+TERMS="$HERE/.build/calculator-terms.json"
+
+extract_terms() {
+  mkdir -p "$(dirname "$TERMS")"
+  ( cd "$FRONTEND" && npx esbuild "$HERE/scripts/calculator-terms.ts" \
+      --bundle \
+      --platform=node \
+      --format=cjs \
+      --log-level=warning \
+      --alias:@=./src \
+      --tsconfig=tsconfig.json ) | node - > "$TERMS.tmp"
+  mv "$TERMS.tmp" "$TERMS"
+}
+
+# --charset=utf8: esbuild's default escapes every non-ASCII character as \uXXXX,
+# which doubles the size of the Japanese and Korean search terms (2.4.0: 1.87 MB
+# escaped against 1.76 MB). Node reads the bundle as UTF-8 either way.
 build_to() {
+  extract_terms
   ( cd "$FRONTEND" && npx esbuild "$HERE/mcp-server.ts" \
       --bundle \
       --platform=node \
@@ -46,6 +70,7 @@ build_to() {
       --external:@modelcontextprotocol/sdk \
       --external:zod \
       --banner:js='#!/usr/bin/env node' \
+      --charset=utf8 \
       --alias:@=./src \
       --tsconfig=tsconfig.json )
 }

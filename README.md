@@ -94,6 +94,58 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Tools
 
+24 tools: six for calculators, one `simulate_*` tool for each of the 13 job
+types, and five for the job lifecycle; plus the site's reference tables as
+resources.
+
+### What changed in 2.4.0
+
+No existing tool was removed or renamed, and no existing tool's arguments
+changed: every name and every argument 2.3.0 accepted is accepted the same way.
+
+- **New tool: `search_calculators`.** Finds calculators by words — "trace
+  impedance on FR4 microstrip" — instead of listing all 241. It matches English
+  titles, keywords, input and output names and descriptions, and the German,
+  Spanish, French, Japanese, Korean and Portuguese titles and keywords, so
+  "マイクロストリップ インピーダンス" finds the microstrip calculator too.
+- **New tool: `get_calculator_schema`.** One calculator's inputs as a JSON
+  Schema (2020-12): each a number with its unit, minimum, maximum, default and
+  description, with the outputs, the formula and its reference, and the page
+  URL. A misspelt identifier is refused with the closest ones.
+- **`run_calculation` lists what it assumed.** A new `defaultedInputs` field
+  names every declared input the call left out, which therefore took its
+  default. An undeclared input key is still computed around and named in a
+  warning, in the REST API's wording; it is not refused.
+- **Every tool carries annotations**: a `title` and `readOnlyHint`,
+  `destructiveHint`, `idempotentHint` and `openWorldHint`, so a host can tell
+  what it may run without asking (see **Annotations** below).
+- **Every description says what the tool answers**, its inputs' units and
+  ranges (or which tool states them), one complete example call and what it
+  returns. The 13 `simulate_*` descriptions are generated from the website's
+  tool registry, so they change when the tool does.
+- **Reference tables as resources**: frequency bands, RF connectors, standard
+  values, component marking codes and PCB specifications, at
+  `rftools://reference/{domain}/{id}` (see **Reference resources** below).
+- **`--manifest`**: `npx rftools-mcp --manifest` prints what this build lists —
+  tools, resources, templates, counts — as JSON, and exits.
+- `run_calculation`'s `webUrl` is now the page's canonical address, with its
+  trailing slash.
+
+### Annotations
+
+| Tools | read-only | destructive | idempotent | open world |
+|---|---|---|---|---|
+| `list_calculators`, `search_calculators`, `get_calculator_info`, `get_calculator_schema`, `run_calculation`, `list_simulation_tools`, `get_simulation_status`, `get_simulation_result` | yes | no | yes | no |
+| `solve_calculation`, `submit_simulation`, `run_simulation`, every `simulate_*` | no | no | no | no |
+
+A tool that starts a job or makes a metered call spends the account's monthly
+allowance, so it is not marked read-only — a host that runs read-only tools
+without asking would otherwise spend a free account's five runs unprompted —
+and it is not idempotent, because a repeat spends again (identical job
+submissions merge only inside 60 seconds). Nothing deletes or overwrites
+anything, and every tool talks only to rftools.io, so no tool is destructive
+or open-world.
+
 ### What changed in 2.2.0
 
 - **New tool: `solve_calculation`.** Finds the value of one calculator input
@@ -162,10 +214,11 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ### Calculator tools
 
-`list_calculators`, `get_calculator_info` and `run_calculation` need no API
-key — they run locally, for free. `solve_calculation` is the exception: it
-runs on rftools.io itself and needs a key, exactly as `run_calculation` needs
-none — see its own section below.
+`list_calculators`, `search_calculators`, `get_calculator_info`,
+`get_calculator_schema` and `run_calculation` need no API key — they run
+locally, for free. `solve_calculation` is the exception: it runs on rftools.io
+itself and needs a key, exactly as `run_calculation` needs none — see its own
+section below.
 
 #### `list_calculators`
 
@@ -179,6 +232,35 @@ List available calculators, optionally filtered by category.
 
 **Parameters:**
 - `category` (optional): `rf`, `pcb`, `power`, `signal`, `antenna`, `general`, `motor`, `protocol`, `emc`, `thermal`, `sensor`, `unit-conversion`, `audio`
+
+#### `search_calculators`
+
+Find calculators by words, in English or in any of the site's other six
+languages, ranked by how well they match.
+
+```
+"Which calculator gives trace impedance on FR4 microstrip?"
+"Find a calculator for battery charge time"
+```
+
+**Parameters:**
+- `query` (required): the words to match
+- `category` (optional): restrict to one category; an unknown one is refused with the list
+- `limit` (optional): 1 to 25 results, default 10
+
+Each result carries `slug`, `title`, `category`, a one-line `description`, the
+page `url` and its `score`; `matched` says how many calculators matched in all.
+A search that matches nothing is returned as an error saying so, not as an
+empty list.
+
+The ranking is deterministic, so the hosted endpoint can reproduce it exactly:
+text is NFKC-normalised and lower-cased; Latin text splits into words (accents
+folded, one plural `s` dropped), Japanese and Korean into character bigrams;
+each calculator field has a weight (English title 10, translated title 8,
+keywords 6, translated keywords 5, input and output names 3, description 2);
+a calculator scores the sum over the query's words of its best field weight
+times `ln(1 + N/df)`; ties keep registry order. The rules are written out in
+`src/calculator-search.ts`.
 
 #### `get_calculator_info`
 
@@ -196,9 +278,22 @@ Each input carries its stated `min`/`max` (the same bounds `run_calculation`'s
 `provenance.validRange` checks against). An input with neither is unbounded —
 `solve_calculation` needs an explicit `range` to solve for one of those.
 
+#### `get_calculator_schema`
+
+The same inputs as a JSON Schema (draft 2020-12) — what a call to
+`run_calculation` may send — with the outputs, the formula and the page URL.
+
+**Parameters:**
+- `slug` (required): Calculator identifier. A misspelt one is refused, naming the three closest (`microstrip-impedence` → `microstrip-impedance`, …).
+
+Returns `inputSchema` (each property a `number` with `title`, `description`
+— label, unit and tooltip — `default`, `minimum`, `maximum` and `x-unit`),
+`outputs` (`key`, `label`, `unit`), `formula` (`primary`, `latex` where there
+is one, and `reference`, the source the formula comes from) and `url`.
+
 #### `run_calculation`
 
-Run a calculator with specific inputs. Returns results with units, a link to the interactive version on rftools.io, and the result's `provenance` (formula source, assumptions, inputs used, whether they lie inside the calculator's stated range, engine version and time). An input left out takes its default. Runs locally — instant, no quota consumed.
+Run a calculator with specific inputs. Returns results with units, a link to the interactive version on rftools.io, `defaultedInputs`, and the result's `provenance` (formula source, assumptions, inputs used, whether they lie inside the calculator's stated range, engine version and time). An input left out takes its default and is named in `defaultedInputs`; an input key the calculator does not declare is not read and is named in `warnings`; a value outside the stated range is computed and named in `warnings`. Runs locally — instant, no quota consumed.
 
 ```
 "Calculate microstrip impedance for a 0.3mm trace on 0.2mm Rogers RO4003C"
@@ -308,6 +403,28 @@ The compatibility form of a `simulate_*` call: `jobType`, `params`, optional fil
 
 Failures are classified by HTTP status and by the service's own error kind, never by matching text: an invalid key, a spent allowance, a rate limit with its retry time, a refused parameter (with the service's own detail, unchanged), a job too large for its lane, a mode the tier does not carry, a timeout and a service fault each read differently. Polling stops at once on a 4xx, and after five failures in a row that are not.
 
+---
+
+### Reference resources
+
+The tables published under [rftools.io/reference](https://rftools.io/reference/)
+are MCP resources, one per page, built from the same data the pages are, so
+the counts always match the site. Each domain has a template for lookup by
+identifier:
+
+| Template | What each entry holds |
+|---|---|
+| `rftools://reference/bands/{id}` | A frequency band: limits in Hz, wavelength, ITU designation, uses, propagation and regulatory notes |
+| `rftools://reference/connectors/{id}` | An RF connector: impedance, frequency and power limits, VSWR, mating cycles, materials, uses |
+| `rftools://reference/values/{id}` | A standard-value table: E24/E96 resistors, capacitors, AWG, drills, threads, SI prefixes |
+| `rftools://reference/codes/{id}` | A marking-code chart: SMD resistor codes, capacitor value, voltage, tolerance and dielectric codes |
+| `rftools://reference/pcb/{id}` | A PCB table: copper weight against thickness and current, standard board thicknesses |
+
+A read returns JSON with the entry's values, its `source` (the standards the
+page names and its note on where the values come from) and the page `url`. An
+unknown identifier fails with invalid params, naming the template and the
+valid identifiers. Hosts that offer completion can complete `{id}`.
+
 ## Example Conversations
 
 ### PCB Design
@@ -384,8 +501,10 @@ AI Agent ←stdio→ rftools-mcp ←HTTPS (key optional)→ rftools.io API → S
 
 ## Machine-Readable Documentation
 
+- **[rftools.io/agents](https://rftools.io/agents/)** — This server's tools, install steps and example prompts, in seven languages
 - **[rftools.io/llms.txt](https://rftools.io/llms.txt)** — Summary with API info and MCP setup
 - **[rftools.io/llms-full.txt](https://rftools.io/llms-full.txt)** — Complete listing of all 241 calculators with inputs, outputs, units, and URLs
+- **`npx rftools-mcp --manifest`** — Everything this build lists (tools with their descriptions, annotations and input schemas, resources, templates and counts) as one JSON document; the agents page is built from it
 
 ## Links
 
