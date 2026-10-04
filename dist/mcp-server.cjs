@@ -487,6 +487,7 @@ function calculateVSWR(inputs) {
     }
   };
 }
+var vswrOf = (gamma) => (1 + gamma) / (1 - gamma);
 var vswrReturnLoss = {
   slug: "vswr-return-loss",
   title: "VSWR & Return Loss Calculator",
@@ -564,6 +565,33 @@ var vswrReturnLoss = {
     }
   ],
   calculate: calculateVSWR,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["vswr", "returnLoss", "gamma", "mismatchLoss", "reflectedPct", "transmittedPct"],
+      free: ["vswr"],
+      inverse: {
+        returnLoss: (rl) => vswrOf(10 ** (-rl / 20)),
+        gamma: (g) => vswrOf(g),
+        mismatchLoss: (ml) => vswrOf(Math.sqrt(1 - 10 ** (-ml / 10))),
+        reflectedPct: (p) => vswrOf(Math.sqrt(p / 100)),
+        transmittedPct: (p) => vswrOf(Math.sqrt(1 - p / 100))
+      },
+      picks: { field: "vswr", values: [1.1, 1.2, 1.5, 2, 3] },
+      reference: { field: "vswr", values: [1.1, 1.2, 1.5, 2, 3, 5] },
+      scales: {
+        axis: { field: "returnLoss", range: [0, 40], scale: "linear" },
+        fields: [
+          { key: "vswr", ticks: [10, 5, 3, 2, 1.5, 1.2, 1.1, 1.05, 1.02] },
+          { key: "returnLoss" },
+          { key: "gamma", ticks: [0.9, 0.7, 0.5, 0.3, 0.1, 0.05, 0.02, 0.01] },
+          { key: "mismatchLoss", ticks: [3, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 5e-3, 2e-3] }
+        ],
+        band: { id: "antenna-spec", field: "vswr", from: 1, to: 2, label: "typical antenna spec VSWR \u2264 2.0" },
+        ends: { id: "match", low: "worse match", high: "better match" }
+      }
+    }]
+  },
   formula: {
     primary: "|\\Gamma| = \\frac{VSWR - 1}{VSWR + 1}, \\quad RL = -20 \\log_{10}|\\Gamma|",
     latex: "\\text{VSWR} = \\frac{1+|\\Gamma|}{1-|\\Gamma|}, \\quad RL = -20\\log_{10}|\\Gamma|",
@@ -632,6 +660,7 @@ function calculateDB(inputs) {
     }
   };
 }
+var dbmOfWatts = (w) => 10 * Math.log10(w * 1e3);
 var dbConverter = {
   slug: "db-converter",
   title: "dBm Power Converter",
@@ -686,7 +715,41 @@ var dbConverter = {
     { key: "mvrms", label: "Voltage", symbol: "V", unit: "mV RMS", precision: 2 },
     { key: "dbuv", label: "Voltage", symbol: "V", unit: "dB\u03BCV", precision: 2 }
   ],
+  examples: [
+    { id: "cable-tv-75-ohm-0-dbmv", label: "75 \u03A9 cable TV channel at 0 dBmV (1 mV)", values: { dbm: -48.750612633917, impedance: 75 } },
+    { id: "audio-line-600-ohm-0-dbm", label: "600 \u03A9 audio line at 0 dBm (0.775 V)", values: { dbm: 0, impedance: 600 } },
+    { id: "receiver-sensitivity-50-ohm", label: "Receiver sensitivity, \u2212110 dBm at 50 \u03A9", values: { dbm: -110, impedance: 50 } }
+  ],
   calculate: calculateDB,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["dbm", "dbw", "watts", "mwatts", "uwatts", "vrms", "mvrms", "dbuv"],
+      free: ["dbm"],
+      params: ["impedance"],
+      inverse: {
+        dbw: (v) => v + 30,
+        watts: (w) => dbmOfWatts(w),
+        mwatts: (mw) => dbmOfWatts(mw / 1e3),
+        uwatts: (uw) => dbmOfWatts(uw / 1e6),
+        // P = V²/Z at the held system impedance.
+        vrms: (v, inputs) => dbmOfWatts(v * v / inputs.impedance),
+        mvrms: (mv, inputs) => dbmOfWatts((mv / 1e3) ** 2 / inputs.impedance),
+        dbuv: (dbuv, inputs) => dbmOfWatts((10 ** (dbuv / 20) / 1e6) ** 2 / inputs.impedance)
+      },
+      picks: { field: "dbm", values: [-30, -10, 0, 10, 20, 30] },
+      reference: { field: "dbm", values: [-30, -20, -10, 0, 10, 20, 30, 40] },
+      scales: {
+        axis: { field: "dbm", range: [-60, 60], scale: "linear" },
+        fields: [
+          { key: "dbm", ticks: [-60, -50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60] },
+          { key: "watts", ticks: [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "vrms" },
+          { key: "dbuv" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "P_{dBm} = 10 \\log_{10}\\!\\left(\\frac{P_{mW}}{1\\,\\text{mW}}\\right)",
     latex: "P_{dBm} = 10\\log_{10}\\left(\\frac{P_{mW}}{1\\text{ mW}}\\right)",
@@ -1283,6 +1346,7 @@ function calculateWavelengthFrequency(inputs) {
     }
   };
 }
+var mhzOfWavelengthMm = (lambdaMm, medium) => 299792458 / (lambdaMm * Math.sqrt(medium) / 1e3) / 1e6;
 var wavelengthFrequency = {
   slug: "wavelength-frequency",
   title: "Wavelength & Frequency Calculator",
@@ -1384,7 +1448,39 @@ var wavelengthFrequency = {
       tooltip: "Wave number k = 2\u03C0/\u03BB in the medium"
     }
   ],
+  examples: [
+    { id: "gps-l1-ptfe-coax", label: "GPS L1 in PTFE coax, \u03B5\u1D63 2.1", values: { frequency: 1575.42, medium: 2.1 } },
+    { id: "stripline-fr4-2g4", label: "2.4 GHz stripline in FR4, \u03B5\u1D63 4.2", values: { frequency: 2400, medium: 4.2 } },
+    { id: "rogers-4003c-5g8", label: "5.8 GHz stripline in Rogers 4003C, \u03B5\u1D63 3.38", values: { frequency: 5800, medium: 3.38 } }
+  ],
   calculate: calculateWavelengthFrequency,
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: ["frequency", "wavelengthMm", "actualWavelengthMm", "halfWaveMm", "quarterWaveMm", "wavenumber"],
+      free: ["frequency"],
+      params: ["medium"],
+      inverse: {
+        wavelengthMm: (l) => mhzOfWavelengthMm(l, 1),
+        actualWavelengthMm: (l, inputs) => mhzOfWavelengthMm(l, inputs.medium),
+        halfWaveMm: (l, inputs) => mhzOfWavelengthMm(2 * l, inputs.medium),
+        quarterWaveMm: (l, inputs) => mhzOfWavelengthMm(4 * l, inputs.medium),
+        wavenumber: (k, inputs) => mhzOfWavelengthMm(2 * Math.PI / k / 1e-3, inputs.medium)
+      },
+      picks: { field: "frequency", values: [100, 433, 915, 2400, 5800, 24e3] },
+      reference: { field: "frequency", values: [10, 30, 100, 300, 1e3, 3e3, 1e4, 3e4] },
+      scales: {
+        axis: { field: "frequency", range: [1, 1e5], scale: "log" },
+        fields: [
+          { key: "frequency" },
+          { key: "actualWavelengthMm" },
+          { key: "halfWaveMm" },
+          { key: "quarterWaveMm" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "\\lambda = \\frac{c}{f\\sqrt{\\varepsilon_r}}",
     variables: [
@@ -1848,7 +1944,7 @@ var ismCoexistence = {
       unit: "%",
       precision: 2,
       primary: true,
-      thresholds: { good: { max: 5 }, warning: { min: 5, max: 20 }, danger: { min: 20 } }
+      thresholds: { good: { max: 5 }, warning: { min: 5, max: 20 }, danger: { max: 20 } }
     },
     { key: "collisionProb_pct", label: "Raw Collision Probability", unit: "%", precision: 2 },
     { key: "throughputImpact_pct", label: "Throughput Impact", unit: "%", precision: 1 },
@@ -2146,6 +2242,43 @@ function calculateSmithChart(inputs) {
     }
   };
 }
+function loadOfGamma(mag, angleDeg, z0) {
+  if (!(mag >= 0 && mag <= 1)) return null;
+  const theta = angleDeg / 180 * Math.PI;
+  const re = mag * Math.cos(theta);
+  const im = mag * Math.sin(theta);
+  const den = (1 - re) * (1 - re) + im * im;
+  if (den === 0) return null;
+  return { resistance: z0 * (1 - mag * mag) / den, reactance: z0 * 2 * im / den };
+}
+function editSmith(field, value, state) {
+  const z0 = state.inputs.referenceImpedance;
+  const angle = state.values.gamma_ang;
+  const mag = state.values.gamma_mag;
+  switch (field) {
+    case "resistance":
+      return value >= 0 ? { resistance: value } : null;
+    case "reactance":
+      return { reactance: value };
+    case "normalizedR":
+      return value >= 0 ? { resistance: value * z0 } : null;
+    case "normalizedX":
+      return { reactance: value * z0 };
+    case "gamma_mag":
+      return loadOfGamma(value, angle, z0);
+    // A matched load has no angle to set.
+    case "gamma_ang":
+      return mag === 0 ? value === 0 ? { resistance: z0, reactance: 0 } : null : loadOfGamma(mag, value, z0);
+    case "vswr":
+      return value >= 1 ? loadOfGamma((value - 1) / (value + 1), angle, z0) : null;
+    case "returnLoss":
+      return value >= 0 ? loadOfGamma(10 ** (-value / 20), angle, z0) : null;
+    case "mismatchLoss":
+      return value >= 0 ? loadOfGamma(Math.sqrt(1 - 10 ** (-value / 10)), angle, z0) : null;
+    default:
+      return null;
+  }
+}
 var smithChart = {
   slug: "smith-chart",
   title: "Online Smith Chart Calculator",
@@ -2303,6 +2436,38 @@ var smithChart = {
     { id: "reactive-50-j50", label: "Reactive (50+j50)", values: { resistance: 50, reactance: 50, referenceImpedance: 50 } }
   ],
   calculate: calculateSmithChart,
+  // The page keeps its own chart (SmithCard), so the scales are per field.
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: [
+        "resistance",
+        "reactance",
+        "normalizedR",
+        "normalizedX",
+        "gamma_mag",
+        "gamma_ang",
+        "vswr",
+        "returnLoss",
+        "mismatchLoss"
+      ],
+      free: ["resistance", "reactance"],
+      params: ["referenceImpedance", "frequency"],
+      systems: [["resistance", "reactance"], ["gamma_mag", "gamma_ang"]],
+      edit: editSmith,
+      picks: { field: "resistance", values: [25, 50, 75, 100, 200] },
+      reference: { field: "vswr", values: [1.1, 1.2, 1.5, 2, 3, 5] },
+      scales: {
+        fields: [
+          { key: "gamma_mag", range: [0, 1], scale: "linear" },
+          { key: "gamma_ang", range: [-180, 180], scale: "linear", ticks: [-180, -90, 0, 90, 180] },
+          { key: "vswr", range: [1, 10], scale: "log", ticks: [1, 1.2, 1.5, 2, 3, 5, 10] },
+          { key: "returnLoss", range: [0, 40], scale: "linear" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "\u0393 = (Z - Z\u2080) / (Z + Z\u2080)",
     latex: "\\Gamma = \\frac{Z_L - Z_0}{Z_L + Z_0}, \\quad \\text{VSWR} = \\frac{1+|\\Gamma|}{1-|\\Gamma|}",
@@ -2831,9 +2996,9 @@ var OFFSET_COUPLED_ODD = [1.104095, 2.193833, -0.906962, 0.245485, 1.175407, 1.3
 var OFFSET_COUPLED_EVEN = [0.725767, 2.700093, -1.581169, 0.293423, 1.228106, 2.065153, 2.977705, 1.755071];
 function offsetCoupledExcess(c2, wb, sb, m) {
   if (!(m > 0)) return 0;
-  const [A, p0, p1, alpha, beta, gamma, decay, q] = c2;
+  const [A2, p0, p1, alpha, beta, gamma, decay, q] = c2;
   const power = Math.max(p0 + p1 * sb, 0.3);
-  return A * Math.pow(m, power) * (Math.pow(wb, alpha) / Math.pow(1 + beta * wb, gamma)) * Math.exp(-decay * Math.pow(sb, q));
+  return A2 * Math.pow(m, power) * (Math.pow(wb, alpha) / Math.pow(1 + beta * wb, gamma)) * Math.exp(-decay * Math.pow(sb, q));
 }
 var OFFSET_COUPLED_RANGE = {
   description: "w/b 0.05\u20130.8, s/b 0.05\u20131.0, nearer gap 0.125\u20130.5 of the plane spacing",
@@ -3204,7 +3369,7 @@ var differentialPair = {
       unit: "",
       precision: 0,
       tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
-      thresholds: { danger: { max: 0.5 } }
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
     }
   ],
   calculate: calculateDifferentialPair,
@@ -3546,7 +3711,7 @@ var viaCalculator = {
       thresholds: {
         good: { max: 8 },
         warning: { max: 10 },
-        danger: { min: 10 }
+        danger: { max: 10 }
       }
     },
     {
@@ -3641,11 +3806,11 @@ function hammerstadJensen2(w, h, er, tMm) {
 }
 function inverseWheeler(z0, er) {
   if (z0 > 44) {
-    const A = z0 / 60 * Math.sqrt((er + 1) / 2) + (er - 1) / (er + 1) * (0.23 + 0.11 / er);
-    return 8 * Math.exp(A) / (Math.exp(2 * A) - 2);
+    const A2 = z0 / 60 * Math.sqrt((er + 1) / 2) + (er - 1) / (er + 1) * (0.23 + 0.11 / er);
+    return 8 * Math.exp(A2) / (Math.exp(2 * A2) - 2);
   } else {
-    const B = 377 * Math.PI / (2 * z0 * Math.sqrt(er));
-    return 2 / Math.PI * (B - 1 - Math.log(2 * B - 1) + (er - 1) / (2 * er) * (Math.log(B - 1) + 0.39 - 0.61 / er));
+    const B2 = 377 * Math.PI / (2 * z0 * Math.sqrt(er));
+    return 2 / Math.PI * (B2 - 1 - Math.log(2 * B2 - 1) + (er - 1) / (2 * er) * (Math.log(B2 - 1) + 0.39 - 0.61 / er));
   }
 }
 function calculateStackup(inputs) {
@@ -4505,8 +4670,9 @@ var ldoThermal = {
       unit: "%",
       precision: 1,
       thresholds: {
-        warning: { max: 70 },
-        danger: { max: 50 }
+        good: { min: 70 },
+        warning: { min: 50, max: 70 },
+        danger: { min: 50 }
       }
     }
   ],
@@ -4538,7 +4704,7 @@ var ldoThermal = {
       { id: "tj-target", kind: "target", label: "Target", value: (i) => i.targetTj }
     ]
   },
-  target: { output: "tj", input: "targetTj", sense: "max", failAt: 125 },
+  target: { output: "tj", input: "targetTj", sense: "max", failAt: "tjMax" },
   examples: [
     { id: "sot223-5v-3v3", label: "5 V to 3.3 V at 500 mA, SOT-223", values: { vin: 5, vout: 3.3, iload: 500, thetaJA: 61, tamb: 40, tjMax: 125 } },
     { id: "to220-12v-5v", label: "12 V to 5 V at 200 mA, TO-220 without heatsink", values: { vin: 12, vout: 5, iload: 200, thetaJA: 50, tamb: 50, tjMax: 150 } },
@@ -5147,7 +5313,7 @@ var filterDesigner = {
       thresholds: {
         good: { max: 2 },
         warning: { min: 2, max: 5 },
-        danger: { min: 5 }
+        danger: { max: 5 }
       }
     },
     {
@@ -5417,7 +5583,7 @@ var samplingNyquist = {
       thresholds: {
         good: { min: 2 },
         warning: { min: 1, max: 2 },
-        danger: { max: 1 }
+        danger: { min: 1 }
       }
     },
     {
@@ -5627,7 +5793,7 @@ var dipoleAntenna = {
       thresholds: {
         good: { max: 1.5 },
         warning: { max: 2 },
-        danger: { min: 2 }
+        danger: { max: 2 }
       }
     },
     {
@@ -6166,6 +6332,20 @@ function calculateOhmsLaw(inputs) {
     }
   };
 }
+var OHM = ["voltage", "current", "resistance", "power"];
+function ohmsHeld(inputs) {
+  const given = ["current", "resistance", "power"].filter((k) => inputs[k] >= 0);
+  if (given.length >= 2) return given.slice(0, 2);
+  return inputs.voltage >= 0 ? ["voltage", ...given] : given;
+}
+function ohmsInputs(a, va, b, vb) {
+  const known = { [a]: va, [b]: vb };
+  const { current: I, resistance: R, power: P } = known;
+  const V = known.voltage ?? (I !== void 0 && R !== void 0 ? I * R : I !== void 0 ? P / I : Math.sqrt(P * R));
+  const next = { voltage: V, current: I ?? -1, resistance: R ?? -1, power: P ?? -1 };
+  const fits = ohmsLaw.inputs.every((i) => Number.isFinite(next[i.key]) && next[i.key] <= (i.max ?? Infinity));
+  return fits ? next : null;
+}
 var ohmsLaw = {
   slug: "ohms-law",
   title: "Ohm's Law Calculator",
@@ -6186,7 +6366,41 @@ var ohmsLaw = {
     { key: "resistance", label: "Resistance", symbol: "R", unit: "\u03A9", precision: 4, format: "engineering" },
     { key: "power", label: "Power", symbol: "P", unit: "W", precision: 4, format: "engineering" }
   ],
+  // Each gives the voltage and one other quantity; the rest are −1 (not given).
+  examples: [
+    { id: "usb-port-5v-500ma", label: "USB 2.0 port: 5 V at 500 mA", values: { voltage: 5, current: 0.5, resistance: -1, power: -1 } },
+    { id: "gpio-3v3-330-ohm", label: "3.3 V GPIO pin into 330 \u03A9", values: { voltage: 3.3, current: -1, resistance: 330, power: -1 } },
+    { id: "heater-12v-24w", label: "12 V, 24 W heater element", values: { voltage: 12, current: -1, resistance: -1, power: 24 } },
+    { id: "mains-lamp-230v-60w", label: "60 W lamp on 230 V mains (hot filament)", values: { voltage: 230, current: -1, resistance: -1, power: 60 } }
+  ],
   calculate: calculateOhmsLaw,
+  // C2: any two of V, I, R and P fix the state, so an edit holds the edited
+  // field and the one edited before it (or, on a first edit, the other of the
+  // two the address gives).
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: ["voltage", "current", "resistance", "power"],
+      free: ["voltage", "current", "resistance", "power"],
+      edit: (field, value, { inputs, values, previous }) => {
+        const f = field;
+        if (!OHM.includes(f) || !(value >= 0)) return null;
+        const keep = previous && previous !== field && OHM.includes(previous) ? previous : ohmsHeld(inputs).find((k) => k !== f) ?? OHM.find((k) => k !== f && values[k] >= 0);
+        return keep ? ohmsInputs(f, value, keep, values[keep]) : null;
+      },
+      picks: { field: "voltage", values: [1.8, 3.3, 5, 12, 24] },
+      reference: { field: "resistance", values: [10, 100, 220, 470, 1e3, 4700, 1e4] },
+      scales: {
+        fields: [
+          { key: "voltage", range: [1e-3, 1e3], scale: "log" },
+          { key: "current", range: [1e-6, 10], scale: "log" },
+          { key: "resistance", range: [1, 1e7], scale: "log" },
+          { key: "power", range: [1e-6, 1e3], scale: "log" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "V = IR, \\quad P = VI = I^2 R = \\frac{V^2}{R}",
     latex: "V = IR, \\quad P = IV = I^2R = \\frac{V^2}{R}",
@@ -7234,7 +7448,7 @@ var uartBaudRate = {
       thresholds: {
         good: { max: 0.5 },
         warning: { max: 2 },
-        danger: { min: 2 }
+        danger: { max: 2 }
       }
     }
   ],
@@ -7434,9 +7648,9 @@ var i2cPullup = {
       precision: 0,
       tooltip: "Geometric mean of R_min and R_max; choose nearest standard E24/E96 value",
       thresholds: {
+        // Below 680 Ω is CHECK, not FAIL: Fast-Plus at 20 mA sink current needs it.
         good: { min: 1e3, max: 4700 },
-        warning: { min: 680, max: 1e4 },
-        danger: { max: 680 }
+        warning: { min: 680, max: 1e4 }
       }
     },
     {
@@ -7562,7 +7776,7 @@ var clockJitter = {
       precision: 1,
       primary: true,
       signed: "explicit",
-      thresholds: { good: { min: 100 }, warning: { min: 0, max: 100 }, danger: { max: 0 } }
+      thresholds: { good: { min: 100 }, warning: { min: 0, max: 100 }, danger: { min: 0 } }
     },
     { key: "totalJitter_ps", label: "Total Jitter", unit: "ps", precision: 1 },
     {
@@ -7570,7 +7784,7 @@ var clockJitter = {
       label: "Budget Used",
       unit: "%",
       precision: 1,
-      thresholds: { good: { max: 60 }, warning: { min: 60, max: 80 }, danger: { min: 80 } }
+      thresholds: { good: { max: 60 }, warning: { min: 60, max: 80 }, danger: { max: 80 } }
     },
     { key: "availableBudget_ps", label: "Available Budget", unit: "ps", precision: 1 },
     { key: "periodPs", label: "Clock Period", unit: "ps", precision: 1 },
@@ -8747,8 +8961,8 @@ function calculateQFactor(inputs) {
     const L = value * 1e-6;
     reactance = omega * L;
   } else {
-    const C2 = value * 1e-9;
-    reactance = 1 / (omega * C2);
+    const C3 = value * 1e-9;
+    reactance = 1 / (omega * C3);
   }
   const qFactor2 = reactance / esr;
   const bandwidth = frequency * 1e3 / qFactor2;
@@ -10156,7 +10370,7 @@ var controlledImpedance = {
       thresholds: {
         good: { min: 45, max: 55 },
         warning: { min: 40, max: 60 },
-        danger: { max: 40 }
+        danger: { min: 40 }
       }
     },
     {
@@ -11250,7 +11464,7 @@ var phaseNoiseToJitter = {
       thresholds: {
         good: { max: 1 },
         warning: { min: 1, max: 10 },
-        danger: { min: 10 }
+        danger: { max: 10 }
       }
     },
     {
@@ -11283,7 +11497,7 @@ var phaseNoiseToJitter = {
       thresholds: {
         good: { min: 70 },
         warning: { min: 50, max: 70 },
-        danger: { max: 50 }
+        danger: { min: 50 }
       },
       tooltip: "Maximum achievable ADC SNR limited by clock jitter at this carrier frequency"
     }
@@ -11995,7 +12209,7 @@ var fftBinResolution = {
       thresholds: {
         good: { max: 1.5 },
         warning: { min: 1.5, max: 3 },
-        danger: { min: 3 }
+        danger: { max: 3 }
       }
     }
   ],
@@ -12234,7 +12448,7 @@ var amModulationIndex = {
       thresholds: {
         good: { max: 100 },
         warning: { min: 100, max: 120 },
-        danger: { min: 120 }
+        danger: { max: 120 }
       },
       tooltip: "100% = full modulation; >100% causes overmodulation distortion"
     },
@@ -13360,7 +13574,7 @@ var spiTiming = {
       thresholds: {
         good: { min: 20 },
         warning: { min: 5, max: 20 },
-        danger: { max: 5 }
+        danger: { min: 5 }
       }
     },
     {
@@ -13675,7 +13889,7 @@ var usbTermination = {
       thresholds: {
         good: { min: 50 },
         warning: { min: 20, max: 50 },
-        danger: { max: 20 }
+        danger: { min: 20 }
       }
     }
   ],
@@ -13807,9 +14021,9 @@ var rs485Termination = {
       unit: "kbps",
       precision: 1,
       thresholds: {
+        // A long bus at a low rate (9.6 kbps over 1200 m) is sound: below 100 kbps is CHECK, not FAIL.
         good: { min: 1e3 },
-        warning: { min: 100, max: 1e3 },
-        danger: { max: 100 }
+        warning: { min: 100, max: 1e3 }
       }
     },
     {
@@ -13924,7 +14138,7 @@ var pwmDutyCycle = {
       thresholds: {
         good: { min: 10, max: 90 },
         warning: { min: 1, max: 99 },
-        danger: { max: 1 }
+        danger: { min: 1 }
       }
     },
     {
@@ -15188,7 +15402,7 @@ var pcbCrosstalk = {
       thresholds: {
         good: { max: 5 },
         warning: { max: 15 },
-        danger: { min: 15 }
+        danger: { max: 15 }
       }
     },
     {
@@ -15201,7 +15415,7 @@ var pcbCrosstalk = {
       thresholds: {
         good: { max: -30 },
         warning: { max: -20 },
-        danger: { min: -20 }
+        danger: { max: -20 }
       }
     },
     {
@@ -15654,7 +15868,7 @@ var viaThermalResistance = {
       thresholds: {
         good: { max: 5 },
         warning: { max: 20 },
-        danger: { min: 20 }
+        danger: { max: 20 }
       }
     },
     {
@@ -16509,7 +16723,7 @@ var transistorSwitch = {
       precision: 0,
       thresholds: {
         good: { min: 1 },
-        danger: { max: 1 }
+        danger: { min: 1 }
       }
     }
   ],
@@ -17271,7 +17485,7 @@ var bldcWinding = {
       symbol: "FF",
       unit: "%",
       precision: 1,
-      thresholds: { good: { max: 65 }, warning: { max: 80 }, danger: { min: 80 } },
+      thresholds: { good: { max: 65 }, warning: { max: 80 }, danger: { max: 80 } },
       tooltip: "Ratio of copper area to slot area \u2014 above 75% is very difficult to wind"
     },
     { key: "phaseResistance", label: "Phase Resistance", symbol: "R_ph", unit: "m\u03A9", precision: 1 },
@@ -17901,6 +18115,26 @@ var torqueUnitConverter = {
     { key: "dyneCm", label: "Dyne-centimetres", symbol: "dyn\xB7cm", unit: "dyn\xB7cm", precision: 0 }
   ],
   calculate: calculateTorqueUnitConverter,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["nm", "lbFt", "lbIn", "ozIn", "kgCm", "kgM", "dyneCm"],
+      free: ["nm"],
+      affine: true,
+      picks: { field: "nm", values: [0.01, 0.1, 1, 10, 100] },
+      // One of each unit, in N·m by calculate()'s factors: each row reads 1 in its own column.
+      reference: { field: "nm", values: [1 / 141.61193267, 1 / 10.19716213, 1 / 8.8507457916, 1, 1 / 0.7375621493, 1 / 0.1019716213] },
+      scales: {
+        axis: { field: "nm", range: [1e-3, 1e3], scale: "log" },
+        fields: [
+          { key: "nm", ticks: [1e-3, 0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "lbFt", ticks: [1e-3, 0.01, 0.1, 1, 10, 100] },
+          { key: "ozIn", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "kgCm", ticks: [0.1, 1, 10, 100, 1e3, 1e4] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 N\xB7m = 0.7376 lb\xB7ft = 8.851 lb\xB7in = 141.6 oz\xB7in",
     variables: []
@@ -18523,18 +18757,38 @@ var pidTuning = {
 // src/lib/calculators/sensor/ntc-thermistor.ts
 function calculateNtcThermistor(inputs) {
   const { resistance, beta, T0, R0 } = inputs;
+  const fixedResistor = inputs.fixedResistor ?? 1e4;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  const ntcPosition = inputs.ntcPosition ?? 0;
   if (resistance <= 0 || R0 <= 0 || beta <= 0) {
     return { values: { temperature: 0, temperatureK: 0 }, errors: ["Resistance, R0, and beta must be positive"] };
+  }
+  if (fixedResistor <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { temperature: 0, temperatureK: 0 }, errors: ["The fixed resistor, ADC reference and ADC bits must be positive"] };
   }
   const T0_K = T0 + 273.15;
   const temperatureK = 1 / (1 / T0_K + 1 / beta * Math.log(resistance / R0));
   const temperature = temperatureK - 273.15;
+  const dividerVoltage = adcRef * (ntcPosition === 1 ? fixedResistor : resistance) / (resistance + fixedResistor);
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(dividerVoltage / adcRef * steps)));
+  const resolution = temperatureK ** 2 * (resistance + fixedResistor) ** 2 / (beta * resistance * fixedResistor * steps);
   return {
     values: {
       temperature,
-      temperatureK
+      temperatureK,
+      dividerVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function resistanceFromVoltage(v, inputs) {
+  const rf = inputs.fixedResistor ?? 1e4;
+  const vref = inputs.adcRef ?? 3.3;
+  if (!(v > 0 && v < vref)) return NaN;
+  return (inputs.ntcPosition ?? 0) === 1 ? rf * (vref / v - 1) : rf * v / (vref - v);
 }
 var ntcThermistor = {
   slug: "ntc-thermistor",
@@ -18599,6 +18853,50 @@ var ntcThermistor = {
         { label: "10k\u03A9 (NTC 10K)", values: { R0: 1e4 } },
         { label: "100k\u03A9 (NTC 100K)", values: { R0: 1e5 } }
       ]
+    },
+    {
+      key: "fixedResistor",
+      label: "Fixed Resistor",
+      symbol: "R_fixed",
+      unit: "\u03A9",
+      defaultValue: 1e4,
+      min: 1,
+      group: "Circuit",
+      tooltip: "The divider resistor between the ADC node and the reference (NTC low side) or ground (high side)"
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The voltage across the divider, which is also the ADC full scale (ratiometric)"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
+    },
+    {
+      key: "ntcPosition",
+      label: "NTC Position",
+      unit: "",
+      defaultValue: 0,
+      group: "Circuit",
+      options: [
+        { value: 0, label: "Low side" },
+        { value: 1, label: "High side" }
+      ],
+      tooltip: "Low side: the NTC from the ADC node to ground. High side: from the reference to the node."
     }
   ],
   outputs: [
@@ -18618,9 +18916,73 @@ var ntcThermistor = {
       unit: "K",
       precision: 2,
       tooltip: "Calculated temperature in Kelvin"
+    },
+    {
+      key: "dividerVoltage",
+      label: "Divider Output",
+      symbol: "V_out",
+      unit: "V",
+      precision: 3,
+      tooltip: "The voltage at the ADC node"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_out / V_ref \xD7 2^N)"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "\xB0C/LSB",
+      precision: 3,
+      tooltip: "The temperature one ADC step spans at this point"
+    }
+  ],
+  examples: [
+    {
+      id: "battery-ntc-10k-3380",
+      label: "10 k\u03A9 \u03B2 3380 NTC on a 3.3 V, 12-bit MCU (battery at 45 \xB0C)",
+      values: { resistance: 4903.4, beta: 3380, T0: 25, R0: 1e4, fixedResistor: 1e4, adcRef: 3.3, adcBits: 12, ntcPosition: 0 }
+    },
+    {
+      id: "hotend-100k-3950",
+      label: "100 k\u03A9 \u03B2 3950 hotend thermistor, 4.7 k\u03A9 pull-up, 5 V 10-bit ADC (200 \xB0C)",
+      values: { resistance: 744.61, beta: 3950, T0: 25, R0: 1e5, fixedResistor: 4700, adcRef: 5, adcBits: 10, ntcPosition: 0 }
+    },
+    {
+      id: "high-side-ntc-10k",
+      label: "10 k\u03A9 \u03B2 3950 NTC on the high side, 3.3 V 12-bit (fridge at 5 \xB0C)",
+      values: { resistance: 25924.6, beta: 3950, T0: 25, R0: 1e4, fixedResistor: 1e4, adcRef: 3.3, adcBits: 12, ntcPosition: 1 }
     }
   ],
   calculate: calculateNtcThermistor,
+  transfer: {
+    physical: "temperature",
+    readings: ["resistance", "dividerVoltage", "adcCode"],
+    free: "resistance",
+    sensor: ["R0", "beta", "T0"],
+    circuit: ["fixedResistor", "adcRef", "adcBits", "ntcPosition"],
+    inverse: {
+      temperature: (t, i) => i.R0 * Math.exp(i.beta * (1 / (t + 273.15) - 1 / (i.T0 + 273.15))),
+      dividerVoltage: (v, i) => resistanceFromVoltage(v, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return resistanceFromVoltage((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3), i);
+      }
+    },
+    search: [1, 1e8],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "divider",
+    label: "NTC",
+    curve: { range: [-40, 125], readings: [{ key: "resistance", scale: "log" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 5 }
+  },
   formula: {
     primary: "1/T = 1/T\u2080 + (1/\u03B2)\xB7ln(R/R\u2080)",
     latex: "\\frac{1}{T} = \\frac{1}{T_0} + \\frac{1}{\\beta} \\ln\\left(\\frac{R}{R_0}\\right)",
@@ -18640,17 +19002,37 @@ var ntcThermistor = {
 // src/lib/calculators/sensor/rtd-temperature.ts
 function calculateRtdTemperature(inputs) {
   const { resistance, r0, alpha } = inputs;
+  const fixedResistor = inputs.fixedResistor ?? 150;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  const sensorPosition = inputs.sensorPosition ?? 0;
   if (r0 <= 0 || alpha <= 0) {
     return { values: { temperature: 0, resistanceAt100C: 0 }, errors: ["R0 and alpha must be positive"] };
   }
+  if (fixedResistor <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { temperature: 0, resistanceAt100C: 0 }, errors: ["The fixed resistor, ADC reference and ADC bits must be positive"] };
+  }
   const temperature = (resistance - r0) / (r0 * alpha);
   const resistanceAt100C = r0 * (1 + alpha * 100);
+  const dividerVoltage = adcRef * (sensorPosition === 1 ? fixedResistor : resistance) / (resistance + fixedResistor);
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(dividerVoltage / adcRef * steps)));
+  const resolution = (resistance + fixedResistor) ** 2 / (r0 * alpha * fixedResistor * steps);
   return {
     values: {
       temperature,
-      resistanceAt100C
+      resistanceAt100C,
+      dividerVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function resistanceFromVoltage2(v, inputs) {
+  const rf = inputs.fixedResistor ?? 150;
+  const vref = inputs.adcRef ?? 3.3;
+  if (!(v > 0 && v < vref)) return NaN;
+  return (inputs.sensorPosition ?? 0) === 1 ? rf * (vref / v - 1) : rf * v / (vref - v);
 }
 var rtdTemperature = {
   slug: "rtd-temperature",
@@ -18711,6 +19093,50 @@ var rtdTemperature = {
         { label: "IEC 60751 (0.003851)", values: { alpha: 3851e-6 } },
         { label: "American (0.003911)", values: { alpha: 3911e-6 } }
       ]
+    },
+    {
+      key: "fixedResistor",
+      label: "Fixed Resistor",
+      symbol: "R_fixed",
+      unit: "\u03A9",
+      defaultValue: 150,
+      min: 1,
+      group: "Circuit",
+      tooltip: "The divider resistor between the ADC node and the reference (RTD low side) or ground (high side). Near the RTD's mid-range resistance gives the most even resolution."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The voltage across the divider, which is also the ADC full scale (ratiometric)"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
+    },
+    {
+      key: "sensorPosition",
+      label: "RTD Position",
+      unit: "",
+      defaultValue: 0,
+      group: "Circuit",
+      options: [
+        { value: 0, label: "Low side" },
+        { value: 1, label: "High side" }
+      ],
+      tooltip: "Low side: the RTD from the ADC node to ground. High side: from the reference to the node."
     }
   ],
   outputs: [
@@ -18730,14 +19156,75 @@ var rtdTemperature = {
       unit: "\u03A9",
       precision: 3,
       tooltip: "Calculated resistance at 100\xB0C for this RTD type"
+    },
+    {
+      key: "dividerVoltage",
+      label: "Divider Output",
+      symbol: "V_out",
+      unit: "V",
+      precision: 3,
+      tooltip: "The voltage at the ADC node"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_out / V_ref \xD7 2^N)"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "\xB0C/LSB",
+      precision: 3,
+      tooltip: "The temperature one ADC step spans at this point"
     }
   ],
+  // The PT100s use the default 150 Ω divider; the PT1000 takes ten times that,
+  // which puts it at the same 44 % of the ADC's range.
   examples: [
-    { id: "pt100-50c", label: "PT100 at 50\xB0C (119.4\u03A9)", values: { resistance: 119.4, r0: 100 } },
-    { id: "pt1000-50c", label: "PT1000 at 50\xB0C (1194\u03A9)", values: { resistance: 1194, r0: 1e3 } },
-    { id: "pt100-100c", label: "PT100 at 100\xB0C (138.5\u03A9)", values: { resistance: 138.5, r0: 100 } }
+    {
+      id: "pt100-50c",
+      label: "PT100 at 50\xB0C (119.4\u03A9)",
+      values: { resistance: 119.4, r0: 100, alpha: 3851e-6, fixedResistor: 150, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
+    },
+    {
+      id: "pt1000-50c",
+      label: "PT1000 at 50\xB0C (1194\u03A9)",
+      values: { resistance: 1194, r0: 1e3, alpha: 3851e-6, fixedResistor: 1500, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
+    },
+    {
+      id: "pt100-100c",
+      label: "PT100 at 100\xB0C (138.5\u03A9)",
+      values: { resistance: 138.5, r0: 100, alpha: 3851e-6, fixedResistor: 150, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
+    }
   ],
   calculate: calculateRtdTemperature,
+  transfer: {
+    physical: "temperature",
+    readings: ["resistance", "dividerVoltage", "adcCode"],
+    free: "resistance",
+    sensor: ["r0", "alpha"],
+    circuit: ["fixedResistor", "adcRef", "adcBits", "sensorPosition"],
+    inverse: {
+      temperature: (t, i) => i.r0 * (1 + i.alpha * t),
+      dividerVoltage: (v, i) => resistanceFromVoltage2(v, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return resistanceFromVoltage2((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3), i);
+      }
+    },
+    search: [1, 1e5],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "divider",
+    label: "RTD",
+    curve: { range: [-50, 250], readings: [{ key: "resistance", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 10 }
+  },
   formula: {
     primary: "T = (R \u2212 R\u2080) / (R\u2080 \xB7 \u03B1)",
     latex: "T = \\frac{R - R_0}{R_0 \\cdot \\alpha}",
@@ -18756,21 +19243,40 @@ var rtdTemperature = {
 // src/lib/calculators/sensor/wheatstone-bridge.ts
 function calculateWheatstoneBridge(inputs) {
   const { vin, r1, r2, r3, r4 } = inputs;
+  const frontGain = inputs.frontGain ?? 6;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
   if (r1 <= 0 || r2 <= 0 || r3 <= 0 || r4 <= 0) {
     return { values: { vout: 0, voutMv: 0, balance: 0, sensitivity: 0 }, errors: ["All resistances must be positive"] };
+  }
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { vout: 0, voutMv: 0, balance: 0, sensitivity: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
   }
   const vout = vin * (r3 / (r1 + r3) - r4 / (r2 + r4));
   const voutMv = vout * 1e3;
   const balance = r1 / r3 - r2 / r4;
   const sensitivity = vout / vin * 1e3;
+  const amplifiedVoltage = frontGain * vout;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef * (r1 + r3) ** 2 / (frontGain * steps * vin * r1);
   return {
     values: {
       vout,
       voutMv,
       balance,
-      sensitivity
+      sensitivity,
+      amplifiedVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function r3FromVout(vout, inputs) {
+  const { vin, r1, r2, r4 } = inputs;
+  const k = vout / vin + r4 / (r2 + r4);
+  if (!(k > 0 && k < 1)) return NaN;
+  return k * r1 / (1 - k);
 }
 var wheatstoneBridge = {
   slug: "wheatstone-bridge",
@@ -18834,6 +19340,39 @@ var wheatstoneBridge = {
       defaultValue: 1e3,
       min: 1,
       tooltip: "Bridge resistor R4 (bottom-right arm)"
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 6,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain between the bridge output and the ADC. 6 takes the 0.5 V of R3 at 1.5 k\u03A9 to 3 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale. The ADC is unipolar: a negative bridge output reads 0."
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
@@ -18871,9 +19410,74 @@ var wheatstoneBridge = {
       unit: "mV/V",
       precision: 3,
       tooltip: "Bridge sensitivity: output mV per V of excitation"
+    },
+    {
+      key: "amplifiedVoltage",
+      signed: "explicit",
+      label: "Amplifier Output",
+      symbol: "V_amp",
+      unit: "V",
+      precision: 3,
+      tooltip: "The bridge output times the amplifier gain"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref \xD7 2^N), 0 below zero"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "\u03A9/LSB",
+      precision: 3,
+      tooltip: "The change in R3 one ADC step spans at this point"
+    }
+  ],
+  examples: [
+    {
+      id: "pt1000-bridge-50c",
+      label: "Pt1000 as R3 in a 1 k\u03A9 bridge at 5 V, gain 6 (about 50 \xB0C)",
+      values: { vin: 5, r1: 1e3, r2: 1e3, r3: 1194, r4: 1e3, frontGain: 6, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "gauge-350-bridge",
+      label: "350 \u03A9 strain gauge as R3 (+0.4 %) in a 350 \u03A9 bridge at 5 V, gain 200",
+      values: { vin: 5, r1: 350, r2: 350, r3: 351.4, r4: 350, frontGain: 200, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "ntc-bridge-10k",
+      label: "10 k\u03A9 \u03B2 3950 NTC as R3 in a 10 k\u03A9 bridge at 3.3 V, gain 2 (about 16 \xB0C)",
+      values: { vin: 3.3, r1: 1e4, r2: 1e4, r3: 15e3, r4: 1e4, frontGain: 2, adcRef: 3.3, adcBits: 12 }
     }
   ],
   calculate: calculateWheatstoneBridge,
+  transfer: {
+    physical: "r3",
+    readings: ["vout", "amplifiedVoltage", "adcCode"],
+    free: "r3",
+    sensor: ["r1", "r2", "r4"],
+    circuit: ["vin", "frontGain", "adcRef", "adcBits"],
+    inverse: {
+      vout: (v, i) => r3FromVout(v, i),
+      amplifiedVoltage: (v, i) => r3FromVout(v / (i.frontGain ?? 6), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return r3FromVout((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) / (i.frontGain ?? 6), i);
+      }
+    },
+    search: [1, 1e6],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "R\u2083",
+    curve: { range: [1e3, 1500], readings: [{ key: "vout", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 25 }
+  },
   formula: {
     primary: "V_out = V_in \xB7 (R3/(R1+R3) \u2212 R4/(R2+R4))",
     latex: "V_{out} = V_{in} \\left(\\frac{R_3}{R_1+R_3} - \\frac{R_4}{R_2+R_4}\\right)",
@@ -18889,12 +19493,19 @@ var wheatstoneBridge = {
 };
 
 // src/lib/calculators/sensor/hall-effect-sensor.ts
+var ELEMENTARY_CHARGE = 1602176634e-28;
 function calculateHallEffectSensor(inputs) {
   const { current, Bfield, thickness, carrierDensity } = inputs;
-  const e = 1602176634e-28;
+  const frontGain = inputs.frontGain ?? 4e3;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  const e = ELEMENTARY_CHARGE;
   const n = carrierDensity * 1e23;
   if (n <= 0 || thickness <= 0 || Bfield <= 0) {
     return { values: { hallVoltage: 0, hallCoefficient: 0, sensitivity: 0 }, errors: ["Carrier density, thickness, and magnetic field must be positive"] };
+  }
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { hallVoltage: 0, hallCoefficient: 0, sensitivity: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
   }
   const RH = 1 / (n * e);
   const I_A = current * 1e-3;
@@ -18903,13 +19514,24 @@ function calculateHallEffectSensor(inputs) {
   const VH_V = RH * I_A * B_T / t_m;
   const hallVoltage = VH_V * 1e3;
   const sensitivity = hallVoltage / Bfield;
+  const amplifiedVoltage = hallVoltage / 1e3 * frontGain;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef * t_m / (steps * frontGain * RH * I_A * 1e-3);
   return {
     values: {
       hallVoltage,
       hallCoefficient: RH,
-      sensitivity
+      sensitivity,
+      amplifiedVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function fieldFromHall(mv, inputs) {
+  const RH = 1 / (inputs.carrierDensity * 1e23 * ELEMENTARY_CHARGE);
+  return mv / 1e3 * (inputs.thickness * 1e-3) / (RH * (inputs.current * 1e-3)) * 1e3;
 }
 var hallEffectSensor = {
   slug: "hall-effect-sensor",
@@ -18944,7 +19566,8 @@ var hallEffectSensor = {
       symbol: "B",
       unit: "mT",
       defaultValue: 100,
-      min: 0,
+      min: 1e-3,
+      // calculate() refuses a field of zero or below
       tooltip: "Applied magnetic field perpendicular to current flow",
       presets: [
         { label: "Earth field (~0.05 mT)", values: { Bfield: 0.05 } },
@@ -18968,12 +19591,45 @@ var hallEffectSensor = {
       unit: "\xD710\xB2\xB3/m\xB3",
       defaultValue: 8.5,
       min: 1e-3,
-      tooltip: "Charge carrier density (8.5\xD710\xB2\xB3 for copper, ~10\xB2\u2074 for silicon)",
+      tooltip: "Charge carrier density in units of 10\xB2\xB3 per m\xB3: copper 8.5\xD710\u2075 (8.5\xD710\xB2\u2078/m\xB3), InSb about 0.2 (2\xD710\xB2\xB2/m\xB3 at room temperature), intrinsic silicon 1.5\xD710\u207B\u2077 (1.5\xD710\xB9\u2076/m\xB3)",
       presets: [
         { label: "Copper (8.5\xD710\xB2\u2078/m\xB3 \u2192 use 8.5e5)", values: { carrierDensity: 85e4 } },
-        { label: "InSb semiconductor (0.02)", values: { carrierDensity: 0.02 } },
+        { label: "InSb semiconductor (0.2)", values: { carrierDensity: 0.2 } },
         { label: "Si typical (1.5\xD710\xB9\u2076/m\xB3 \u2192 1.5e-7)", values: { carrierDensity: 15e-8 } }
       ]
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 4e3,
+      min: 0.01,
+      max: 1e6,
+      group: "Circuit",
+      tooltip: "The gain between the Hall element and the ADC. 4000 takes the default element's 0.73 mV at 500 mT to about 2.9 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
@@ -19002,9 +19658,73 @@ var hallEffectSensor = {
       unit: "mV/mT",
       precision: 4,
       tooltip: "Hall sensor sensitivity: output mV per mT of applied field"
+    },
+    {
+      key: "amplifiedVoltage",
+      label: "Amplifier Output",
+      symbol: "V_amp",
+      unit: "V",
+      precision: 3,
+      tooltip: "The Hall voltage times the amplifier gain"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref \xD7 2^N)"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "mT/LSB",
+      precision: 4,
+      tooltip: "The field one ADC step spans"
+    }
+  ],
+  examples: [
+    {
+      id: "insb-element-30mt",
+      label: "InSb thin-film Hall element (1 \xB5m, 5 mA), gain 20",
+      values: { current: 5, Bfield: 30, thickness: 1e-3, carrierDensity: 0.2, frontGain: 20, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "gaas-element-100mt",
+      label: "GaAs Hall element (1 \xB5m, 5 mA), gain 50",
+      values: { current: 5, Bfield: 100, thickness: 1e-3, carrierDensity: 1, frontGain: 50, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "silicon-plate-20mt",
+      label: "Silicon Hall plate (2 \xB5m, 1 mA), gain 200",
+      values: { current: 1, Bfield: 20, thickness: 2e-3, carrierDensity: 0.1, frontGain: 200, adcRef: 3.3, adcBits: 12 }
     }
   ],
   calculate: calculateHallEffectSensor,
+  transfer: {
+    physical: "Bfield",
+    readings: ["hallVoltage", "amplifiedVoltage", "adcCode"],
+    free: "Bfield",
+    sensor: ["current", "thickness", "carrierDensity"],
+    circuit: ["frontGain", "adcRef", "adcBits"],
+    inverse: {
+      hallVoltage: (mv, i) => fieldFromHall(mv, i),
+      amplifiedVoltage: (v, i) => fieldFromHall(v * 1e3 / (i.frontGain ?? 4e3), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return fieldFromHall((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) * 1e3 / (i.frontGain ?? 4e3), i);
+      }
+    },
+    search: [0.01, 1e4],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "B",
+    curve: { range: [20, 500], readings: [{ key: "hallVoltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 20 }
+  },
   formula: {
     primary: "V_H = (R_H \xB7 I \xB7 B) / t,  R_H = 1/(n\xB7e)",
     latex: "V_H = \\frac{R_H \\cdot I \\cdot B}{t}, \\quad R_H = \\frac{1}{n \\cdot e}",
@@ -19026,19 +19746,35 @@ var hallEffectSensor = {
 // src/lib/calculators/sensor/strain-gauge-bridge.ts
 function calculateStrainGaugeBridge(inputs) {
   const { vin, gaugeFactor, strain, bridgeConfig } = inputs;
+  const frontGain = inputs.frontGain ?? 400;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
   if (gaugeFactor <= 0 || vin <= 0) {
     return { values: { vout: 0, resistance_change: 0, strain_SI: 0 }, errors: ["Vin and gauge factor must be positive"] };
+  }
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { vout: 0, resistance_change: 0, strain_SI: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
   }
   const strain_SI = strain * 1e-6;
   const vout = vin * (gaugeFactor * strain_SI / 4) * bridgeConfig * 1e3;
   const resistance_change = gaugeFactor * strain_SI * 100;
+  const amplifiedVoltage = vout / 1e3 * frontGain;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef / (steps * frontGain * vin * (gaugeFactor * 1e-6 / 4) * bridgeConfig);
   return {
     values: {
       vout,
       resistance_change,
-      strain_SI
+      strain_SI,
+      amplifiedVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function strainFromVout(vout, inputs) {
+  return vout / (inputs.vin * (inputs.gaugeFactor * 1e-6 / 4) * inputs.bridgeConfig * 1e3);
 }
 var strainGaugeBridge = {
   slug: "strain-gauge-bridge",
@@ -19112,6 +19848,39 @@ var strainGaugeBridge = {
         { value: 2, label: "Half bridge (2 active arms)" },
         { value: 4, label: "Full bridge (4 active arms)" }
       ]
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 400,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain between the bridge output and the ADC. 400 takes a quarter bridge at 3000 \u03BC\u03B5 (7.9 mV at 5 V, GF 2.1) to about 3.2 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
@@ -19142,9 +19911,72 @@ var strainGaugeBridge = {
       precision: 6,
       format: "scientific",
       tooltip: "Strain in SI units (dimensionless, m/m)"
+    },
+    {
+      key: "amplifiedVoltage",
+      label: "Amplifier Output",
+      symbol: "V_amp",
+      unit: "V",
+      precision: 3,
+      tooltip: "The bridge output times the amplifier gain"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref \xD7 2^N)"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "\u03BC\u03B5/LSB",
+      precision: 3,
+      tooltip: "The strain one ADC step spans"
+    }
+  ],
+  examples: [
+    {
+      id: "quarter-bridge-foil",
+      label: "Foil gauge (GF 2.0) in a quarter bridge at 5 V, gain 500",
+      values: { vin: 5, gaugeFactor: 2, strain: 1200, bridgeConfig: 1, frontGain: 500, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "half-bridge-bending",
+      label: "Bending-beam half bridge (GF 2.1) at 5 V, gain 200",
+      values: { vin: 5, gaugeFactor: 2.1, strain: 1500, bridgeConfig: 2, frontGain: 200, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "full-bridge-24-bit",
+      label: "Full bridge of foil gauges (GF 2.0) at 3.3 V, gain 128, 24-bit ADC",
+      values: { vin: 3.3, gaugeFactor: 2, strain: 1e3, bridgeConfig: 4, frontGain: 128, adcRef: 3.3, adcBits: 24 }
     }
   ],
   calculate: calculateStrainGaugeBridge,
+  transfer: {
+    physical: "strain",
+    readings: ["vout", "amplifiedVoltage", "adcCode"],
+    free: "strain",
+    sensor: ["gaugeFactor", "bridgeConfig"],
+    circuit: ["vin", "frontGain", "adcRef", "adcBits"],
+    inverse: {
+      vout: (v, i) => strainFromVout(v, i),
+      amplifiedVoltage: (v, i) => strainFromVout(v * 1e3 / (i.frontGain ?? 400), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return strainFromVout((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) * 1e3 / (i.frontGain ?? 400), i);
+      }
+    },
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "\u03B5",
+    curve: { range: [0, 3e3], readings: [{ key: "vout", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 100 }
+  },
   formula: {
     primary: "V_out = V_in \xB7 (GF \xB7 \u03B5 / 4) \xB7 N",
     latex: "V_{out} = V_{in} \\cdot \\frac{GF \\cdot \\varepsilon}{4} \\cdot N",
@@ -19162,19 +19994,53 @@ var strainGaugeBridge = {
 };
 
 // src/lib/calculators/sensor/pt100-resistance.ts
+var A = 39083e-7;
+var B = -5775e-10;
+var C = -42735e-16;
 function calculatePt100Resistance(inputs) {
   const { temperature, r0 } = inputs;
-  const A = 39083e-7;
-  const B = -5775e-10;
-  const C2 = -42735e-16;
+  const fixedResistor = inputs.fixedResistor ?? 220;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  const sensorPosition = inputs.sensorPosition ?? 0;
+  if (fixedResistor <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { resistance: 0, sensitivityOhmPerDeg: 0 }, errors: ["The fixed resistor, ADC reference and ADC bits must be positive"] };
+  }
   let resistance;
   if (temperature >= 0) {
     resistance = r0 * (1 + A * temperature + B * temperature ** 2);
   } else {
-    resistance = r0 * (1 + A * temperature + B * temperature ** 2 + C2 * (temperature - 100) * temperature ** 3);
+    resistance = r0 * (1 + A * temperature + B * temperature ** 2 + C * (temperature - 100) * temperature ** 3);
   }
   const sensitivityOhmPerDeg = r0 * (A + 2 * B * temperature);
-  return { values: { resistance, sensitivityOhmPerDeg } };
+  const dividerVoltage = adcRef * (sensorPosition === 1 ? fixedResistor : resistance) / (resistance + fixedResistor);
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(dividerVoltage / adcRef * steps)));
+  const slope = temperature >= 0 ? r0 * (A + 2 * B * temperature) : r0 * (A + 2 * B * temperature + C * (4 * temperature ** 3 - 300 * temperature ** 2));
+  const resolution = (resistance + fixedResistor) ** 2 / (fixedResistor * steps * slope);
+  return { values: { resistance, sensitivityOhmPerDeg, dividerVoltage, adcCode, resolution } };
+}
+function temperatureFromResistance(r, r0) {
+  if (!(r > 0 && r0 > 0)) return NaN;
+  const d = 1 - r / r0;
+  const disc = A * A - 4 * B * d;
+  if (!(disc >= 0)) return NaN;
+  let t = -2 * d / (A + Math.sqrt(disc));
+  if (t >= 0) return t;
+  for (let k = 0; k < 50; k++) {
+    const f = 1 + A * t + B * t ** 2 + C * (t - 100) * t ** 3 - r / r0;
+    const df = A + 2 * B * t + C * (4 * t ** 3 - 300 * t ** 2);
+    const step = f / df;
+    t -= step;
+    if (Math.abs(step) < 1e-13 * Math.max(1, Math.abs(t))) break;
+  }
+  return t;
+}
+function resistanceFromVoltage3(v, inputs) {
+  const rf = inputs.fixedResistor ?? 220;
+  const vref = inputs.adcRef ?? 3.3;
+  if (!(v > 0 && v < vref)) return NaN;
+  return (inputs.sensorPosition ?? 0) === 1 ? rf * (vref / v - 1) : rf * v / (vref - v);
 }
 var pt100Resistance = {
   slug: "pt100-resistance",
@@ -19211,13 +20077,102 @@ var pt100Resistance = {
         { label: "Room (25\xB0C)", values: { temperature: 25 } },
         { label: "Steam (100\xB0C)", values: { temperature: 100 } }
       ]
+    },
+    {
+      key: "fixedResistor",
+      label: "Fixed Resistor",
+      symbol: "R_fixed",
+      unit: "\u03A9",
+      defaultValue: 220,
+      min: 1,
+      group: "Circuit",
+      tooltip: "The divider resistor between the ADC node and the reference (RTD low side) or ground (high side). Near the RTD's mid-range resistance gives the most even resolution."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The voltage across the divider, which is also the ADC full scale (ratiometric)"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
+    },
+    {
+      key: "sensorPosition",
+      label: "RTD Position",
+      unit: "",
+      defaultValue: 0,
+      group: "Circuit",
+      options: [
+        { value: 0, label: "Low side" },
+        { value: 1, label: "High side" }
+      ],
+      tooltip: "Low side: the RTD from the ADC node to ground. High side: from the reference to the node."
     }
   ],
   outputs: [
     { key: "resistance", label: "Resistance", symbol: "R(T)", unit: "\u03A9", precision: 3, primary: true },
-    { key: "sensitivityOhmPerDeg", label: "Sensitivity", symbol: "dR/dT", unit: "\u03A9/\xB0C", precision: 4 }
+    { key: "sensitivityOhmPerDeg", label: "Sensitivity", symbol: "dR/dT", unit: "\u03A9/\xB0C", precision: 4 },
+    { key: "dividerVoltage", label: "Divider Output", symbol: "V_out", unit: "V", precision: 3, tooltip: "The voltage at the ADC node" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_out / V_ref \xD7 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "\xB0C/LSB", precision: 3, tooltip: "The temperature one ADC step spans at this point" }
+  ],
+  examples: [
+    {
+      id: "pt1000-1k-freezer",
+      label: "Pt1000 with a 1 k\u03A9 reference resistor, freezer at \u221220 \xB0C",
+      values: { r0: 1e3, temperature: -20, fixedResistor: 1e3, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
+    },
+    {
+      id: "pt100-1k-oven",
+      label: "Pt100 with a 1 k\u03A9 resistor, oven at 250 \xB0C",
+      values: { r0: 100, temperature: 250, fixedResistor: 1e3, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
+    }
   ],
   calculate: calculatePt100Resistance,
+  transfer: {
+    physical: "temperature",
+    readings: ["resistance", "dividerVoltage", "adcCode"],
+    free: "temperature",
+    sensor: ["r0"],
+    circuit: ["fixedResistor", "adcRef", "adcBits", "sensorPosition"],
+    inverse: {
+      resistance: (r, i) => temperatureFromResistance(r, i.r0),
+      dividerVoltage: (v, i) => temperatureFromResistance(resistanceFromVoltage3(v, i), i.r0),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return temperatureFromResistance(resistanceFromVoltage3((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3), i), i.r0);
+      }
+    },
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "divider",
+    label: "Pt100",
+    curve: { range: [0, 600], readings: [{ key: "resistance", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 25 }
+  },
   formula: {
     primary: "R(T) = R\u2080(1 + AT + BT\xB2) for T \u2265 0\xB0C",
     variables: [
@@ -19233,23 +20188,37 @@ var pt100Resistance = {
 };
 
 // src/lib/calculators/sensor/thermocouple-voltage.ts
+var seebeckCoefficients = {
+  0: 41,
+  // K
+  1: 51,
+  // J
+  2: 43,
+  // T
+  3: 68
+  // E
+};
+var seebeckOf = (type) => seebeckCoefficients[Math.round(type)] ?? 41;
 function calculateThermocoupleVoltage(inputs) {
   const { temperature, coldJunctionTemp, type } = inputs;
-  const seebeckCoefficients = {
-    0: 41,
-    // K
-    1: 51,
-    // J
-    2: 43,
-    // T
-    3: 68
-    // E
-  };
-  const seebeck = seebeckCoefficients[Math.round(type)] ?? 41;
+  const frontGain = inputs.frontGain ?? 60;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { voltage: 0, coldJunctionCorrection: 0, seebeck: 0, deltaT: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
+  }
+  const seebeck = seebeckOf(type);
   const deltaT = temperature - coldJunctionTemp;
   const voltage = seebeck * deltaT;
   const coldJunctionCorrection = seebeck * coldJunctionTemp;
-  return { values: { voltage, coldJunctionCorrection, seebeck, deltaT } };
+  const amplifiedVoltage = frontGain * voltage * 1e-6;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef / (steps * frontGain * seebeck * 1e-6);
+  return { values: { voltage, coldJunctionCorrection, seebeck, deltaT, amplifiedVoltage, adcCode, resolution } };
+}
+function temperatureFromAmplified(v, inputs) {
+  return inputs.coldJunctionTemp + v / ((inputs.frontGain ?? 60) * seebeckOf(inputs.type) * 1e-6);
 }
 var thermocoupleVoltage = {
   slug: "thermocouple-voltage",
@@ -19294,15 +20263,98 @@ var thermocoupleVoltage = {
       defaultValue: 25,
       min: -50,
       max: 70
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 60,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain between the thermocouple and the ADC. 60 takes a type K's 50 mV at 1250 \xB0C to about 3 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale. The ADC is unipolar: a hot junction colder than the cold junction reads 0."
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
     { key: "voltage", label: "Output Voltage", symbol: "E", unit: "\u03BCV", precision: 0, primary: true },
     { key: "coldJunctionCorrection", label: "Cold Junction Correction", symbol: "E_cjc", unit: "\u03BCV", precision: 0, signed: "explicit" },
     { key: "seebeck", label: "Seebeck Coefficient", symbol: "S", unit: "\u03BCV/\xB0C", precision: 0 },
-    { key: "deltaT", label: "Temperature Difference", symbol: "\u0394T", unit: "\xB0C", precision: 0, signed: "explicit" }
+    { key: "deltaT", label: "Temperature Difference", symbol: "\u0394T", unit: "\xB0C", precision: 0, signed: "explicit" },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, signed: "explicit", tooltip: "The thermocouple voltage times the amplifier gain" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref \xD7 2^N), 0 below zero"
+    },
+    { key: "resolution", label: "Resolution", unit: "\xB0C/LSB", precision: 3, tooltip: "The temperature one ADC step spans" }
+  ],
+  examples: [
+    {
+      id: "type-k-exhaust-600c",
+      label: "Type K exhaust probe at 600 \xB0C, gain 60, 3.3 V 12-bit ADC",
+      values: { type: 0, temperature: 600, coldJunctionTemp: 25, frontGain: 60, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "type-j-heater-300c",
+      label: "Type J on a 300 \xB0C heater block, gain 100",
+      values: { type: 1, temperature: 300, coldJunctionTemp: 25, frontGain: 100, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "type-t-autoclave-121c",
+      label: "Type T in a 121 \xB0C autoclave, gain 200",
+      values: { type: 2, temperature: 121, coldJunctionTemp: 25, frontGain: 200, adcRef: 3.3, adcBits: 12 }
+    }
   ],
   calculate: calculateThermocoupleVoltage,
+  transfer: {
+    physical: "temperature",
+    readings: ["voltage", "amplifiedVoltage", "adcCode"],
+    free: "temperature",
+    sensor: ["type", "coldJunctionTemp"],
+    circuit: ["frontGain", "adcRef", "adcBits"],
+    inverse: {
+      voltage: (e, i) => i.coldJunctionTemp + e / seebeckOf(i.type),
+      amplifiedVoltage: (v, i) => temperatureFromAmplified(v, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return temperatureFromAmplified((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3), i);
+      }
+    },
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "TC",
+    curve: { range: [0, 1250], readings: [{ key: "voltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 50 }
+  },
   formula: {
     primary: "E = S \xD7 (T_hot \u2212 T_cold)",
     variables: [
@@ -19319,14 +20371,30 @@ var thermocoupleVoltage = {
 // src/lib/calculators/sensor/load-cell-amplifier.ts
 function calculateLoadCellAmplifier(inputs) {
   const { excitationVoltage, sensitivity, fullScaleLoad, gain } = inputs;
+  const appliedLoad = inputs.appliedLoad ?? 5;
+  const adcRef = inputs.adcRef ?? 5;
+  const adcBits = inputs.adcBits ?? 12;
   if (fullScaleLoad <= 0) {
     return { values: { fullScaleOutputMv: 0, amplifiedOutput: 0, sensitivityPerUnit: 0, requiredGain: 0 }, errors: ["Full-scale load must be positive"] };
+  }
+  if (adcRef <= 0 || adcBits < 1) {
+    return { values: { fullScaleOutputMv: 0, amplifiedOutput: 0, sensitivityPerUnit: 0, requiredGain: 0 }, errors: ["The ADC reference and ADC bits must be positive"] };
   }
   const fullScaleOutputMv = sensitivity * excitationVoltage;
   const amplifiedOutput = fullScaleOutputMv / 1e3 * gain;
   const sensitivityPerUnit = fullScaleOutputMv / fullScaleLoad;
   const requiredGain = 5e3 / fullScaleOutputMv;
-  return { values: { fullScaleOutputMv, amplifiedOutput, sensitivityPerUnit, requiredGain } };
+  const bridgeOutputMv = fullScaleOutputMv * (appliedLoad / fullScaleLoad);
+  const amplifiedVoltage = bridgeOutputMv / 1e3 * gain;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef * fullScaleLoad / (steps * gain * fullScaleOutputMv * 1e-3);
+  return {
+    values: { fullScaleOutputMv, amplifiedOutput, sensitivityPerUnit, requiredGain, bridgeOutputMv, amplifiedVoltage, adcCode, resolution }
+  };
+}
+function loadFromMv(mv, inputs) {
+  return mv / (inputs.sensitivity * inputs.excitationVoltage) * inputs.fullScaleLoad;
 }
 var loadCellAmplifier = {
   slug: "load-cell-amplifier",
@@ -19369,15 +20437,98 @@ var loadCellAmplifier = {
       unit: "V/V",
       defaultValue: 500,
       min: 1
+    },
+    {
+      key: "appliedLoad",
+      label: "Applied Load",
+      symbol: "F",
+      unit: "kg",
+      defaultValue: 5,
+      min: 0,
+      tooltip: "The load on the cell, in the same unit as the full-scale load"
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 5,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale. 5 V matches the gain this calculator suggests."
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
     { key: "fullScaleOutputMv", label: "Full-Scale Output", symbol: "V_FS", unit: "mV", precision: 2 },
     { key: "amplifiedOutput", label: "Amplified Full-Scale", symbol: "V_amp", unit: "V", precision: 3 },
     { key: "sensitivityPerUnit", label: "Sensitivity", symbol: "S_per_unit", unit: "mV/kg", precision: 4 },
-    { key: "requiredGain", label: "Gain for 5V ADC", symbol: "G_5V", unit: "V/V", precision: 0, primary: true }
+    { key: "requiredGain", label: "Gain for 5V ADC", symbol: "G_5V", unit: "V/V", precision: 0, primary: true },
+    { key: "bridgeOutputMv", label: "Cell Output", symbol: "V_out", unit: "mV", precision: 3, tooltip: "The load cell output at the applied load" },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, tooltip: "The cell output at the applied load times the gain" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref \xD7 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "kg/LSB", precision: 4, tooltip: "The load one ADC step spans" }
+  ],
+  examples: [
+    {
+      id: "bar-cell-5kg",
+      label: "5 kg bar load cell (1 mV/V) at 5 V, gain 800, 12-bit 5 V ADC",
+      values: { excitationVoltage: 5, sensitivity: 1, fullScaleLoad: 5, gain: 800, appliedLoad: 2, adcRef: 5, adcBits: 12 }
+    },
+    {
+      id: "platform-cell-50kg",
+      label: "50 kg platform cell (2 mV/V) at 5 V, gain 400, 16-bit ADC",
+      values: { excitationVoltage: 5, sensitivity: 2, fullScaleLoad: 50, gain: 400, appliedLoad: 30, adcRef: 5, adcBits: 16 }
+    },
+    {
+      id: "s-beam-500kg",
+      label: "500 kg S-beam (3 mV/V) at 10 V, gain 100, 3.3 V 16-bit ADC",
+      values: { excitationVoltage: 10, sensitivity: 3, fullScaleLoad: 500, gain: 100, appliedLoad: 200, adcRef: 3.3, adcBits: 16 }
+    }
   ],
   calculate: calculateLoadCellAmplifier,
+  transfer: {
+    physical: "appliedLoad",
+    readings: ["bridgeOutputMv", "amplifiedVoltage", "adcCode"],
+    free: "appliedLoad",
+    sensor: ["sensitivity", "fullScaleLoad"],
+    circuit: ["excitationVoltage", "gain", "adcRef", "adcBits"],
+    inverse: {
+      bridgeOutputMv: (mv, i) => loadFromMv(mv, i),
+      amplifiedVoltage: (v, i) => loadFromMv(v * 1e3 / i.gain, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return loadFromMv((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 5) * 1e3 / i.gain, i);
+      }
+    },
+    search: [0, 1e4],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "F",
+    curve: { range: [0, 10], readings: [{ key: "bridgeOutputMv", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 0.5 }
+  },
   formula: {
     primary: "V_FS = S \xD7 V_ex,  V_amp = V_FS \xD7 G",
     variables: [
@@ -19519,6 +20670,9 @@ var capacitiveProximity = {
 };
 
 // src/lib/calculators/sensor/current-shunt.ts
+function currentFromMv(mv, inputs) {
+  return mv / (inputs.shuntResistance * 1e-3 * 1e3);
+}
 var currentShunt = {
   slug: "current-shunt",
   title: "Current Shunt Resistor",
@@ -19561,22 +20715,90 @@ var currentShunt = {
       unit: "V",
       defaultValue: 3.3,
       min: 0.1
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits, for the code and the resolution at this width"
     }
   ],
   outputs: [
     { key: "shuntVoltage", label: "Shunt Voltage Drop", symbol: "V_sh", unit: "mV", precision: 2, primary: true },
     { key: "amplifiedVoltage", label: "Amplified Voltage", symbol: "V_amp", unit: "V", precision: 3 },
     { key: "powerDissipation", label: "Shunt Power Dissipation", symbol: "P_sh", unit: "mW", precision: 2 },
-    { key: "adcResolutionCurrent", label: "ADC Resolution (12-bit)", symbol: "\u0394I", unit: "mA/LSB", precision: 3 }
+    { key: "adcResolutionCurrent", label: "ADC Resolution (12-bit)", symbol: "\u0394I", unit: "mA/LSB", precision: 3 },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref \xD7 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "A/LSB", precision: 6, tooltip: "The current one ADC step spans at the ADC resolution above" }
+  ],
+  examples: [
+    {
+      id: "shunt-10mohm-5a",
+      label: "10 m\u03A9 shunt, gain-20 sense amplifier, 3.3 V 12-bit ADC (5 A)",
+      values: { current: 5, shuntResistance: 10, amplifierGain: 20, adcVoltage: 3.3, adcBits: 12 }
+    },
+    {
+      id: "motor-2mohm-20a",
+      label: "2 m\u03A9 shunt on a 20 A motor supply, gain 50",
+      values: { current: 20, shuntResistance: 2, amplifierGain: 50, adcVoltage: 3.3, adcBits: 12 }
+    },
+    {
+      id: "charger-100mohm-1a",
+      label: "100 m\u03A9 shunt on a 1 A battery charger, gain 20",
+      values: { current: 1, shuntResistance: 100, amplifierGain: 20, adcVoltage: 3.3, adcBits: 12 }
+    }
   ],
   calculate: (inputs) => {
     const { current, shuntResistance, amplifierGain, adcVoltage } = inputs;
+    const adcBits = inputs.adcBits ?? 12;
+    if (adcBits < 1) {
+      return { values: { shuntVoltage: 0, amplifiedVoltage: 0, powerDissipation: 0, adcResolutionCurrent: 0 }, errors: ["ADC bits must be at least 1"] };
+    }
     const rShOhm = shuntResistance * 1e-3;
     const shuntVoltage = current * rShOhm * 1e3;
     const amplifiedVoltage = shuntVoltage / 1e3 * amplifierGain;
     const powerDissipation = current ** 2 * rShOhm * 1e3;
     const adcResolutionCurrent = amplifierGain > 0 && rShOhm > 0 ? adcVoltage / 4096 / (amplifierGain * rShOhm) * 1e3 : 0;
-    return { values: { shuntVoltage, amplifiedVoltage, powerDissipation, adcResolutionCurrent } };
+    const steps = 2 ** Math.round(adcBits);
+    const adcCode = adcVoltage > 0 ? Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcVoltage * steps))) : 0;
+    const resolution = amplifierGain > 0 && rShOhm > 0 ? adcVoltage / steps / (amplifierGain * rShOhm) : 0;
+    return { values: { shuntVoltage, amplifiedVoltage, powerDissipation, adcResolutionCurrent, adcCode, resolution } };
+  },
+  transfer: {
+    physical: "current",
+    readings: ["shuntVoltage", "amplifiedVoltage", "adcCode"],
+    free: "current",
+    sensor: ["shuntResistance"],
+    circuit: ["amplifierGain", "adcVoltage", "adcBits"],
+    inverse: {
+      shuntVoltage: (mv, i) => currentFromMv(mv, i),
+      amplifiedVoltage: (v, i) => currentFromMv(v * 1e3 / i.amplifierGain, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return currentFromMv((Math.floor(code) + 0.5) / steps * i.adcVoltage * 1e3 / i.amplifierGain, i);
+      }
+    },
+    search: [0, 1e3],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "I",
+    curve: { range: [0, 10], readings: [{ key: "shuntVoltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 0.5 }
   },
   formula: {
     primary: "V_sh = I \xD7 R_sh,  P = I\xB2 \xD7 R_sh",
@@ -19593,12 +20815,26 @@ var currentShunt = {
 // src/lib/calculators/sensor/accelerometer-sensitivity.ts
 function calculateAccelerometerSensitivity(inputs) {
   const { sensitivity, fullScaleRange, supplyVoltage, adcBits } = inputs;
+  const acceleration = inputs.acceleration ?? 1;
+  const frontGain = inputs.frontGain ?? 1;
+  if (frontGain <= 0) {
+    return { values: { fullScaleVoltage: 0, voltagePerCount: 0, accelerationMgPerCount: 0 }, errors: ["The amplifier gain must be positive"] };
+  }
   const fullScaleVoltage = sensitivity * fullScaleRange * 2;
   const adcCounts = Math.pow(2, adcBits);
   const voltagePerCount = supplyVoltage * 1e3 / adcCounts;
   const accelerationPerCount = sensitivity > 0 ? voltagePerCount / sensitivity : 0;
   const accelerationMgPerCount = accelerationPerCount * 1e3;
-  return { values: { fullScaleVoltage, voltagePerCount, accelerationMgPerCount } };
+  const swing = sensitivity * acceleration / 1e3;
+  const outputVoltage = supplyVoltage / 2 + swing;
+  const amplifiedVoltage = supplyVoltage / 2 + frontGain * swing;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = supplyVoltage > 0 ? Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / supplyVoltage * steps))) : 0;
+  const resolution = sensitivity > 0 ? supplyVoltage * 1e3 / (steps * frontGain * sensitivity) : 0;
+  return { values: { fullScaleVoltage, voltagePerCount, accelerationMgPerCount, outputVoltage, amplifiedVoltage, adcCode, resolution } };
+}
+function accelerationFrom(v, gain, inputs) {
+  return (v - inputs.supplyVoltage / 2) * 1e3 / (gain * inputs.sensitivity);
 }
 var accelerometerSensitivity = {
   slug: "accelerometer-sensitivity",
@@ -19648,14 +20884,85 @@ var accelerometerSensitivity = {
       min: 8,
       max: 24,
       step: 1
+    },
+    {
+      key: "acceleration",
+      label: "Acceleration",
+      symbol: "a",
+      unit: "g",
+      defaultValue: 1,
+      tooltip: "The acceleration along the sensing axis: 1 g at rest with the axis vertical"
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 1,
+      min: 0.01,
+      max: 1e3,
+      group: "Circuit",
+      tooltip: "The gain between the sensor and the ADC, about the zero-g level at half the supply. 1 is a direct connection, which the per-LSB outputs assume."
     }
   ],
   outputs: [
     { key: "fullScaleVoltage", label: "Full-Scale Output Swing", symbol: "V_FS", unit: "mV", precision: 0 },
     { key: "voltagePerCount", label: "Voltage per LSB", symbol: "mV/LSB", unit: "mV", precision: 3 },
-    { key: "accelerationMgPerCount", label: "Acceleration per LSB", symbol: "mg/LSB", unit: "mg", precision: 2, primary: true }
+    { key: "accelerationMgPerCount", label: "Acceleration per LSB", symbol: "mg/LSB", unit: "mg", precision: 2, primary: true },
+    { key: "outputVoltage", label: "Sensor Output", symbol: "V_out", unit: "V", precision: 3, tooltip: "The sensor output at this acceleration: half the supply at 0 g" },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, tooltip: "Half the supply plus the gain times the sensor swing" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC referenced to the supply reads: floor(V_amp / V_cc \xD7 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "g/LSB", precision: 5, tooltip: "The acceleration one ADC step spans, the amplifier gain included" }
+  ],
+  examples: [
+    {
+      id: "adxl335-at-rest",
+      label: "ADXL335-class \xB13 g (330 mV/g) on a 3.3 V, 12-bit ADC, at rest (1 g)",
+      values: { sensitivity: 330, fullScaleRange: 3, supplyVoltage: 3.3, adcBits: 12, acceleration: 1, frontGain: 1 }
+    },
+    {
+      id: "adxl1002-vibration",
+      label: "ADXL1002-class \xB150 g vibration sensor (40 mV/g) on a 5 V, 16-bit ADC",
+      values: { sensitivity: 40, fullScaleRange: 50, supplyVoltage: 5, adcBits: 16, acceleration: 20, frontGain: 1 }
+    },
+    {
+      id: "adxl335-tilt-gain-2",
+      label: "ADXL335-class with gain 2 for tilt sensing (\u22120.5 g)",
+      values: { sensitivity: 330, fullScaleRange: 3, supplyVoltage: 3.3, adcBits: 12, acceleration: -0.5, frontGain: 2 }
+    }
   ],
   calculate: calculateAccelerometerSensitivity,
+  transfer: {
+    physical: "acceleration",
+    readings: ["outputVoltage", "amplifiedVoltage", "adcCode"],
+    free: "acceleration",
+    sensor: ["sensitivity", "fullScaleRange"],
+    circuit: ["supplyVoltage", "frontGain", "adcBits"],
+    inverse: {
+      outputVoltage: (v, i) => accelerationFrom(v, 1, i),
+      amplifiedVoltage: (v, i) => accelerationFrom(v, i.frontGain ?? 1, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return accelerationFrom((Math.floor(code) + 0.5) / steps * i.supplyVoltage, i.frontGain ?? 1, i);
+      }
+    },
+    search: [-100, 100],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "a",
+    curve: { range: [-3, 3], readings: [{ key: "outputVoltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 0.25 }
+  },
   formula: {
     primary: "V_out = V_ref/2 \xB1 (S \xD7 a)",
     variables: [
@@ -19668,6 +20975,9 @@ var accelerometerSensitivity = {
 };
 
 // src/lib/calculators/sensor/pressure-bridge-output.ts
+function pressureFromMv(mv, inputs) {
+  return mv / (inputs.excitationVoltage * inputs.bridgeSensitivity) * inputs.fullScalePressure;
+}
 var pressureBridgeOutput = {
   slug: "pressure-bridge-output",
   title: "Pressure Sensor Bridge Output",
@@ -19709,22 +21019,116 @@ var pressureBridgeOutput = {
       unit: "kPa",
       defaultValue: 100,
       min: 1e-3
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 60,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain between the bridge output and the ADC. 60 takes a 50 mV full-scale output to 3 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
     { key: "bridgeOutputMv", label: "Bridge Output", symbol: "V_out", unit: "mV", precision: 2, primary: true },
     { key: "fullScaleOutput", label: "Full-Scale Output", symbol: "V_FS", unit: "mV", precision: 2 },
-    { key: "fractionalDeflection", label: "Fractional Deflection", symbol: "P/P_FS", unit: "%", precision: 1 }
+    { key: "fractionalDeflection", label: "Fractional Deflection", symbol: "P/P_FS", unit: "%", precision: 1 },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, tooltip: "The bridge output times the amplifier gain" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref \xD7 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "kPa/LSB", precision: 4, tooltip: "The pressure one ADC step spans" }
+  ],
+  examples: [
+    {
+      id: "mpx2100-class-50kpa",
+      label: "100 kPa sensor (4 mV/V, MPX2100 class) at 5 V, gain 150",
+      values: { excitationVoltage: 5, bridgeSensitivity: 4, appliedPressure: 50, fullScalePressure: 100, frontGain: 150, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "mpx2010-class-tank",
+      label: "10 kPa sensor (2.5 mV/V, MPX2010 class) at 5 V, gain 200, under 0.75 m of water",
+      values: { excitationVoltage: 5, bridgeSensitivity: 2.5, appliedPressure: 7.355, fullScalePressure: 10, frontGain: 200, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "industrial-1mpa",
+      label: "1 MPa stainless transducer (2 mV/V) at 10 V, gain 100",
+      values: { excitationVoltage: 10, bridgeSensitivity: 2, appliedPressure: 600, fullScalePressure: 1e3, frontGain: 100, adcRef: 3.3, adcBits: 12 }
+    }
   ],
   calculate: (inputs) => {
     const { excitationVoltage, bridgeSensitivity, appliedPressure, fullScalePressure } = inputs;
+    const frontGain = inputs.frontGain ?? 60;
+    const adcRef = inputs.adcRef ?? 3.3;
+    const adcBits = inputs.adcBits ?? 12;
     if (fullScalePressure <= 0) {
       return { values: { bridgeOutputMv: 0, fullScaleOutput: 0, fractionalDeflection: 0 }, errors: ["Full-scale pressure must be positive"] };
+    }
+    if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+      return { values: { bridgeOutputMv: 0, fullScaleOutput: 0, fractionalDeflection: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
     }
     const fractionalDeflection = appliedPressure / fullScalePressure * 100;
     const bridgeOutputMv = excitationVoltage * bridgeSensitivity * (appliedPressure / fullScalePressure);
     const fullScaleOutput = excitationVoltage * bridgeSensitivity;
-    return { values: { bridgeOutputMv, fullScaleOutput, fractionalDeflection } };
+    const amplifiedVoltage = bridgeOutputMv / 1e3 * frontGain;
+    const steps = 2 ** Math.round(adcBits);
+    const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+    const resolution = adcRef * fullScalePressure / (steps * frontGain * excitationVoltage * bridgeSensitivity * 1e-3);
+    return { values: { bridgeOutputMv, fullScaleOutput, fractionalDeflection, amplifiedVoltage, adcCode, resolution } };
+  },
+  transfer: {
+    physical: "appliedPressure",
+    readings: ["bridgeOutputMv", "amplifiedVoltage", "adcCode"],
+    free: "appliedPressure",
+    sensor: ["bridgeSensitivity", "fullScalePressure"],
+    circuit: ["excitationVoltage", "frontGain", "adcRef", "adcBits"],
+    inverse: {
+      bridgeOutputMv: (mv, i) => pressureFromMv(mv, i),
+      amplifiedVoltage: (v, i) => pressureFromMv(v * 1e3 / (i.frontGain ?? 60), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return pressureFromMv((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) * 1e3 / (i.frontGain ?? 60), i);
+      }
+    },
+    search: [0, 1e5],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "P",
+    curve: { range: [0, 100], readings: [{ key: "bridgeOutputMv", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 5 }
   },
   formula: {
     primary: "V_out = V_ex \xD7 S \xD7 (P/P_FS)",
@@ -19905,14 +21309,27 @@ var opticalSensorRange = {
 // src/lib/calculators/sensor/lvdt-sensitivity.ts
 function calculateLvdtSensitivity(inputs) {
   const { sensitivity, excitationVoltage, coreDisplacement, fullScaleRange } = inputs;
+  const frontGain = inputs.frontGain ?? 1.5;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
   if (fullScaleRange <= 0) {
     return { values: { outputVoltage: 0, fullScaleOutput: 0, sensitivityMvMm: 0, linearRange: 0 }, errors: ["Full-scale range must be positive"] };
+  }
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { outputVoltage: 0, fullScaleOutput: 0, sensitivityMvMm: 0, linearRange: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
   }
   const outputVoltage = sensitivity * excitationVoltage * (coreDisplacement / fullScaleRange) * 100;
   const fullScaleOutput = sensitivity * excitationVoltage * 100;
   const sensitivityMvMm = sensitivity * excitationVoltage * 100 / fullScaleRange;
   const linearRange = fullScaleRange * 0.8;
-  return { values: { outputVoltage, fullScaleOutput, sensitivityMvMm, linearRange } };
+  const amplifiedVoltage = outputVoltage / 1e3 * frontGain;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef * fullScaleRange / (steps * frontGain * sensitivity * excitationVoltage * 100 * 1e-3);
+  return { values: { outputVoltage, fullScaleOutput, sensitivityMvMm, linearRange, amplifiedVoltage, adcCode, resolution } };
+}
+function displacementFromMv(mv, inputs) {
+  return mv / (inputs.sensitivity * inputs.excitationVoltage * 100) * inputs.fullScaleRange;
 }
 var lvdtSensitivity = {
   slug: "lvdt-sensitivity",
@@ -19955,15 +21372,99 @@ var lvdtSensitivity = {
       unit: "mm",
       defaultValue: 25,
       min: 1e-3
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 1.5,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain of the demodulator and amplifier between the LVDT and the ADC (V DC out per V RMS in). 1.5 takes the 2 V RMS full-scale output to 3 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
     { key: "outputVoltage", label: "Output Voltage (RMS)", symbol: "V_out", unit: "mV", precision: 2, primary: true },
     { key: "fullScaleOutput", label: "Full-Scale Output", symbol: "V_FS", unit: "mV", precision: 1 },
     { key: "sensitivityMvMm", label: "Sensitivity", symbol: "S", unit: "mV/mm", precision: 3 },
-    { key: "linearRange", label: "Linear Range (est.)", symbol: "x_lin", unit: "mm", precision: 0 }
+    { key: "linearRange", label: "Linear Range (est.)", symbol: "x_lin", unit: "mm", precision: 0 },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, tooltip: "The demodulated output times the amplifier gain" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref \xD7 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "mm/LSB", precision: 4, tooltip: "The displacement one ADC step spans" }
+  ],
+  examples: [
+    {
+      id: "gauging-lvdt-2-54mm",
+      label: "\xB12.54 mm gauging LVDT (2.6 mV/V/%FS) at 3 V RMS, gain 4",
+      values: { excitationVoltage: 3, sensitivity: 2.6, coreDisplacement: 2, fullScaleRange: 2.54, frontGain: 4, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "lvdt-25mm",
+      label: "\xB125 mm LVDT (4 mV/V/%FS) at 5 V RMS, gain 1.5",
+      values: { excitationVoltage: 5, sensitivity: 4, coreDisplacement: 15, fullScaleRange: 25, frontGain: 1.5, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "long-stroke-lvdt-50mm",
+      label: "\xB150 mm long-stroke LVDT (1.5 mV/V/%FS) at 5 V RMS, gain 4, 16-bit ADC",
+      values: { excitationVoltage: 5, sensitivity: 1.5, coreDisplacement: 20, fullScaleRange: 50, frontGain: 4, adcRef: 3.3, adcBits: 16 }
+    }
   ],
   calculate: calculateLvdtSensitivity,
+  transfer: {
+    physical: "coreDisplacement",
+    readings: ["outputVoltage", "amplifiedVoltage", "adcCode"],
+    free: "coreDisplacement",
+    sensor: ["sensitivity", "fullScaleRange"],
+    circuit: ["excitationVoltage", "frontGain", "adcRef", "adcBits"],
+    inverse: {
+      outputVoltage: (mv, i) => displacementFromMv(mv, i),
+      amplifiedVoltage: (v, i) => displacementFromMv(v * 1e3 / (i.frontGain ?? 1.5), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return displacementFromMv((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) * 1e3 / (i.frontGain ?? 1.5), i);
+      }
+    },
+    search: [0, 1e3],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "LVDT",
+    curve: { range: [0, 25], readings: [{ key: "outputVoltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 1 }
+  },
   formula: {
     primary: "V_out = S \xD7 V_ex \xD7 (x/FS) \xD7 100",
     variables: [
@@ -20082,6 +21583,7 @@ function calculateFrequencyWavelength(inputs) {
     }
   };
 }
+var mhzOfWavelength = (lambdaM, velocityFactor) => 299792458 * velocityFactor / lambdaM / 1e6;
 var frequencyWavelength = {
   slug: "frequency-wavelength",
   title: "Frequency to Wavelength Converter",
@@ -20124,7 +21626,7 @@ var frequencyWavelength = {
       min: 0.01,
       max: 1,
       step: 0.01,
-      tooltip: "Velocity factor of medium: 1.0=free space, 0.66=coax, 0.97=FR4 PCB, 0.85=open-wire",
+      tooltip: "Velocity factor of the medium: 1.0 = free space, about 0.95 = open-wire line, 0.85 = foam coax, 0.66 = solid-PE coax, about 0.55 = FR4 microstrip",
       presets: [
         { label: "Free space (1.0)", values: { velocityFactor: 1 } },
         { label: "Coaxial cable (0.66)", values: { velocityFactor: 0.66 } },
@@ -20176,7 +21678,40 @@ var frequencyWavelength = {
       tooltip: "Quarter wavelength \u2014 typical monopole antenna length"
     }
   ],
+  examples: [
+    { id: "rg58-2m-band", label: "145 MHz in RG-58 coax, VF 0.66", values: { frequency: 145, velocityFactor: 0.66 } },
+    { id: "lmr400-915-mhz", label: "915 MHz in LMR-400 coax, VF 0.85", values: { frequency: 915, velocityFactor: 0.85 } },
+    { id: "open-wire-40m-band", label: "7.1 MHz on open-wire line, VF 0.95", values: { frequency: 7.1, velocityFactor: 0.95 } }
+  ],
   calculate: calculateFrequencyWavelength,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["frequency", "wavelength", "wavelengthCm", "wavelengthMm", "halfWave", "quarterWave"],
+      free: ["frequency"],
+      params: ["velocityFactor"],
+      inverse: {
+        wavelength: (l, inputs) => mhzOfWavelength(l, inputs.velocityFactor),
+        wavelengthCm: (l, inputs) => mhzOfWavelength(l / 100, inputs.velocityFactor),
+        wavelengthMm: (l, inputs) => mhzOfWavelength(l / 1e3, inputs.velocityFactor),
+        halfWave: (l, inputs) => mhzOfWavelength(2 * l, inputs.velocityFactor),
+        quarterWave: (l, inputs) => mhzOfWavelength(4 * l, inputs.velocityFactor)
+      },
+      // The frequency input states no maximum: 1 kHz to 1 THz.
+      search: [1e-3, 1e6],
+      picks: { field: "frequency", values: [144, 433, 915, 2400, 5800] },
+      reference: { field: "frequency", values: [10, 30, 100, 300, 1e3, 3e3, 1e4, 3e4] },
+      scales: {
+        axis: { field: "frequency", range: [1, 1e5], scale: "log" },
+        fields: [
+          { key: "frequency" },
+          { key: "wavelength" },
+          { key: "halfWave" },
+          { key: "quarterWave" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "\u03BB = (c \xB7 VF) / f",
     latex: "\\lambda = \\frac{c \\cdot VF}{f}",
@@ -20213,6 +21748,7 @@ function calculateDbmWatts(inputs) {
     }
   };
 }
+var dbmOfWatts2 = (w) => 10 * Math.log10(w * 1e3);
 var dbmWatts = {
   slug: "dbm-watts",
   title: "dBm to Watts Power Converter",
@@ -20298,6 +21834,32 @@ var dbmWatts = {
     }
   ],
   calculate: calculateDbmWatts,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["dbm", "watts", "milliwatts", "dBW", "dBuV", "volts"],
+      free: ["dbm"],
+      inverse: {
+        watts: (w) => dbmOfWatts2(w),
+        milliwatts: (mw) => dbmOfWatts2(mw / 1e3),
+        dBW: (v) => v + 30,
+        // V = √(P·50): the voltage fields are into the fixed 50 Ω load.
+        dBuV: (dbuv) => dbmOfWatts2((10 ** (dbuv / 20) * 1e-6) ** 2 / 50),
+        volts: (v) => dbmOfWatts2(v * v / 50)
+      },
+      picks: { field: "dbm", values: [-30, 0, 10, 20, 30, 40] },
+      reference: { field: "dbm", values: [-30, -20, -10, 0, 10, 20, 30, 40] },
+      scales: {
+        axis: { field: "dbm", range: [-60, 60], scale: "linear" },
+        fields: [
+          { key: "dbm", ticks: [-60, -50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60] },
+          { key: "watts", ticks: [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "volts" },
+          { key: "dBuV" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "P(W) = 10^(dBm/10) \xD7 10\u207B\xB3,  V = \u221A(P \xD7 50)",
     latex: "P(W) = 10^{dBm/10} \\times 10^{-3}, \\quad V = \\sqrt{P \\times 50}",
@@ -20400,6 +21962,26 @@ var temperatureConverter = {
     }
   ],
   calculate: calculateTemperatureConverter,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["celsius", "fahrenheit", "kelvin", "rankine", "reaumur"],
+      free: ["celsius"],
+      affine: true,
+      picks: { field: "celsius", values: [-40, 0, 25, 85, 100, 125] },
+      // Military and industrial low ends, freezing, room, commercial / industrial / automotive highs, boiling.
+      reference: { field: "celsius", values: [-55, -40, 0, 25, 70, 85, 100, 125] },
+      scales: {
+        axis: { field: "celsius", range: [-50, 150], scale: "linear" },
+        fields: [
+          { key: "celsius" },
+          { key: "fahrenheit" },
+          { key: "kelvin" }
+        ],
+        band: { id: "industrial", field: "celsius", from: -40, to: 85, label: "industrial grade \u221240 to +85 \xB0C" }
+      }
+    }]
+  },
   formula: {
     primary: "F = C\xD79/5 + 32,  K = C + 273.15",
     latex: "F = \\frac{9}{5}C + 32, \\quad K = C + 273.15",
@@ -20701,6 +22283,30 @@ var inductanceUnits = {
     { key: "picohenry", label: "Picohenries", symbol: "pH", unit: "pH", precision: 0, display: { unit: "pH" } }
   ],
   calculate: calculateInductanceUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["picohenry", "nanohenry", "microhenry", "millihenry", "henry"],
+      free: ["henry"],
+      // Exact inverses: the affine two-point inverse loses digits at nH and pH, where henries are ≪ 1.
+      inverse: {
+        picohenry: (v) => v / 1e12,
+        nanohenry: (v) => v / 1e9,
+        microhenry: (v) => v / 1e6,
+        millihenry: (v) => v / 1e3
+      },
+      picks: { field: "microhenry", values: [0.1, 1, 10, 100, 1e3] },
+      reference: { field: "henry", values: [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 0.01] },
+      scales: {
+        axis: { field: "henry", range: [1e-9, 1], scale: "log" },
+        fields: [
+          { key: "nanohenry", ticks: [1, 10, 100, 1e3] },
+          { key: "microhenry", ticks: [1, 10, 100, 1e3] },
+          { key: "millihenry", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 H = 10\xB3 mH = 10\u2076 mu H = 10\u2079 nH = 10\xB9\xB2 pH",
     variables: []
@@ -20755,6 +22361,30 @@ var capacitanceUnits = {
     { key: "picofarad", label: "Picofarads", symbol: "pF", unit: "pF", precision: 1, display: { unit: "pF" } }
   ],
   calculate: calculateCapacitanceUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["picofarad", "nanofarad", "microfarad", "millifarad", "farad"],
+      free: ["farad"],
+      // Exact inverses: the affine two-point inverse loses digits at pF, where farads are ~1e-12.
+      inverse: {
+        picofarad: (v) => v / 1e12,
+        nanofarad: (v) => v / 1e9,
+        microfarad: (v) => v / 1e6,
+        millifarad: (v) => v / 1e3
+      },
+      picks: { field: "nanofarad", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      reference: { field: "farad", values: [1e-12, 1e-11, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5] },
+      scales: {
+        axis: { field: "farad", range: [1e-12, 1e-3], scale: "log" },
+        fields: [
+          { key: "picofarad", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "nanofarad", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "microfarad", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 F = 10\xB3 mF = 10\u2076 mu F = 10\u2079 nF = 10\xB9\xB2 pF",
     variables: []
@@ -20809,6 +22439,26 @@ var resistanceUnits = {
     { key: "gigaohm", label: "Gigaohms", symbol: "G\u03A9", unit: "G\u03A9", precision: 9, display: { unit: "G\u03A9" } }
   ],
   calculate: calculateResistanceUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["milliohm", "ohm", "kilohm", "megaohm", "gigaohm"],
+      free: ["ohm"],
+      affine: true,
+      picks: { field: "kilohm", values: [0.1, 1, 10, 100, 1e3] },
+      // Shunt values in mΩ, then the kΩ/MΩ decades.
+      reference: { field: "ohm", values: [1e-3, 0.01, 0.1, 1, 1e3, 1e4, 1e5, 1e6] },
+      scales: {
+        axis: { field: "ohm", range: [1e-3, 1e9], scale: "log" },
+        fields: [
+          { key: "milliohm", ticks: [1, 10, 100, 1e3] },
+          { key: "ohm", ticks: [1, 10, 100, 1e3] },
+          { key: "kilohm", ticks: [1, 10, 100, 1e3] },
+          { key: "megaohm", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 k\u03A9 = 1000 \u03A9,  1 M\u03A9 = 10\u2076 \u03A9",
     variables: []
@@ -20864,6 +22514,31 @@ var currentUnits = {
     { key: "picoampere", label: "Picoamperes", symbol: "pA", unit: "pA", precision: 1, display: { unit: "pA" } }
   ],
   calculate: calculateCurrentUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["picoampere", "nanoampere", "microampere", "milliampere", "ampere"],
+      free: ["ampere"],
+      // Exact inverses: the affine two-point inverse loses digits at pA and nA, where amperes are ≪ 1.
+      inverse: {
+        picoampere: (v) => v / 1e12,
+        nanoampere: (v) => v / 1e9,
+        microampere: (v) => v / 1e6,
+        milliampere: (v) => v / 1e3
+      },
+      picks: { field: "milliampere", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      reference: { field: "ampere", values: [1e-9, 1e-6, 1e-5, 1e-4, 1e-3, 0.01, 0.1, 1] },
+      scales: {
+        axis: { field: "ampere", range: [1e-9, 10], scale: "log" },
+        fields: [
+          { key: "nanoampere", ticks: [1, 10, 100, 1e3] },
+          { key: "microampere", ticks: [1, 10, 100, 1e3] },
+          { key: "milliampere", ticks: [1, 10, 100, 1e3] },
+          { key: "ampere", ticks: [0.1, 1, 10] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 A = 10\xB3 mA = 10\u2076 mu A = 10\u2079 nA = 10\xB9\xB2 pA",
     variables: []
@@ -20918,6 +22593,25 @@ var voltageUnits = {
     { key: "megavolt", label: "Megavolts", symbol: "MV", unit: "MV", precision: 9, display: { unit: "MV" } }
   ],
   calculate: calculateVoltageUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["microvolt", "millivolt", "volt", "kilovolt", "megavolt"],
+      free: ["volt"],
+      affine: true,
+      picks: { field: "volt", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      reference: { field: "volt", values: [1e-6, 1e-5, 1e-4, 1e-3, 0.01, 0.1, 1, 1e3] },
+      scales: {
+        axis: { field: "volt", range: [1e-6, 1e6], scale: "log" },
+        fields: [
+          { key: "microvolt", ticks: [1, 10, 100, 1e3] },
+          { key: "millivolt", ticks: [1, 10, 100, 1e3] },
+          { key: "volt", ticks: [1, 10, 100, 1e3] },
+          { key: "kilovolt", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 V = 10\xB3 mV = 10\u2076 mu V",
     variables: []
@@ -20974,6 +22668,32 @@ var timeUnits = {
     { key: "femtosecond", label: "Femtoseconds", symbol: "fs", unit: "fs", precision: 0, display: { unit: "fs" } }
   ],
   calculate: calculateTimeUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["femtosecond", "picosecond", "nanosecond", "microsecond", "millisecond", "second"],
+      free: ["second"],
+      // Exact inverses: the affine two-point inverse loses digits at ps and fs, where seconds are ≪ 1.
+      inverse: {
+        femtosecond: (v) => v / 1e15,
+        picosecond: (v) => v / 1e12,
+        nanosecond: (v) => v / 1e9,
+        microsecond: (v) => v / 1e6,
+        millisecond: (v) => v / 1e3
+      },
+      picks: { field: "microsecond", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      reference: { field: "second", values: [1e-15, 1e-12, 1e-9, 1e-8, 1e-7, 1e-6, 1e-3, 1] },
+      scales: {
+        axis: { field: "second", range: [1e-12, 1], scale: "log" },
+        fields: [
+          { key: "picosecond", ticks: [1, 10, 100, 1e3] },
+          { key: "nanosecond", ticks: [1, 10, 100, 1e3] },
+          { key: "microsecond", ticks: [1, 10, 100, 1e3] },
+          { key: "millisecond", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 s = 10\xB3 ms = 10\u2076 mu s = 10\u2079 ns = 10\xB9\xB2 ps = 10\xB9\u2075 fs",
     variables: []
@@ -21026,6 +22746,31 @@ var magneticFluxUnits = {
     { key: "gauss", label: "Gauss", symbol: "G", unit: "G", precision: 2 }
   ],
   calculate: calculateMagneticFluxUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["nanotesla", "microtesla", "millitesla", "tesla", "gauss"],
+      free: ["tesla"],
+      // Exact inverses: the affine two-point inverse loses digits at nT, where teslas are ~1e-9.
+      inverse: {
+        nanotesla: (v) => v / 1e9,
+        microtesla: (v) => v / 1e6,
+        millitesla: (v) => v / 1e3,
+        gauss: (v) => v / 1e4
+      },
+      picks: { field: "millitesla", values: [0.05, 1, 10, 100, 1e3] },
+      reference: { field: "tesla", values: [1e-6, 5e-5, 1e-4, 1e-3, 0.01, 0.1, 1, 3] },
+      scales: {
+        axis: { field: "tesla", range: [1e-6, 10], scale: "log" },
+        fields: [
+          { key: "microtesla", ticks: [1, 10, 100, 1e3] },
+          { key: "millitesla", ticks: [1, 10, 100, 1e3] },
+          { key: "tesla", ticks: [0.1, 1, 10] },
+          { key: "gauss", ticks: [0.01, 0.1, 1, 10, 100, 1e3, 1e4] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 T = 10\u2074 G = 10\xB3 mT = 10\u2076 mu T",
     variables: []
@@ -21082,6 +22827,26 @@ var dataRateUnits = {
     { key: "mBps", label: "Megabytes/sec", symbol: "MB/s", unit: "MB/s", precision: 3 }
   ],
   calculate: calculateDataRateUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["bps", "kbps", "mbps", "gbps", "bytesPerSecond", "kBps", "mBps"],
+      free: ["bps"],
+      affine: true,
+      picks: { field: "mbps", values: [1, 10, 100, 1e3, 1e4] },
+      // UART 9600 and 115200 baud, CAN, 10/100/1000 Ethernet, 10G.
+      reference: { field: "bps", values: [9600, 115200, 1e6, 1e7, 1e8, 1e9, 1e10] },
+      scales: {
+        axis: { field: "bps", range: [1e3, 1e11], scale: "log" },
+        fields: [
+          { key: "kbps", ticks: [1, 10, 100, 1e3] },
+          { key: "mbps", ticks: [1, 10, 100, 1e3] },
+          { key: "gbps", ticks: [1, 10, 100] },
+          { key: "mBps", ticks: [1e-3, 0.01, 0.1, 1, 10, 100, 1e3, 1e4] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 byte = 8 bits,  1 Mbps = 10\u2076 bps",
     variables: []
@@ -21133,6 +22898,25 @@ var angleUnits = {
     { key: "turn", label: "Turns", symbol: "rev", unit: "rev", precision: 4 }
   ],
   calculate: calculateAngleUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["degree", "radian", "turn", "gradian", "arcminute", "arcsecond"],
+      free: ["degree"],
+      affine: true,
+      picks: { field: "degree", values: [30, 45, 60, 90, 180, 360] },
+      reference: { field: "degree", values: [1, 15, 30, 45, 60, 90, 180, 360] },
+      scales: {
+        axis: { field: "degree", range: [0, 360], scale: "linear" },
+        fields: [
+          { key: "degree", ticks: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+          { key: "radian", ticks: [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2, 2 * Math.PI] },
+          { key: "turn", ticks: [0, 0.25, 0.5, 0.75, 1] },
+          { key: "gradian", ticks: [0, 100, 200, 300, 400] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1\xB0 = \u03C0/180 rad = 10/9 grad",
     variables: []
@@ -21189,6 +22973,34 @@ var energyUnits = {
     { key: "btu", label: "BTU", symbol: "BTU", unit: "BTU", precision: 5 }
   ],
   calculate: calculateEnergyUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["joule", "millijoule", "microjoule", "electronvolt", "kwh", "calorie", "btu"],
+      free: ["joule"],
+      // Exact inverses of calculate()'s factors: the affine two-point inverse loses every digit at eV scale (~1e-19 J).
+      inverse: {
+        electronvolt: (v) => v * 1602176634e-28,
+        microjoule: (v) => v / 1e6,
+        millijoule: (v) => v / 1e3,
+        calorie: (v) => v * 4.184,
+        btu: (v) => v * 1055.06,
+        kwh: (v) => v * 36e5
+      },
+      picks: { field: "joule", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      // One of each unit: every row reads 1 in its own column.
+      reference: { field: "joule", values: [1602176634e-28, 1e-6, 1e-3, 1, 4.184, 1055.06, 36e5] },
+      scales: {
+        axis: { field: "joule", range: [1e-6, 1e7], scale: "log" },
+        fields: [
+          { key: "microjoule", ticks: [1, 10, 100, 1e3] },
+          { key: "millijoule", ticks: [1, 10, 100, 1e3] },
+          { key: "joule", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "kwh", ticks: [1e-3, 0.01, 0.1, 1] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 kWh = 3.6 MJ,  1 eV = 1.602 \xD7 10\u207B\xB9\u2079 J",
     variables: []
@@ -21246,6 +23058,26 @@ var torqueUnitsConv = {
     { key: "dyneCm", label: "Dyne\xB7cm", symbol: "dyn\xB7cm", unit: "dyn\xB7cm", precision: 0 }
   ],
   calculate: calculateTorqueUnitsConv,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["nm", "lbFt", "lbIn", "ozIn", "kgCm", "kgM", "dyneCm"],
+      free: ["nm"],
+      affine: true,
+      picks: { field: "nm", values: [0.01, 0.1, 1, 10, 100] },
+      // One of each unit, in N·m by calculate()'s factors: each row reads 1 in its own column.
+      reference: { field: "nm", values: [1 / 141.612, 1 / 10.1972, 1 / 8.85075, 1, 1 / 0.737562, 1 / 0.101972] },
+      scales: {
+        axis: { field: "nm", range: [1e-3, 1e3], scale: "log" },
+        fields: [
+          { key: "nm", ticks: [1e-3, 0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "lbFt", ticks: [1e-3, 0.01, 0.1, 1, 10, 100] },
+          { key: "ozIn", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "kgCm", ticks: [0.1, 1, 10, 100, 1e3, 1e4] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 N\xB7m = 0.7376 lb\xB7ft = 141.6 oz\xB7in",
     variables: []
@@ -21298,6 +23130,24 @@ var illuminanceUnits = {
     { key: "phot", label: "Phot", symbol: "ph", unit: "ph", precision: 5 }
   ],
   calculate: calculateIlluminanceUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["lux", "footcandle", "millilux", "kilolux", "phot"],
+      free: ["lux"],
+      affine: true,
+      picks: { field: "lux", values: [1, 100, 500, 1e3, 1e4, 1e5] },
+      reference: { field: "lux", values: [0.1, 1, 10, 100, 500, 1e3, 1e4, 1e5] },
+      scales: {
+        axis: { field: "lux", range: [0.1, 1e5], scale: "log" },
+        fields: [
+          { key: "lux", ticks: [0.1, 1, 10, 100, 1e3, 1e4, 1e5] },
+          { key: "footcandle", ticks: [0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "kilolux", ticks: [1e-3, 0.01, 0.1, 1, 10, 100] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 lux = 0.0929 fc = 1 lm/m\xB2",
     variables: []
@@ -21978,7 +23828,7 @@ var pllLoopFilter = {
       thresholds: {
         good: { max: 0.1 },
         warning: { max: 0.2 },
-        danger: { min: 0.2 }
+        danger: { max: 0.2 }
       }
     }
   ],
@@ -25025,7 +26875,7 @@ var ethernetCable = {
       tooltip: "1 = within spec (PASS), 0 = exceeds maximum length (FAIL)",
       thresholds: {
         good: { min: 1 },
-        danger: { max: 0.5 }
+        danger: { min: 0.5 }
       }
     }
   ],
@@ -25351,7 +27201,7 @@ var viaStubResonance = {
       thresholds: {
         good: { min: 10 },
         warning: { min: 5, max: 10 },
-        danger: { max: 5 }
+        danger: { min: 5 }
       }
     },
     {
@@ -25514,7 +27364,7 @@ var solderPasteVolume = {
       thresholds: {
         good: { min: 0.66 },
         warning: { min: 0.5, max: 0.66 },
-        danger: { max: 0.5 }
+        danger: { min: 0.5 }
       }
     }
   ],
@@ -25669,13 +27519,13 @@ var emiFilterLc = {
     const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)}\u03BCF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)}nF` : `${+(uf * 1e6).toPrecision(3)}pF`;
     const fmtL = (uh) => uh >= 1 ? `${+uh.toPrecision(3)}\u03BCH` : `${+(uh * 1e3).toPrecision(3)}nH`;
     const L = fmtL(outputs.inductance);
-    const C2 = fmtC(outputs.capacitance);
+    const C3 = fmtC(outputs.capacitance);
     return [{
       label: "Pi LC EMI Filter",
       elements: [
-        { type: "C", placement: "shunt", label: `C1 ${C2}` },
+        { type: "C", placement: "shunt", label: `C1 ${C3}` },
         { type: "L", placement: "series", label: `L ${L}` },
-        { type: "C", placement: "shunt", label: `C2 ${C2}` }
+        { type: "C", placement: "shunt", label: `C2 ${C3}` }
       ]
     }];
   },
@@ -27495,6 +29345,11 @@ function calculateEqualizerQFactor(inputs) {
   const upperFreq = centerFreq * Math.pow(2, octaves / 2);
   return { values: { qFactor: qFactor2, octaves, lowerFreq, upperFreq } };
 }
+function qOfOctaves(n) {
+  if (!(n > 0)) return NaN;
+  const x = 2 ** n;
+  return x / (x - 1) ** 2;
+}
 var equalizerQFactor = {
   slug: "equalizer-q-factor",
   title: "Equalizer Filter Q & Bandwidth",
@@ -27514,7 +29369,41 @@ var equalizerQFactor = {
     { key: "lowerFreq", label: "Lower \u22123 dB Frequency", symbol: "f_L", unit: "Hz", precision: 0 },
     { key: "upperFreq", label: "Upper \u22123 dB Frequency", symbol: "f_H", unit: "Hz", precision: 0 }
   ],
+  examples: [
+    { id: "kick-drum-60-hz", label: "Kick drum low end: 60 Hz, Q 1.5", values: { centerFreq: 60, bandwidth: 40 } },
+    { id: "vocal-presence-5-khz", label: "Vocal presence: 5 kHz, Q 2", values: { centerFreq: 5e3, bandwidth: 2500 } },
+    { id: "mains-hum-notch-50-hz", label: "50 Hz mains-hum notch, Q 10", values: { centerFreq: 50, bandwidth: 5 } }
+  ],
   calculate: calculateEqualizerQFactor,
+  // C2: one free input, the bandwidth in Hz, at the held centre frequency.
+  // The band edges sit half the octave bandwidth either side of f₀, so each
+  // edge gives the octaves and through them Q.
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: ["qFactor", "octaves", "bandwidth", "lowerFreq", "upperFreq"],
+      free: ["bandwidth"],
+      params: ["centerFreq"],
+      inverse: {
+        qFactor: (q, { centerFreq }) => centerFreq / q,
+        octaves: (n, { centerFreq }) => centerFreq / qOfOctaves(n),
+        lowerFreq: (fl, { centerFreq }) => centerFreq / qOfOctaves(2 * Math.log2(centerFreq / fl)),
+        upperFreq: (fh, { centerFreq }) => centerFreq / qOfOctaves(2 * Math.log2(fh / centerFreq))
+      },
+      picks: { field: "qFactor", values: [0.5, 0.707, 1, 1.414, 2, 4] },
+      reference: { field: "qFactor", values: [0.5, 0.707, 1, 1.414, 2, 4, 10] },
+      scales: {
+        axis: { field: "qFactor", range: [0.3, 30], scale: "log" },
+        fields: [
+          { key: "qFactor", ticks: [0.5, 0.707, 1, 1.414, 2, 3, 5, 10, 20] },
+          { key: "octaves", ticks: [3, 2, 1, 0.5, 1 / 3, 0.25, 0.1] },
+          { key: "bandwidth", ticks: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4] }
+        ],
+        ends: { id: "width", low: "wider band", high: "narrower band" }
+      }
+    }]
+  },
   formula: {
     primary: "Q = f\u2080 / BW",
     variables: [
@@ -27634,7 +29523,64 @@ var audioDelayTime = {
     { key: "noteDelayMs", label: "Selected Note Delay", symbol: "t_note", unit: "ms", precision: 1, primary: true },
     { key: "propagationMs", label: "Propagation Delay", symbol: "t_prop", unit: "ms", precision: 1 }
   ],
+  // A dotted note is 1.5 times its plain value and a triplet 2/3, so a dotted
+  // eighth is n = 16/3 and an eighth-note triplet n = 12.
+  examples: [
+    { id: "dotted-eighth-120-bpm", label: "Dotted-eighth echo at 120 BPM", values: { bpm: 120, noteValue: 16 / 3 } },
+    { id: "eighth-triplet-90-bpm", label: "Eighth-note triplet at 90 BPM", values: { bpm: 90, noteValue: 12 } },
+    { id: "delay-tower-hot-day", label: "Delay tower 60 m out on a 35 \xB0C day (c = 352 m/s)", values: { distance: 60, speedOfSound: 352 } },
+    { id: "front-fill-cold-hall", label: "Front fill 8 m out in a 10 \xB0C hall (c = 337 m/s)", values: { distance: 8, speedOfSound: 337 } }
+  ],
   calculate: calculateAudioDelayTime,
+  // C2: two independent groups. Tempo solves BPM for a delay at the held note
+  // division (t_note = 60000/BPM · 4/n); distance solves the distance for a
+  // propagation delay at the held speed of sound.
+  linked: {
+    groups: [
+      {
+        id: "tempo",
+        prefixed: true,
+        label: "Tempo sync",
+        fields: ["bpm", "beatMs", "noteDelayMs"],
+        free: ["bpm"],
+        params: ["noteValue"],
+        inverse: {
+          beatMs: (t) => 6e4 / t,
+          noteDelayMs: (t, { noteValue }) => 24e4 / (noteValue * t)
+        },
+        picks: { field: "bpm", values: [90, 100, 120, 128, 140] },
+        reference: { field: "bpm", values: [60, 80, 90, 100, 120, 128, 140, 174] },
+        scales: {
+          axis: { field: "bpm", range: [20, 300], scale: "log" },
+          fields: [
+            { key: "bpm", ticks: [20, 30, 40, 60, 80, 100, 120, 150, 200, 300] },
+            { key: "beatMs", ticks: [3e3, 2e3, 1e3, 750, 500, 400, 300, 200] },
+            { key: "noteDelayMs", ticks: [20, 50, 100, 200, 300, 500, 1e3, 2e3, 3e3, 5e3, 1e4] }
+          ]
+        }
+      },
+      {
+        id: "distance",
+        prefixed: true,
+        label: "Propagation",
+        fields: ["distance", "propagationMs"],
+        free: ["distance"],
+        params: ["speedOfSound"],
+        inverse: {
+          propagationMs: (t, { speedOfSound }) => t * speedOfSound / 1e3
+        },
+        picks: { field: "distance", values: [1, 5, 10, 20, 50] },
+        reference: { field: "distance", values: [1, 2, 5, 10, 20, 50, 100] },
+        scales: {
+          axis: { field: "distance", range: [0.3, 300], scale: "log" },
+          fields: [
+            { key: "distance", ticks: [0.5, 1, 2, 5, 10, 20, 50, 100, 200] },
+            { key: "propagationMs", ticks: [1, 2, 5, 10, 20, 50, 100, 200, 500] }
+          ]
+        }
+      }
+    ]
+  },
   formula: {
     primary: "t_beat = 60000/BPM ms,  t_prop = d/c \xD7 1000",
     variables: [
@@ -27681,7 +29627,63 @@ var powerAmplifierGain = {
     { key: "powerGain", label: "Power Gain", symbol: "Ap", unit: "W/W", precision: 0 },
     { key: "powerGainDb", label: "Power Gain", symbol: "Ap_dB", unit: "dB", precision: 1, signed: "explicit" }
   ],
+  // Rated output voltage √(P·R_load); input power V_in²/R_in, in mW.
+  examples: [
+    { id: "hifi-100w-8-ohm", label: "Hi-fi amp: 100 W into 8 \u03A9 from \u221210 dBV, 47 k\u03A9 input", values: { inputVoltage: 0.316, outputVoltage: Math.sqrt(100 * 8), inputPower: 0.316 ** 2 / 47e3 * 1e3, outputPower: 100 } },
+    { id: "pro-1000w-4-ohm", label: "Pro amp: 1000 W into 4 \u03A9 from +4 dBu, 10 k\u03A9 input", values: { inputVoltage: 1.228, outputVoltage: Math.sqrt(1e3 * 4), inputPower: 1.228 ** 2 / 1e4 * 1e3, outputPower: 1e3 } },
+    { id: "headphone-amp-32-ohm", label: "Headphone amp: 1 V in, 3 V into 32 \u03A9, 10 k\u03A9 input", values: { inputVoltage: 1, outputVoltage: 3, inputPower: 1 / 1e4 * 1e3, outputPower: 9 / 32 } }
+  ],
   calculate: calculatePowerAmplifierGain,
+  // C2: two independent groups, each solving its output level for a gain at
+  // the held input level. P_in is in mW and P_out in W, hence the 1000.
+  linked: {
+    groups: [
+      {
+        id: "voltage",
+        prefixed: true,
+        label: "Voltage gain",
+        fields: ["voltageGainDb", "voltageGain", "outputVoltage"],
+        free: ["outputVoltage"],
+        params: ["inputVoltage"],
+        inverse: {
+          voltageGain: (g, { inputVoltage }) => g * inputVoltage,
+          voltageGainDb: (db, { inputVoltage }) => inputVoltage * 10 ** (db / 20)
+        },
+        picks: { field: "voltageGainDb", values: [20, 26, 29, 32, 35] },
+        reference: { field: "voltageGainDb", values: [0, 6, 10, 20, 26, 30, 40] },
+        scales: {
+          axis: { field: "voltageGainDb", range: [0, 60], scale: "linear" },
+          fields: [
+            { key: "voltageGainDb" },
+            { key: "voltageGain", ticks: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3] },
+            { key: "outputVoltage" }
+          ]
+        }
+      },
+      {
+        id: "power",
+        prefixed: true,
+        label: "Power gain",
+        fields: ["powerGainDb", "powerGain", "outputPower"],
+        free: ["outputPower"],
+        params: ["inputPower"],
+        inverse: {
+          powerGain: (g, { inputPower }) => g * inputPower / 1e3,
+          powerGainDb: (db, { inputPower }) => 10 ** (db / 10) * inputPower / 1e3
+        },
+        picks: { field: "outputPower", values: [25, 50, 100, 200, 500] },
+        reference: { field: "powerGainDb", values: [20, 30, 40, 50, 60, 70] },
+        scales: {
+          axis: { field: "powerGainDb", range: [20, 80], scale: "linear" },
+          fields: [
+            { key: "powerGainDb" },
+            { key: "powerGain", ticks: [100, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8] },
+            { key: "outputPower" }
+          ]
+        }
+      }
+    ]
+  },
   formula: {
     primary: "Av_dB = 20\xB7log\u2081\u2080(V_out/V_in)",
     variables: [
@@ -28121,6 +30123,19 @@ function calculateDeltaWye(inputs) {
     }
   };
 }
+var DELTA = ["rdA", "rdB", "rdC"];
+var WYE = ["r1", "r2", "r3"];
+function deltaWyeEdit(field, value, values) {
+  const system = DELTA.includes(field) ? DELTA : WYE.includes(field) ? WYE : null;
+  if (!system) return null;
+  const [ra, rb, rc] = system.map((k) => k === field ? value : values[k]);
+  const next = { conversionDir: system === DELTA ? 0 : 1, ra, rb, rc };
+  const fits = ["ra", "rb", "rc"].every((k) => {
+    const input = deltaWyeConversion.inputs.find((i) => i.key === k);
+    return Number.isFinite(next[k]) && next[k] >= input.min && next[k] <= input.max;
+  });
+  return fits ? next : null;
+}
 var deltaWyeConversion = {
   slug: "delta-wye-conversion",
   title: "Delta\u2013Wye (Star\u2013Delta) Conversion Calculator",
@@ -28268,6 +30283,23 @@ var deltaWyeConversion = {
     { id: "1k-2k-3k", label: "1 k\u03A9 / 2 k\u03A9 / 3 k\u03A9", values: { ra: 1e3, rb: 2e3, rc: 3e3 } }
   ],
   calculate: calculateDeltaWye,
+  // C2: the three delta and three wye resistors are all fields; the direction
+  // follows the side last edited, so it is not shown.
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: [...DELTA, ...WYE],
+      free: ["ra", "rb", "rc", "conversionDir"],
+      systems: [DELTA, WYE],
+      edit: (field, value, { values }) => deltaWyeEdit(field, value, values),
+      picks: { field: "rdA", values: [10, 22, 47, 100, 470, 1e3] },
+      reference: { field: "rdA", values: [5, 10, 20, 50, 100, 200, 500] },
+      scales: {
+        fields: [...DELTA, ...WYE].map((key) => ({ key, range: [1, 1e6], scale: "log" }))
+      }
+    }]
+  },
   formula: {
     primary: "R_1 = \\frac{R_b R_c}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_1}",
     latex: "R_1 = \\frac{R_b R_c}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_1}",
@@ -29612,7 +31644,7 @@ var dualStripline = {
       unit: "%",
       precision: 2,
       tooltip: "Backward-crosstalk coefficient if the two layers run directly over each other",
-      thresholds: { good: { max: 5 }, warning: { max: 10 }, danger: { min: 10 } }
+      thresholds: { good: { max: 5 }, warning: { max: 10 }, danger: { max: 10 } }
     },
     {
       key: "propagationDelay",
@@ -29940,6 +31972,7 @@ var broadsideCoupledPair = {
 // src/lib/calculators/signal/rise-time-bandwidth.ts
 var LN9_OVER_2PI = Math.log(9) / (2 * Math.PI);
 var RATIO_20_80_TO_10_90 = Math.log(9) / Math.log(4);
+var riseTimeOf = (tr1090Ps, inputs) => inputs.riseTimeConvention >= 0.5 ? tr1090Ps / RATIO_20_80_TO_10_90 : tr1090Ps;
 function calculateRiseTimeBandwidth(inputs) {
   const { riseTime, riseTimeConvention, clockFrequency } = inputs;
   const warnings = [];
@@ -30092,7 +32125,43 @@ var riseTimeBandwidth = {
       precision: 2
     }
   ],
+  examples: [
+    { id: "lvcmos-clock-25-mhz", label: "LVCMOS clock buffer: 1 ns at 25 MHz", values: { riseTime: 1e3, riseTimeConvention: 0, clockFrequency: 25 } },
+    { id: "usb2-high-speed", label: "USB 2.0 high-speed: 500 ps (10\u201390 %) at 240 MHz", values: { riseTime: 500, riseTimeConvention: 0, clockFrequency: 240 } },
+    { id: "serial-10g-20-80", label: "10 Gb/s serial lane: 30 ps (20\u201380 %) at 5.16 GHz", values: { riseTime: 30, riseTimeConvention: 1, clockFrequency: 5156.25 } }
+  ],
   calculate: calculateRiseTimeBandwidth,
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: ["riseTime", "riseTime1090", "bandwidth3dB", "kneeFrequency", "spectralBandwidth", "harmonicNumber"],
+      free: ["riseTime"],
+      params: ["riseTimeConvention", "clockFrequency"],
+      // Each frequency is a constant over the 10–90% rise time (MHz·ps = 10⁶).
+      inverse: {
+        riseTime1090: (t, inputs) => riseTimeOf(t, inputs),
+        bandwidth3dB: (f, inputs) => riseTimeOf(LN9_OVER_2PI / (f * 1e6) / 1e-12, inputs),
+        kneeFrequency: (f, inputs) => riseTimeOf(0.5 / (f * 1e6) / 1e-12, inputs),
+        spectralBandwidth: (f, inputs) => riseTimeOf(1 / (Math.PI * f * 1e6) / 1e-12, inputs),
+        // The harmonic number is the knee over the held clock; no clock, no inverse.
+        harmonicNumber: (n, inputs) => riseTimeOf(0.5 / (n * inputs.clockFrequency * 1e6) / 1e-12, inputs)
+      },
+      // The rise time input states no maximum: 1 ps to 100 ns.
+      search: [1, 1e5],
+      picks: { field: "riseTime", values: [35, 100, 150, 500, 1e3] },
+      reference: { field: "riseTime", values: [20, 50, 100, 200, 500, 1e3, 2e3, 5e3] },
+      scales: {
+        axis: { field: "riseTime", range: [10, 1e4], scale: "log" },
+        fields: [
+          { key: "riseTime", ticks: [10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4] },
+          { key: "bandwidth3dB", ticks: [50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4] },
+          { key: "kneeFrequency", ticks: [50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4] },
+          { key: "harmonicNumber", ticks: [1, 3, 5, 10, 30, 100, 300] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "f_knee = 0.5/t_r,  f_3dB = ln(9)/(2\u03C0\xB7t_r) \u2248 0.35/t_r",
     latex: "f_{knee} = \\frac{0.5}{t_r},\\qquad f_{3dB} = \\frac{\\ln 9}{2\\pi t_r} \\approx \\frac{0.35}{t_r}",
@@ -30697,6 +32766,26 @@ var lengthUnits = {
     }
   ],
   calculate: calculateLengthUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["millimeter", "mil", "inch", "micrometer", "centimeter", "meter", "ounceCopperEquivalent"],
+      free: ["millimeter"],
+      affine: true,
+      // 1 mil, design-rule trace widths, 62 mil (1.6 mm) board, 0.1" pitch, 1 inch.
+      picks: { field: "mil", values: [1, 5, 10, 62, 100, 1e3] },
+      // 1 mil, 0.1 / 0.2 / 0.5 mm traces, 1 mm, 1.6 mm board, 0.1" pitch, 1 inch.
+      reference: { field: "millimeter", values: [0.0254, 0.1, 0.2, 0.5, 1, 1.6, 2.54, 25.4] },
+      scales: {
+        axis: { field: "millimeter", range: [0.01, 1e3], scale: "log" },
+        fields: [
+          { key: "millimeter", ticks: [0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "mil", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "inch", ticks: [1e-3, 0.01, 0.1, 1, 10] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 in = 25.4 mm exactly;  1 mil = 0.0254 mm;  1 mm = 39.3701 mil",
     latex: "1\\,\\text{mil} = \\frac{25.4}{1000}\\,\\text{mm} = 25.4\\,\\mu\\text{m}",
@@ -31206,6 +33295,9 @@ var CURRENT_SHEET = {
 var MU0_NH_PER_MM = 4 * Math.PI * 0.1;
 function calculateSpiralInductor(inputs) {
   const { outerDiameter, innerDiameter, turns, traceWidth, traceSpacing, shape } = inputs;
+  if (!(outerDiameter > 0 && innerDiameter >= 0 && innerDiameter < outerDiameter)) {
+    return { values: {}, errors: ["The inner diameter must be smaller than the outer diameter"] };
+  }
   const dAvg = (outerDiameter + innerDiameter) / 2;
   const fillRatio = (outerDiameter - innerDiameter) / (outerDiameter + innerDiameter);
   const shapeKey = shape === 0 ? "square" : shape === 1 ? "hexagonal" : shape === 2 ? "octagonal" : "circular";
@@ -31726,6 +33818,41 @@ function calculateRectangularPolar(inputs) {
     warnings: warnings.length > 0 ? warnings : void 0
   };
 }
+function nearTurn(deg, current) {
+  const d = deg + 360 * Math.round((current - deg) / 360);
+  return Math.abs(d) <= 360 ? d : deg;
+}
+function rectPolarEdit(field, value, inputs, values) {
+  const rect = (re, im) => ({
+    real: re,
+    imaginary: im,
+    magnitude: Math.hypot(re, im),
+    angleDeg: nearTurn(Math.atan2(im, re) * DEG_PER_RAD, inputs.angleDeg)
+  });
+  const part = (r, x) => Math.abs(x) < 1e-12 * r ? 0 : r * x;
+  const polar = (r, deg) => ({
+    real: part(r, Math.cos(deg / DEG_PER_RAD)),
+    imaginary: part(r, Math.sin(deg / DEG_PER_RAD)),
+    magnitude: r,
+    angleDeg: deg
+  });
+  switch (field) {
+    case "real":
+      return rect(value, values.imaginary);
+    case "imaginary":
+      return rect(values.real, value);
+    case "magnitude":
+      return value >= 0 ? polar(value, values.angleDeg) : null;
+    case "angleDeg":
+      return Math.abs(value) <= 360 ? polar(values.magnitude, value) : null;
+    case "angleRadOut":
+      return polar(values.magnitude, nearTurn(value * DEG_PER_RAD, inputs.angleDeg));
+    case "angleDeg360":
+      return polar(values.magnitude, nearTurn(value, inputs.angleDeg));
+    default:
+      return null;
+  }
+}
 var rectangularPolar = {
   slug: "rectangular-polar",
   title: "Rectangular \u2194 Polar Complex Number Converter",
@@ -31800,19 +33927,42 @@ var rectangularPolar = {
     { key: "realOut", label: "Real Part from r\u2220\u03B8", symbol: "a", unit: "" },
     { key: "imagOut", label: "Imaginary Part from r\u2220\u03B8", symbol: "b", unit: "" }
   ],
+  // Each example sets all four inputs, a + jb and r∠θ describing the same
+  // number: the linked page shows both sides, and an example that set only one
+  // pair left the other at the defaults (50 − j25 beside 5∠53.13°).
   examples: [
-    { id: "rect-3-j4", label: "3 + j4 (magnitude 5)", values: { real: 3, imaginary: 4 } },
-    { id: "rect-50-j0", label: "50 + j0 (matched load)", values: { real: 50, imaginary: 0 } },
-    { id: "rect-50-minus-j25", label: "50 \u2212 j25 (capacitive)", values: { real: 50, imaginary: -25 } },
-    { id: "rect-minus-30-j40", label: "\u221230 + j40 (quadrant II)", values: { real: -30, imaginary: 40 } },
-    { id: "rect-0-j1", label: "0 + j1 (pure reactance)", values: { real: 0, imaginary: 1 } },
-    { id: "polar-1-0-deg", label: "1 \u2220 0\xB0 (unit vector)", values: { magnitude: 1, angleDeg: 0 } },
-    { id: "polar-5-53-deg", label: "5 \u2220 53.13\xB0", values: { magnitude: 5, angleDeg: 53.13010235415598 } },
-    { id: "polar-1-90-deg", label: "1 \u2220 90\xB0 (pure +j)", values: { magnitude: 1, angleDeg: 90 } },
-    { id: "polar-0-5-180-deg", label: "0.5 \u2220 180\xB0 (\u0393 real negative)", values: { magnitude: 0.5, angleDeg: 180 } },
-    { id: "polar-100-minus-45-deg", label: "100 \u2220 \u221245\xB0", values: { magnitude: 100, angleDeg: -45 } }
+    { id: "rect-3-j4", label: "3 + j4 (magnitude 5)", values: { real: 3, imaginary: 4, magnitude: 5, angleDeg: 53.13010235415598 } },
+    { id: "rect-50-j0", label: "50 + j0 (matched load)", values: { real: 50, imaginary: 0, magnitude: 50, angleDeg: 0 } },
+    { id: "rect-50-minus-j25", label: "50 \u2212 j25 (capacitive)", values: { real: 50, imaginary: -25, magnitude: 55.90169943749474, angleDeg: -26.56505117707799 } },
+    { id: "rect-minus-30-j40", label: "\u221230 + j40 (quadrant II)", values: { real: -30, imaginary: 40, magnitude: 50, angleDeg: 126.86989764584402 } },
+    { id: "rect-0-j1", label: "0 + j1 (pure reactance)", values: { real: 0, imaginary: 1, magnitude: 1, angleDeg: 90 } },
+    { id: "polar-1-0-deg", label: "1 \u2220 0\xB0 (unit vector)", values: { real: 1, imaginary: 0, magnitude: 1, angleDeg: 0 } },
+    { id: "polar-0-5-180-deg", label: "0.5 \u2220 180\xB0 (\u0393 real negative)", values: { real: -0.5, imaginary: 0, magnitude: 0.5, angleDeg: 180 } },
+    { id: "polar-100-minus-45-deg", label: "100 \u2220 \u221245\xB0", values: { real: 70.71067811865476, imaginary: -70.71067811865474, magnitude: 100, angleDeg: -45 } }
   ],
   calculate: calculateRectangularPolar,
+  // C2: a, b, r and θ are the inputs; the angle in radians and in 0…360° are
+  // fields too. The outputs that only restate an input once both sides agree
+  // (|a + jb|, the −180…180° angle, a and b from r∠θ) are not shown twice.
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["real", "imaginary", "magnitude", "angleDeg", "angleRadOut", "angleDeg360"],
+      free: ["real", "imaginary", "magnitude", "angleDeg"],
+      systems: [["real", "imaginary"], ["magnitude", "angleDeg", "angleRadOut", "angleDeg360"]],
+      edit: (field, value, { inputs, values }) => rectPolarEdit(field, value, inputs, values),
+      picks: { field: "angleDeg", values: [-90, -45, 0, 45, 90, 180] },
+      reference: { field: "angleDeg", values: [0, 30, 45, 60, 90, 120, 135, 180] },
+      scales: {
+        fields: [
+          { key: "magnitude", range: [0.01, 1e3], scale: "log" },
+          { key: "angleDeg", range: [-180, 180], scale: "linear", ticks: [-180, -135, -90, -45, 0, 45, 90, 135, 180] },
+          { key: "angleDeg360", range: [0, 360], scale: "linear", ticks: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+          { key: "angleRadOut", range: [-Math.PI, Math.PI], scale: "linear", ticks: [-3, -2, -1, 0, 1, 2, 3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "r = \u221A(a\xB2 + b\xB2), \u03B8 = atan2(b, a) \xB7 180/\u03C0 ; a = r\xB7cos \u03B8, b = r\xB7sin \u03B8",
     latex: "r = \\sqrt{a^{2} + b^{2}},\\quad \\theta = \\operatorname{atan2}(b,\\,a) \\qquad a = r\\cos\\theta,\\quad b = r\\sin\\theta",
@@ -31887,11 +34037,14 @@ function calculateFrequencyPpmTolerance(inputs) {
   const warnings = [];
   if (totalPpmWorst > 50) {
     warnings.push(
-      `Worst-case ${totalPpmWorst.toFixed(1)} ppm exceeds the \xB150 ppm budget most UART links assume`
+      `Worst-case ${totalPpmWorst.toFixed(1)} ppm exceeds \xB150 ppm, the tolerance of 100BASE-TX Ethernet and the Bluetooth LE radio clock`
     );
   }
   if (totalPpmWorst > 100) {
-    warnings.push("Above \xB1100 ppm \u2014 too loose for USB, Ethernet, and most radio reference clocks");
+    warnings.push("Above \xB1100 ppm \u2014 outside every Ethernet clock tolerance and most radio reference clocks");
+  }
+  if (totalPpmWorst > 500) {
+    warnings.push("Above \xB1500 ppm \u2014 outside USB 2.0 high speed (\xB1500 ppm); full speed allows \xB12500 ppm");
   }
   if (years > 5 && agingPerYear > 0) {
     warnings.push(
@@ -31912,6 +34065,15 @@ function calculateFrequencyPpmTolerance(inputs) {
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
+}
+var initialOfWorst = (worstPpm, inputs) => worstPpm - inputs.tempStability - inputs.agingPerYear * inputs.years;
+var initialOfDeviation = (deviationHz, inputs) => initialOfWorst(deviationHz * 1e6 / (inputs.nominalFrequency * 1e6), inputs);
+function initialOfRss(rssPpm, inputs) {
+  if (rssPpm < 0) return NaN;
+  const aging = inputs.agingPerYear * inputs.years;
+  const held = inputs.tempStability * inputs.tempStability + aging * aging;
+  const square = rssPpm * rssPpm - held;
+  return square < 0 && square > -1e-12 * held ? 0 : Math.sqrt(square);
 }
 var frequencyPpmTolerance = {
   slug: "frequency-ppm-tolerance",
@@ -31949,7 +34111,7 @@ var frequencyPpmTolerance = {
           values: { nominalFrequency: 8, initialTolerance: 30, tempStability: 20, agingPerYear: 5, years: 5 }
         },
         {
-          label: "25 MHz Ethernet (\xB150 ppm)",
+          label: "25 MHz Ethernet (\xB130 ppm)",
           values: { nominalFrequency: 25, initialTolerance: 30, tempStability: 15, agingPerYear: 3, years: 5 }
         },
         {
@@ -31957,7 +34119,7 @@ var frequencyPpmTolerance = {
           values: { nominalFrequency: 26, initialTolerance: 0.5, tempStability: 0.5, agingPerYear: 1, years: 3 }
         },
         {
-          label: "12 MHz USB (\xB10.25%)",
+          label: "12 MHz USB (\xB150 ppm)",
           values: { nominalFrequency: 12, initialTolerance: 50, tempStability: 30, agingPerYear: 5, years: 10 }
         }
       ]
@@ -32009,8 +34171,8 @@ var frequencyPpmTolerance = {
     { key: "totalPpmRss", label: "Total Error (RSS)", symbol: "\xB1ppm", unit: "ppm" },
     { key: "agingTotalPpm", label: "Accumulated Aging", symbol: "\xB1ppm", unit: "ppm" },
     { key: "deviationHz", label: "Frequency Deviation", symbol: "\xB1\u0394f", unit: "Hz" },
-    { key: "fMinHz", label: "Minimum Frequency", symbol: "f_min", unit: "Hz" },
-    { key: "fMaxHz", label: "Maximum Frequency", symbol: "f_max", unit: "Hz" },
+    { key: "fMinHz", label: "Minimum Frequency", symbol: "f_min", unit: "Hz", display: { sig: 9 } },
+    { key: "fMaxHz", label: "Maximum Frequency", symbol: "f_max", unit: "Hz", display: { sig: 9 } },
     { key: "spanHz", label: "Total Frequency Span", symbol: "\u0394f_pp", unit: "Hz" },
     { key: "driftSecPerDay", label: "Clock Drift", symbol: "", unit: "s/day" },
     { key: "driftMinPerYear", label: "Clock Drift", symbol: "", unit: "min/year" }
@@ -32018,11 +34180,54 @@ var frequencyPpmTolerance = {
   examples: [
     { id: "rtc-32-768-khz", label: "32.768 kHz RTC (\xB120 ppm)", values: { nominalFrequency: 0.032768, initialTolerance: 20, tempStability: 10, agingPerYear: 3, years: 10 } },
     { id: "mcu-8-mhz", label: "8 MHz MCU (\xB130 ppm)", values: { nominalFrequency: 8, initialTolerance: 30, tempStability: 20, agingPerYear: 5, years: 5 } },
-    { id: "ethernet-25-mhz", label: "25 MHz Ethernet (\xB150 ppm)", values: { nominalFrequency: 25, initialTolerance: 30, tempStability: 15, agingPerYear: 3, years: 5 } },
+    { id: "ethernet-25-mhz", label: "25 MHz Ethernet (\xB130 ppm)", values: { nominalFrequency: 25, initialTolerance: 30, tempStability: 15, agingPerYear: 3, years: 5 } },
     { id: "lte-tcxo-26-mhz", label: "26 MHz LTE TCXO (\xB10.5 ppm)", values: { nominalFrequency: 26, initialTolerance: 0.5, tempStability: 0.5, agingPerYear: 1, years: 3 } },
-    { id: "usb-12-mhz", label: "12 MHz USB (\xB10.25%)", values: { nominalFrequency: 12, initialTolerance: 50, tempStability: 30, agingPerYear: 5, years: 10 } }
+    { id: "usb-12-mhz", label: "12 MHz USB (\xB150 ppm)", values: { nominalFrequency: 12, initialTolerance: 50, tempStability: 30, agingPerYear: 5, years: 10 } }
   ],
   calculate: calculateFrequencyPpmTolerance,
+  // ppm ↔ Hz ↔ drift at a held nominal frequency: the initial tolerance moves,
+  // the temperature and aging terms are held (the accumulated aging is theirs
+  // alone, so it is not a field).
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: [
+        "initialTolerance",
+        "totalPpmWorst",
+        "totalPpmRss",
+        "deviationHz",
+        "fMinHz",
+        "fMaxHz",
+        "spanHz",
+        "driftSecPerDay",
+        "driftMinPerYear"
+      ],
+      free: ["initialTolerance"],
+      params: ["nominalFrequency", "tempStability", "agingPerYear", "years"],
+      inverse: {
+        totalPpmWorst: (w, inputs) => initialOfWorst(w, inputs),
+        totalPpmRss: (r, inputs) => initialOfRss(r, inputs),
+        deviationHz: (d, inputs) => initialOfDeviation(d, inputs),
+        fMinHz: (f, inputs) => initialOfDeviation(inputs.nominalFrequency * 1e6 - f, inputs),
+        fMaxHz: (f, inputs) => initialOfDeviation(f - inputs.nominalFrequency * 1e6, inputs),
+        spanHz: (s, inputs) => initialOfDeviation(s / 2, inputs),
+        driftSecPerDay: (d, inputs) => initialOfWorst(d * 1e6 / SECONDS_PER_DAY, inputs),
+        driftMinPerYear: (d, inputs) => initialOfWorst(d * 1e6 / MINUTES_PER_YEAR, inputs)
+      },
+      picks: { field: "initialTolerance", values: [5, 10, 20, 30, 50, 100] },
+      reference: { field: "initialTolerance", values: [1, 5, 10, 20, 30, 50, 100] },
+      scales: {
+        axis: { field: "initialTolerance", range: [0, 100], scale: "linear" },
+        fields: [
+          { key: "initialTolerance" },
+          { key: "totalPpmWorst" },
+          { key: "deviationHz" },
+          { key: "driftSecPerDay" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "\u0394f = f\u2080 \xD7 ppm_total / 10\u2076, ppm_total = ppm_init + ppm_temp + ppm_age \xD7 years",
     latex: "\\Delta f = f_0 \\cdot \\frac{\\text{ppm}_{\\text{init}} + \\text{ppm}_{\\text{temp}} + \\text{ppm}_{\\text{age}}\\, t}{10^{6}} \\qquad \\text{ppm}_{\\text{RSS}} = \\sqrt{\\text{ppm}_{\\text{init}}^{2} + \\text{ppm}_{\\text{temp}}^{2} + (\\text{ppm}_{\\text{age}} t)^{2}}",
@@ -32347,11 +34552,11 @@ function calculateViaStepResponse(inputs) {
   const inductanceNH = 0.2 * h * (Math.log(4 * h / d) + 0.5);
   const capacitancePF = 0.0554 * er * h * d1 / (d2 - d1);
   const L = inductanceNH * 1e-9;
-  const C2 = capacitancePF * 1e-12;
-  const zViaOhm = Math.sqrt(L / C2);
-  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C2)) / 1e9;
-  const excessC = C2 - L / (z0 * z0);
-  const excessL = L - C2 * z0 * z0;
+  const C3 = capacitancePF * 1e-12;
+  const zViaOhm = Math.sqrt(L / C3);
+  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C3)) / 1e9;
+  const excessC = C3 - L / (z0 * z0);
+  const excessL = L - C3 * z0 * z0;
   const excessCapacitancePF = excessC * 1e12;
   const excessInductanceNH = excessL * 1e9;
   const trIn = riseTime * 1e-12;
@@ -33227,7 +35432,7 @@ var edgeCoupledInternalAsymmetric = {
       unit: "",
       precision: 0,
       tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
-      thresholds: { danger: { max: 0.5 } }
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
     }
   ],
   calculate: calculateEdgeCoupledInternalAsymmetric,
@@ -33502,7 +35707,7 @@ var edgeCoupledEmbedded = {
       unit: "",
       precision: 0,
       tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
-      thresholds: { danger: { max: 0.5 } }
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
     }
   ],
   calculate: calculateEdgeCoupledEmbedded,
@@ -33558,7 +35763,7 @@ var edgeCoupledEmbedded = {
 };
 
 // src/lib/calculators/pcb/differential-via.ts
-var C = 299792458;
+var C2 = 299792458;
 var ETA_03 = 376.730313412;
 var MU_02 = 4e-7 * Math.PI;
 var SIGMA_CU = 58e6;
@@ -33598,10 +35803,10 @@ function calculateDifferentialVia(inputs) {
   const commonImpedance = evenImpedance / 2;
   const singleEnded = evenImpedance;
   const stubLength = Math.max(boardThickness - exitDepth, 0);
-  const vp = C / sqrtEr;
+  const vp = C2 / sqrtEr;
   const stubResonance = stubLength > 0 ? vp / (4 * stubLength * 1e-3) / 1e9 : 0;
   const lossPerMm = (fHz) => {
-    const dielectric2 = Math.PI * fHz * sqrtEr * lossTangent / C * NEPER_TO_DB * 1e-3;
+    const dielectric2 = Math.PI * fHz * sqrtEr * lossTangent / C2 * NEPER_TO_DB * 1e-3;
     const surfaceR = Math.sqrt(Math.PI * fHz * MU_02 / SIGMA_CU);
     const perimeter = Math.PI * barrelDiameter * 1e-3;
     const conductor2 = 2 * surfaceR / (diffImpedance * perimeter) * NEPER_TO_DB * 1e-3;
@@ -33811,7 +36016,7 @@ var differentialVia = {
       unit: "",
       precision: 0,
       tooltip: "1 when the two clearance openings merge. With plane copper between the barrels the coupling is screened and this model overstates it.",
-      thresholds: { danger: { max: 0.5 } }
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
     },
     { key: "stubLength", label: "Stub Length", symbol: "L_stub", unit: "mm", precision: 3 },
     {
@@ -33828,7 +36033,7 @@ var differentialVia = {
       symbol: "IL_max",
       unit: "dB",
       precision: 3,
-      thresholds: { warning: { min: 1 }, danger: { min: 3 } }
+      thresholds: { good: { max: 1 }, warning: { min: 1, max: 3 }, danger: { max: 3 } }
     },
     {
       key: "worstLossFrequency",
@@ -34232,7 +36437,7 @@ var conductorToPadWidth = {
       unit: "",
       precision: 0,
       tooltip: "1 when a conductor of non-zero width fits within the clearance rule",
-      thresholds: { danger: { max: 0.5 } }
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
     }
   ],
   calculate: calculateConductorToPadWidth,
@@ -34465,7 +36670,7 @@ var bgaBreakoutWidth = {
       label: "Geometry Fits",
       unit: "",
       precision: 0,
-      thresholds: { danger: { max: 0.5 } }
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
     }
   ],
   calculate: calculateBgaBreakoutWidth,
@@ -34848,7 +37053,7 @@ var maximumPadDiameter = {
       label: "Geometry Fits",
       unit: "",
       precision: 0,
-      thresholds: { danger: { max: 0.5 } }
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
     }
   ],
   calculate: calculateMaximumPadDiameter,
