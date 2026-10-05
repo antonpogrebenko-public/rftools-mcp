@@ -231,7 +231,7 @@ List available calculators, optionally filtered by category.
 ```
 
 **Parameters:**
-- `category` (optional): `rf`, `pcb`, `power`, `signal`, `antenna`, `general`, `motor`, `protocol`, `emc`, `thermal`, `sensor`, `unit-conversion`, `audio`
+- `category` (optional): `rf`, `pcb`, `power`, `signal`, `antenna`, `general`, `motor`, `protocol`, `emc`, `thermal`, `sensor`, `unit-conversion`, `audio`, `iot`
 
 #### `search_calculators`
 
@@ -462,6 +462,7 @@ valid identifiers. Hosts that offer completion can complete `{id}`.
 | **Sensor Interface** | 17 | NTC thermistor, RTD, thermocouple, Wheatstone bridge, load cell, photodiode, 4-20 mA loop transmitter |
 | **Unit Conversion** | 19 | dBm↔Watts, rectangular↔polar, frequency↔wavelength, length (mm/mil/inch), AWG wire, capacitor code, temperature, inductance, data rate |
 | **Audio Electronics** | 18 | Speaker crossover, room modes, headphone power, class-D efficiency, audio transformer, equalizer Q |
+| **IoT & LPWAN** | 2 | LoRa link budget (sensitivity by spreading factor, time on air, duty-cycle off-time, Okumura–Hata range), BLE link budget by PHY (ITU-R P.1238 indoor path loss) |
 
 ## Why Use This Instead of Asking the AI to Calculate?
 

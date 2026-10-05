@@ -1,5 +1,5 @@
 {
-  "source": "run_calculation answers from the published 2.3.0 bundle (rftools-mcp 673b685, dist/mcp-server.cjs), captured 2026-10-01 for openspec agent-surface task 2.8",
+  "source": "run_calculation answers from the published 2.3.0 bundle (rftools-mcp 673b685, dist/mcp-server.cjs), captured 2026-10-01 for openspec agent-surface task 2.8; rf-link-budget re-read 2026-10-05 from the frontend calculator after it took the exact speed of light (openspec catalogue-antenna-rf-batch): the call shape is 2.3.0's, the numbers are the corrected ones",
   "calls": {
     "microstrip-impedance": {
       "inputs": {
@@ -48,7 +48,7 @@
         {
           "key": "fspl",
           "label": "Free Space Path Loss",
-          "value": 101.22134812768918,
+          "value": 101.22735916352389,
           "unit": "dB"
         },
         {
@@ -60,19 +60,19 @@
         {
           "key": "rxPower",
           "label": "Received Power",
-          "value": -65.37634812768918,
+          "value": -65.38235916352387,
           "unit": "dBm"
         },
         {
           "key": "linkMargin",
           "label": "Link Margin",
-          "value": 30.923651872310828,
+          "value": 30.91764083647614,
           "unit": "dB"
         },
         {
           "key": "maxRangeKm",
           "label": "Max Range",
-          "value": 37.632786039220775,
+          "value": 37.60675142695359,
           "unit": "km"
         },
         {
