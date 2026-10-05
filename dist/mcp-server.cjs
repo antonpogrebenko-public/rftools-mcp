@@ -34540,7 +34540,10 @@ function registerCalculatorTools(server, opts) {
     {
       title: "List Calculators",
       description: composeDescription({
-        question: `List the ${total} RF and electronics calculators on rftools.io, or those in one category.`,
+        // No count in the question: it is translated on /agents in six languages,
+        // and a count would make every catalogue change a retranslation. The
+        // count stays in `returns`, which is English only.
+        question: "List the RF and electronics calculators on rftools.io, or those in one category.",
         inputs: `category, optional: one of ${categories}. An unknown category is refused with this list.`,
         example: { category: "pcb" },
         returns: `A JSON array with each calculator's slug, title, category and description. search_calculators finds one by words instead of listing all ${total}.`
@@ -40222,10 +40225,13 @@ function registerSimulationTools(server, options = {}) {
     {
       title: "List Simulation Tools",
       description: composeDescription({
-        question: `List the ${JOB_TYPES.length} server-side simulation job types with their tool names, parameters, file rules, free-lane bounds and time budgets.`,
+        question: (
+          // Count-free, like list_calculators: the question is translated on /agents.
+          "List the server-side simulation job types with their tool names, parameters, file rules, free-lane bounds and time budgets."
+        ),
         inputs: "none.",
         example: {},
-        returns: "count; the tier allowances; what runs without a key; how long a result link lives; the duplicate-submission window; and for each job type its simulate_* tool name, jobType, title, parameter names, time budget, file rules and free-lane bounds.",
+        returns: `count (${JOB_TYPES.length} today); the tier allowances; what runs without a key; how long a result link lives; the duplicate-submission window; and for each job type its simulate_* tool name, jobType, title, parameter names, time budget, file rules and free-lane bounds.`,
         notes: `${TIER_LIMITS} A job runs without a key on the free lane; a job that takes a file does not. ${UPLOAD_NEEDS_KEY}`
       }),
       inputSchema: import_zod3.z.object({}),

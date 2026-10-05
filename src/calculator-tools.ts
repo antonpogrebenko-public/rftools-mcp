@@ -213,7 +213,10 @@ export function registerCalculatorTools(server: McpServer, opts: CalculatorToolO
     {
       title: 'List Calculators',
       description: composeDescription({
-        question: `List the ${total} RF and electronics calculators on rftools.io, or those in one category.`,
+        // No count in the question: it is translated on /agents in six languages,
+        // and a count would make every catalogue change a retranslation. The
+        // count stays in `returns`, which is English only.
+        question: 'List the RF and electronics calculators on rftools.io, or those in one category.',
         inputs: `category, optional: one of ${categories}. An unknown category is refused with this list.`,
         example: { category: 'pcb' },
         returns:

@@ -786,12 +786,13 @@ export function registerSimulationTools(server: McpServer, options: SimulationOp
       title: 'List Simulation Tools',
       description: composeDescription({
         question:
-          `List the ${JOB_TYPES.length} server-side simulation job types with their tool names, parameters, ` +
+          // Count-free, like list_calculators: the question is translated on /agents.
+          'List the server-side simulation job types with their tool names, parameters, ' +
           'file rules, free-lane bounds and time budgets.',
         inputs: 'none.',
         example: {},
         returns:
-          'count; the tier allowances; what runs without a key; how long a result link lives; the duplicate-' +
+          `count (${JOB_TYPES.length} today); the tier allowances; what runs without a key; how long a result link lives; the duplicate-` +
           'submission window; and for each job type its simulate_* tool name, jobType, title, parameter names, time ' +
           'budget, file rules and free-lane bounds.',
         notes: `${TIER_LIMITS} A job runs without a key on the free lane; a job that takes a file does not. ${UPLOAD_NEEDS_KEY}`,
