@@ -18862,7 +18862,7 @@ var ntcThermistor = {
       defaultValue: 1e4,
       min: 1,
       group: "Circuit",
-      tooltip: "The divider resistor between the ADC node and the reference (NTC low side) or ground (high side)"
+      tooltip: "The divider's fixed resistor: from the reference to the ADC node when the NTC is on the low side, from the ADC node to ground when it is on the high side"
     },
     {
       key: "adcRef",
@@ -19102,7 +19102,7 @@ var rtdTemperature = {
       defaultValue: 150,
       min: 1,
       group: "Circuit",
-      tooltip: "The divider resistor between the ADC node and the reference (RTD low side) or ground (high side). Near the RTD's mid-range resistance gives the most even resolution."
+      tooltip: "The divider's fixed resistor: from the reference to the ADC node when the RTD is on the low side, from the ADC node to ground when it is on the high side. A value near the RTD's mid-range resistance gives the most even resolution."
     },
     {
       key: "adcRef",
@@ -19350,7 +19350,7 @@ var wheatstoneBridge = {
       min: 0.01,
       max: 1e5,
       group: "Circuit",
-      tooltip: "The gain between the bridge output and the ADC. 6 takes the 0.5 V of R3 at 1.5 k\u03A9 to 3 V."
+      tooltip: "The gain between the bridge output and the ADC. A gain of 6 brings the bridge's 0.5 V output with R3 at 1.5 k\u03A9 to 3 V."
     },
     {
       key: "adcRef",
@@ -19607,7 +19607,7 @@ var hallEffectSensor = {
       min: 0.01,
       max: 1e6,
       group: "Circuit",
-      tooltip: "The gain between the Hall element and the ADC. 4000 takes the default element's 0.73 mV at 500 mT to about 2.9 V."
+      tooltip: "The gain between the Hall element and the ADC. A gain of 4000 brings the default element's 0.73 mV at 500 mT to about 2.9 V."
     },
     {
       key: "adcRef",
@@ -19858,7 +19858,7 @@ var strainGaugeBridge = {
       min: 0.01,
       max: 1e5,
       group: "Circuit",
-      tooltip: "The gain between the bridge output and the ADC. 400 takes a quarter bridge at 3000 \u03BC\u03B5 (7.9 mV at 5 V, GF 2.1) to about 3.2 V."
+      tooltip: "The gain between the bridge output and the ADC. A gain of 400 brings a quarter bridge at 3000 \u03BC\u03B5 (7.9 mV at 5 V, GF 2.1) to about 3.2 V."
     },
     {
       key: "adcRef",
@@ -20086,7 +20086,7 @@ var pt100Resistance = {
       defaultValue: 220,
       min: 1,
       group: "Circuit",
-      tooltip: "The divider resistor between the ADC node and the reference (RTD low side) or ground (high side). Near the RTD's mid-range resistance gives the most even resolution."
+      tooltip: "The divider's fixed resistor: from the reference to the ADC node when the RTD is on the low side, from the ADC node to ground when it is on the high side. A value near the RTD's mid-range resistance gives the most even resolution."
     },
     {
       key: "adcRef",
@@ -20140,12 +20140,12 @@ var pt100Resistance = {
   examples: [
     {
       id: "pt1000-1k-freezer",
-      label: "Pt1000 with a 1 k\u03A9 reference resistor, freezer at \u221220 \xB0C",
+      label: "Pt1000 with a 1 k\u03A9 fixed resistor, freezer at \u221220 \xB0C",
       values: { r0: 1e3, temperature: -20, fixedResistor: 1e3, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
     },
     {
       id: "pt100-1k-oven",
-      label: "Pt100 with a 1 k\u03A9 resistor, oven at 250 \xB0C",
+      label: "Pt100 with a 1 k\u03A9 fixed resistor, oven at 250 \xB0C",
       values: { r0: 100, temperature: 250, fixedResistor: 1e3, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
     }
   ],
@@ -20273,7 +20273,7 @@ var thermocoupleVoltage = {
       min: 0.01,
       max: 1e5,
       group: "Circuit",
-      tooltip: "The gain between the thermocouple and the ADC. 60 takes a type K's 50 mV at 1250 \xB0C to about 3 V."
+      tooltip: "The gain between the thermocouple and the ADC. A gain of 60 brings a type K's 50 mV at 1250 \xB0C to about 3 V."
     },
     {
       key: "adcRef",
@@ -20704,7 +20704,9 @@ var currentShunt = {
       label: "Amplifier Gain",
       symbol: "G",
       unit: "V/V",
-      defaultValue: 50,
+      // 20, not 50: at the default 10 A through 10 mΩ, gain 50 drove 5 V into
+      // the 3.3 V ADC and the page opened clipped at code 4095 (founder, 2026-10-06).
+      defaultValue: 20,
       min: 1,
       tooltip: "INA219: 1\u2013128\xD7, INA240: 20\u2013200\xD7"
     },
@@ -20725,7 +20727,7 @@ var currentShunt = {
       max: 24,
       step: 1,
       group: "Circuit",
-      tooltip: "ADC resolution in bits, for the code and the resolution at this width"
+      tooltip: "ADC resolution in bits; the ADC code and the resolution output use this many bits"
     }
   ],
   outputs: [
@@ -20902,7 +20904,7 @@ var accelerometerSensitivity = {
       min: 0.01,
       max: 1e3,
       group: "Circuit",
-      tooltip: "The gain between the sensor and the ADC, about the zero-g level at half the supply. 1 is a direct connection, which the per-LSB outputs assume."
+      tooltip: "The gain between the sensor and the ADC, applied around the zero-g level, which sits at half the supply. 1 is a direct connection, which the per-LSB outputs assume."
     }
   ],
   outputs: [
@@ -21029,7 +21031,7 @@ var pressureBridgeOutput = {
       min: 0.01,
       max: 1e5,
       group: "Circuit",
-      tooltip: "The gain between the bridge output and the ADC. 60 takes a 50 mV full-scale output to 3 V."
+      tooltip: "The gain between the bridge output and the ADC. A gain of 60 brings a 50 mV full-scale output to 3 V."
     },
     {
       key: "adcRef",
@@ -21077,7 +21079,7 @@ var pressureBridgeOutput = {
     },
     {
       id: "mpx2010-class-tank",
-      label: "10 kPa sensor (2.5 mV/V, MPX2010 class) at 5 V, gain 200, under 0.75 m of water",
+      label: "10 kPa sensor (2.5 mV/V, MPX2010 class) at 5 V, gain 200, at a water depth of 0.75 m",
       values: { excitationVoltage: 5, bridgeSensitivity: 2.5, appliedPressure: 7.355, fullScalePressure: 10, frontGain: 200, adcRef: 3.3, adcBits: 12 }
     },
     {
@@ -21382,7 +21384,7 @@ var lvdtSensitivity = {
       min: 0.01,
       max: 1e5,
       group: "Circuit",
-      tooltip: "The gain of the demodulator and amplifier between the LVDT and the ADC (V DC out per V RMS in). 1.5 takes the 2 V RMS full-scale output to 3 V."
+      tooltip: "The gain of the demodulator and amplifier between the LVDT and the ADC (V DC out per V RMS in). A gain of 1.5 brings the 2 V RMS full-scale output to 3 V."
     },
     {
       key: "adcRef",
@@ -21717,7 +21719,7 @@ var frequencyWavelength = {
     latex: "\\lambda = \\frac{c \\cdot VF}{f}",
     variables: [
       { symbol: "\u03BB", description: "Wavelength", unit: "m" },
-      { symbol: "c", description: "Speed of light (3\xD710\u2078)", unit: "m/s" },
+      { symbol: "c", description: "Speed of light (299 792 458, exact)", unit: "m/s" },
       { symbol: "VF", description: "Velocity factor of medium", unit: "" },
       { symbol: "f", description: "Frequency", unit: "Hz" }
     ]
@@ -29528,8 +29530,8 @@ var audioDelayTime = {
   examples: [
     { id: "dotted-eighth-120-bpm", label: "Dotted-eighth echo at 120 BPM", values: { bpm: 120, noteValue: 16 / 3 } },
     { id: "eighth-triplet-90-bpm", label: "Eighth-note triplet at 90 BPM", values: { bpm: 90, noteValue: 12 } },
-    { id: "delay-tower-hot-day", label: "Delay tower 60 m out on a 35 \xB0C day (c = 352 m/s)", values: { distance: 60, speedOfSound: 352 } },
-    { id: "front-fill-cold-hall", label: "Front fill 8 m out in a 10 \xB0C hall (c = 337 m/s)", values: { distance: 8, speedOfSound: 337 } }
+    { id: "delay-tower-hot-day", label: "Delay tower 60 m from the main PA on a 35 \xB0C day (c = 352 m/s)", values: { distance: 60, speedOfSound: 352 } },
+    { id: "front-fill-cold-hall", label: "Front fill 8 m from the main PA in a 10 \xB0C hall (c = 337 m/s)", values: { distance: 8, speedOfSound: 337 } }
   ],
   calculate: calculateAudioDelayTime,
   // C2: two independent groups. Tempo solves BPM for a delay at the held note
