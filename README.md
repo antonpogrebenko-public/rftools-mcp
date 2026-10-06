@@ -98,6 +98,31 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.5.0
+
+No tool was added, removed or renamed, and no tool's arguments changed.
+
+- **Fourteen new calculators** (255 in all), each checked against a cited
+  textbook, standard or datasheet value:
+  - antennas: `helical-antenna`, `monopole-antenna`, `antenna-downtilt`;
+  - RF: `line-of-sight`, `wilkinson-power-divider`, `directional-coupler`,
+    `circular-waveguide`, `microstrip-mitered-bend`, `5g-nr-band-lookup`
+    (3GPP Release 18 band table) and `5g-nr-link-budget`;
+  - power: `rc-snubber`, `rcd-clamp-snubber`.
+- **A new category, `iot`** ("IoT & LPWAN"), holding `lora-link-budget` and
+  `ble-link-budget`. `list_calculators` with `category: "iot"` lists them.
+- **Corrected outputs:**
+  - `filter-designer`: its Chebyshev prototype values were wrong from order 4
+    (g3 1.5733, now 2.3661), a first-order Butterworth gave g1 = 1 (now 2),
+    and the band-pass element values were ten times too small at Q = 10. The
+    values are now computed, not tabulated.
+  - `waveguide-cutoff`, `free-space-path-loss`, `rf-link-budget`,
+    `fresnel-zone`, `link-margin` and `radar-range-equation` use the exact
+    speed of light, not 3×10⁸. Lengths move by about 0.07 % and path loss by
+    0.006 dB. `radar-range-equation` also uses the exact Boltzmann constant.
+  - `planar-spiral-inductor` refuses an inner diameter at or above the outer
+    one instead of returning NaN.
+
 ### What changed in 2.4.0
 
 No existing tool was removed or renamed, and no existing tool's arguments
