@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
-**MCP server for [rftools.io](https://rftools.io) — 241 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
+**MCP server for [rftools.io](https://rftools.io) — 255 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
 
 Give Claude, Cursor, or any MCP-compatible AI assistant access to validated engineering calculators and heavy server-side simulations. Microstrip impedance, link budgets, filter design, converter sizing, antenna patterns, and 200+ more calculators — plus NEC2 antenna simulation, FDTD, Monte Carlo, SMPS analysis, EMI estimation, and more, all callable as MCP tools.
 
@@ -16,7 +16,7 @@ Calculators work with no API key, and so do the simulation tools: without one, a
 
 ### Without API key
 
-All 241 calculators run locally with no sign-up required, and every simulation tool that takes no file still submits — on the free lane, with the free limits and the free-lane parameter bounds stated on the response.
+All 255 calculators run locally with no sign-up required, and every simulation tool that takes no file still submits — on the free lane, with the free limits and the free-lane parameter bounds stated on the response.
 
 A job type that takes a file is the exception. Uploading a file needs an API key; set `RFTOOLS_API_KEY`. Without one, a call carrying `inputFiles` or `inputPaths` is refused here, with that sentence, before the file is read and before any request leaves this machine.
 
@@ -104,7 +104,7 @@ No existing tool was removed or renamed, and no existing tool's arguments
 changed: every name and every argument 2.3.0 accepted is accepted the same way.
 
 - **New tool: `search_calculators`.** Finds calculators by words — "trace
-  impedance on FR4 microstrip" — instead of listing all 241. It matches English
+  impedance on FR4 microstrip" — instead of listing all 255. It matches English
   titles, keywords, input and output names and descriptions, and the German,
   Spanish, French, Japanese, Korean and Portuguese titles and keywords, so
   "マイクロストリップ インピーダンス" finds the microstrip calculator too.
@@ -445,15 +445,15 @@ valid identifiers. Hosts that offer completion can complete `{id}`.
 >
 > **AI:** *Calls `run_calculation` with buck-converter* → Duty cycle: 20.8%, inductor: 17.4 μH, output cap: 22 μF. [View on rftools.io →](https://rftools.io/calculators/power/buck-converter)
 
-## All 241 Calculators
+## All 255 Calculators
 
 | Category | Count | Examples |
 |----------|------:|---------|
-| **RF & Microwave** | 29 | Microstrip impedance, coplanar waveguide (CPW/GCPW), VSWR/return loss, Smith chart, link budget, noise figure cascade, radar range, free-space path loss, mixer spur |
+| **RF & Microwave** | 36 | Microstrip impedance, coplanar waveguide (CPW/GCPW), VSWR/return loss, Smith chart, link budget, noise figure cascade, radar range, free-space path loss, mixer spur, Wilkinson divider, directional coupler, circular waveguide, line of sight, 5G NR band lookup and link budget |
 | **PCB Design** | 36 | Trace width for current, controlled impedance, edge-coupled stripline pairs (symmetric, offset, embedded), differential via with stub loss, skin depth percentage, conductor-to-pad width, BGA breakout width, aperture diagonal, maximum pad diameter, effective dielectric constant, via step response, microvia current capacity, asymmetric (offset) stripline, dual stripline, broadside-coupled pair, differential pair, via calculator, crosstalk, critical trace length, fusing current, decoupling capacitor, padstack/annular ring, BGA land pad, conductor spacing, planar spiral inductor, embedded resistor, via voltage drop |
-| **Power Electronics** | 21 | Buck converter, boost converter, flyback, LDO thermal, battery life, MOSFET dissipation, solar panel sizing |
+| **Power Electronics** | 23 | Buck converter, boost converter, flyback, LDO thermal, battery life, MOSFET dissipation, solar panel sizing, RC snubber, RCD clamp snubber |
 | **Signal Processing** | 14 | Filter designer, ADC SNR, FFT bin resolution, PLL loop filter, BER/SNR, Johnson noise, rise time to bandwidth |
-| **Antenna Design** | 8 | Dipole, patch, Yagi-Uda, horn, parabolic dish, loop, EIRP, beamwidth |
+| **Antenna Design** | 11 | Dipole, patch, Yagi-Uda, horn, parabolic dish, loop, EIRP, beamwidth, helical, monopole/whip, antenna downtilt |
 | **General Electronics** | 24 | Ohm's law, crystal PPM tolerance, op-amp gain, 555 timer, BJT bias, MOSFET operating point, Schmitt trigger, crystal load capacitance |
 | **Motor Control** | 22 | DC motor speed, stepper, BLDC, servo, PID tuning, gear ratio, H-bridge selection, torque converter |
 | **Communications** | 11 | UART baud rate, I2C pull-up, SPI timing, CAN bus, USB termination, RS-485, Ethernet, Modbus, LIN bus |
@@ -504,7 +504,7 @@ AI Agent ←stdio→ rftools-mcp ←HTTPS (key optional)→ rftools.io API → S
 
 - **[rftools.io/agents](https://rftools.io/agents/)** — This server's tools, install steps and example prompts, in seven languages
 - **[rftools.io/llms.txt](https://rftools.io/llms.txt)** — Summary with API info and MCP setup
-- **[rftools.io/llms-full.txt](https://rftools.io/llms-full.txt)** — Complete listing of all 241 calculators with inputs, outputs, units, and URLs
+- **[rftools.io/llms-full.txt](https://rftools.io/llms-full.txt)** — Complete listing of all 255 calculators with inputs, outputs, units, and URLs
 - **`npx rftools-mcp --manifest`** — Everything this build lists (tools with their descriptions, annotations and input schemas, resources, templates and counts) as one JSON document; the agents page is built from it
 
 ## Links
