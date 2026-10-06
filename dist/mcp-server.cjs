@@ -42,6 +42,7 @@ var import_zod3 = require("zod");
 // src/lib/calculators/rf/microstrip-impedance.ts
 function calculateMicrostrip(inputs) {
   const { traceWidth: w, substrateHeight: h, dielectricConstant: er, copperThickness } = inputs;
+  const frequency = inputs.frequency ?? 2.4;
   const t = copperThickness / 1e3;
   const dw = t / Math.PI * (1 + Math.log(2 * h / t));
   const wEff = w + dw;
@@ -53,11 +54,14 @@ function calculateMicrostrip(inputs) {
   const z0 = 60 / Math.sqrt(erEff) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
   const c2 = 299.792458;
   const tpd = 1 / c2 * Math.sqrt(erEff) * 1e3;
+  const guidedWavelength = c2 / (frequency * Math.sqrt(erEff));
   return {
     values: {
       impedance: z0,
       effectiveDielectric: erEff,
-      propagationDelay: tpd
+      propagationDelay: tpd,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     }
   };
 }
@@ -110,15 +114,8 @@ var microstripImpedance = {
       min: 1,
       max: 100,
       step: 0.01,
-      tooltip: "Relative permittivity of the substrate material",
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConstant: 4.2 } },
-        { label: "FR4-HF (4.0)", values: { dielectricConstant: 4 } },
-        { label: "Rogers 4003C (3.38)", values: { dielectricConstant: 3.38 } },
-        { label: "Rogers 4350B (3.48)", values: { dielectricConstant: 3.48 } },
-        { label: "PTFE/Rogers 5880 (2.2)", values: { dielectricConstant: 2.2 } },
-        { label: "Alumina 96% (9.6)", values: { dielectricConstant: 9.6 } }
-      ]
+      tooltip: "Relative permittivity of the substrate material"
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -135,6 +132,16 @@ var microstripImpedance = {
         { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } },
         { label: "2 oz (70 \u03BCm)", values: { copperThickness: 70 } }
       ]
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
@@ -166,7 +173,29 @@ var microstripImpedance = {
       unit: "ps/mm",
       precision: 2,
       format: "standard"
+    },
+    {
+      key: "guidedWavelength",
+      label: "Guided Wavelength",
+      symbol: "\u03BBg",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
+    },
+    {
+      key: "quarterWavelength",
+      label: "Quarter Wavelength",
+      symbol: "\u03BBg/4",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
     }
+  ],
+  examples: [
+    { id: "fr4-0-2-mm-50-ohm", label: "50 \u03A9 on 0.2 mm FR-4 prepreg", values: { traceWidth: 0.345, substrateHeight: 0.2, dielectricConstant: 4.4, copperThickness: 35 } },
+    { id: "ro4350b-0-508-mm-50-ohm", label: "50 \u03A9 on 0.508 mm RO4350B", values: { traceWidth: 1.065, substrateHeight: 0.508, dielectricConstant: 3.66, copperThickness: 35 } },
+    { id: "fr4-1-6-mm-50-ohm", label: "50 \u03A9 on a 1.6 mm two-layer FR-4 board", values: { traceWidth: 3, substrateHeight: 1.6, dielectricConstant: 4.4, copperThickness: 35 } },
+    { id: "rt-duroid-5880-0-254-mm-50-ohm", label: "50 \u03A9 on 0.254 mm RT/duroid 5880", values: { traceWidth: 0.76, substrateHeight: 0.254, dielectricConstant: 2.2, copperThickness: 17.5 } }
   ],
   calculate: calculateMicrostrip,
   formula: {
@@ -180,6 +209,12 @@ var microstripImpedance = {
     reference: 'Hammerstad & Jensen (1980); Wadell, "Transmission Line Design Handbook" 1991'
   },
   visualization: { type: "cross-section", layers: ["trace", "substrate", "ground"] },
+  geometry: {
+    drawing: { family: "microstrip", roles: { w: "traceWidth", h: "substrateHeight", t: "copperThickness", er: "dielectricConstant" } },
+    synthesis: [{ output: "impedance", solveFor: ["traceWidth", "substrateHeight"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "traceWidth", y: "impedance", range: [0.1, 5], scale: "linear" }
+  },
   relatedCalculators: ["vswr-return-loss", "trace-width-current", "rf-link-budget"],
   relatedTools: ["impedance-matching", "pdn-impedance", "fdtd-sparam"],
   relatedBlogPosts: ["coax-loss", "eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"],
@@ -1543,13 +1578,17 @@ function calculateCoaxImpedance(inputs) {
   const c2 = 299792458;
   const D_m = D * 1e-3;
   const cutoffFreqGHz = c2 / (Math.PI * D_m * Math.sqrt(er)) * 1e-9;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 299.792458 / (frequency * Math.sqrt(er));
   return {
     values: {
       impedance,
       capacitancePFm,
       inductanceNHm,
       velocityFactor,
-      cutoffFreqGHz
+      cutoffFreqGHz,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     }
   };
 }
@@ -1582,7 +1621,7 @@ var coaxImpedance = {
         { label: "RG-59", values: { innerDiameter: 0.584, outerDiameter: 3.66, dielectricConstant: 2.3 } },
         { label: "RG-174", values: { innerDiameter: 0.48, outerDiameter: 1.8, dielectricConstant: 2.3 } },
         { label: "RG-213", values: { innerDiameter: 2.26, outerDiameter: 7.24, dielectricConstant: 2.26 } },
-        { label: "LMR-400", values: { innerDiameter: 2.74, outerDiameter: 8.13, dielectricConstant: 1.38 } }
+        { label: "LMR-400", values: { innerDiameter: 2.74, outerDiameter: 7.24, dielectricConstant: 1.38 } }
       ]
     },
     {
@@ -1610,14 +1649,18 @@ var coaxImpedance = {
       min: 1,
       max: 20,
       step: 0.01,
-      tooltip: "Relative permittivity of the insulating dielectric between conductors",
-      presets: [
-        { label: "Air (1.0)", values: { dielectricConstant: 1 } },
-        { label: "PTFE (2.2)", values: { dielectricConstant: 2.2 } },
-        { label: "Polyethylene (2.25)", values: { dielectricConstant: 2.25 } },
-        { label: "Foam PE (1.45)", values: { dielectricConstant: 1.45 } },
-        { label: "PVC (3.5)", values: { dielectricConstant: 3.5 } }
-      ]
+      tooltip: "Relative permittivity of the insulating dielectric between conductors"
+      // The material picker sets it (lib/geometry/materials.ts, coax-dielectric).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
@@ -1670,14 +1713,18 @@ var coaxImpedance = {
       precision: 2,
       format: "standard",
       tooltip: "Frequency above which higher-order modes can propagate (TE11 mode)"
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "\u03BBg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "\u03BBg/4", unit: "mm", precision: 3, format: "standard" }
   ],
   examples: [
     { id: "rg-58", label: "RG-58", values: { innerDiameter: 0.9, outerDiameter: 2.95, dielectricConstant: 2.3 } },
     { id: "rg-59", label: "RG-59", values: { innerDiameter: 0.584, outerDiameter: 3.66, dielectricConstant: 2.3 } },
     { id: "rg-174", label: "RG-174", values: { innerDiameter: 0.48, outerDiameter: 1.8, dielectricConstant: 2.3 } },
     { id: "rg-213", label: "RG-213", values: { innerDiameter: 2.26, outerDiameter: 7.24, dielectricConstant: 2.26 } },
-    { id: "lmr-400", label: "LMR-400", values: { innerDiameter: 2.74, outerDiameter: 8.13, dielectricConstant: 1.38 } }
+    // D is the shield's inside, the 7.24 mm dielectric diameter; 8.13 mm is the braid's outside.
+    { id: "lmr-400", label: "LMR-400", values: { innerDiameter: 2.74, outerDiameter: 7.24, dielectricConstant: 1.38 } },
+    { id: "rg-402-semi-rigid", label: "RG-402 semi-rigid (0.141\u2033), PTFE", values: { innerDiameter: 0.92, outerDiameter: 2.98, dielectricConstant: 2.1 } }
   ],
   calculate: calculateCoaxImpedance,
   formula: {
@@ -1690,6 +1737,12 @@ var coaxImpedance = {
     reference: 'Wadell, "Transmission Line Design Handbook" 1991, Chapter 3'
   },
   visualization: { type: "cross-section", layers: ["inner", "dielectric", "outer"] },
+  geometry: {
+    drawing: { family: "coax", roles: { d: "innerDiameter", D: "outerDiameter", er: "dielectricConstant" } },
+    synthesis: [{ output: "impedance", solveFor: ["innerDiameter", "outerDiameter"] }],
+    material: { library: "coax-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "innerDiameter", y: "impedance", range: [0.1, 2.8], scale: "log" }
+  },
   relatedCalculators: ["microstrip-impedance", "vswr-return-loss"],
   relatedTools: ["impedance-matching"],
   relatedBlogPosts: ["esd-clamp-selection", "s-parameter-pipeline-connector-deembedding"],
@@ -2547,6 +2600,12 @@ var smithChart = {
 };
 
 // src/lib/calculators/pcb/trace-width-current.ts
+function traceCurrentChart(standard, external) {
+  if (standard === 1) {
+    return { k: 0.024, rule: "0.024\xB7\u0394T^0.44\xB7A^0.725", clause: "IPC-2152 (2009) \xA75, Figure 5-1, internal and external conductors, all environments" };
+  }
+  return external ? { k: 0.048, rule: "0.048\xB7\u0394T^0.44\xB7A^0.725", clause: "IPC-2221A (2003) \xA76.2, Figure 6-4, chart A, external conductors" } : { k: 0.024, rule: "0.024\xB7\u0394T^0.44\xB7A^0.725", clause: "IPC-2221A (2003) \xA76.2, Figure 6-4, chart C, internal conductors" };
+}
 function calculateTraceWidth(inputs) {
   const { current, copperWeight, tempRise, traceLength, isExternal } = inputs;
   const copperMil = copperWeight * 1.37;
@@ -2568,14 +2627,26 @@ function calculateTraceWidth(inputs) {
   const resistance = rho * lengthM / (widthM * thicknessM);
   const voltageDrop2 = current * resistance;
   const powerDiss = current * current * resistance;
+  const standard = inputs.standard ?? 0;
+  const traceWidth = inputs.traceWidth ?? 0.5;
+  const kDT = traceCurrentChart(standard, isExternal > 0.5).k * Math.pow(tempRise, 0.44);
+  const warnings = [];
+  if (!(traceWidth > 0)) warnings.push("Enter the drawn trace width to check it against the chart");
+  const limitCurrent = traceWidth > 0 ? kDT * Math.pow(traceWidth / 0.0254 * copperMil, 0.725) : NaN;
+  const limitPercent = current / limitCurrent * 100;
+  const minTraceWidth = Math.pow(current / kDT, 1 / 0.725) / copperMil * 0.0254;
   return {
     values: {
       width2221mm,
       width2152mm,
       resistance,
       voltageDrop: voltageDrop2,
-      powerDiss
-    }
+      powerDiss,
+      limitCurrent,
+      limitPercent,
+      minTraceWidth
+    },
+    ...warnings.length ? { warnings } : {}
   };
 }
 var traceWidthCurrent = {
@@ -2659,6 +2730,29 @@ var traceWidthCurrent = {
         { value: 1, label: "External (outer) layer" },
         { value: 0, label: "Internal layer" }
       ]
+    },
+    {
+      key: "traceWidth",
+      label: "Drawn Trace Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 0.5,
+      min: 0.01,
+      max: 100,
+      tooltip: "The width as drawn, which the standards check judges; the minimum widths do not use it"
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "IPC-2221A Fig. 6-4" },
+        { value: 1, label: "IPC-2152 Fig. 5-1" }
+      ],
+      tooltip: "The chart the current is checked against: IPC-2221A\u2019s external or internal curve, or IPC-2152\u2019s conservative chart for every conductor"
     }
   ],
   outputs: [
@@ -2695,9 +2789,59 @@ var traceWidthCurrent = {
       label: "Power Dissipation",
       unit: "W",
       precision: 4
+    },
+    {
+      key: "limitCurrent",
+      label: "Current Limit",
+      symbol: "I_max",
+      unit: "A",
+      precision: 3,
+      tooltip: "The most current the drawn trace may carry at the allowed temperature rise, read on the chosen chart"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The current as a percentage of the chart limit; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "minTraceWidth",
+      label: "Compliant Width",
+      symbol: "W_min",
+      unit: "mm",
+      precision: 3,
+      tooltip: "The width at which the current equals the chart limit; at or above it the trace complies"
     }
   ],
+  examples: [
+    { id: "motor-3a-1-mm-outer", label: "3 A motor feed, 1 mm outer trace, 1 oz", values: { current: 3, copperWeight: 1, tempRise: 10, isExternal: 1, traceWidth: 1 } },
+    { id: "usb-c-5a-3-mm-outer", label: "5 A USB-C VBUS, 3 mm outer trace, 1 oz", values: { current: 5, copperWeight: 1, tempRise: 10, isExternal: 1, traceWidth: 3 } },
+    { id: "inner-5a-2-mm-2-oz", label: "5 A on a 2 mm inner trace, 2 oz, 20 \xB0C rise", values: { current: 5, copperWeight: 2, tempRise: 20, isExternal: 0, traceWidth: 2 } },
+    { id: "bus-10a-5-mm-2-oz", label: "10 A power bus, 5 mm outer trace, 2 oz, 20 \xB0C rise", values: { current: 10, copperWeight: 2, tempRise: 20, isExternal: 1, traceWidth: 5 } }
+  ],
   calculate: calculateTraceWidth,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "IPC-2221A, Generic Standard on Printed Board Design (May 2003), \xA76.2 and Figure 6-4, the chart of IPC-2221 (February 1998), read through its published fit I = k\xB7\u0394T^0.44\xB7A^0.725 (I in A, \u0394T in \xB0C, A in mil\xB2)",
+        1: "IPC-2152, Standard for Determining Current Carrying Capacity in Printed Board Design (August 2009), \xA75, Figure 5-1, the conservative chart, which keeps IPC-2221\u2019s internal-conductor curve"
+      }
+    },
+    class: { input: "isExternal" },
+    value: "current",
+    limit: "limitCurrent",
+    percent: "limitPercent",
+    limitKind: "maximum",
+    clause: (standard, cls) => traceCurrentChart(standard, (cls ?? 1) > 0.5).clause,
+    rule: (standard, cls) => traceCurrentChart(standard, (cls ?? 1) > 0.5).rule,
+    remedies: [
+      { input: "traceWidth", output: "minTraceWidth", direction: "up" },
+      { input: "current", output: "limitCurrent", direction: "down" }
+    ]
+  },
   formula: {
     primary: "A = \\left(\\frac{I}{k \\cdot \\Delta T^b}\\right)^{1/c}",
     variables: [
@@ -2724,6 +2868,10 @@ var traceWidthCurrent = {
     {
       code: "copper-weight",
       text: "Copper is 1.37 mil (34.8 \xB5m) thick per ounce, and the trace cross-section is a rectangle of that thickness."
+    },
+    {
+      code: "standards-check-chart",
+      text: "The standards check reads the drawn width on IPC-2221A Figure 6-4\u2019s curve for the layer, or on IPC-2152\u2019s conservative Figure 5-1, which is IPC-2221\u2019s internal curve, for either layer. It applies neither the further 15 % derating Figure 6-4 suggests for boards 0.8 mm thick or less and copper 108 \xB5m thick or more, nor IPC-2152\u2019s detailed charts and modifiers."
     },
     {
       code: "resistance-at-temperature",
@@ -2848,7 +2996,18 @@ var traceResistance = {
     ],
     reference: "IPC-2221B; copper \u03C1\u2082\u2080 = 1.72\xD710\u207B\u2078 \u03A9\xB7m, \u03B1 = 3.93\xD710\u207B\xB3 /\xB0C"
   },
+  examples: [
+    { id: "1-oz-0p5mm-100mm", label: "0.5 mm trace, 1 oz, 100 mm", values: { traceWidth: 0.5, traceLength: 100, copperThickness: 35, temperature: 25 } },
+    { id: "supply-10-mohm-60c", label: "50 mm supply trace held to 10 m\u03A9 at 60 \xB0C", values: { traceWidth: 2.8434057142857325, traceLength: 50, copperThickness: 35, temperature: 60 } },
+    { id: "half-oz-0p15mm-signal", label: "0.15 mm signal trace, \xBD oz, 50 mm", values: { traceWidth: 0.15, traceLength: 50, copperThickness: 17.5, temperature: 25 } },
+    { id: "2-oz-5mm-power-85c", label: "5 mm power trace, 2 oz, 200 mm at 85 \xB0C", values: { traceWidth: 5, traceLength: 200, copperThickness: 70, temperature: 85 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "trace", roles: { len: "traceLength", w: "traceWidth", t: "copperThickness" } },
+    synthesis: [{ output: "resistance", solveFor: ["traceWidth", "traceLength"] }],
+    curve: { x: "traceWidth", y: "resistance", range: [0.1, 10], scale: "log" }
+  },
   relatedCalculators: ["trace-width-current", "microstrip-impedance"],
   relatedBlogPosts: ["pcb-trace-width-current-capacity"],
   verificationData: [
@@ -2919,7 +3078,7 @@ function centredStripNormC(w, b) {
   if (x > 20) {
     return 8 * (Math.LN2 + x + Math.log1p(Math.exp(-2 * x))) / Math.PI;
   }
-  return 4 * ellipticK(Math.tanh(x)) / ellipticK(1 / Math.cosh(x));
+  return 4 * ellipticKc(1 / Math.cosh(x)) / ellipticKc(Math.tanh(x));
 }
 var OFFSET_A = 0.245266;
 var OFFSET_P = 0.718328;
@@ -3163,6 +3322,19 @@ function cpwg(w, g, h, er, t) {
   const Z0 = ETA_0 / 2 / (Math.sqrt(erEff) * sum);
   return { Z0, erEff };
 }
+function ellipticKc(kp) {
+  if (!(kp > 0)) return Infinity;
+  if (kp >= 1) return Math.PI / 2;
+  let a = 1, b = kp;
+  for (let i = 0; i < 32; i++) {
+    const aNext = (a + b) / 2;
+    const bNext = Math.sqrt(a * b);
+    a = aNext;
+    b = bNext;
+    if (Math.abs(a - b) < 1e-15 * a) break;
+  }
+  return Math.PI / (2 * a);
+}
 function ellipticK(k) {
   if (k <= 0) return Math.PI / 2;
   if (k >= 1) return Infinity;
@@ -3194,6 +3366,8 @@ function calculateDifferentialPair(inputs) {
     return { values: {}, errors: ["Copper thickness must be less than substrate height"] };
   }
   const result = diffMicrostrip(w, s, h, er, t);
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 299.792458 / (frequency * Math.sqrt(result.erEffOdd));
   const warnings = [];
   if (!result.inRange) {
     warnings.push(
@@ -3209,7 +3383,9 @@ function calculateDifferentialPair(inputs) {
       zeven: result.Zeven,
       erEffOdd: result.erEffOdd,
       erEffEven: result.erEffEven,
-      inValidatedRange: result.inRange ? 1 : 0
+      inValidatedRange: result.inRange ? 1 : 0,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -3272,12 +3448,8 @@ var differentialPair = {
       min: 1,
       max: 20,
       step: 0.01,
-      tooltip: "Relative permittivity of the substrate material",
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConstant: 4.2 } },
-        { label: "Rogers 4003C (3.38)", values: { dielectricConstant: 3.38 } },
-        { label: "PTFE (2.2)", values: { dielectricConstant: 2.2 } }
-      ]
+      tooltip: "Relative permittivity of the substrate material"
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -3294,6 +3466,16 @@ var differentialPair = {
         { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } },
         { label: "2 oz (70 \u03BCm)", values: { copperThickness: 70 } }
       ]
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength of the differential (odd) mode; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
@@ -3370,7 +3552,29 @@ var differentialPair = {
       precision: 0,
       tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
       thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
+    },
+    {
+      key: "guidedWavelength",
+      label: "Guided Wavelength (odd mode)",
+      symbol: "\u03BBg",
+      unit: "mm",
+      precision: 3,
+      format: "standard",
+      tooltip: "Wavelength of the differential (odd) mode on the pair at the frequency, c/(f\xB7\u221A\u03B5eff,odd)"
+    },
+    {
+      key: "quarterWavelength",
+      label: "Quarter Wavelength (odd mode)",
+      symbol: "\u03BBg/4",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
     }
+  ],
+  examples: [
+    { id: "usb-2-90-ohm-fr4-0-1-mm", label: "USB 2.0, 90 \u03A9 on 0.1 mm FR-4", values: { traceWidth: 0.177, traceSpacing: 0.15, substrateHeight: 0.1, dielectricConstant: 4.4, copperThickness: 17.5 } },
+    { id: "ethernet-100-ohm-fr4-0-2-mm", label: "Ethernet or LVDS, 100 \u03A9 on 0.2 mm FR-4", values: { traceWidth: 0.256, traceSpacing: 0.2, substrateHeight: 0.2, dielectricConstant: 4.4, copperThickness: 35 } },
+    { id: "pcie-85-ohm-fr4-0-1-mm", label: "PCIe, 85 \u03A9 on 0.1 mm FR-4", values: { traceWidth: 0.197, traceSpacing: 0.15, substrateHeight: 0.1, dielectricConstant: 4.4, copperThickness: 17.5 } }
   ],
   calculate: calculateDifferentialPair,
   // What `diffMicrostrip` computes, written out. The single line is closed-form
@@ -3438,6 +3642,12 @@ var differentialPair = {
   visualization: {
     type: "cross-section",
     layers: ["trace1", "gap", "trace2", "substrate", "ground"]
+  },
+  geometry: {
+    drawing: { family: "coupled", roles: { w: "traceWidth", s: "traceSpacing", h: "substrateHeight", t: "copperThickness", er: "dielectricConstant" } },
+    synthesis: [{ output: "zdiff", solveFor: ["traceWidth", "traceSpacing", "substrateHeight"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "traceWidth", y: "zdiff", range: [0.05, 1], scale: "log" }
   },
   relatedCalculators: [
     "edge-coupled-internal-symmetric",
@@ -3636,11 +3846,8 @@ var viaCalculator = {
       min: 1,
       max: 20,
       step: 0.01,
-      tooltip: "Relative permittivity of the board material",
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConstant: 4.2 } },
-        { label: "Rogers 4003C (3.38)", values: { dielectricConstant: 3.38 } }
-      ]
+      tooltip: "Relative permittivity of the board material"
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -3772,7 +3979,22 @@ var viaCalculator = {
       text: "The signal-layer input does not change any output."
     }
   ],
+  examples: [
+    { id: "fr4-0p3-drill-1p6-board", label: "0.3 mm drill, 1.6 mm FR-4 board", values: { viaDiameter: 0.3, padDiameter: 0.6, antipadDiameter: 1, boardThickness: 1.6, dielectricConstant: 4.4, copperThickness: 25 } },
+    { id: "rf-50-ohm-ro4350b", label: "50 \u03A9 RF via, 1.6 mm RO4350B", values: { viaDiameter: 0.3, padDiameter: 0.6, antipadDiameter: 1.477405833827592, boardThickness: 1.6, dielectricConstant: 3.66, copperThickness: 25 } },
+    { id: "fr4-0p2-drill-1mm-board", label: "0.2 mm drill, 1.0 mm FR-4 board", values: { viaDiameter: 0.2, padDiameter: 0.45, antipadDiameter: 0.8, boardThickness: 1, dielectricConstant: 4.4, copperThickness: 20 } },
+    { id: "backplane-0p4-drill-3p2", label: "0.4 mm drill, 3.2 mm backplane", values: { viaDiameter: 0.4, padDiameter: 0.8, antipadDiameter: 1.3, boardThickness: 3.2, dielectricConstant: 4.4, copperThickness: 25 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "via", roles: { d: "viaDiameter", pad: "padDiameter", antipad: "antipadDiameter", len: "boardThickness", plating: "copperThickness", er: "dielectricConstant" } },
+    synthesis: [
+      { output: "impedance", solveFor: ["antipadDiameter", "viaDiameter"] },
+      { output: "capacitancePF", solveFor: ["antipadDiameter", "padDiameter"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "antipadDiameter", y: "impedance", range: [0.7, 3], scale: "linear" }
+  },
   relatedCalculators: ["trace-width-current", "microstrip-impedance"],
   relatedBlogPosts: ["decoupling-capacitor", "fdtd-via-transition-signal-integrity", "pdn-impedance-plane-resonances-decoupling"],
   verificationData: [
@@ -3958,11 +4180,9 @@ var stackupBuilder = {
       max: 12,
       step: 0.01,
       tooltip: "Relative permittivity of the board material at design frequency",
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published); FR4-HF is not in the library yet.
       presets: [
-        { label: "FR4 (4.2)", values: { dielectricConstant: 4.2 } },
-        { label: "FR4-HF (3.8)", values: { dielectricConstant: 3.8 } },
-        { label: "Rogers 4003C (3.38)", values: { dielectricConstant: 3.38 } },
-        { label: "Rogers 4350B (3.48)", values: { dielectricConstant: 3.48 } }
+        { label: "FR4-HF (3.8)", values: { dielectricConstant: 3.8 } }
       ]
     }
   ],
@@ -4034,7 +4254,25 @@ var stackupBuilder = {
     ],
     reference: 'Wheeler (1977); Pozar "Microwave Engineering" 4th ed.'
   },
+  examples: [
+    { id: "fr4-4-layer-1p6mm", label: "4-layer FR-4, 1.6 mm, 0.2 mm prepregs", values: { layerCount: 4, targetImpedance: 50, dielectricH1: 0.2, dielectricH2: 1.2, dielectricH3: 0.2, copperWeight: 1, dielectricConstant: 4.4 } },
+    { id: "fr4-0402-pad-width", label: "50 \u03A9 as wide as an 0402 pad, FR-4", values: { layerCount: 4, targetImpedance: 50, dielectricH1: 0.26152551245592287, dielectricH2: 1.2, dielectricH3: 0.2, copperWeight: 1, dielectricConstant: 4.4 } },
+    { id: "ro4350b-0p254-top", label: "RO4350B 0.254 mm (10 mil) under L1, 50 \u03A9", values: { layerCount: 4, targetImpedance: 50, dielectricH1: 0.254, dielectricH2: 1, dielectricH3: 0.254, copperWeight: 1, dielectricConstant: 3.66 } },
+    { id: "fr4-75-ohm-video", label: "75 \u03A9 video trace on 0.2 mm FR-4", values: { layerCount: 4, targetImpedance: 75, dielectricH1: 0.2, dielectricH2: 1.2, dielectricH3: 0.2, copperWeight: 1, dielectricConstant: 4.4 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "stackup",
+      roles: { layers: "layerCount", h1: "dielectricH1", h2: "dielectricH2", h3: "dielectricH3", t: "copperWeight", er: "dielectricConstant", w: "traceWidthL1mm", w2: "traceWidthL3mm" }
+    },
+    synthesis: [
+      { output: "traceWidthL1mm", solveFor: ["dielectricH1"] },
+      { output: "totalThicknessMm", solveFor: ["dielectricH2", "dielectricH1", "dielectricH3"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "dielectricH1", y: "traceWidthL1mm", range: [0.075, 0.5], scale: "linear" }
+  },
   relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-width-current"],
   relatedTools: ["pdn-impedance", "fdtd-sparam"],
   relatedBlogPosts: ["pcb-stackup-controlled-impedance"],
@@ -5804,6 +6042,12 @@ var dipoleAntenna = {
       precision: 4
     }
   ],
+  examples: [
+    { id: "two-metre-145", label: "2 m band, 145 MHz, bare wire", values: { frequency: 145, velocityFactor: 0.97 } },
+    { id: "twenty-metre-14m2", label: "20 m band, 14.2 MHz, insulated wire", values: { frequency: 14.2, velocityFactor: 0.95 } },
+    { id: "lora-868", label: "868 MHz LoRa node", values: { frequency: 868, velocityFactor: 0.97 } },
+    { id: "fm-broadcast-98", label: "FM broadcast, 98 MHz", values: { frequency: 98, velocityFactor: 0.97 } }
+  ],
   calculate: calculateDipoleAntenna,
   formula: {
     primary: "L_{\\lambda/2} = \\frac{v_f \\cdot c}{2f}, \\quad Z_{in} \\approx 73.1\\,\\Omega, \\quad G = 2.15\\,\\text{dBi}",
@@ -5825,6 +6069,12 @@ var dipoleAntenna = {
     reference: 'Balanis, "Antenna Theory: Analysis and Design", 4th ed., Chapter 4'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "dipole", roles: { len: "halfWaveLength_mm", arm: "quarterWaveLength_mm", f: "frequency", vf: "velocityFactor" } },
+    // A wire of a given length: the frequency it resonates at, or the velocity factor that tunes it there.
+    synthesis: [{ output: "halfWaveLength_mm", solveFor: ["frequency", "velocityFactor"] }],
+    curve: { x: "frequency", y: "halfWaveLength_mm", range: [100, 3e3], scale: "log" }
+  },
   relatedCalculators: [
     "patch-antenna",
     "horn-antenna",
@@ -5953,9 +6203,8 @@ var patchAntenna = {
       max: 30,
       step: 0.01,
       tooltip: "FR4 \u2248 4.4; Rogers RO4003C \u2248 3.55; Air = 1",
+      // The material picker sets laminates (lib/geometry/materials.ts); air is not a laminate.
       presets: [
-        { label: "FR4 (\u03B5r=4.4)", values: { dielectricConstant: 4.4 } },
-        { label: "Rogers RO4003C (\u03B5r=3.55)", values: { dielectricConstant: 3.55 } },
         { label: "Air (\u03B5r=1)", values: { dielectricConstant: 1 } }
       ]
     },
@@ -6030,6 +6279,12 @@ var patchAntenna = {
       tooltip: "Typical single-element patch gain (6\u20138 dBi)"
     }
   ],
+  examples: [
+    { id: "wifi-2g45-fr4", label: "2.45 GHz on 1.6 mm FR-4", values: { frequency: 2.45, dielectricConstant: 4.4, substrateHeight: 1.6 } },
+    { id: "gps-l1-ro4003c", label: "GPS L1, 1575.42 MHz, on 1.524 mm RO4003C", values: { frequency: 1.57542, dielectricConstant: 3.55, substrateHeight: 1.524 } },
+    { id: "wifi-5g8-ro4350b", label: "5.8 GHz on 0.762 mm RO4350B", values: { frequency: 5.8, dielectricConstant: 3.66, substrateHeight: 0.762 } },
+    { id: "mmwave-28g-rt5880", label: "28 GHz 5G on 0.254 mm RT/duroid 5880", values: { frequency: 28, dielectricConstant: 2.2, substrateHeight: 0.254 } }
+  ],
   calculate: calculatePatchAntenna,
   formula: {
     primary: "W = \\frac{c}{2f}\\sqrt{\\frac{2}{\\varepsilon_r+1}}, \\quad L = \\frac{c}{2f\\sqrt{\\varepsilon_{r,\\text{eff}}}} - 2\\Delta L",
@@ -6052,6 +6307,13 @@ var patchAntenna = {
     reference: 'Balanis, "Antenna Theory: Analysis and Design", 4th ed., Chapter 14'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "patch", roles: { L: "patchLength_mm", W: "patchWidth_mm", h: "substrateHeight", er: "dielectricConstant", feed: "feedOffset", f: "frequency" } },
+    // A patch of a given length: the frequency it resonates at, or the substrate height that brings it there.
+    synthesis: [{ output: "patchLength_mm", solveFor: ["frequency", "substrateHeight"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "frequency", y: "patchLength_mm", range: [1, 10], scale: "log" }
+  },
   relatedCalculators: [
     "dipole-antenna",
     "eirp-calculator",
@@ -7489,6 +7751,20 @@ var uartBaudRate = {
 };
 
 // src/lib/calculators/protocol/i2c-pullup.ts
+function i2cModeLimits(speedMode) {
+  const at = (mode, riseMaxNs, riseMinNs, sinkA, busCapMaxPf) => ({
+    mode,
+    riseMaxNs,
+    riseMinNs,
+    sinkA,
+    busCapMaxPf,
+    clause: `UM10204 Rev. 7.0, Table 11, t_r (rise time of SDA and SCL), ${mode}: ${riseMaxNs} ns maximum; t_r = 0.8473\xB7R_p\xB7C_b, \xA77.1`
+  });
+  if (speedMode === 0) return at("Standard-mode", 1e3, 0, 3e-3, 400);
+  if (speedMode === 1) return at("Fast-mode", 300, 20, 3e-3, 400);
+  return at("Fast-mode Plus", 120, 0, 0.02, 550);
+}
+var DEFAULT_PULLUP = 4700;
 function calculateI2cPullup(inputs) {
   const { vdd, speedMode, busCap, numDevices } = inputs;
   if (vdd <= 0) {
@@ -7497,17 +7773,12 @@ function calculateI2cPullup(inputs) {
   if (busCap <= 0) {
     return { values: {}, errors: ["Bus capacitance must be greater than 0"] };
   }
-  let riseTimeTarget_ns;
-  let iol;
-  if (speedMode === 0) {
-    riseTimeTarget_ns = 1e3;
-    iol = 3e-3;
-  } else if (speedMode === 1) {
-    riseTimeTarget_ns = 300;
-    iol = 3e-3;
-  } else {
-    riseTimeTarget_ns = 120;
-    iol = 0.02;
+  const limits = i2cModeLimits(speedMode);
+  const riseTimeTarget_ns = limits.riseMaxNs;
+  const iol = limits.sinkA;
+  const pullup = inputs.pullup ?? DEFAULT_PULLUP;
+  if (!(pullup > 0)) {
+    return { values: {}, errors: ["Pull-up resistance must be greater than 0"] };
   }
   const vol_max = 0.4;
   const R_max = riseTimeTarget_ns * 1e-9 / (0.8473 * busCap * 1e-12);
@@ -7530,6 +7801,18 @@ function calculateI2cPullup(inputs) {
   } else if (R_recommended > 1e4) {
     warnings.push("Recommended pull-up exceeds 10 k\u03A9 \u2014 marginal rise time; reduce bus capacitance");
   }
+  const riseTime = 0.8473 * pullup * busCap * 1e-3;
+  const riseTimePercent = riseTime / riseTimeTarget_ns * 100;
+  const maxBusCap = Math.min(riseTimeTarget_ns / (0.8473 * pullup * 1e-3), limits.busCapMaxPf);
+  if (pullup < R_min) {
+    warnings.push(`The pull-up is below R_min: pulling a line LOW to V_OL = 0.4 V takes more than the ${Math.round(iol * 1e3)} mA a ${limits.mode} device must sink (UM10204 Rev. 7.0, Table 10)`);
+  }
+  if (riseTime < limits.riseMinNs) {
+    warnings.push(`The rise time is below the ${limits.riseMinNs} ns ${limits.mode} minimum (UM10204 Rev. 7.0, Table 11)`);
+  }
+  if (busCap > limits.busCapMaxPf) {
+    warnings.push(`The bus capacitance exceeds the ${limits.busCapMaxPf} pF a ${limits.mode} bus line may carry (UM10204 Rev. 7.0, Table 11)`);
+  }
   return {
     values: {
       R_max_ohm: Math.round(R_max),
@@ -7537,7 +7820,10 @@ function calculateI2cPullup(inputs) {
       R_recommended_ohm: Math.round(R_recommended),
       current_ma,
       powerPerLine_mw,
-      riseTimeTarget_ns: Math.round(riseTimeTarget_ns)
+      riseTimeTarget_ns: Math.round(riseTimeTarget_ns),
+      riseTime,
+      riseTimePercent,
+      maxBusCap
     },
     warnings: warnings.length > 0 ? warnings : void 0,
     intermediateValues: {
@@ -7606,9 +7892,26 @@ var i2cPullup = {
       unit: "pF",
       defaultValue: 100,
       min: 10,
-      max: 400,
+      // UM10204 Table 11: 400 pF in Standard- and Fast-mode, 550 pF in Fast-mode Plus (a warning names the mode's own limit).
+      max: 550,
       step: 5,
       tooltip: "Total bus capacitance including PCB traces and device pins"
+    },
+    {
+      key: "pullup",
+      label: "Pull-Up Resistor",
+      symbol: "R_p",
+      unit: "\u03A9",
+      defaultValue: DEFAULT_PULLUP,
+      min: 100,
+      max: 1e5,
+      tooltip: "The pull-up fitted on SDA and SCL; its rise time with the bus capacitance is checked against UM10204",
+      presets: [
+        { label: "1 k\u03A9", values: { pullup: 1e3 } },
+        { label: "2.2 k\u03A9", values: { pullup: 2200 } },
+        { label: "4.7 k\u03A9", values: { pullup: 4700 } },
+        { label: "10 k\u03A9", values: { pullup: 1e4 } }
+      ]
     },
     {
       key: "numDevices",
@@ -7676,9 +7979,61 @@ var i2cPullup = {
       unit: "ns",
       precision: 0,
       tooltip: "Maximum permitted rise time for the selected speed mode (NXP UM10204)"
+    },
+    {
+      key: "riseTime",
+      label: "Rise Time",
+      symbol: "t_{r,p}",
+      unit: "ns",
+      precision: 1,
+      tooltip: "Rise time of SDA and SCL with the fitted pull-up, 0.3\xB7V_DD to 0.7\xB7V_DD: t_r = 0.8473 \xD7 R_p \xD7 C_bus (UM10204 \xA77.1)"
+    },
+    {
+      key: "riseTimePercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The rise time as a percentage of the speed mode\u2019s UM10204 maximum; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "maxBusCap",
+      label: "Compliant Bus Capacitance",
+      symbol: "C_{b,max}",
+      unit: "pF",
+      precision: 1,
+      tooltip: "The largest bus capacitance at which the fitted pull-up meets the rise-time limit, and no more than UM10204 Table 11 allows (400 pF; 550 pF in Fast-mode Plus)"
     }
   ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "fast-mode-4k7-150-pf", label: "Fast-mode, 4.7 k\u03A9 on 150 pF (four sensors)", values: { vdd: 3.3, speedMode: 1, busCap: 150, pullup: 4700, numDevices: 4 } },
+    { id: "fast-mode-2k2-100-pf", label: "Fast-mode, 2.2 k\u03A9 on 100 pF", values: { vdd: 3.3, speedMode: 1, busCap: 100, pullup: 2200, numDevices: 2 } },
+    { id: "standard-mode-5-v-4k7-200-pf", label: "Standard-mode at 5 V, 4.7 k\u03A9 on 200 pF", values: { vdd: 5, speedMode: 0, busCap: 200, pullup: 4700, numDevices: 6 } },
+    { id: "fast-mode-plus-680-200-pf", label: "Fast-mode Plus, 680 \u03A9 on 200 pF", values: { vdd: 3.3, speedMode: 2, busCap: 200, pullup: 680, numDevices: 4 } }
+  ],
   calculate: calculateI2cPullup,
+  // One specification, so the speed mode is the selector: each mode is a
+  // column of UM10204's tables, and an option input needs two options.
+  standards: {
+    standard: {
+      input: "speedMode",
+      sources: {
+        0: "NXP UM10204, I\xB2C-bus specification and user manual, Rev. 7.0 (1 October 2021), Standard-mode: Table 11 (t_r, C_b), Table 10 (I_OL at V_OL = 0.4 V), \xA77.1 (t_r = 0.8473\xB7R_p\xB7C_b)",
+        1: "NXP UM10204 Rev. 7.0 (2021), Fast-mode: the same tables",
+        2: "NXP UM10204 Rev. 7.0 (2021), Fast-mode Plus: the same tables"
+      }
+    },
+    value: "riseTime",
+    limit: "riseTimeTarget_ns",
+    percent: "riseTimePercent",
+    clause: (standard) => i2cModeLimits(standard).clause,
+    remedies: [
+      { input: "pullup", output: "R_max_ohm", direction: "down" },
+      { input: "busCap", output: "maxBusCap", direction: "down" }
+    ],
+    chart: { x: "pullup", range: [100, 1e5], scale: "log", yScale: "log" }
+  },
   formula: {
     primary: "R_{max} = \\frac{t_r}{0.8473 \\cdot C_{bus}}, \\quad R_{min} = \\frac{V_{DD} - V_{OL}}{I_{OL}}, \\quad R_{rec} = \\sqrt{R_{min} \\cdot R_{max}}",
     variables: [
@@ -7948,6 +8303,16 @@ var heatsinkCalculator = {
 };
 
 // src/lib/calculators/thermal/pcb-trace-temp.ts
+function laminateLimit(laminate) {
+  const at = (mot, row) => ({ mot, rule: `${mot} \xB0C \u2212 T_A`, clause: `limit IPC-2222 (1998) Table 4-1, ${row}: ${mot} \xB0C, less the ambient (IPC-2221A \xA76.2)` });
+  if (laminate === 1) return at(120, "FR-4 (IPC-4101/21/24/25/27), dielectric 0.1 mm min");
+  if (laminate === 2) return at(170, "GPY polyimide (IPC-4101/40/41/42), dielectric 1.6 mm min");
+  if (laminate === 3) return at(140, "GPY polyimide (IPC-4101/40/41/42), dielectric 0.1 mm min");
+  return at(130, "FR-4 (IPC-4101/21/24/25/27), dielectric 0.4 mm min");
+}
+function riseChart(standard) {
+  return standard === 1 ? { k: 0.024, clause: "Rise on IPC-2152 (2009) \xA75, Figure 5-1" } : { k: 0.048, clause: "Rise on IPC-2221A (2003) \xA76.2, Figure 6-4, chart A, external conductors" };
+}
 function calculatePcbTraceTemp(inputs) {
   const { current, traceWidth, copperWeight, ambientTemp, traceLength } = inputs;
   if (current <= 0) {
@@ -7965,14 +8330,30 @@ function calculatePcbTraceTemp(inputs) {
   const tempRise = Math.pow(current / (0.048 * Math.pow(crossSection_mils2, 0.725)), 1 / 0.44);
   const maxTemp = ambientTemp + tempRise;
   const currentCapacity = 0.048 * Math.pow(crossSection_mils2, 0.725) * Math.pow(10, 0.44);
+  const k = riseChart(inputs.standard ?? 0).k;
+  const chartRise = Math.pow(current / (k * Math.pow(crossSection_mils2, 0.725)), 1 / 0.44);
+  const permissible = laminateLimit(inputs.laminate ?? 0).mot - ambientTemp;
+  const warnings = [];
+  if (!(permissible > 0)) warnings.push("The ambient is at or above the laminate\u2019s maximum operating temperature, so no temperature rise is permissible");
+  const limitRise = permissible > 0 ? permissible : NaN;
+  const limitPercent = chartRise / limitRise * 100;
+  const kRise = k * Math.pow(limitRise, 0.44);
+  const maxCurrent = kRise * Math.pow(crossSection_mils2, 0.725);
+  const minTraceWidth = Math.pow(current / kRise, 1 / 0.725) / (thickness * 1550);
   return {
     values: {
       tempRise,
       maxTemp,
       traceResistance: traceResistance2,
       powerDissipated,
-      currentCapacity
-    }
+      currentCapacity,
+      chartRise,
+      limitRise,
+      limitPercent,
+      minTraceWidth,
+      maxCurrent
+    },
+    ...warnings.length ? { warnings } : {}
   };
 }
 var pcbTraceTemp = {
@@ -8030,6 +8411,34 @@ var pcbTraceTemp = {
       unit: "mm",
       defaultValue: 100,
       min: 1
+    },
+    {
+      key: "laminate",
+      label: "Laminate",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 3,
+      options: [
+        { value: 0, label: "FR-4, \u2265 0.4 mm" },
+        { value: 1, label: "FR-4, 0.1\u20130.4 mm" },
+        { value: 2, label: "Polyimide, \u2265 1.6 mm" },
+        { value: 3, label: "Polyimide, 0.1\u20131.6 mm" }
+      ],
+      tooltip: "The laminate and the board\u2019s total dielectric thickness, which set its maximum operating temperature"
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "IPC-2221A Fig. 6-4" },
+        { value: 1, label: "IPC-2152 Fig. 5-1" }
+      ],
+      tooltip: "The chart the rise is read on: IPC-2221A\u2019s external curve, as Temperature Rise, or IPC-2152\u2019s conservative chart. Either way the limit is the laminate\u2019s maximum operating temperature less the ambient."
     }
   ],
   outputs: [
@@ -8078,9 +8487,76 @@ var pcbTraceTemp = {
       symbol: "I_max",
       unit: "A",
       precision: 2
+    },
+    {
+      key: "chartRise",
+      label: "Temperature Rise on the Chart",
+      symbol: "\u0394T",
+      unit: "\xB0C",
+      precision: 1,
+      tooltip: "The rise read on the chosen chart: on IPC-2221A\u2019s external curve it is Temperature Rise; on IPC-2152\u2019s conservative chart it is higher"
+    },
+    {
+      key: "limitRise",
+      label: "Permissible Rise",
+      symbol: "\u0394T_max",
+      unit: "\xB0C",
+      precision: 1,
+      tooltip: "The laminate\u2019s maximum operating temperature less the ambient: the most the trace may rise"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The temperature rise as a percentage of the permissible rise; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "minTraceWidth",
+      label: "Compliant Width",
+      symbol: "W_min",
+      unit: "mm",
+      precision: 3,
+      tooltip: "The width at which the rise equals the permissible rise; at or above it the trace complies"
+    },
+    {
+      key: "maxCurrent",
+      label: "Compliant Current",
+      symbol: "I_lim",
+      unit: "A",
+      precision: 2,
+      tooltip: "The current at which the rise equals the permissible rise; at or below it the trace complies"
     }
   ],
+  examples: [
+    { id: "heater-7a-105-c", label: "7 A heater feed, 2 mm, 1 oz, 105 \xB0C ambient", values: { current: 7, traceWidth: 2, copperWeight: 1, ambientTemp: 105, laminate: 0 } },
+    { id: "heater-7a-105-c-2-oz", label: "7 A heater feed in 2 oz copper, 105 \xB0C ambient", values: { current: 7, traceWidth: 2, copperWeight: 2, ambientTemp: 105, laminate: 0 } },
+    { id: "polyimide-1a-0p3-mm", label: "1 A on a 0.3 mm, \xBD oz trace, thin polyimide board, 60 \xB0C", values: { current: 1, traceWidth: 0.3, copperWeight: 0.5, ambientTemp: 60, laminate: 3 } },
+    { id: "ipc-2152-2a-0p5-mm", label: "2 A on a 0.5 mm trace at 70 \xB0C, IPC-2152 chart", values: { current: 2, traceWidth: 0.5, copperWeight: 1, ambientTemp: 70, standard: 1 } }
+  ],
   calculate: calculatePcbTraceTemp,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "The rise: IPC-2221A, Generic Standard on Printed Board Design (May 2003), \xA76.2 and Figure 6-4, chart A, the chart of IPC-2221 (February 1998), read through its published fit I = 0.048\xB7\u0394T^0.44\xB7A^0.725 (A in mil\xB2). The limit: IPC-2221A \xA76.2\u2019s permissible rise, with IPC-2222, Sectional Design Standard for Rigid Organic Printed Boards (February 1998), \xA74.3 and Table 4-1, Clad Laminate Maximum Operating Temperatures",
+        1: "The rise: IPC-2152, Standard for Determining Current Carrying Capacity in Printed Board Design (August 2009), \xA75, Figure 5-1, the conservative chart, which keeps IPC-2221\u2019s internal curve, I = 0.024\xB7\u0394T^0.44\xB7A^0.725. The limit as for IPC-2221A: \xA76.2 with IPC-2222 (February 1998) Table 4-1"
+      }
+    },
+    class: { input: "laminate" },
+    value: "chartRise",
+    limit: "limitRise",
+    percent: "limitPercent",
+    limitKind: "maximum",
+    clause: (standard, cls) => `${riseChart(standard).clause}; ${laminateLimit(cls ?? 0).clause}`,
+    rule: (_standard, cls) => laminateLimit(cls ?? 0).rule,
+    remedies: [
+      { input: "traceWidth", output: "minTraceWidth", direction: "up" },
+      { input: "current", output: "maxCurrent", direction: "down" }
+    ],
+    chart: { x: "current", range: [0.1, 100], scale: "log", yScale: "log" }
+  },
   formula: {
     primary: "\u0394T = (I / (k \xD7 W^b))^(1/c) \u2014 IPC-2152",
     variables: [
@@ -9191,6 +9667,7 @@ var waveguideCutoff = {
       unit: "mm",
       defaultValue: 22.86,
       min: 0.1,
+      max: 1e3,
       presets: [
         { label: "WR-90 (X-band)", values: { width: 22.86, height: 10.16 } },
         { label: "WR-62 (Ku-band)", values: { width: 15.8, height: 7.9 } },
@@ -9212,7 +9689,8 @@ var waveguideCutoff = {
       symbol: "f",
       unit: "GHz",
       defaultValue: 10,
-      min: 0.1
+      min: 0.1,
+      max: 1e3
     },
     {
       key: "modeM",
@@ -9273,11 +9751,14 @@ var waveguideCutoff = {
       precision: 0
     }
   ],
+  // Each guide at a frequency inside its band: at the 10 GHz default WR-42 and
+  // WR-28 are below cutoff.
   examples: [
-    { id: "wr-90", label: "WR-90 (X-band)", values: { width: 22.86, height: 10.16 } },
-    { id: "wr-62", label: "WR-62 (Ku-band)", values: { width: 15.8, height: 7.9 } },
-    { id: "wr-42", label: "WR-42 (K-band)", values: { width: 10.668, height: 4.318 } },
-    { id: "wr-28", label: "WR-28 (Ka-band)", values: { width: 7.112, height: 3.556 } }
+    { id: "wr-90", label: "WR-90 (X-band)", values: { width: 22.86, height: 10.16, frequency: 10 } },
+    { id: "wr-62", label: "WR-62 (Ku-band)", values: { width: 15.8, height: 7.9, frequency: 15 } },
+    { id: "wr-42", label: "WR-42 (K-band)", values: { width: 10.668, height: 4.318, frequency: 22 } },
+    { id: "wr-28", label: "WR-28 (Ka-band)", values: { width: 7.112, height: 3.556, frequency: 33 } },
+    { id: "wr-284", label: "WR-284 (S-band radar), 3 GHz", values: { width: 72.136, height: 34.036, frequency: 3 } }
   ],
   calculate: calculateWaveguideCutoff,
   formula: {
@@ -9292,6 +9773,14 @@ var waveguideCutoff = {
     reference: "Pozar, Microwave Engineering 4th Ed., Chapter 3"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "waveguide", roles: { a: "width", b: "height", f: "frequency", m: "modeM", n: "modeN" } },
+    synthesis: [
+      { output: "cutoffFreq", solveFor: ["width"] },
+      { output: "guideWavelength", solveFor: ["frequency", "width"] }
+    ],
+    curve: { x: "width", y: "cutoffFreq", range: [5, 200], scale: "log" }
+  },
   relatedCalculators: ["microstrip-impedance", "coax-impedance", "wavelength-frequency"],
   methodology: {
     references: [
@@ -10238,6 +10727,8 @@ function calculateControlledImpedance(inputs) {
   }
   const { Z0: impedance, erEff: effectiveDielectric } = computeZ0(traceWidth);
   const propagationDelay = Math.sqrt(effectiveDielectric) / 0.3;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 299.792458 / (frequency * Math.sqrt(effectiveDielectric));
   let lo = 0.01, hi = 20;
   for (let i = 0; i < 50; i++) {
     const mid = (lo + hi) / 2;
@@ -10254,7 +10745,9 @@ function calculateControlledImpedance(inputs) {
       impedance,
       effectiveDielectric,
       propagationDelay,
-      traceWidthFor50
+      traceWidthFor50,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -10302,6 +10795,8 @@ var controlledImpedance = {
       unit: "mm",
       defaultValue: 1.8,
       min: 0.05,
+      // The range the 50 Ω width is searched over; synthesis searches it too.
+      max: 20,
       step: 0.05
     },
     {
@@ -10311,6 +10806,7 @@ var controlledImpedance = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 10,
       step: 0.01
     },
     {
@@ -10319,13 +10815,8 @@ var controlledImpedance = {
       symbol: "\u03B5r",
       unit: "",
       defaultValue: 4.4,
-      min: 1,
-      presets: [
-        { label: "FR4 (4.4)", values: { dielectricConst: 4.4 } },
-        { label: "Rogers RO4003 (3.55)", values: { dielectricConst: 3.55 } },
-        { label: "Rogers RO4350 (3.66)", values: { dielectricConst: 3.66 } },
-        { label: "PTFE (2.1)", values: { dielectricConst: 2.1 } }
-      ]
+      min: 1
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -10357,6 +10848,16 @@ var controlledImpedance = {
         { label: "Prepreg FR4 (4.2)", values: { coverDielectric: 4.2 } },
         { label: "Conformal coating (3.0)", values: { coverDielectric: 3 } }
       ]
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
@@ -10393,7 +10894,29 @@ var controlledImpedance = {
       symbol: "W_50\u03A9",
       unit: "mm",
       precision: 3
+    },
+    {
+      key: "guidedWavelength",
+      label: "Guided Wavelength",
+      symbol: "\u03BBg",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
+    },
+    {
+      key: "quarterWavelength",
+      label: "Quarter Wavelength",
+      symbol: "\u03BBg/4",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
     }
+  ],
+  examples: [
+    { id: "surface-fr4-0-2-mm-50-ohm", label: "50 \u03A9 surface microstrip on 0.2 mm FR-4", values: { traceType: 0, traceWidth: 0.345, substrateHeight: 0.2, dielectricConst: 4.4, copperThickness: 35 } },
+    { id: "soldermask-fr4-0-2-mm-50-ohm", label: "50 \u03A9 under 25 \xB5m soldermask on 0.2 mm FR-4", values: { traceType: 1, traceWidth: 0.33, substrateHeight: 0.2, dielectricConst: 4.4, copperThickness: 35, coverHeight: 0.025, coverDielectric: 3.5 } },
+    { id: "stripline-fr4-0-4-mm-50-ohm", label: "50 \u03A9 stripline, planes 0.4 mm apart, FR-4", values: { traceType: 2, traceWidth: 0.138, substrateHeight: 0.2, dielectricConst: 4.4, copperThickness: 17.5 } },
+    { id: "surface-ro4350b-0-508-mm-50-ohm", label: "50 \u03A9 on 0.508 mm RO4350B", values: { traceType: 0, traceWidth: 1.065, substrateHeight: 0.508, dielectricConst: 3.66, copperThickness: 35 } }
   ],
   calculate: calculateControlledImpedance,
   formula: {
@@ -10420,6 +10943,17 @@ var controlledImpedance = {
     reference: "Hammerstad & Jensen, IEEE MTT-S 1980; stripline core verified against the field solver committed in src/lib/pcb/__tests__/solver. The covered-microstrip filling factors are fitted to a layered solve."
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "microstrip",
+      roles: { w: "traceWidth", h: "substrateHeight", t: "copperThickness", er: "dielectricConst", cover: "coverHeight", coverEr: "coverDielectric" },
+      // Stripline is centred: a plane h above and h below the trace.
+      variant: { input: "traceType", byValue: { 1: "embedded", 2: "stripline" } }
+    },
+    synthesis: [{ output: "impedance", solveFor: ["traceWidth", "substrateHeight"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "impedance", range: [0.05, 5], scale: "log" }
+  },
   relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-resistance", "edge-coupled-internal-symmetric", "edge-coupled-embedded"],
   relatedTools: ["pdn-impedance"],
   relatedBlogPosts: ["decoupling-capacitor", "ethernet-cable", "eye-diagram-signal-integrity-10gbps"]
@@ -12936,6 +13470,7 @@ var yagiAntenna = {
       unit: "MHz",
       defaultValue: 144,
       min: 1,
+      max: 1e4,
       tooltip: "Operating frequency in MHz",
       presets: [
         { label: "144 MHz (2m)", values: { frequency: 144 } },
@@ -13010,6 +13545,13 @@ var yagiAntenna = {
       precision: 1
     }
   ],
+  // Each boom is the length the 0.2λ spacing gives, (N − 1) × 0.2λ.
+  examples: [
+    { id: "six-metre-3el", label: "6 m band, 3 elements, 50.1 MHz", values: { frequency: 50.1, numElements: 3, boomLength: 2.39 } },
+    { id: "two-metre-5el", label: "2 m band, 5 elements, 144 MHz", values: { frequency: 144, numElements: 5, boomLength: 1.67 } },
+    { id: "seventy-cm-7el", label: "70 cm band, 7 elements, 432 MHz", values: { frequency: 432, numElements: 7, boomLength: 0.83 } },
+    { id: "twenty-three-cm-15el", label: "23 cm band, 15 elements, 1296 MHz", values: { frequency: 1296, numElements: 15, boomLength: 0.65 } }
+  ],
   calculate: calculateYagiAntenna,
   formula: {
     primary: "\u03BB = c/f;  G \u2248 10\xB7log\u2081\u2080(0.8\xB7N) + 2.15 dBi  (c = 299 792 458 m/s)",
@@ -13021,6 +13563,15 @@ var yagiAntenna = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "yagi",
+      roles: { n: "numElements", boom: "boomLength", f: "frequency", driver: "driverLength", refl: "reflectorLength", dir: "directorLength", spacing: "spacing" }
+    },
+    // Elements already cut: the frequency the driven element is a resonant length for.
+    synthesis: [{ output: "driverLength", solveFor: ["frequency"] }],
+    curve: { x: "numElements", y: "gain", range: [2, 20], scale: "linear" }
+  },
   relatedCalculators: ["dipole-antenna", "horn-antenna", "eirp-calculator", "patch-antenna", "rf-link-budget"],
   relatedTools: ["antenna-sim"],
   relatedBlogPosts: ["cubesat-uhf-link-budget-walkthrough"],
@@ -13103,6 +13654,7 @@ var hornAntenna = {
       unit: "mm",
       defaultValue: 50,
       min: 1,
+      max: 2e3,
       tooltip: "Aperture dimension in the H-plane (horizontal)"
     },
     {
@@ -13112,6 +13664,7 @@ var hornAntenna = {
       unit: "mm",
       defaultValue: 40,
       min: 1,
+      max: 2e3,
       tooltip: "Aperture dimension in the E-plane (vertical)"
     }
   ],
@@ -13154,6 +13707,12 @@ var hornAntenna = {
       precision: 3
     }
   ],
+  examples: [
+    { id: "x-band-130x110", label: "X-band horn, 10 GHz, 130 \xD7 110 mm", values: { frequency: 10, apertureWidth: 130, apertureHeight: 110 } },
+    { id: "ku-band-60x45", label: "Ku-band horn, 12 GHz, 60 \xD7 45 mm", values: { frequency: 12, apertureWidth: 60, apertureHeight: 45 } },
+    { id: "ka-band-40x30", label: "Ka-band horn, 30 GHz, 40 \xD7 30 mm", values: { frequency: 30, apertureWidth: 40, apertureHeight: 30 } },
+    { id: "s-band-300x230", label: "S-band horn, 2.45 GHz, 300 \xD7 230 mm", values: { frequency: 2.45, apertureWidth: 300, apertureHeight: 230 } }
+  ],
   calculate: calculateHornAntenna,
   formula: {
     primary: "G = 10\xB7log\u2081\u2080(4\u03C0\xB7\u03B7\xB7A/\u03BB\xB2)",
@@ -13166,6 +13725,11 @@ var hornAntenna = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "horn", roles: { a: "apertureWidth", b: "apertureHeight", f: "frequency" } },
+    synthesis: [{ output: "gain", solveFor: ["apertureWidth", "apertureHeight"] }],
+    curve: { x: "apertureWidth", y: "gain", range: [10, 500], scale: "log" }
+  },
   relatedCalculators: ["parabolic-dish-antenna", "eirp-calculator", "antenna-beamwidth", "yagi-antenna", "dipole-antenna"],
   relatedBlogPosts: ["yagi-antenna-simulation-2m-band"],
   liveWidgets: [
@@ -13240,6 +13804,7 @@ var parabolicDishAntenna = {
       unit: "m",
       defaultValue: 1.2,
       min: 0.01,
+      max: 500,
       tooltip: "Reflector diameter in meters"
     },
     {
@@ -13285,6 +13850,12 @@ var parabolicDishAntenna = {
       precision: 1
     }
   ],
+  examples: [
+    { id: "ku-tv-60cm", label: "Ku-band TV dish, 60 cm, 11.7 GHz", values: { frequency: 11.7, diameter: 0.6, efficiency: 65 } },
+    { id: "vsat-1m2-uplink", label: "VSAT 1.2 m, 14.25 GHz uplink", values: { frequency: 14.25, diameter: 1.2, efficiency: 60 } },
+    { id: "c-band-3m", label: "C-band earth station, 3 m, 4 GHz", values: { frequency: 4, diameter: 3, efficiency: 60 } },
+    { id: "deep-space-70m", label: "70 m deep-space antenna, X-band 8.42 GHz", values: { frequency: 8.42, diameter: 70, efficiency: 70 } }
+  ],
   calculate: calculateParabolicDishAntenna,
   formula: {
     primary: "G = 10\xB7log\u2081\u2080(4\u03C0\xB7\u03B7\xB7A/\u03BB\xB2);  HPBW \u2248 70\u03BB/D",
@@ -13297,6 +13868,14 @@ var parabolicDishAntenna = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "dish", roles: { D: "diameter", f: "frequency", eff: "efficiency", hpbw: "hpbw" } },
+    synthesis: [
+      { output: "gain", solveFor: ["diameter", "efficiency"] },
+      { output: "hpbw", solveFor: ["diameter"] }
+    ],
+    curve: { x: "diameter", y: "gain", range: [0.1, 10], scale: "log" }
+  },
   relatedCalculators: ["horn-antenna", "eirp-calculator", "rf-link-budget"],
   relatedBlogPosts: ["antenna-beamwidth"],
   liveWidgets: [
@@ -13381,6 +13960,7 @@ var loopAntenna = {
       unit: "m",
       defaultValue: 1,
       min: 0.01,
+      max: 20,
       tooltip: "Diameter of the loop structure in meters"
     },
     {
@@ -13433,6 +14013,12 @@ var loopAntenna = {
       precision: 3
     }
   ],
+  examples: [
+    { id: "forty-metre-1m", label: "40 m band, 1 m loop of 22 mm pipe", values: { frequency: 7.1, diameter: 1, conductorDiam: 22 } },
+    { id: "twenty-metre-0m8", label: "20 m band, 0.8 m loop of 22 mm pipe", values: { frequency: 14.2, diameter: 0.8, conductorDiam: 22 } },
+    { id: "ten-metre-0m5", label: "10 m band, 0.5 m loop of 15 mm pipe", values: { frequency: 28.5, diameter: 0.5, conductorDiam: 15 } },
+    { id: "mw-receive-0m6", label: "Medium-wave receive loop, 1 MHz, 0.6 m of 2 mm wire", values: { frequency: 1, diameter: 0.6, conductorDiam: 2 } }
+  ],
   calculate: calculateLoopAntenna,
   formula: {
     primary: "R_rad = 320\u03C0\u2074\xB7(A/\u03BB\xB2)\xB2",
@@ -13445,6 +14031,11 @@ var loopAntenna = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "loop", roles: { D: "diameter", d: "conductorDiam", f: "frequency" } },
+    synthesis: [{ output: "radiation_resistance", solveFor: ["diameter"] }],
+    curve: { x: "diameter", y: "radiation_resistance", range: [0.2, 2], scale: "log" }
+  },
   relatedCalculators: ["dipole-antenna", "q-factor", "antenna-beamwidth"],
   relatedBlogPosts: ["radiated-emission-estimate"],
   relatedTools: ["antenna-sim"],
@@ -13771,6 +14362,14 @@ var canBusTiming = {
 };
 
 // src/lib/calculators/protocol/usb-termination.ts
+var USB_NOMINAL_IMPEDANCE = 90;
+function usbImpedanceLimit(usbVersion) {
+  if (usbVersion === 0) {
+    return { tolerance: 13.5, rule: "90 \u03A9 \xB115 %", clause: "USB 2.0, Table 7-12, Z_O (differential cable impedance, full-/high-speed); \xA77.1.6.1 for the board trace" };
+  }
+  return { tolerance: 7, rule: "90 \u03A9 \xB17 \u03A9", clause: "USB 3.0 Rev. 1.0, \xA75.6.1.1.1, SDP differential characteristic impedance (raw cable, informative)" };
+}
+var USB2_CABLE_DELAY_MAX = 26;
 function calculateUsbTermination(inputs) {
   const { usbVersion, lineImpedance, cableLength } = inputs;
   const terminationResistor = lineImpedance;
@@ -13780,14 +14379,28 @@ function calculateUsbTermination(inputs) {
   const attenPerMeter_dB = usbVersion === 0 ? 0.4 : 1.5;
   const totalAtten_dB = cableLength * attenPerMeter_dB;
   const eyeOpening = Math.max(0, 100 - totalAtten_dB * 10);
+  const limit = usbImpedanceLimit(usbVersion);
+  const impedanceError = Math.abs(lineImpedance - USB_NOMINAL_IMPEDANCE);
+  const impedanceTolerance = limit.tolerance;
+  const impedancePercent = impedanceError / impedanceTolerance * 100;
+  const compliantImpedance = lineImpedance >= USB_NOMINAL_IMPEDANCE ? USB_NOMINAL_IMPEDANCE + impedanceTolerance : USB_NOMINAL_IMPEDANCE - impedanceTolerance;
+  const warnings = [];
+  if (usbVersion === 0 && propagationDelay > USB2_CABLE_DELAY_MAX) {
+    warnings.push("The cable delay exceeds the 26 ns one-way delay USB 2.0 allows (Table 7-12, T_FSCBL)");
+  }
   return {
     values: {
       terminationResistor,
       differentialImpedance,
       propagationDelay,
       signalRiseTime,
-      eyeOpening
-    }
+      eyeOpening,
+      impedanceError,
+      impedanceTolerance,
+      impedancePercent,
+      compliantImpedance
+    },
+    ...warnings.length ? { warnings } : {}
   };
 }
 var usbTermination = {
@@ -13818,7 +14431,7 @@ var usbTermination = {
       step: 1,
       presets: [
         { label: "USB 2.0 (HS 480 Mbps)", values: { usbVersion: 0 } },
-        { label: "USB 3.0 (SS 2.5 Gbps)", values: { usbVersion: 1 } }
+        { label: "USB 3.0 (SS 5 Gbps)", values: { usbVersion: 1 } }
       ],
       options: [
         { value: 0, label: "USB 2.0 (High Speed, 480 Mbps)" },
@@ -13833,7 +14446,7 @@ var usbTermination = {
       defaultValue: 90,
       min: 50,
       max: 150,
-      tooltip: "Single-ended trace/cable impedance (USB spec: 90\u03A9 differential = ~45\u03A9 per line)"
+      tooltip: "Differential impedance of the data pair, trace or cable: USB 2.0 and USB 3.0 both specify 90 \u03A9 (45 \u03A9 odd-mode per line)"
     },
     {
       key: "cableLength",
@@ -13891,16 +14504,75 @@ var usbTermination = {
         warning: { min: 20, max: 50 },
         danger: { min: 20 }
       }
+    },
+    {
+      key: "impedanceError",
+      label: "Impedance Deviation",
+      symbol: "\u0394Z",
+      unit: "\u03A9",
+      precision: 2,
+      tooltip: "How far the line impedance is from the 90 \u03A9 nominal: |Z\u2080 \u2212 90 \u03A9|"
+    },
+    {
+      key: "impedanceTolerance",
+      label: "Impedance Tolerance",
+      symbol: "\u0394Z_max",
+      unit: "\u03A9",
+      precision: 2,
+      tooltip: "The deviation from 90 \u03A9 the chosen USB version allows: \xB113.5 \u03A9 (USB 2.0, \xB115 %) or \xB17 \u03A9 (USB 3.0)"
+    },
+    {
+      key: "impedancePercent",
+      label: "Percent of Tolerance",
+      unit: "%",
+      precision: 1,
+      tooltip: "The deviation as a percentage of the tolerance; above 100 % the line is outside the window",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "compliantImpedance",
+      label: "Compliant Line Impedance",
+      symbol: "Z\u2080,lim",
+      unit: "\u03A9",
+      precision: 2,
+      // One decimal, so the window's edge reads 103.5 Ω, not a rounded 104 outside it.
+      display: { decimals: 1 },
+      tooltip: "The nearest edge of the tolerance window: 90 \u03A9 plus the tolerance at or above 90 \u03A9, minus it below"
     }
   ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "usb2-cable-90-ohm-5-m", label: "USB 2.0 cable, 90 \u03A9, 5 m", values: { usbVersion: 0, lineImpedance: 90, cableLength: 5 } },
+    { id: "usb2-board-pair-85-ohm", label: "USB 2.0 on an 85 \u03A9 board pair, 15 cm", values: { usbVersion: 0, lineImpedance: 85, cableLength: 0.15 } },
+    { id: "usb3-cable-100-ohm-twinax", label: "USB 3.0 cable from 100 \u03A9 twinax, 1 m", values: { usbVersion: 1, lineImpedance: 100, cableLength: 1 } },
+    { id: "usb3-cable-85-ohm", label: "USB 3.0 cable at 85 \u03A9, 1 m", values: { usbVersion: 1, lineImpedance: 85, cableLength: 1 } }
+  ],
   calculate: calculateUsbTermination,
+  standards: {
+    standard: {
+      input: "usbVersion",
+      sources: {
+        0: "Universal Serial Bus Specification, Revision 2.0 (27 April 2000), Table 7-12 (Z_O) and \xA77.1.6.1; no erratum or ECN changes Z_O",
+        1: "Universal Serial Bus 3.0 Specification, Revision 1.0 (12 November 2008), \xA75.6.1.1.1 (informative)"
+      }
+    },
+    value: "impedanceError",
+    limit: "impedanceTolerance",
+    percent: "impedancePercent",
+    clause: (standard) => usbImpedanceLimit(standard).clause,
+    rule: (standard) => usbImpedanceLimit(standard).rule,
+    remedies: [
+      { input: "lineImpedance", output: "compliantImpedance", direction: "nearest" }
+    ],
+    chart: { x: "lineImpedance", range: [50, 150] }
+  },
   formula: {
     primary: "R_term = Z\u2080;  t_pd = L/v_prop",
     variables: [
       { symbol: "R_term", description: "Termination resistor", unit: "\u03A9" },
       { symbol: "Z\u2080", description: "Characteristic impedance", unit: "\u03A9" },
       { symbol: "t_pd", description: "Propagation delay", unit: "ns" },
-      { symbol: "v_prop", description: "Signal propagation velocity (~0.2c)", unit: "m/s" }
+      { symbol: "v_prop", description: "Signal propagation velocity (2\xD710\u2078 m/s, about 0.67c)", unit: "m/s" }
     ]
   },
   visualization: { type: "none" },
@@ -15362,6 +16034,7 @@ var pcbCrosstalk = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 10,
       tooltip: "Edge-to-edge spacing between traces"
     },
     {
@@ -15389,6 +16062,7 @@ var pcbCrosstalk = {
       unit: "mm",
       defaultValue: 50,
       min: 0.1,
+      max: 1e3,
       tooltip: "Length over which the traces run parallel"
     }
   ],
@@ -15434,6 +16108,11 @@ var pcbCrosstalk = {
       tooltip: "Quarter-wavelength at the signal frequency in PCB medium"
     }
   ],
+  examples: [
+    { id: "clock-125-mhz-40-mm", label: "125 MHz clock beside a data line, 40 mm run", values: { traceWidth: 0.2, traceSpacing: 0.2, dielectricHeight: 0.1, frequency: 125, traceLength: 40 } },
+    { id: "ddr-800-mhz-25-mm", label: "DDR data lines at 800 MHz, 0.1 mm gap, 25 mm", values: { traceWidth: 0.1, traceSpacing: 0.1, dielectricHeight: 0.075, frequency: 800, traceLength: 25 } },
+    { id: "three-w-spacing-100-mm", label: "3W rule, 0.2 mm traces 0.4 mm apart, 100 mm", values: { traceWidth: 0.2, traceSpacing: 0.4, dielectricHeight: 0.1, frequency: 100, traceLength: 100 } }
+  ],
   calculate: calculatePcbCrosstalk,
   formula: {
     primary: "Kb \u2248 K/2, NEXT = Kb \xD7 min(1, L/L_crit), FEXT \u221D Kf \xD7 L/v/T_r",
@@ -15446,6 +16125,11 @@ var pcbCrosstalk = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "coupled", roles: { w: "traceWidth", s: "traceSpacing", h: "dielectricHeight", len: "traceLength" } },
+    synthesis: [{ output: "next_dB", solveFor: ["traceSpacing", "traceLength"] }],
+    curve: { x: "traceSpacing", y: "next_dB", range: [0.05, 0.6], scale: "linear" }
+  },
   relatedCalculators: ["differential-pair", "controlled-impedance", "pcb-trace-inductance"],
   relatedTools: ["fdtd-sparam"],
   relatedBlogPosts: ["stackup-builder"]
@@ -15672,7 +16356,8 @@ var pcbTraceInductance = {
       symbol: "l",
       unit: "mm",
       defaultValue: 10,
-      min: 0.1
+      min: 0.1,
+      max: 1e3
     },
     {
       key: "traceWidth",
@@ -15680,7 +16365,8 @@ var pcbTraceInductance = {
       symbol: "w",
       unit: "mm",
       defaultValue: 0.2,
-      min: 0.01
+      min: 0.01,
+      max: 20
     },
     {
       key: "thickness",
@@ -15738,7 +16424,17 @@ var pcbTraceInductance = {
       { symbol: "t", description: "Copper thickness", unit: "m" }
     ]
   },
+  examples: [
+    { id: "decoupling-0p3mm-1nh", label: "0.3 mm decoupling trace, 1 nH long", values: { traceLength: 1.7258180852406677, traceWidth: 0.3, thickness: 35 } },
+    { id: "signal-0p15mm-25mm", label: "0.15 mm signal trace, 25 mm", values: { traceLength: 25, traceWidth: 0.15, thickness: 35 } },
+    { id: "power-3mm-20mm-2-oz", label: "3 mm power trace, 20 mm, 2 oz", values: { traceLength: 20, traceWidth: 3, thickness: 70 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "trace", roles: { len: "traceLength", w: "traceWidth", t: "thickness" } },
+    synthesis: [{ output: "inductance", solveFor: ["traceLength", "traceWidth"] }],
+    curve: { x: "traceLength", y: "inductance", range: [1, 100], scale: "log" }
+  },
   relatedCalculators: ["decoupling-capacitor", "pcb-crosstalk", "via-calculator"],
   relatedBlogPosts: ["magnetics-optimizer-transformer-design"]
 };
@@ -15797,7 +16493,8 @@ var viaThermalResistance = {
       symbol: "d",
       unit: "mm",
       defaultValue: 0.3,
-      min: 0.05
+      min: 0.05,
+      max: 6
     },
     {
       key: "platingThickness",
@@ -15806,6 +16503,7 @@ var viaThermalResistance = {
       unit: "\u03BCm",
       defaultValue: 25,
       min: 1,
+      max: 100,
       tooltip: "Copper plating thickness on via barrel walls"
     },
     {
@@ -15897,7 +16595,22 @@ var viaThermalResistance = {
       { symbol: "N", description: "Number of vias", unit: "" }
     ]
   },
+  examples: [
+    { id: "qfn-3x3-plated-0p3", label: "QFN pad, 3 \xD7 3 plated 0.3 mm vias, 1.6 mm board", values: { viaDiameter: 0.3, platingThickness: 25, boardThickness: 1.6, numVias: 9, viaFill: 0 } },
+    { id: "qfn-3x3-15-cw", label: "QFN pad, 3 \xD7 3 plated vias sized for 15 \xB0C/W", values: { viaDiameter: 0.41695445346007104, platingThickness: 25, boardThickness: 1.6, numVias: 9, viaFill: 0 } },
+    { id: "via-in-pad-4x4-filled", label: "Via-in-pad, 4 \xD7 4 copper-filled 0.25 mm vias", values: { viaDiameter: 0.25, platingThickness: 25, boardThickness: 1.6, numVias: 16, viaFill: 1 } },
+    { id: "dpak-5x5-plated-0p4", label: "DPAK tab, 5 \xD7 5 plated 0.4 mm vias", values: { viaDiameter: 0.4, platingThickness: 25, boardThickness: 1.6, numVias: 25, viaFill: 0 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "via-array",
+      roles: { n: "numVias", d: "viaDiameter", plating: "platingThickness", len: "boardThickness" },
+      variant: { input: "viaFill", byValue: { 0: "plated", 1: "filled" } }
+    },
+    synthesis: [{ output: "arrayResistance", solveFor: ["viaDiameter", "platingThickness"] }],
+    curve: { x: "viaDiameter", y: "arrayResistance", range: [0.15, 1], scale: "linear" }
+  },
   relatedCalculators: ["thermal-resistance-network", "via-calculator", "pcb-trace-temp"],
   relatedBlogPosts: ["pcb-trace-width-current-capacity", "thermal-resistance-network"]
 };
@@ -17295,7 +18008,7 @@ function calculateBldcWinding(inputs) {
   const polePairs = safePoles / 2;
   const slotAngleDeg = 180 * safePoles / safeSlots;
   const q = safeSlots / (phases * safePoles);
-  const coilSpan = Math.round(safeSlots / safePoles);
+  const coilSpan = Math.max(1, Math.round(safeSlots / safePoles));
   const polePitchSlots = safeSlots / safePoles;
   const pitchFactor = Math.abs(Math.sin(coilSpan / polePitchSlots * (Math.PI / 2)));
   const qRound = Math.max(1, Math.round(q));
@@ -17506,7 +18219,17 @@ var bldcWinding = {
     { id: "9n6p-small", label: "9N6P (small)", values: { slotCount: 9, poleCount: 6 } },
     { id: "12n16p-hub", label: "12N16P (hub)", values: { slotCount: 12, poleCount: 16 } },
     { id: "24n22p-gimbal", label: "24N22P (gimbal)", values: { slotCount: 24, poleCount: 22 } },
-    { id: "36n42p-direct-drive", label: "36N42P (DD)", values: { slotCount: 36, poleCount: 42 } }
+    { id: "36n42p-direct-drive", label: "36N42P (DD)", values: { slotCount: 36, poleCount: 42 } },
+    {
+      id: "12n14p-50mm-360kv",
+      label: "12N14P, 50 \xD7 10 mm stator, 360 Kv, 15 A",
+      values: { targetKv: 360, slotCount: 12, poleCount: 14, statorInnerDia: 50, statorStackLength: 10, maxCurrent: 15, supplyVoltage: 22.2, windingType: 0 }
+    },
+    {
+      id: "9n6p-28mm-700kv",
+      label: "9N6P inrunner, 28 mm bore, 700 Kv, 8 A",
+      values: { targetKv: 700, slotCount: 9, poleCount: 6, statorInnerDia: 28, statorStackLength: 12, maxCurrent: 8, supplyVoltage: 11.1, windingType: 0 }
+    }
   ],
   calculate: calculateBldcWinding,
   formula: {
@@ -17523,6 +18246,16 @@ var bldcWinding = {
     reference: "Hanselman, D. \u2014 Brushless Permanent Magnet Motor Design, 2nd ed."
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "stator",
+      roles: { slots: "slotCount", poles: "poleCount", dia: "statorInnerDia", len: "statorStackLength", turns: "turnsPerCoil" },
+      variant: { input: "windingType", byValue: { 0: "wye", 1: "delta" } }
+    },
+    // Whole turns rarely give the target Kv exactly: the stack (or bore) that makes them do so.
+    synthesis: [{ output: "actualKv", solveFor: ["statorStackLength", "statorInnerDia"] }],
+    curve: { x: "statorInnerDia", y: "turnsPerCoil", range: [10, 60], scale: "linear" }
+  },
   relatedCalculators: ["bldc-motor", "bldc-efficiency", "bldc-thermal", "motor-winding-resistance"],
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"],
   liveWidgets: [
@@ -20633,7 +21366,8 @@ var capacitiveProximity = {
       symbol: "A",
       unit: "cm\xB2",
       defaultValue: 1,
-      min: 1e-3
+      min: 1e-3,
+      max: 1e3
     },
     {
       key: "gapDistance",
@@ -20641,7 +21375,8 @@ var capacitiveProximity = {
       symbol: "d",
       unit: "mm",
       defaultValue: 5,
-      min: 0.1
+      min: 0.1,
+      max: 100
     },
     {
       key: "permittivity",
@@ -20657,6 +21392,12 @@ var capacitiveProximity = {
     { key: "capacitancePf", label: "Capacitance", symbol: "C", unit: "pF", precision: 3, primary: true },
     { key: "sensitivity", label: "Sensitivity", symbol: "dC/dd", unit: "pF/mm", precision: 4 }
   ],
+  examples: [
+    { id: "touch-key-glass", label: "Touch key, 1 cm\xB2 under 2 mm glass", values: { plateArea: 1, gapDistance: 2, permittivity: 4.6 } },
+    { id: "pcb-pad-fr4", label: "PCB touch pad, 1 cm\xB2 through 1.6 mm FR-4", values: { plateArea: 1, gapDistance: 1.6, permittivity: 4.4 } },
+    { id: "proximity-plate-air", label: "Proximity plate, 25 cm\xB2 at 10 mm in air", values: { plateArea: 25, gapDistance: 10, permittivity: 1 } },
+    { id: "level-plates-water", label: "Level-sense plates, 5 cm\xB2 1 mm apart, in water", values: { plateArea: 5, gapDistance: 1, permittivity: 80.1 } }
+  ],
   calculate: calculateCapacitiveProximity,
   formula: {
     primary: "C = \u03B5\u2080\u03B5\u1D63A/d",
@@ -20666,6 +21407,13 @@ var capacitiveProximity = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "plates", roles: { area: "plateArea", gap: "gapDistance", er: "permittivity" } },
+    // The capacitance the front end needs at the detection distance: the plate that gives it.
+    synthesis: [{ output: "capacitancePf", solveFor: ["plateArea", "gapDistance"] }],
+    material: { library: "sensor-dielectric", sets: { er: "permittivity" } },
+    curve: { x: "gapDistance", y: "capacitancePf", range: [1, 20], scale: "log" }
+  },
   relatedCalculators: ["hall-effect-sensor", "sensor-accuracy-budget", "photodiode-transimpedance"]
 };
 
@@ -23651,7 +24399,17 @@ var thermalViaArray = {
       { symbol: "N", description: "Number of vias", unit: "" }
     ]
   },
+  examples: [
+    { id: "qfn-3x3-plated-0p3", label: "QFN pad, 3 \xD7 3 plated 0.3 mm vias", values: { numVias: 9, viaDiameter: 0.3, platingThickness: 25, pcbThickness: 1.6, copperThermal: 385, drillFill: 0 } },
+    { id: "power-qfn-4x4-filled", label: "Power QFN, 4 \xD7 4 copper-filled vias at 5 \xB0C/W", values: { numVias: 16, viaDiameter: 0.257181480694894, platingThickness: 25, pcbThickness: 1.6, copperThermal: 385, drillFill: 1 } },
+    { id: "dpak-5x5-plated-0p4", label: "DPAK tab, 5 \xD7 5 plated 0.4 mm vias", values: { numVias: 25, viaDiameter: 0.4, platingThickness: 25, pcbThickness: 1.6, copperThermal: 385, drillFill: 0 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "via-array", roles: { n: "numVias", d: "viaDiameter", plating: "platingThickness", len: "pcbThickness", fill: "drillFill" } },
+    synthesis: [{ output: "thetaArray", solveFor: ["viaDiameter", "numVias", "platingThickness"] }],
+    curve: { x: "viaDiameter", y: "thetaArray", range: [0.15, 1], scale: "linear" }
+  },
   relatedCalculators: ["junction-temperature", "heatsink-selection", "via-thermal-resistance"],
   relatedBlogPosts: ["junction-temperature", "pcb-trace-temp"]
 };
@@ -24299,6 +25057,7 @@ var fresnelZone = {
       unit: "km",
       defaultValue: 1,
       min: 1e-3,
+      max: 1e3,
       tooltip: "Total distance between the two endpoints of the link"
     },
     {
@@ -24340,6 +25099,12 @@ var fresnelZone = {
       tooltip: "Free-space wavelength at the operating frequency"
     }
   ],
+  examples: [
+    { id: "wifi-bridge-2g4-1km", label: "2.4 GHz Wi-Fi bridge, 1 km", values: { frequency: 2.4, distance: 1, n: 1 } },
+    { id: "ptp-5g8-5km", label: "5.8 GHz point-to-point, 5 km", values: { frequency: 5.8, distance: 5, n: 1 } },
+    { id: "lora-868-10km", label: "868 MHz LoRa, 10 km", values: { frequency: 0.868, distance: 10, n: 1 } },
+    { id: "backhaul-18g-15km", label: "18 GHz microwave backhaul, 15 km", values: { frequency: 18, distance: 15, n: 1 } }
+  ],
   calculate: calculateFresnelZone,
   formula: {
     primary: "r_n = \u221A(n\xB7\u03BB\xB7d\u2081\xB7d\u2082/(d\u2081+d\u2082))  at midpoint d\u2081=d\u2082=d/2",
@@ -24352,6 +25117,15 @@ var fresnelZone = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "fresnel", roles: { d: "distance", r: "radiusM", n: "n", f: "frequency", clear: "clearanceM" } },
+    // The zone radius, or the clearance the path has: the longest link that keeps it.
+    synthesis: [
+      { output: "radiusM", solveFor: ["distance"] },
+      { output: "clearanceM", solveFor: ["distance"] }
+    ],
+    curve: { x: "distance", y: "radiusM", range: [0.1, 50], scale: "log" }
+  },
   relatedCalculators: ["free-space-path-loss", "rf-link-budget", "link-margin"],
   relatedBlogPosts: ["rf-link-budget-calculator-guide"],
   liveWidgets: [
@@ -24367,24 +25141,68 @@ var fresnelZone = {
 };
 
 // src/lib/calculators/rf/power-density.ts
+function exposureLimit(standard, exposureClass, fMHz) {
+  const occupational = exposureClass === 1;
+  if (standard === 1) {
+    const cls = occupational ? "occupational" : "general public";
+    const at2 = (band2, wm2, rule) => ({ wm2, rule, clause: `ICNIRP (2020) Table 5, ${cls}, ${band2}` });
+    if (!(fMHz >= 0.1) || fMHz > 3e5) return at2("outside 100 kHz\u2013300 GHz", null, "\u2014");
+    if (fMHz <= 30) return at2("0.1\u201330 MHz (E and H only)", null, "\u2014");
+    if (fMHz <= 400) return occupational ? at2(">30\u2013400 MHz", 10, "10 W/m\xB2") : at2(">30\u2013400 MHz", 2, "2 W/m\xB2");
+    if (fMHz <= 2e3) return occupational ? at2(">400\u20132000 MHz", fMHz / 40, "f/40 W/m\xB2") : at2(">400\u20132000 MHz", fMHz / 200, "f/200 W/m\xB2");
+    return occupational ? at2(">2\u2013300 GHz", 50, "50 W/m\xB2") : at2(">2\u2013300 GHz", 10, "10 W/m\xB2");
+  }
+  const table = occupational ? "(A) occupational/controlled" : "(B) general population/uncontrolled";
+  const at = (band2, mwcm2, rule) => ({ wm2: mwcm2 === null ? null : mwcm2 * 10, rule, clause: `47 CFR \xA71.1310(e)(1), Table 1, ${table}, ${band2}` });
+  if (!(fMHz >= 0.3) || fMHz > 1e5) return at("outside 0.3 MHz\u2013100 GHz", null, "\u2014");
+  if (occupational) {
+    if (fMHz < 3) return at("0.3\u20133.0 MHz", 100, "100 mW/cm\xB2");
+    if (fMHz < 30) return at("3.0\u201330 MHz", 900 / (fMHz * fMHz), "900/f\xB2 mW/cm\xB2");
+    if (fMHz < 300) return at("30\u2013300 MHz", 1, "1.0 mW/cm\xB2");
+    if (fMHz < 1500) return at("300\u20131,500 MHz", fMHz / 300, "f/300 mW/cm\xB2");
+    return at("1,500\u2013100,000 MHz", 5, "5 mW/cm\xB2");
+  }
+  if (fMHz < 1.34) return at("0.3\u20131.34 MHz", 100, "100 mW/cm\xB2");
+  if (fMHz < 30) return at("1.34\u201330 MHz", 180 / (fMHz * fMHz), "180/f\xB2 mW/cm\xB2");
+  if (fMHz < 300) return at("30\u2013300 MHz", 0.2, "0.2 mW/cm\xB2");
+  if (fMHz < 1500) return at("300\u20131,500 MHz", fMHz / 1500, "f/1500 mW/cm\xB2");
+  return at("1,500\u2013100,000 MHz", 1, "1.0 mW/cm\xB2");
+}
+var GROUND_REFLECTION = 2.56;
 function calculatePowerDensity(inputs) {
   const { eirp, distance } = inputs;
+  const standard = inputs.standard ?? 0;
+  const exposureClass = inputs.exposureClass ?? 0;
+  const reflection = (inputs.groundReflection ?? 0) === 1 ? GROUND_REFLECTION : 1;
+  const fMHz = (inputs.frequency ?? 2.4) * 1e3;
   if (distance <= 0) {
     return { values: { powerDensity: 0, efield: 0, hfield: 0, planeWaveImpedance: 0 }, errors: ["Distance must be positive"] };
   }
   const eirp_W = Math.pow(10, (eirp - 30) / 10);
-  const S_Wm2 = eirp_W / (4 * Math.PI * distance * distance);
+  const S_Wm2 = reflection * eirp_W / (4 * Math.PI * distance * distance);
   const powerDensity2 = S_Wm2 * 1e3;
   const planeWaveImpedance = 120 * Math.PI;
   const efield = Math.sqrt(S_Wm2 * planeWaveImpedance);
   const hfield = efield / planeWaveImpedance * 1e3;
+  const limit = exposureLimit(standard, exposureClass, fMHz).wm2;
+  const warnings = [];
+  if (limit === null) warnings.push(standard === 1 && fMHz > 0.1 && fMHz <= 30 ? "ICNIRP 2020 gives no power-density reference level at or below 30 MHz; it limits E and H there" : "The chosen standard gives no power-density limit at this frequency");
+  const limitDensity = limit === null ? NaN : limit * 1e3;
+  const limitPercent = limit === null ? NaN : S_Wm2 / limit * 100;
+  const minDistance = limit === null ? NaN : Math.sqrt(reflection * eirp_W / (4 * Math.PI * limit));
+  const maxEirp = limit === null ? NaN : 10 * Math.log10(limit * 4 * Math.PI * distance * distance / reflection) + 30;
   return {
     values: {
       powerDensity: powerDensity2,
       efield,
       hfield,
-      planeWaveImpedance
-    }
+      planeWaveImpedance,
+      limitDensity,
+      limitPercent,
+      minDistance,
+      maxEirp
+    },
+    ...warnings.length ? { warnings } : {}
   };
 }
 var powerDensity = {
@@ -24437,7 +25255,46 @@ var powerDensity = {
       unit: "GHz",
       defaultValue: 2.4,
       min: 1e-3,
-      tooltip: "Operating frequency (used for reference, does not affect far-field power density)"
+      tooltip: "Sets the exposure limit; the far-field power density itself does not depend on it"
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "FCC 47 CFR \xA71.1310" },
+        { value: 1, label: "ICNIRP 2020" }
+      ],
+      tooltip: "The exposure limits the power density is checked against"
+    },
+    {
+      key: "exposureClass",
+      label: "Exposure",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "General public" },
+        { value: 1, label: "Occupational" }
+      ],
+      tooltip: "General public (uncontrolled) or occupational (controlled) exposure"
+    },
+    {
+      key: "groundReflection",
+      label: "Ground Reflection",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Free space" },
+        { value: 1, label: "Ground reflection \xD72.56" }
+      ],
+      tooltip: "FCC OET Bulletin 65: a ground reflection adding in phase raises the power density by 1.6\xB2 = 2.56"
     }
   ],
   outputs: [
@@ -24448,12 +25305,7 @@ var powerDensity = {
       symbol: "S",
       unit: "mW/m\xB2",
       precision: 3,
-      tooltip: "RF power density at given distance: S = EIRP / (4\u03C0\xB7d\xB2)",
-      thresholds: {
-        good: { max: 1e3 },
-        warning: { min: 1e3, max: 1e4 },
-        danger: { max: 1e4 }
-      }
+      tooltip: "RF power density at given distance: S = EIRP / (4\u03C0\xB7d\xB2)"
     },
     {
       key: "efield",
@@ -24478,9 +25330,68 @@ var powerDensity = {
       unit: "\u03A9",
       precision: 1,
       tooltip: "Free-space plane wave impedance \u03B7 = 120\u03C0 \u2248 377\u03A9"
+    },
+    {
+      key: "limitDensity",
+      label: "Exposure Limit",
+      symbol: "S_lim",
+      unit: "mW/m\xB2",
+      precision: 3,
+      tooltip: "The power-density limit of the chosen standard and exposure class at the frequency"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The power density as a percentage of the limit; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "minDistance",
+      label: "Compliant Distance",
+      symbol: "d_min",
+      unit: "m",
+      precision: 3,
+      tooltip: "The distance at which the power density equals the limit; at or beyond it the exposure complies"
+    },
+    {
+      key: "maxEirp",
+      label: "Compliant EIRP",
+      symbol: "EIRP_max",
+      unit: "dBm",
+      precision: 2,
+      tooltip: "The EIRP at which the power density at this distance equals the limit; at or below it the exposure complies"
     }
   ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "lora-gateway-915-mhz-20-cm", label: "LoRa gateway, 915 MHz, 36 dBm EIRP at 20 cm", values: { eirp: 36, distance: 0.2, frequency: 0.915, standard: 0, exposureClass: 0, groundReflection: 0 } },
+    { id: "wifi-ap-2-4-ghz-20-cm", label: "Wi-Fi access point, 2.4 GHz, 20 dBm EIRP at 20 cm", values: { eirp: 20, distance: 0.2, frequency: 2.4, standard: 0, exposureClass: 0, groundReflection: 0 } },
+    { id: "cell-sector-1900-mhz-3-m", label: "Cellular sector, 1900 MHz, 61 dBm EIRP at 3 m", values: { eirp: 61, distance: 3, frequency: 1.9, standard: 0, exposureClass: 0, groundReflection: 0 } },
+    { id: "fm-broadcast-98-mhz-50-m", label: "FM broadcast, 98 MHz, 10 kW EIRP at 50 m over ground", values: { eirp: 70, distance: 50, frequency: 0.098, standard: 0, exposureClass: 0, groundReflection: 1 } }
+  ],
   calculate: calculatePowerDensity,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "47 CFR \xA71.1310(e)(1), Table 1, as amended by FCC 19-126 (2019); far-field method of FCC OET Bulletin 65, Edition 97-01",
+        1: "ICNIRP (2020), Guidelines for limiting exposure to electromagnetic fields (100 kHz to 300 GHz), Health Physics 118(5):483\u2013524, Table 5"
+      }
+    },
+    class: { input: "exposureClass" },
+    value: "powerDensity",
+    limit: "limitDensity",
+    percent: "limitPercent",
+    clause: (standard, cls, inputs) => exposureLimit(standard, cls ?? 0, (inputs.frequency ?? 2.4) * 1e3).clause,
+    rule: (standard, cls, inputs) => exposureLimit(standard, cls ?? 0, (inputs.frequency ?? 2.4) * 1e3).rule,
+    remedies: [
+      { input: "distance", output: "minDistance", direction: "up" },
+      { input: "eirp", output: "maxEirp", direction: "down" }
+    ],
+    chart: { x: "distance", range: [0.01, 100], scale: "log", yScale: "log" }
+  },
   formula: {
     primary: "S = EIRP / (4\u03C0\xB7d\xB2),  E = \u221A(S\xB7\u03B7),  \u03B7 = 120\u03C0 \u2248 377\u03A9",
     latex: "S = \\frac{EIRP}{4\\pi d^2}, \\quad E = \\sqrt{S \\cdot \\eta}",
@@ -27246,8 +28157,27 @@ var viaStubResonance = {
 };
 
 // src/lib/calculators/pcb/solder-paste-volume.ts
+var RELEASE_RULES = [
+  { ratio: 0.66, name: "area ratio", rule: "A/(0.66\xB7P)" },
+  { ratio: 1.5, name: "aspect ratio", rule: "W/1.5" }
+];
+function stencilLimit(criterion, apertureL, apertureW) {
+  if (criterion === 1) {
+    return {
+      mm: Math.min(apertureL, apertureW) / 1.5,
+      rule: "W/1.5",
+      clause: "IPC-7525B \xA73.2.1: aspect ratio W/T > 1.5 (W the narrower side of the aperture)"
+    };
+  }
+  return {
+    mm: apertureL * apertureW / (0.66 * 2 * (apertureL + apertureW)),
+    rule: "A/(0.66\xB7P)",
+    clause: "IPC-7525B \xA73.2.1: area ratio A/(P\xB7T) > 0.66"
+  };
+}
 function calculateSolderPasteVolume(inputs) {
   const { padLength, padWidth, stencilThickness, apertureReduction } = inputs;
+  const releaseCriterion = inputs.releaseCriterion ?? 0;
   if (padLength <= 0 || padWidth <= 0) {
     return { values: {}, errors: ["Pad dimensions must be positive"] };
   }
@@ -27265,15 +28195,30 @@ function calculateSolderPasteVolume(inputs) {
   const pasteVolumeMl = pasteVolume;
   const perimeter = 2 * (apertureL + apertureW);
   const areaRatio = apertureArea / (perimeter * stencilThickness);
+  const limit = stencilLimit(releaseCriterion, apertureL, apertureW);
+  const maxStencilThickness = limit.mm;
+  const stencilPercent = stencilThickness / maxStencilThickness * 100;
+  const needed = releaseCriterion === 1 ? 1.5 * stencilThickness / Math.min(padLength, padWidth) : 0.66 * 2 * (padLength + padWidth) * stencilThickness / (padLength * padWidth);
+  let maxApertureReduction = 100 * (1 - needed);
+  const warnings = [];
+  if (maxApertureReduction < 0) {
+    maxApertureReduction = NaN;
+    warnings.push(`No aperture reduction complies: even an aperture the full size of the pad fails the ${RELEASE_RULES[releaseCriterion === 1 ? 1 : 0].name} rule at this foil thickness`);
+  }
   return {
     values: {
       apertureArea,
       pasteVolume,
       pasteVolumeMl,
-      areaRatio
-    }
+      areaRatio,
+      maxStencilThickness,
+      stencilPercent,
+      maxApertureReduction
+    },
+    ...warnings.length ? { warnings } : {}
   };
 }
+var IPC_7525B = "IPC-7525B, Stencil Design Guidelines (October 2011), \xA73.2.1; the same as IPC-7525A (February 2007) \xA73.2.1.2";
 var solderPasteVolume = {
   slug: "solder-paste-volume",
   title: "Solder Paste Volume Calculator",
@@ -27328,6 +28273,19 @@ var solderPasteVolume = {
       min: 0,
       max: 50,
       tooltip: "Aperture reduction from pad size per IPC-7525A (typically 10-20%)"
+    },
+    {
+      key: "releaseCriterion",
+      label: "Release Criterion",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Area ratio > 0.66" },
+        { value: 1, label: "Aspect ratio > 1.5" }
+      ],
+      tooltip: "The IPC-7525B paste-release rule the stencil is checked against"
     }
   ],
   outputs: [
@@ -27368,9 +28326,64 @@ var solderPasteVolume = {
         warning: { min: 0.5, max: 0.66 },
         danger: { min: 0.5 }
       }
+    },
+    {
+      key: "maxStencilThickness",
+      label: "Maximum Stencil Thickness",
+      symbol: "t_max",
+      unit: "mm",
+      precision: 4,
+      tooltip: "The thickest foil that meets the chosen IPC-7525B rule for this aperture: A/(0.66\xB7P) for the area ratio, W/1.5 for the aspect ratio"
+    },
+    {
+      key: "stencilPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The stencil thickness as a percentage of the thickest the rule allows; above 100 % the paste may not release",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "maxApertureReduction",
+      label: "Compliant Aperture Reduction",
+      unit: "%",
+      precision: 1,
+      tooltip: "The largest aperture reduction at which the aperture still meets the rule at this foil thickness"
     }
   ],
+  examples: [
+    { id: "qfn-0p5-lead-0p15-foil", label: "0.5 mm pitch QFN lead, 0.25 \xD7 0.8 mm, 0.15 mm foil", values: { padLength: 0.8, padWidth: 0.25, stencilThickness: 0.15, apertureReduction: 10 } },
+    { id: "qfn-0p5-lead-0p12-foil", label: "0.5 mm pitch QFN lead, 0.25 \xD7 0.8 mm, 0.12 mm foil", values: { padLength: 0.8, padWidth: 0.25, stencilThickness: 0.12, apertureReduction: 10 } },
+    { id: "chip-0201-0p12-foil", label: "0201 chip pad, 0.3 \xD7 0.3 mm, 0.12 mm foil", values: { padLength: 0.3, padWidth: 0.3, stencilThickness: 0.12, apertureReduction: 0 } },
+    { id: "chip-0201-0p10-foil", label: "0201 chip pad, 0.3 \xD7 0.3 mm, 0.10 mm foil", values: { padLength: 0.3, padWidth: 0.3, stencilThickness: 0.1, apertureReduction: 0 } }
+  ],
   calculate: calculateSolderPasteVolume,
+  // One standard, so its two release rules are the selector, and an option input needs two options.
+  standards: {
+    standard: {
+      input: "releaseCriterion",
+      sources: {
+        0: `${IPC_7525B}: area ratio > 0.66`,
+        1: `${IPC_7525B}: aspect ratio > 1.5`
+      }
+    },
+    value: "stencilThickness",
+    limit: "maxStencilThickness",
+    percent: "stencilPercent",
+    clause: (standard, _cls, inputs) => {
+      const k = 1 - (inputs.apertureReduction ?? 10) / 100;
+      return stencilLimit(standard, (inputs.padLength ?? 1.5) * k, (inputs.padWidth ?? 0.8) * k).clause;
+    },
+    rule: (standard, _cls, inputs) => {
+      const k = 1 - (inputs.apertureReduction ?? 10) / 100;
+      return stencilLimit(standard, (inputs.padLength ?? 1.5) * k, (inputs.padWidth ?? 0.8) * k).rule;
+    },
+    remedies: [
+      { input: "stencilThickness", output: "maxStencilThickness", direction: "down" },
+      { input: "apertureReduction", output: "maxApertureReduction", direction: "down" }
+    ]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
   formula: {
     primary: "V = L_{ap} \\times W_{ap} \\times t_{stencil}",
     latex: "AR = \\frac{L_{ap} \\times W_{ap}}{2 \\times t_{stencil} \\times (L_{ap} + W_{ap})}",
@@ -27548,13 +28561,48 @@ var emiFilterLc = {
 };
 
 // src/lib/calculators/emc/esd-tvs-diode.ts
+var ESD_TEST_LEVELS_KV = {
+  contact: [2, 4, 6, 8],
+  air: [2, 4, 8, 15]
+};
+function esdTestLevel(standard, testLevel) {
+  const method = standard === 1 ? "air" : "contact";
+  const level = Math.round(testLevel);
+  if (!(level >= 1 && level <= 4)) {
+    return { kv: null, rule: "\u2014", clause: `IEC 61000-4-2:2025, clause 5, Table 1, ${method} discharge: levels 1\u20134 only (level X is set by the product standard)` };
+  }
+  const kv = ESD_TEST_LEVELS_KV[method][level - 1];
+  return { kv, rule: `\xB1${kv} kV`, clause: `IEC 61000-4-2:2025, clause 5, Table 1, ${method} discharge, level ${level}` };
+}
+var ESD_LEVEL_WARNING = "IEC 61000-4-2 sets test voltages for levels 1 to 4 only; level X is set by the product standard";
+var ESD_STANDARD_OPTIONS = [
+  { value: 0, label: "IEC 61000-4-2 contact" },
+  { value: 1, label: "IEC 61000-4-2 air" }
+];
+var ESD_TEST_LEVEL_OPTIONS = [
+  { value: 1, label: "Level 1" },
+  { value: 2, label: "Level 2" },
+  { value: 3, label: "Level 3" },
+  { value: 4, label: "Level 4" }
+];
+var IEC_61000_4_2 = "IEC 61000-4-2:2025 (Edition 3.0), Electromagnetic compatibility \u2013 Part 4-2: Electrostatic discharge immunity test, clause 5, Table 1";
+var ESD_SOURCES = {
+  0: `${IEC_61000_4_2}, contact discharge (test levels unchanged from Edition 2.0, 2008)`,
+  1: `${IEC_61000_4_2}, air discharge (test levels unchanged from Edition 2.0, 2008)`
+};
 function calculateEsdTvsDiode(inputs) {
   const { vwm, esd_level, clampMultiplier } = inputs;
+  const standard = inputs.standard ?? 0;
+  const testLevel = inputs.testLevel ?? 4;
+  const esdRating = inputs.esdRating ?? 15;
   if (vwm <= 0) {
     return { values: {}, errors: ["Working voltage must be positive"] };
   }
   if (clampMultiplier < 1) {
     return { values: {}, errors: ["Clamp multiplier must be >= 1"] };
+  }
+  if (!(esdRating > 0)) {
+    return { values: {}, errors: ["ESD rating must be positive"] };
   }
   const level = Math.round(esd_level);
   if (level < 1 || level > 4) {
@@ -27586,14 +28634,20 @@ function calculateEsdTvsDiode(inputs) {
   const vp = vpeakByLevel[level];
   const ipp = vp / 1500;
   const ppwr = vclamp * ipp;
+  const kv = esdTestLevel(standard, testLevel).kv;
+  const testVoltage = kv === null ? NaN : kv;
+  const limitPercent = kv === null ? NaN : kv / esdRating * 100;
   return {
     values: {
       vclamp,
       vBR,
       ipp,
       ppwr,
-      energy
-    }
+      energy,
+      testVoltage,
+      limitPercent
+    },
+    ...kv === null ? { warnings: [ESD_LEVEL_WARNING] } : {}
   };
 }
 var esdTvsDiode = {
@@ -27646,6 +28700,37 @@ var esdTvsDiode = {
       min: 1,
       max: 3,
       tooltip: "Ratio of clamp voltage to breakdown voltage \u2014 typical datasheet ratio 1.2-1.5"
+    },
+    {
+      key: "esdRating",
+      label: "TVS ESD Rating",
+      symbol: "V_ESD,rated",
+      unit: "kV",
+      defaultValue: 15,
+      min: 0.1,
+      max: 50,
+      tooltip: "The IEC 61000-4-2 withstand voltage on the TVS datasheet, for the discharge method chosen under Standard (datasheets give contact and air separately)"
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: ESD_STANDARD_OPTIONS,
+      tooltip: "IEC 61000-4-2 contact discharge (preferred) or air discharge (where contact is not possible)"
+    },
+    {
+      key: "testLevel",
+      label: "Test Level",
+      unit: "",
+      defaultValue: 4,
+      min: 1,
+      max: 4,
+      step: 1,
+      options: ESD_TEST_LEVEL_OPTIONS,
+      tooltip: "The IEC 61000-4-2 test level the product must pass; the product standard sets it"
     }
   ],
   outputs: [
@@ -27689,9 +28774,44 @@ var esdTvsDiode = {
       unit: "mJ",
       precision: 3,
       tooltip: "ESD event energy: E = 0.5 \xD7 C \xD7 V\xB2 (HBM: 100pF, IEC: 150pF)"
+    },
+    {
+      key: "testVoltage",
+      label: "Test Voltage",
+      symbol: "V_test",
+      unit: "kV",
+      precision: 1,
+      tooltip: "The IEC 61000-4-2 test voltage of the chosen discharge method and level: the least ESD rating that complies"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The test voltage as a percentage of the TVS rating; above 100 % the rating is below the test level",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
     }
   ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "usb-5-v-8-kv-contact-level-4", label: "5 V USB line, \xB18 kV contact TVS, level 4 contact", values: { vwm: 5, esdRating: 8, standard: 0, testLevel: 4 } },
+    { id: "gpio-3v3-12-kv-air-level-4", label: "3.3 V GPIO, \xB112 kV air TVS, level 4 air", values: { vwm: 3.3, esdRating: 12, standard: 1, testLevel: 4 } },
+    { id: "industrial-24-v-30-kv-contact-level-4", label: "24 V industrial input, \xB130 kV contact TVS, level 4 contact", values: { vwm: 24, esdRating: 30, standard: 0, testLevel: 4 } }
+  ],
   calculate: calculateEsdTvsDiode,
+  standards: {
+    standard: { input: "standard", sources: ESD_SOURCES },
+    class: { input: "testLevel" },
+    value: "esdRating",
+    limit: "testVoltage",
+    // The rating must reach the test level: a floor, judged as limit/value.
+    limitKind: "minimum",
+    percent: "limitPercent",
+    clause: (standard, cls) => esdTestLevel(standard, cls ?? 4).clause,
+    rule: (standard, cls) => esdTestLevel(standard, cls ?? 4).rule,
+    remedies: [{ input: "esdRating", output: "testVoltage", direction: "up" }]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
   formula: {
     primary: "V_{BR} = 1.1 \\times V_{wm},\\quad V_{clamp} = k_{clamp} \\times V_{BR}",
     latex: "I_{pp} = \\frac{V_{ESD}}{R_{HBM}},\\quad P_{pk} = V_{clamp} \\times I_{pp}",
@@ -27830,6 +28950,8 @@ var decouplingCapacitorEmc = {
 // src/lib/calculators/emc/esd-clamp-selection.ts
 function calculateEsdClampSelection(inputs) {
   const { esdVoltage, clampVoltage, lineImpedance } = inputs;
+  const standard = inputs.standard ?? 0;
+  const testLevel = inputs.testLevel ?? 4;
   if (lineImpedance <= 0) {
     return { values: {}, errors: ["Line impedance must be greater than 0"] };
   }
@@ -27840,7 +28962,13 @@ function calculateEsdClampSelection(inputs) {
   const clampPower = clampVoltage * peakCurrent;
   const voltageMargin = esdVoltage - clampVoltage;
   const clampingRatio = clampVoltage / esdVoltage;
-  return { values: { peakCurrent, clampPower, voltageMargin, clampingRatio } };
+  const kv = esdTestLevel(standard, testLevel).kv;
+  const testVoltage = kv === null ? NaN : kv * 1e3;
+  const limitPercent = kv === null ? NaN : testVoltage / esdVoltage * 100;
+  return {
+    values: { peakCurrent, clampPower, voltageMargin, clampingRatio, testVoltage, limitPercent },
+    ...kv === null ? { warnings: [ESD_LEVEL_WARNING] } : {}
+  };
 }
 var esdClampSelection = {
   slug: "esd-clamp-selection",
@@ -27853,15 +28981,71 @@ var esdClampSelection = {
   inputs: [
     { key: "esdVoltage", label: "ESD Strike Voltage", symbol: "V_ESD", unit: "V", defaultValue: 4e3, min: 100, tooltip: "IEC 61000-4-2 Level 4: \xB18 kV contact" },
     { key: "clampVoltage", label: "Clamp Voltage (V_cl)", symbol: "V_cl", unit: "V", defaultValue: 15, min: 1, tooltip: "TVS clamping voltage at peak current from datasheet" },
-    { key: "lineImpedance", label: "Line Impedance", symbol: "Z", unit: "\u03A9", defaultValue: 330, min: 0.1, tooltip: "Series resistance in ESD discharge path" }
+    { key: "lineImpedance", label: "Line Impedance", symbol: "Z", unit: "\u03A9", defaultValue: 330, min: 0.1, tooltip: "Series resistance in ESD discharge path" },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: ESD_STANDARD_OPTIONS,
+      tooltip: "IEC 61000-4-2 contact discharge (preferred) or air discharge (where contact is not possible)"
+    },
+    {
+      key: "testLevel",
+      label: "Test Level",
+      unit: "",
+      defaultValue: 4,
+      min: 1,
+      max: 4,
+      step: 1,
+      options: ESD_TEST_LEVEL_OPTIONS,
+      tooltip: "The IEC 61000-4-2 test level the product must pass; the product standard sets it"
+    }
   ],
   outputs: [
     { key: "peakCurrent", label: "Peak Clamp Current", symbol: "I_pk", unit: "A", precision: 1, primary: true },
     { key: "clampPower", label: "Peak Power Dissipation", symbol: "P_pk", unit: "W", precision: 0 },
     { key: "voltageMargin", label: "Voltage Margin", symbol: "\u0394V", unit: "V", precision: 0, signed: "explicit" },
-    { key: "clampingRatio", label: "Clamping Ratio", symbol: "V_cl/V_ESD", unit: "", precision: 3 }
+    { key: "clampingRatio", label: "Clamping Ratio", symbol: "V_cl/V_ESD", unit: "", precision: 3 },
+    {
+      key: "testVoltage",
+      label: "Test Voltage",
+      symbol: "V_test",
+      unit: "V",
+      precision: 0,
+      tooltip: "The IEC 61000-4-2 test voltage of the chosen discharge method and level: the least strike voltage the clamp must be checked at"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The test voltage as a percentage of the strike voltage checked; above 100 % the check is below the test level",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    }
+  ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "contact-level-4-15-v-clamp", label: "Level 4 contact, 8 kV into a 15 V clamp", values: { esdVoltage: 8e3, clampVoltage: 15, lineImpedance: 330, standard: 0, testLevel: 4 } },
+    { id: "air-level-4-15-v-clamp", label: "Level 4 air, 15 kV into a 15 V clamp", values: { esdVoltage: 15e3, clampVoltage: 15, lineImpedance: 330, standard: 1, testLevel: 4 } },
+    { id: "contact-level-3-checked-at-4-kv", label: "Level 3 contact (6 kV), checked at 4 kV with a 6 V clamp", values: { esdVoltage: 4e3, clampVoltage: 6, lineImpedance: 330, standard: 0, testLevel: 3 } }
   ],
   calculate: calculateEsdClampSelection,
+  standards: {
+    standard: { input: "standard", sources: ESD_SOURCES },
+    class: { input: "testLevel" },
+    value: "esdVoltage",
+    limit: "testVoltage",
+    // The rating must reach the test level: a floor, judged as limit/value.
+    limitKind: "minimum",
+    percent: "limitPercent",
+    clause: (standard, cls) => esdTestLevel(standard, cls ?? 4).clause,
+    rule: (standard, cls) => esdTestLevel(standard, cls ?? 4).rule,
+    remedies: [{ input: "esdVoltage", output: "testVoltage", direction: "up" }]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
   formula: {
     primary: "I_pk = (V_ESD \u2212 V_cl) / Z,  P_pk = V_cl \xD7 I_pk",
     variables: [
@@ -27874,38 +29058,183 @@ var esdClampSelection = {
 };
 
 // src/lib/calculators/emc/radiated-emission-estimate.ts
+var CISPR32 = {
+  B: [
+    { lo: 30, hi: 230, ref: 10, value: 30, alt: true, where: "Table A.4, OATS/SAC at 10 m, quasi-peak" },
+    { lo: 230, hi: 1e3, ref: 10, value: 37, alt: true, where: "Table A.4, OATS/SAC at 10 m, quasi-peak" },
+    { lo: 30, hi: 230, ref: 3, value: 40, alt: true, where: "Table A.4, OATS/SAC at 3 m, quasi-peak" },
+    { lo: 230, hi: 1e3, ref: 3, value: 47, alt: true, where: "Table A.4, OATS/SAC at 3 m, quasi-peak" },
+    { lo: 1e3, hi: 3e3, ref: 3, value: 50, where: "Table A.5, FSOATS at 3 m, average" },
+    { lo: 3e3, hi: 6e3, ref: 3, value: 54, where: "Table A.5, FSOATS at 3 m, average" }
+  ],
+  A: [
+    { lo: 30, hi: 230, ref: 10, value: 40, alt: true, where: "Table A.2, OATS/SAC at 10 m, quasi-peak" },
+    { lo: 230, hi: 1e3, ref: 10, value: 47, alt: true, where: "Table A.2, OATS/SAC at 10 m, quasi-peak" },
+    { lo: 30, hi: 230, ref: 3, value: 50, alt: true, where: "Table A.2, OATS/SAC at 3 m, quasi-peak" },
+    { lo: 230, hi: 1e3, ref: 3, value: 57, alt: true, where: "Table A.2, OATS/SAC at 3 m, quasi-peak" },
+    { lo: 1e3, hi: 3e3, ref: 3, value: 56, where: "Table A.3, FSOATS at 3 m, average" },
+    { lo: 3e3, hi: 6e3, ref: 3, value: 60, where: "Table A.3, FSOATS at 3 m, average" }
+  ]
+};
+var FCC = {
+  B: [
+    { lo: 30, hi: 88, ref: 3, value: 100, where: "\xA715.109(a), Class B" },
+    { lo: 88, hi: 216, ref: 3, value: 150, where: "\xA715.109(a), Class B" },
+    { lo: 216, hi: 960, ref: 3, value: 200, where: "\xA715.109(a), Class B" },
+    { lo: 960, hi: 4e4, ref: 3, value: 500, where: "\xA715.109(a), Class B" }
+  ],
+  A: [
+    { lo: 30, hi: 88, ref: 10, value: 90, where: "\xA715.109(b), Class A" },
+    { lo: 88, hi: 216, ref: 10, value: 150, where: "\xA715.109(b), Class A" },
+    { lo: 216, hi: 960, ref: 10, value: 210, where: "\xA715.109(b), Class A" },
+    { lo: 960, hi: 4e4, ref: 10, value: 300, where: "\xA715.109(b), Class A" }
+  ]
+};
+var num = (v) => String(Number(v.toPrecision(3)));
+var band = (row) => row.hi >= 4e4 ? `above ${num(row.lo)} MHz` : `${num(row.lo)}\u2013${num(row.hi)} MHz`;
+function emissionLimit(standard, emissionClass, fMHz, r) {
+  const fcc = standard === 1;
+  const cls = emissionClass === 1 ? "A" : "B";
+  const rows = (fcc ? FCC : CISPR32)[cls];
+  const top = fcc ? 4e4 : 6e3;
+  if (!(fMHz >= 30) || fMHz > top) {
+    const outside = !(fMHz >= 30) ? "below 30 MHz" : `above ${fcc ? "40 GHz (\xA715.33(b)(1))" : "6 GHz (Table 1)"}`;
+    return { uvm: null, rule: "\u2014", clause: fcc ? `47 CFR \xA715.109, Class ${cls}: no limit ${outside}` : `CISPR 32 Annex A, class ${cls}: no radiated limit ${outside}` };
+  }
+  const near = r < Math.sqrt(30) ? 3 : 10;
+  let best = null;
+  for (const row2 of rows) {
+    if (fMHz < row2.lo || fMHz > row2.hi || row2.alt && row2.ref !== near) continue;
+    const atRef = fcc ? row2.value : 10 ** (row2.value / 20);
+    const uvm2 = atRef * row2.ref / r;
+    if (!best || uvm2 < best.uvm) best = { row: row2, uvm: uvm2 };
+  }
+  const { row, uvm } = best;
+  const moved = Math.abs(r - row.ref) > 1e-9;
+  const stated = fcc ? `${num(row.value)} \xB5V/m at ${row.ref} m` : `${num(row.value)} dB\xB5V/m at ${row.ref} m`;
+  const rule = moved ? fcc ? `${stated} \xD7 ${row.ref} m/r` : `${stated} + 20\xB7log\u2081\u2080(${row.ref} m/r)` : stated;
+  const detector = fcc && fMHz > 1e3 ? ", average (\xA715.35(b))" : "";
+  const extrapolated = moved ? `; extrapolated to ${num(r)} m at 20 dB/decade${fcc ? " (\xA715.31(f)(1))" : ""}` : "";
+  const clause = fcc ? `47 CFR ${row.where}, ${band(row)}${detector}, at ${row.ref} m${extrapolated}` : `CISPR 32 ${row.where}, ${band(row)}${extrapolated}`;
+  return { uvm, rule, clause };
+}
 var radiatedEmissionEstimate = {
   slug: "radiated-emission-estimate",
   title: "Radiated Emission Estimate",
   shortTitle: "Radiated Emissions",
   metaTitle: "Radiated Emission Estimate Calculator - Free Tool",
   category: "emc",
-  description: "Estimate radiated emissions from PCB current loops using the small-loop model. Compare E-field against CISPR 22/FCC Class B limits instantly.",
-  keywords: ["radiated emissions", "EMC radiated", "CISPR 22", "FCC radiated emissions", "PCB emissions estimate", "loop antenna emissions"],
+  description: "Estimate radiated emissions from PCB current loops using the small-loop model. Compare the E-field against CISPR 32 or FCC Class A and B limits instantly.",
+  keywords: ["radiated emissions", "EMC radiated", "CISPR 32", "CISPR 22", "FCC radiated emissions", "PCB emissions estimate", "loop antenna emissions"],
   inputs: [
     { key: "current", label: "Loop Current (peak)", symbol: "I", unit: "mA", defaultValue: 10, min: 1e-3 },
     { key: "loopArea", label: "Loop Area", symbol: "A", unit: "cm\xB2", defaultValue: 1, min: 1e-3, tooltip: "Area enclosed by the current loop on PCB" },
     { key: "frequency", label: "Frequency", symbol: "f", unit: "MHz", defaultValue: 100, min: 0.01 },
-    { key: "distance", label: "Measurement Distance", symbol: "r", unit: "m", defaultValue: 3, min: 0.1, tooltip: "CISPR 22 standard: 3 m or 10 m" }
+    { key: "distance", label: "Measurement Distance", symbol: "r", unit: "m", defaultValue: 3, min: 0.1, tooltip: "CISPR 32 and FCC Part 15 measure at 3 m or 10 m; other distances scale at 20 dB/decade" },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "CISPR 32" },
+        { value: 1, label: "FCC \xA715.109" }
+      ],
+      tooltip: "The radiated-emission limits the field is checked against"
+    },
+    {
+      key: "emissionClass",
+      label: "Class",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Class B" },
+        { value: 1, label: "Class A" }
+      ],
+      tooltip: "Class B: residential equipment, the stricter limit. Class A: commercial and industrial equipment"
+    }
   ],
   outputs: [
     { key: "eFieldDbuvM", label: "E-Field", symbol: "E", unit: "dB\u03BCV/m", precision: 1, primary: true },
-    { key: "margin", label: "Margin vs CISPR 22 Class B", symbol: "M", unit: "dB", precision: 1, thresholds: { good: { min: 6 }, warning: { min: 0 } }, signed: "explicit" }
+    {
+      key: "margin",
+      label: "Margin to Limit",
+      symbol: "M",
+      unit: "dB",
+      precision: 1,
+      thresholds: { good: { min: 6 }, warning: { min: 0 } },
+      signed: "explicit",
+      tooltip: "The limit of the chosen standard and class at this frequency and distance, minus the field; below 0 dB does not comply"
+    },
+    { key: "eFieldUvm", label: "Field Strength", symbol: "E", unit: "\xB5V/m", precision: 2, tooltip: "The field in \xB5V/m, the unit the FCC writes its limits in" },
+    { key: "limitField", label: "Emission Limit", symbol: "E_lim", unit: "\xB5V/m", precision: 2, tooltip: "The limit of the chosen standard and class at this frequency, at the measurement distance" },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The field as a percentage of the limit; above 100 % does not comply (200 % is 6 dB over)",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    { key: "maxCurrent", label: "Compliant Loop Current", symbol: "I_max", unit: "mA", precision: 3, tooltip: "The loop current at which the field equals the limit; at or below it the emission complies" },
+    { key: "maxLoopArea", label: "Compliant Loop Area", symbol: "A_max", unit: "cm\xB2", precision: 3, tooltip: "The loop area at which the field equals the limit; at or below it the emission complies" }
+  ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "smps-harmonic-30-mhz", label: "SMPS harmonic at 30 MHz, 5 mA in 2 cm\xB2", values: { current: 5, loopArea: 2, frequency: 30, distance: 3, standard: 0, emissionClass: 0 } },
+    { id: "clock-harmonic-300-mhz", label: "Clock harmonic at 300 MHz, 5 mA in 2 cm\xB2", values: { current: 5, loopArea: 2, frequency: 300, distance: 3, standard: 0, emissionClass: 0 } },
+    { id: "industrial-150-mhz-fcc-class-a-10-m", label: "Industrial controller at 150 MHz, FCC Class A at 10 m", values: { current: 10, loopArea: 2, frequency: 150, distance: 10, standard: 1, emissionClass: 1 } },
+    { id: "ddr-clock-1-6-ghz", label: "DDR clock at 1.6 GHz, 1 mA in 0.5 cm\xB2", values: { current: 1, loopArea: 0.5, frequency: 1600, distance: 3, standard: 0, emissionClass: 0 } }
   ],
   calculate: (inputs) => {
     const { current, loopArea, frequency, distance } = inputs;
+    const standard = inputs.standard ?? 0;
+    const emissionClass = inputs.emissionClass ?? 0;
     const currentA = current / 1e3;
     const areaM2 = loopArea * 1e-4;
     const freqMhz = frequency;
     const eField = 0.01316 * freqMhz ** 2 * areaM2 * currentA / distance;
     const eFieldDbuvM = eField > 0 ? 20 * Math.log10(eField * 1e6) : -200;
-    const cispr22Limit = 40;
-    const margin = cispr22Limit - eFieldDbuvM;
+    const eFieldUvm = eField * 1e6;
+    const limit = emissionLimit(standard, emissionClass, freqMhz, distance).uvm;
     const warnings = [];
-    if (Math.abs(distance - 3) > 0.5) {
-      warnings.push("CISPR 22 Class B limit of 40 dB\u03BCV/m applies at 3 m. Results at other distances require limit normalization.");
+    if (limit === null) {
+      const fcc = standard === 1;
+      warnings.push(!(freqMhz >= 30) ? `${fcc ? "FCC \xA715.109" : "CISPR 32"} sets no radiated-emission limit below 30 MHz` : fcc ? "FCC \xA715.33(b)(1) requires no radiated measurement above 40 GHz, so \xA715.109 sets no limit there" : "CISPR 32 sets no radiated-emission limit above 6 GHz");
     }
-    return { values: { eFieldDbuvM, margin }, ...warnings.length > 0 && { warnings } };
+    const limitField = limit === null ? NaN : limit;
+    const margin = limit === null ? NaN : 20 * Math.log10(limit) - eFieldDbuvM;
+    const limitPercent = limit === null ? NaN : eFieldUvm / limit * 100;
+    const maxCurrent = limit === null ? NaN : current * limit / eFieldUvm;
+    const maxLoopArea = limit === null ? NaN : loopArea * limit / eFieldUvm;
+    return {
+      values: { eFieldDbuvM, margin, eFieldUvm, limitField, limitPercent, maxCurrent, maxLoopArea },
+      ...warnings.length > 0 && { warnings }
+    };
+  },
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "CISPR 32:2015+AMD1:2019 (Edition 2.1), Electromagnetic compatibility of multimedia equipment \u2013 Emission requirements, Annex A, Tables A.2\u2013A.5 (radiated, OATS/SAC and FSOATS), and Table 1 for the highest frequency",
+        1: "47 CFR \xA715.109(a)\u2013(c), radiated emission limits (last amended 2016), with \xA715.31(f)(1) (other distances), \xA715.33(b)(1) (frequency range) and \xA715.35(a)\u2013(b) (detectors); eCFR, current to 2 October 2026"
+      }
+    },
+    class: { input: "emissionClass" },
+    value: "eFieldUvm",
+    limit: "limitField",
+    percent: "limitPercent",
+    clause: (standard, cls, inputs) => emissionLimit(standard, cls ?? 0, inputs.frequency ?? 100, inputs.distance ?? 3).clause,
+    rule: (standard, cls, inputs) => emissionLimit(standard, cls ?? 0, inputs.frequency ?? 100, inputs.distance ?? 3).rule,
+    remedies: [
+      { input: "current", output: "maxCurrent", direction: "down" },
+      { input: "loopArea", output: "maxLoopArea", direction: "down" }
+    ],
+    chart: { x: "current", range: [1e-3, 1e3], scale: "log", yScale: "log" }
   },
   formula: {
     primary: "E = 1.316\xD710\u207B\xB2 \xD7 f\xB2 \xD7 A \xD7 I / r  [V/m, f in MHz, A in m\xB2]",
@@ -28034,8 +29363,8 @@ var pcbCrosstalkEmc = {
   keywords: ["PCB crosstalk EMC", "trace coupling", "capacitive coupling PCB", "inductive coupling PCB", "EMC crosstalk", "PCB EMC"],
   inputs: [
     { key: "aggressorVoltage", label: "Aggressor Voltage", symbol: "V_A", unit: "V", defaultValue: 3.3, min: 1e-3 },
-    { key: "mutualCapacitance", label: "Mutual Capacitance", symbol: "C_m", unit: "pF", defaultValue: 20, min: 1e-3, tooltip: "Total mutual capacitance between traces (pF)" },
-    { key: "mutualInductance", label: "Mutual Inductance", symbol: "L_m", unit: "nH", defaultValue: 10, min: 1e-3, tooltip: "Total mutual inductance between traces (nH)" },
+    { key: "mutualCapacitance", label: "Mutual Capacitance", symbol: "C_m", unit: "pF", defaultValue: 20, min: 1e-3, max: 1e4, tooltip: "Total mutual capacitance between traces (pF)" },
+    { key: "mutualInductance", label: "Mutual Inductance", symbol: "L_m", unit: "nH", defaultValue: 10, min: 1e-3, max: 1e4, tooltip: "Total mutual inductance between traces (nH)" },
     { key: "frequency", label: "Frequency", symbol: "f", unit: "MHz", defaultValue: 100, min: 1e-3 },
     { key: "lineImpedance", label: "Victim Line Impedance", symbol: "Z", unit: "\u03A9", defaultValue: 50, min: 1 }
   ],
@@ -28045,12 +29374,23 @@ var pcbCrosstalkEmc = {
     { key: "totalCrosstalk", label: "Total Crosstalk", symbol: "V_xt", unit: "mV", precision: 2, primary: true },
     { key: "crosstalkDb", label: "Crosstalk Coupling", symbol: "XT", unit: "dB", precision: 1 }
   ],
+  examples: [
+    { id: "clock-3-3-v-25-mhz", label: "3.3 V, 25 MHz clock beside a 50 \u03A9 line (1 pF, 3 nH)", values: { aggressorVoltage: 3.3, mutualCapacitance: 1, mutualInductance: 3, frequency: 25, lineImpedance: 50 } },
+    { id: "logic-5-v-10-mhz", label: "5 V logic at 10 MHz (2 pF, 6 nH)", values: { aggressorVoltage: 5, mutualCapacitance: 2, mutualInductance: 6, frequency: 10, lineImpedance: 50 } },
+    { id: "io-1-8-v-200-mhz", label: "1.8 V I/O at 200 MHz (0.4 pF, 1.2 nH)", values: { aggressorVoltage: 1.8, mutualCapacitance: 0.4, mutualInductance: 1.2, frequency: 200, lineImpedance: 50 } }
+  ],
   calculate: calculatePcbCrosstalkEmc,
   formula: {
     primary: "V_cap = V_A \xD7 C_m \xD7 2\u03C0f \xD7 Z,  V_ind = L_m \xD7 2\u03C0f \xD7 (V_A/Z)",
     variables: []
   },
   visualization: { type: "none" },
+  // No dimensions: the drawing is two lines coupled through C_m and L_m (the coupled family's abstract form).
+  geometry: {
+    drawing: { family: "coupled", roles: { cm: "mutualCapacitance", lm: "mutualInductance" } },
+    synthesis: [{ output: "totalCrosstalk", solveFor: ["mutualCapacitance", "mutualInductance"] }],
+    curve: { x: "mutualCapacitance", y: "totalCrosstalk", range: [0.1, 100], scale: "log" }
+  },
   relatedCalculators: ["ground-plane-impedance", "radiated-emission-estimate", "shielding-effectiveness"]
 };
 
@@ -29120,7 +30460,7 @@ var subwooferBox = {
   metaTitle: "Subwoofer Box Calculator \u2014 Sealed & Ported Volume",
   keywords: ["subwoofer box calculator", "bass box calculator", "speaker enclosure calculator", "Thiele-Small", "ported box", "sealed box subwoofer", "Vas Qts Fs"],
   inputs: [
-    { key: "vas", label: "Vas (Equivalent Volume)", symbol: "Vas", unit: "L", defaultValue: 50, min: 0.1, tooltip: "From driver datasheet" },
+    { key: "vas", label: "Vas (Equivalent Volume)", symbol: "Vas", unit: "L", defaultValue: 50, min: 0.1, max: 2e3, tooltip: "From driver datasheet" },
     { key: "qts", label: "Qts (Total Q)", symbol: "Qts", unit: "", defaultValue: 0.35, min: 0.01, max: 2, step: 0.01, tooltip: "Qts < 0.35 \u2192 vented, 0.35\u20130.7 \u2192 sealed" },
     { key: "fs", label: "Fs (Resonant Frequency)", symbol: "Fs", unit: "Hz", defaultValue: 35, min: 5, max: 200 }
   ],
@@ -29129,6 +30469,11 @@ var subwooferBox = {
     { key: "vbVented", label: "Ported Box Volume", symbol: "Vb_v", unit: "L", precision: 1 },
     { key: "portTuning", label: "Port Tuning Frequency", symbol: "Fb", unit: "Hz", precision: 1 },
     { key: "f3Sealed", label: "-3 dB (Sealed)", symbol: "f_3", unit: "Hz", precision: 1 }
+  ],
+  examples: [
+    { id: "woofer-12in", label: "12-inch subwoofer, Vas 80 L, Qts 0.38, fs 26 Hz", values: { vas: 80, qts: 0.38, fs: 26 } },
+    { id: "woofer-10in", label: "10-inch subwoofer, Vas 45 L, Qts 0.45, fs 30 Hz", values: { vas: 45, qts: 0.45, fs: 30 } },
+    { id: "woofer-8in", label: "8-inch woofer, Vas 25 L, Qts 0.40, fs 38 Hz", values: { vas: 25, qts: 0.4, fs: 38 } }
   ],
   calculate: calculateSubwooferBox,
   formula: {
@@ -29139,6 +30484,15 @@ var subwooferBox = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "box", roles: { vb: "vbSealed", vbv: "vbVented", vas: "vas", fb: "portTuning", qts: "qts", fs: "fs", f3: "f3Sealed" } },
+    // A box of a given size, or a −3 dB point: the driver that suits it.
+    synthesis: [
+      { output: "vbSealed", solveFor: ["vas", "qts"] },
+      { output: "f3Sealed", solveFor: ["fs", "qts"] }
+    ],
+    curve: { x: "qts", y: "vbSealed", range: [0.2, 0.6], scale: "linear" }
+  },
   relatedCalculators: ["room-modes", "speaker-sensitivity", "tweeter-capacitor"],
   relatedBlogPosts: ["room-modes"]
 };
@@ -30857,6 +32211,8 @@ function calculateCoplanarWaveguide(inputs) {
   const isGrounded = structure >= 0.5;
   const { Z0: impedance, erEff: effectiveDielectric } = isGrounded ? cpwg(traceWidth, gapWidth, substrateHeight, dielectricConst, t) : ungroundedCpw(traceWidth, gapWidth, substrateHeight, dielectricConst, t);
   const propagationDelay = Math.sqrt(effectiveDielectric) / C_MM_PER_PS;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS / (frequency * Math.sqrt(effectiveDielectric));
   const zAtGap = (gap) => isGrounded ? cpwg(traceWidth, gap, substrateHeight, dielectricConst, t).Z0 : ungroundedCpw(traceWidth, gap, substrateHeight, dielectricConst, t).Z0;
   let lo = 0.01;
   let hi = 10;
@@ -30885,7 +32241,9 @@ function calculateCoplanarWaveguide(inputs) {
       effectiveDielectric,
       propagationDelay,
       gapFor50,
-      wavelengthAt1GHz: C_MM_PER_PS * 1e3 / Math.sqrt(effectiveDielectric)
+      wavelengthAt1GHz: C_MM_PER_PS * 1e3 / Math.sqrt(effectiveDielectric),
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -30933,6 +32291,7 @@ var coplanarWaveguide = {
       unit: "mm",
       defaultValue: 1,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -30942,6 +32301,8 @@ var coplanarWaveguide = {
       unit: "mm",
       defaultValue: 0.3,
       min: 0.02,
+      // The range the 50 Ω gap is searched over; synthesis searches it too.
+      max: 10,
       step: 0.01,
       tooltip: "Edge-to-edge spacing between the centre conductor and each side ground"
     },
@@ -30967,14 +32328,8 @@ var coplanarWaveguide = {
       unit: "",
       defaultValue: 3.55,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "Rogers RO4003C (3.55)", values: { dielectricConst: 3.55 } },
-        { label: "Rogers RO4350B (3.66)", values: { dielectricConst: 3.66 } },
-        { label: "FR4 (4.4)", values: { dielectricConst: 4.4 } },
-        { label: "PTFE / RO5880 (2.2)", values: { dielectricConst: 2.2 } },
-        { label: "Alumina 96% (9.6)", values: { dielectricConst: 9.6 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -30989,6 +32344,16 @@ var coplanarWaveguide = {
         { label: "1 oz (35 \u03BCm)", values: { copperThickness: 35 } },
         { label: "2 oz (70 \u03BCm)", values: { copperThickness: 70 } }
       ]
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
@@ -31025,7 +32390,15 @@ var coplanarWaveguide = {
       symbol: "\u03BBg",
       unit: "mm",
       precision: 2
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength at f", symbol: "\u03BBg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength at f", symbol: "\u03BBg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "gcpw-ro4003c-0-508-mm-50-ohm", label: "GCPW, 50 \u03A9 on 0.508 mm RO4003C", values: { structure: 1, traceWidth: 1, gapWidth: 0.414, substrateHeight: 0.508, dielectricConst: 3.55, copperThickness: 35 } },
+    { id: "gcpw-ro4350b-0-254-mm-50-ohm", label: "GCPW, 50 \u03A9 on 0.254 mm RO4350B", values: { structure: 1, traceWidth: 0.5, gapWidth: 0.266, substrateHeight: 0.254, dielectricConst: 3.66, copperThickness: 35 } },
+    { id: "gcpw-fr4-1-6-mm-50-ohm", label: "GCPW, 50 \u03A9 on a 1.6 mm FR-4 board", values: { structure: 1, traceWidth: 1.5, gapWidth: 0.28, substrateHeight: 1.6, dielectricConst: 4.4, copperThickness: 35 } },
+    { id: "cpw-alumina-0-635-mm-50-ohm", label: "CPW, 50 \u03A9 on 0.635 mm alumina, 3 \xB5m thin film", values: { structure: 0, traceWidth: 0.1, gapWidth: 0.048, substrateHeight: 0.635, dielectricConst: 9.9, copperThickness: 3 } }
   ],
   calculate: calculateCoplanarWaveguide,
   formula: {
@@ -31078,6 +32451,16 @@ var coplanarWaveguide = {
     }
   ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "cpw",
+      roles: { w: "traceWidth", g: "gapWidth", h: "substrateHeight", t: "copperThickness", er: "dielectricConst" },
+      variant: { input: "structure", byValue: { 1: "grounded", 0: "ungrounded" } }
+    },
+    synthesis: [{ output: "impedance", solveFor: ["gapWidth", "traceWidth"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "gapWidth", y: "impedance", range: [0.05, 2], scale: "log" }
+  },
   relatedCalculators: [
     "microstrip-impedance",
     "controlled-impedance",
@@ -31145,6 +32528,8 @@ function calculateAsymmetricStripline(inputs) {
     t
   );
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS2;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS2 / (frequency * Math.sqrt(dielectricConst));
   const asymmetryRatio = h2 / h1;
   const offsetPenalty = centredImpedance > 0 ? (impedance - centredImpedance) / centredImpedance * 100 : 0;
   if (h2 < h1) {
@@ -31170,7 +32555,9 @@ function calculateAsymmetricStripline(inputs) {
       offsetPenalty,
       propagationDelay,
       planeSpacing,
-      asymmetryRatio
+      asymmetryRatio,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -31198,6 +32585,7 @@ var asymmetricStriplineCalc = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -31207,6 +32595,7 @@ var asymmetricStriplineCalc = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 5,
       step: 0.01,
       tooltip: "Dielectric thickness between the trace and the closer reference plane"
     },
@@ -31241,13 +32630,18 @@ var asymmetricStriplineCalc = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
-        { label: "PTFE (2.2)", values: { dielectricConst: 2.2 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
@@ -31293,7 +32687,14 @@ var asymmetricStriplineCalc = {
       unit: "mm",
       precision: 3
     },
-    { key: "asymmetryRatio", label: "Asymmetry Ratio", symbol: "h\u2082/h\u2081", unit: "", precision: 2 }
+    { key: "asymmetryRatio", label: "Asymmetry Ratio", symbol: "h\u2082/h\u2081", unit: "", precision: 2 },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "\u03BBg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "\u03BBg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "fr4-0-15-0-45-mm-50-ohm", label: "50 \u03A9, 0.15 mm prepreg and 0.45 mm core, FR-4", values: { traceWidth: 0.165, heightToNearPlane: 0.15, heightToFarPlane: 0.45, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "fr4-0-2-0-6-mm-1-oz-50-ohm", label: "50 \u03A9, 0.2 mm and 0.6 mm, 1 oz copper, FR-4", values: { traceWidth: 0.206, heightToNearPlane: 0.2, heightToFarPlane: 0.6, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "centred-0-3-mm-50-ohm", label: "50 \u03A9 centred, 0.3 mm each side (Cohn\u2019s exact case)", values: { traceWidth: 0.233, heightToNearPlane: 0.3, heightToFarPlane: 0.3, copperThickness: 17.5, dielectricConst: 4.4 } }
   ],
   calculate: calculateAsymmetricStripline,
   // What `asymmetricStripline` computes (`striplineNormC` in lib/pcb/impedance),
@@ -31365,6 +32766,12 @@ var asymmetricStriplineCalc = {
     }
   ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "stripline", roles: { w: "traceWidth", h1: "heightToNearPlane", h2: "heightToFarPlane", t: "copperThickness", er: "dielectricConst" } },
+    synthesis: [{ output: "impedance", solveFor: ["traceWidth", "heightToNearPlane"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "impedance", range: [0.03, 2], scale: "log" }
+  },
   relatedCalculators: [
     "controlled-impedance",
     "dual-stripline",
@@ -31497,6 +32904,8 @@ function calculateDualStripline(inputs) {
   );
   const broadsideCoupling = Zeven + Zodd > 0 ? (Zeven - Zodd) / (Zeven + Zodd) * 100 : 0;
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS3;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS3 / (frequency * Math.sqrt(dielectricConst));
   if (broadsideCoupling > 10) {
     warnings.push(
       `Broadside coupling is ${broadsideCoupling.toFixed(1)}% if the layers overlap \u2014 route the two signal layers orthogonally`
@@ -31528,7 +32937,9 @@ function calculateDualStripline(inputs) {
       impedanceLayer2,
       layer2Offset: h2,
       propagationDelay,
-      broadsideCoupling
+      broadsideCoupling,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -31556,6 +32967,7 @@ var dualStripline = {
       unit: "mm",
       defaultValue: 0.13,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -31575,6 +32987,7 @@ var dualStripline = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 5,
       step: 0.01
     },
     {
@@ -31606,12 +33019,18 @@ var dualStripline = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
@@ -31654,7 +33073,14 @@ var dualStripline = {
       symbol: "t_pd",
       unit: "ps/mm",
       precision: 3
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "\u03BBg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "\u03BBg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "symmetric-0-8-mm-50-ohm", label: "50 \u03A9 on both layers, planes 0.8 mm apart, FR-4", values: { traceWidth: 0.202, planeSpacing: 0.8, layer1Offset: 0.2, layerSeparation: 0.33, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "uneven-0-8-mm", label: "Uneven layers, 0.2 mm and 0.23 mm to the planes, FR-4", values: { traceWidth: 0.202, planeSpacing: 0.8, layer1Offset: 0.2, layerSeparation: 0.3, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "ro4350b-1-0-mm-50-ohm", label: "50 \u03A9 on both layers, planes 1.0 mm apart, RO4350B", values: { traceWidth: 0.324, planeSpacing: 1, layer1Offset: 0.25, layerSeparation: 0.43, copperThickness: 35, dielectricConst: 3.66 } }
   ],
   calculate: calculateDualStripline,
   formula: {
@@ -31676,6 +33102,18 @@ var dualStripline = {
     reference: 'IPC-2141A; E. Bogatin, "Signal and Power Integrity \u2014 Simplified", 3rd ed., ch. 11'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "stripline",
+      roles: { w: "traceWidth", b: "planeSpacing", offset: "layer1Offset", sep: "layerSeparation", h2: "layer2Offset", t: "copperThickness", er: "dielectricConst" }
+    },
+    synthesis: [
+      { output: "impedanceLayer1", solveFor: ["traceWidth", "layer1Offset"] },
+      { output: "impedanceLayer2", solveFor: ["traceWidth"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "impedanceLayer1", range: [0.03, 1], scale: "log" }
+  },
   relatedCalculators: [
     "asymmetric-stripline",
     "controlled-impedance",
@@ -31708,6 +33146,9 @@ function calculateBroadsideCoupledPair(inputs) {
   const t = copperThickness / 1e3;
   const isShielded = shielded >= 0.5;
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS4;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS4 / (frequency * Math.sqrt(dielectricConst));
+  const quarterWavelength = guidedWavelength / 4;
   if (isShielded) {
     const heightToPlane = (planeSpacing - traceSeparation - 2 * t) / 2;
     if (heightToPlane <= 0) {
@@ -31753,7 +33194,9 @@ function calculateBroadsideCoupledPair(inputs) {
         commonImpedance: Zcommon,
         uncoupledImpedance,
         heightToPlane,
-        propagationDelay
+        propagationDelay,
+        guidedWavelength,
+        quarterWavelength
       },
       warnings: warnings.length > 0 ? warnings : void 0
     };
@@ -31779,7 +33222,9 @@ function calculateBroadsideCoupledPair(inputs) {
       commonImpedance: 0,
       uncoupledImpedance: 0,
       heightToPlane: 0,
-      propagationDelay
+      propagationDelay,
+      guidedWavelength,
+      quarterWavelength
     },
     warnings
   };
@@ -31825,6 +33270,7 @@ var broadsideCoupledPair = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -31834,6 +33280,7 @@ var broadsideCoupledPair = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 5,
       step: 0.01,
       tooltip: "Dielectric thickness between the two stacked traces"
     },
@@ -31867,13 +33314,18 @@ var broadsideCoupledPair = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
-        { label: "Polyimide flex (3.5)", values: { dielectricConst: 3.5 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
@@ -31922,7 +33374,14 @@ var broadsideCoupledPair = {
       symbol: "t_pd",
       unit: "ps/mm",
       precision: 3
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "\u03BBg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "\u03BBg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "shielded-100-ohm-1-0-mm", label: "100 \u03A9 between planes 1.0 mm apart, FR-4", values: { shielded: 1, traceWidth: 0.15, traceSeparation: 0.3, planeSpacing: 1, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "shielded-90-ohm-0-8-mm", label: "90 \u03A9 between planes 0.8 mm apart, FR-4", values: { shielded: 1, traceWidth: 0.12, traceSeparation: 0.183, planeSpacing: 0.8, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "flex-no-planes-polyimide", label: "Flex with no planes, 0.1 mm traces on 0.1 mm polyimide", values: { shielded: 0, traceWidth: 0.1, traceSeparation: 0.1, copperThickness: 17.5, dielectricConst: 3.4 } }
   ],
   calculate: calculateBroadsideCoupledPair,
   formula: {
@@ -31945,6 +33404,16 @@ var broadsideCoupledPair = {
     reference: 'B. C. Wadell, "Transmission Line Design Handbook", Artech House 1991, \xA74.5 (broadside-coupled lines)'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "coupled",
+      roles: { w: "traceWidth", sep: "traceSeparation", b: "planeSpacing", h: "heightToPlane", t: "copperThickness", er: "dielectricConst" },
+      variant: { input: "shielded", byValue: { 1: "broadside", 0: "broadside-open" } }
+    },
+    synthesis: [{ output: "diffImpedance", solveFor: ["traceWidth", "traceSeparation"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "diffImpedance", range: [0.03, 1], scale: "log" }
+  },
   relatedCalculators: [
     "edge-coupled-internal-symmetric",
     "edge-coupled-internal-asymmetric",
@@ -32817,12 +34286,45 @@ var lengthUnits = {
 };
 
 // src/lib/calculators/pcb/padstack-annular-ring.ts
+var FABRICATION_ALLOWANCE = [0.4, 0.25, 0.2];
+var LEVELS = ["A", "B", "C"];
+var EXTERNAL_RING_2221 = 0.05;
+var CLASS3_RING = { external: 0.05, internal: 0.025 };
+var fmt = (v) => String(Number(v.toPrecision(6)));
+var snap = (v) => Number(v.toPrecision(12));
+function landLimit(standard, ipcClass, level, drill, platingMm, fabricationAllowance, pad) {
+  const hole = drill - 2 * platingMm;
+  if (standard === 1) {
+    if (ipcClass !== 3) {
+      return { mm: null, maxDrill: null, rule: "\u2014", clause: "IPC-6012E Table 3-9, Class 2: 90\xB0 breakout permitted, no minimum annular ring" };
+    }
+    const ext = 2 * CLASS3_RING.external - 2 * platingMm;
+    const int = 2 * CLASS3_RING.internal;
+    return {
+      mm: snap(drill + Math.max(ext, int) + fabricationAllowance),
+      maxDrill: snap(pad - fabricationAllowance - Math.max(ext, int)),
+      rule: "max(a + 0.100, D + 0.050) + FA",
+      clause: "IPC-6012E Table 3-9, Class 3: annular ring 0.050 mm external (from the finished hole) and 0.025 mm internal (from the drilled hole), after the fabrication allowance FA"
+    };
+  }
+  const L = Math.min(2, Math.max(0, Math.round(level)));
+  const c2 = FABRICATION_ALLOWANCE[L];
+  return {
+    mm: snap(hole + 2 * EXTERNAL_RING_2221 + c2),
+    maxDrill: snap(pad + 2 * platingMm - 2 * EXTERNAL_RING_2221 - c2),
+    rule: `a + 0.100 + ${fmt(c2)} mm`,
+    clause: `IPC-2221B \xA79.1.1, land = a + 2b + c: Table 9-2 (external land, supported hole, b = 0.050 mm), Table 9-1 (Level ${LEVELS[L]}, c = ${fmt(c2)} mm)`
+  };
+}
 function calculatePadstack(inputs) {
   const { drillDiameter, platingThickness, fabricationAllowance, ipcClass, boardThickness } = inputs;
+  const standard = inputs.standard ?? 0;
+  const producibilityLevel = inputs.producibilityLevel ?? 1;
+  const padDiameter = inputs.padDiameter ?? 0.65;
   const platingMm = platingThickness / 1e3;
   const finishedHoleDia = drillDiameter - 2 * platingMm;
   const minAnnularExt = 0.05;
-  const minAnnularInt = ipcClass === 3 ? 0.05 : 0.025;
+  const minAnnularInt = 0.025;
   const minPadDiaExt = drillDiameter + 2 * minAnnularExt + fabricationAllowance;
   const minPadDiaInt = drillDiameter + 2 * minAnnularInt + fabricationAllowance;
   const landAreaExt = Math.PI / 4 * (minPadDiaExt ** 2 - drillDiameter ** 2);
@@ -32838,6 +34340,17 @@ function calculatePadstack(inputs) {
   if (finishedHoleDia < 0.1) {
     warnings.push("Finished hole diameter is very small \u2014 verify plating capability");
   }
+  const limit = landLimit(standard, ipcClass, producibilityLevel, drillDiameter, platingMm, fabricationAllowance, padDiameter);
+  if (limit.mm === null) {
+    warnings.push("IPC-6012E Class 2 permits 90\xB0 breakout and sets no minimum annular ring");
+  }
+  const minLandDiameter = limit.mm ?? NaN;
+  const landPercent = limit.mm === null || padDiameter <= 0 ? NaN : limit.mm / padDiameter * 100;
+  let maxDrillDiameter = limit.maxDrill ?? NaN;
+  if (limit.maxDrill !== null && limit.maxDrill <= 0) {
+    maxDrillDiameter = NaN;
+    warnings.push("No drill complies: the pad is smaller than the land the standard requires for any hole");
+  }
   return {
     values: {
       finishedHoleDia,
@@ -32848,7 +34361,10 @@ function calculatePadstack(inputs) {
       landAreaExt,
       landAreaInt,
       aspectRatio,
-      maxAspect
+      maxAspect,
+      minLandDiameter,
+      landPercent,
+      maxDrillDiameter
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -32919,6 +34435,44 @@ var padstackAnnularRing = {
       defaultValue: 1.6,
       min: 0.2,
       max: 6
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "IPC-2221B" },
+        { value: 1, label: "IPC-6012E" }
+      ],
+      tooltip: "IPC-2221B: the design rule a + 2b + c. IPC-6012E: the Class 3 acceptance ring after the fabrication allowance"
+    },
+    {
+      key: "producibilityLevel",
+      label: "Producibility Level",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 2,
+      step: 1,
+      options: [
+        { value: 0, label: "Level A (general)" },
+        { value: 1, label: "Level B (moderate)" },
+        { value: 2, label: "Level C (high)" }
+      ],
+      tooltip: "Sets the IPC-2221B Table 9-1 fabrication allowance c: 0.4, 0.25 or 0.2 mm"
+    },
+    {
+      key: "padDiameter",
+      label: "Pad Diameter",
+      symbol: "D_pad",
+      unit: "mm",
+      defaultValue: 0.65,
+      min: 0.1,
+      max: 10,
+      tooltip: "The land diameter on your board, checked against the minimum land of the chosen standard"
     }
   ],
   outputs: [
@@ -32929,20 +34483,74 @@ var padstackAnnularRing = {
     { key: "minAnnularInt", label: "Min Annular Ring (Internal)", unit: "mm" },
     { key: "landAreaExt", label: "Land Area (External)", unit: "mm\xB2" },
     { key: "aspectRatio", label: "Aspect Ratio", unit: ":1" },
-    { key: "maxAspect", label: "Max Allowed Aspect Ratio", unit: ":1" }
+    { key: "maxAspect", label: "Max Allowed Aspect Ratio", unit: ":1" },
+    {
+      key: "minLandDiameter",
+      label: "Minimum Land",
+      symbol: "D_land",
+      unit: "mm",
+      tooltip: "The smallest land the chosen standard allows for this hole: a + 2b + c (IPC-2221B), or the Class 3 ring after the fabrication allowance (IPC-6012E)"
+    },
+    {
+      key: "landPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The minimum land as a percentage of the pad; above 100 % the pad is too small",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "maxDrillDiameter",
+      label: "Compliant Drill",
+      symbol: "D_max",
+      unit: "mm",
+      tooltip: "The largest drill for which this pad still meets the chosen standard"
+    }
+  ],
+  examples: [
+    { id: "via-0p3-in-0p5-pad", label: "0.3 mm via in a 0.5 mm pad, Level B", values: { drillDiameter: 0.3, padDiameter: 0.5, producibilityLevel: 1 } },
+    { id: "pth-1-mm-in-1p6-pad", label: "1.0 mm component hole in a 1.6 mm pad, Level A", values: { drillDiameter: 1, padDiameter: 1.6, producibilityLevel: 0 } },
+    { id: "class-3-0p25-in-0p4-pad", label: "Class 3 acceptance, 0.25 mm drill in a 0.4 mm pad", values: { drillDiameter: 0.25, padDiameter: 0.4, ipcClass: 3, standard: 1 } },
+    { id: "via-0p2-on-2p4-mm-board", label: "0.2 mm via in a 0.4 mm pad, 2.4 mm board", values: { drillDiameter: 0.2, padDiameter: 0.4, boardThickness: 2.4 } }
   ],
   calculate: calculatePadstack,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "IPC-2221B, Generic Standard on Printed Board Design (November 2012), \xA79.1.1 (land = a + 2b + c), Table 9-1 (fabrication allowance by level) and Table 9-2 (minimum annular ring)",
+        1: "IPC-6012E, Qualification and Performance Specification for Rigid Printed Boards (2020), Table 3-9, annular ring by class"
+      }
+    },
+    class: { input: "ipcClass" },
+    value: "padDiameter",
+    limit: "minLandDiameter",
+    limitKind: "minimum",
+    percent: "landPercent",
+    clause: (standard, cls, inputs) => landLimit(standard, cls ?? 2, inputs.producibilityLevel ?? 1, inputs.drillDiameter ?? 0.3, (inputs.platingThickness ?? 25) / 1e3, inputs.fabricationAllowance ?? 0.05, inputs.padDiameter ?? 0.65).clause,
+    rule: (standard, cls, inputs) => landLimit(standard, cls ?? 2, inputs.producibilityLevel ?? 1, inputs.drillDiameter ?? 0.3, (inputs.platingThickness ?? 25) / 1e3, inputs.fabricationAllowance ?? 0.05, inputs.padDiameter ?? 0.65).rule,
+    remedies: [
+      { input: "padDiameter", output: "minLandDiameter", direction: "up" },
+      { input: "drillDiameter", output: "maxDrillDiameter", direction: "down" }
+    ]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
+  assumptions: [
+    { code: "ipc-2221b-base-allowance", text: "The IPC-2221B fabrication allowance is the Table 9-1 base value; its additions for copper heavier than 1 oz/ft\xB2 and for boards of more than eight layers are not applied." },
+    { code: "finished-hole-from-drill", text: "The finished hole is the drill diameter less twice the plating thickness, and stands for IPC-2221B's maximum finished hole a." }
+  ],
   formula: {
     primary: "Pad_min = Drill + 2 \xD7 Annular_ring_min + Fab_allowance",
     latex: "D_{pad} = D_{drill} + 2 \\cdot AR_{min} + FA",
     variables: [
       { symbol: "D_pad", description: "Minimum pad diameter", unit: "mm" },
       { symbol: "D_drill", description: "Drill diameter", unit: "mm" },
-      { symbol: "AR_min", description: "Minimum annular ring (IPC-6012)", unit: "mm" },
+      { symbol: "AR_min", description: "Minimum annular ring (IPC-2221B Table 9-2)", unit: "mm" },
       { symbol: "FA", description: "Fabrication allowance for drill wander", unit: "mm" }
     ],
     derivation: [
-      "IPC-6012 Rev E specifies minimum annular ring of 0.050 mm external (Class 2 and 3) and 0.025 mm internal (Class 2, breakout allowed) or 0.050 mm internal (Class 3, no breakout). Fabrication allowance accounts for drill wander."
+      "IPC-2221B Table 9-2 sets a minimum annular ring of 0.050 mm on external lands and 0.025 mm on internal lands of plated holes. IPC-6012E Table 3-9 accepts Class 3 boards with at least 0.050 mm external (measured from the finished hole) and 0.025 mm internal (measured from the drilled hole); Class 2 permits 90\xB0 breakout. Fabrication allowance accounts for drill wander.",
+      "The standards check compares a pad with IPC-2221B's land rule a + 2b + c, where a is the finished hole, b = 0.050 mm and c is the Table 9-1 fabrication allowance (0.4, 0.25 or 0.2 mm for Levels A, B and C), or with the IPC-6012E Class 3 ring after your fabrication allowance."
     ]
   },
   visualization: { type: "none" },
@@ -32963,7 +34571,7 @@ var padstackAnnularRing = {
     },
     {
       question: "What is the difference between Class 2 and Class 3?",
-      answer: "Class 2 (dedicated service electronics) allows tangential breakout on internal layers with a minimum 0.025 mm annular ring. Class 3 (high reliability) requires no breakout and a minimum 0.050 mm annular ring on all layers."
+      answer: "Class 2 (dedicated service electronics) accepts up to 90\xB0 breakout of the hole from the land, provided the land-to-conductor junction and the minimum spacing are kept. Class 3 (high reliability) accepts no breakout: at least 0.050 mm of ring on external layers and 0.025 mm on internal layers."
     },
     {
       question: "What does fabrication allowance account for?",
@@ -32973,10 +34581,29 @@ var padstackAnnularRing = {
 };
 
 // src/lib/calculators/pcb/bga-land-pad.ts
+function bgaLand(ballType, ball) {
+  const nonCollapsing = ballType === 1;
+  const row = ball >= 0.55 ? 0 : ball >= 0.25 ? 1 : 2;
+  const band2 = ["balls of 0.55 mm and above", "balls of 0.25\u20130.50 mm", "balls below 0.25 mm"][row];
+  const percent = nonCollapsing ? [15, 10, 5][row] : [25, 20, 15][row];
+  const factor = nonCollapsing ? 1 + percent / 100 : 1 - percent / 100;
+  const tolerance = ball >= 0.35 ? 0.05 : null;
+  const kind = nonCollapsing ? "non-collapsing" : "collapsing";
+  return {
+    nominal: Number((ball * factor).toPrecision(12)),
+    // 0.6 × 0.75 is 0.45, not 0.44999999999999996
+    percent,
+    tolerance,
+    rule: tolerance === null ? `${factor} \xD7 ball` : `${factor} \xD7 ball \xB1 0.05 mm`,
+    clause: `IPC-7351B BGA land, ${kind} balls: ${percent} % ${nonCollapsing ? "larger" : "smaller"} than the ball for ${band2}${tolerance === null ? "" : ", land variation \xB10.05 mm"}`
+  };
+}
 function calculateBgaLand(inputs) {
-  const { ballPitch, ballDiameter, densityLevel, solderMaskDefined, viaInPad } = inputs;
-  const factor = densityLevel === 0 ? 1 : densityLevel === 1 ? 0.9 : 0.8;
-  const padDia = Math.round(ballDiameter * factor * 20) / 20;
+  const { ballPitch, ballDiameter, solderMaskDefined, viaInPad } = inputs;
+  const ballType = inputs.ballType ?? 0;
+  const landDiameter = inputs.landDiameter ?? 0.48;
+  const land = bgaLand(ballType, ballDiameter);
+  const padDia = Math.round(land.nominal * 20) / 20;
   const isSMD = solderMaskDefined >= 0.5;
   const maskOpening = isSMD ? padDia - 0.1 : padDia + 0.1;
   const maxViaDrill = viaInPad >= 0.5 ? padDia - 0.2 : 0;
@@ -32998,6 +34625,14 @@ function calculateBgaLand(inputs) {
   if (maxViaDrill > 0 && maxViaDrill < 0.1) {
     warnings.push("Via drill for via-in-pad is below 0.1 mm \u2014 check fab capability");
   }
+  const ipcLand = land.nominal;
+  const landDeviation = Math.abs(landDiameter - ipcLand);
+  const landTolerance = land.tolerance ?? NaN;
+  const landPercent = land.tolerance === null ? NaN : landDeviation / land.tolerance * 100;
+  const compliantLand = land.tolerance === null ? NaN : Number((landDiameter >= ipcLand ? ipcLand + land.tolerance : ipcLand - land.tolerance).toPrecision(12));
+  if (land.tolerance === null) {
+    warnings.push("IPC-7351B narrows the land variation for balls below 0.35 mm; it is not checked here");
+  }
   return {
     values: {
       padDia,
@@ -33007,17 +34642,23 @@ function calculateBgaLand(inputs) {
       escapeRoutes,
       maxTraceWidth,
       stencilAperture,
-      padToPadGap
+      padToPadGap,
+      ipcLand,
+      landDeviation,
+      landTolerance,
+      landPercent,
+      compliantLand
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
 }
+var IPC_7351B = "IPC-7351B, Generic Requirements for Surface Mount Design and Land Pattern Standard (June 2010), BGA land table";
 var bgaLandPad = {
   slug: "bga-land-pad",
   title: "BGA Land Pad Calculator",
   shortTitle: "BGA Land Pad",
   category: "pcb",
-  description: "Calculate BGA land pad diameter, solder mask opening, and escape routing per IPC-7351B density levels.",
+  description: "Calculate BGA land pad diameter, solder mask opening, and escape routing per IPC-7351B, which sizes the land by ball diameter.",
   keywords: [
     "BGA",
     "ball grid array",
@@ -33048,20 +34689,6 @@ var bgaLandPad = {
       max: 0.89
     },
     {
-      key: "densityLevel",
-      label: "Density Level",
-      unit: "",
-      defaultValue: 1,
-      min: 0,
-      max: 2,
-      step: 1,
-      options: [
-        { value: 0, label: "Most (A)" },
-        { value: 1, label: "Nominal (B)" },
-        { value: 2, label: "Least (C)" }
-      ]
-    },
-    {
       key: "solderMaskDefined",
       label: "Solder Mask Defined",
       unit: "",
@@ -33086,6 +34713,29 @@ var bgaLandPad = {
         { value: 0, label: "No" },
         { value: 1, label: "Yes" }
       ]
+    },
+    {
+      key: "ballType",
+      label: "Ball Type",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Collapsing" },
+        { value: 1, label: "Non-collapsing" }
+      ],
+      tooltip: "Collapsing balls (most BGAs) take a land smaller than the ball; non-collapsing balls one larger"
+    },
+    {
+      key: "landDiameter",
+      label: "Land Diameter",
+      symbol: "D_land",
+      unit: "mm",
+      defaultValue: 0.48,
+      min: 0.05,
+      max: 1.5,
+      tooltip: "The land diameter on your board, checked against the IPC-7351B land for the ball"
     }
   ],
   outputs: [
@@ -33096,19 +34746,82 @@ var bgaLandPad = {
     { key: "escapeRoutes", label: "Escape Routes per Channel", unit: "", display: { integer: true } },
     { key: "maxTraceWidth", label: "Max Trace Width in Channel", unit: "mm" },
     { key: "stencilAperture", label: "Stencil Aperture", unit: "mm" },
-    { key: "padToPadGap", label: "Pad-to-Pad Gap", unit: "mm" }
+    { key: "padToPadGap", label: "Pad-to-Pad Gap", unit: "mm" },
+    {
+      key: "ipcLand",
+      label: "IPC-7351B Nominal Land",
+      symbol: "D_nom",
+      unit: "mm",
+      precision: 4,
+      tooltip: "The ball diameter less 25, 20 or 15 % (collapsing) or plus 15, 10 or 5 % (non-collapsing), by ball size"
+    },
+    {
+      key: "landDeviation",
+      label: "Land Deviation",
+      symbol: "\u0394D",
+      unit: "mm",
+      precision: 4,
+      tooltip: "How far your land is from the IPC-7351B nominal land, either way"
+    },
+    {
+      key: "landTolerance",
+      label: "Land Variation",
+      unit: "mm",
+      precision: 3,
+      tooltip: "The IPC-7351B land variation either side of the nominal land"
+    },
+    {
+      key: "landPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The deviation as a percentage of the land variation; above 100 % the land is outside the IPC-7351B range",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "compliantLand",
+      label: "Compliant Land",
+      unit: "mm",
+      precision: 4,
+      tooltip: "The nearer edge of the IPC-7351B land range: the nominal land plus the variation at or above it, minus it below"
+    }
+  ],
+  examples: [
+    { id: "bga-1p0-0p6-ball", label: "1.0 mm pitch, 0.6 mm balls, 0.45 mm land", values: { ballPitch: 1, ballDiameter: 0.6, landDiameter: 0.45 } },
+    { id: "bga-1p0-0p6-ball-old-land", label: "1.0 mm pitch, 0.6 mm balls on an old 0.55 mm land", values: { ballPitch: 1, ballDiameter: 0.6, landDiameter: 0.55 } },
+    { id: "bga-0p8-0p45-ball", label: "0.8 mm pitch, 0.45 mm balls, 0.40 mm land", values: { ballPitch: 0.8, ballDiameter: 0.45, landDiameter: 0.4 } },
+    { id: "cbga-1p27-0p89-ball", label: "Ceramic BGA, 0.89 mm non-collapsing balls at 1.27 mm, 0.89 mm land", values: { ballPitch: 1.27, ballDiameter: 0.89, ballType: 1, landDiameter: 0.89 } }
   ],
   calculate: calculateBgaLand,
+  // One standard, so its two land tables are the selector, and an option input needs two options.
+  standards: {
+    standard: {
+      input: "ballType",
+      sources: {
+        0: `${IPC_7351B}, collapsing balls: 25 %, 20 % and 15 % reduction by ball diameter, land variation \xB10.05 mm`,
+        1: `${IPC_7351B}, non-collapsing balls: 15 %, 10 % and 5 % increase by ball diameter, land variation \xB10.05 mm`
+      }
+    },
+    value: "landDeviation",
+    limit: "landTolerance",
+    percent: "landPercent",
+    clause: (standard, _cls, inputs) => bgaLand(standard, inputs.ballDiameter ?? 0.6).clause,
+    rule: (standard, _cls, inputs) => bgaLand(standard, inputs.ballDiameter ?? 0.6).rule,
+    remedies: [
+      { input: "landDiameter", output: "compliantLand", direction: "nearest" }
+    ],
+    chart: { x: "landDiameter", range: [0.1, 1.2] }
+  },
   formula: {
-    primary: "Pad = Ball_dia \xD7 Factor (rounded to 0.05 mm)",
-    latex: "D_{pad} = \\text{round}_{0.05}(D_{ball} \\times k)",
+    primary: "Pad = Ball_dia \xD7 (1 \u2212 r), r by ball size (rounded to 0.05 mm)",
+    latex: "D_{pad} = \\text{round}_{0.05}(D_{ball} \\times (1 - r))",
     variables: [
       { symbol: "D_pad", description: "Pad diameter", unit: "mm" },
       { symbol: "D_ball", description: "Ball diameter", unit: "mm" },
-      { symbol: "k", description: "Density factor (1.0/0.9/0.8)", unit: "" }
+      { symbol: "r", description: "IPC-7351B land reduction: 25 % (ball \u2265 0.55 mm), 20 % (0.25\u20130.50 mm), 15 % (smaller)", unit: "" }
     ],
     derivation: [
-      "IPC-7351B specifies land diameter as a fraction of ball diameter: 100% (most land), 90% (nominal), 80% (least land). NSMD mask opening adds 0.1 mm clearance; SMD subtracts 0.1 mm overlap."
+      "IPC-7351B sizes a BGA land from the nominal ball diameter: collapsing balls take a land 25 % smaller than the ball for balls of 0.55 mm and above, 20 % for 0.25\u20130.50 mm and 15 % below; non-collapsing balls take one 15 %, 10 % or 5 % larger. The land variation is \xB10.05 mm. NSMD mask opening adds 0.1 mm clearance; SMD subtracts 0.1 mm overlap."
     ]
   },
   visualization: { type: "none" },
@@ -33138,46 +34851,79 @@ var bgaLandPad = {
 };
 
 // src/lib/calculators/pcb/minimum-conductor-spacing.ts
-var VOLTAGE_BP = [15, 30, 50, 100, 150, 170, 250, 300, 500];
-var SPACING_TABLE = {
-  B1: [0.05, 0.05, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.25],
-  B2: [0.1, 0.1, 0.6, 0.6, 0.6, 1.25, 1.25, 1.25, 2.5],
-  B3: [0.05, 0.05, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8],
-  B4: [0.05, 0.05, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8]
+var VOLTAGE_ROWS = [15, 30, 50, 100, 150, 170, 250, 300, 500];
+var ROW_LABELS = ["0\u201315 V", "16\u201330 V", "31\u201350 V", "51\u2013100 V", "101\u2013150 V", "151\u2013170 V", "171\u2013250 V", "251\u2013300 V", "301\u2013500 V"];
+var SPACING_COLUMNS = {
+  B1: { rows: [0.05, 0.05, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.25], perVolt: 25e-4, name: "internal conductors" },
+  B2: { rows: [0.1, 0.1, 0.6, 0.6, 0.6, 1.25, 1.25, 1.25, 2.5], perVolt: 5e-3, name: "external conductors, uncoated, sea level to 3,050 m" },
+  B3: { rows: [0.1, 0.1, 0.6, 1.5, 3.2, 3.2, 6.4, 12.5, 12.5], perVolt: 0.025, name: "external conductors, uncoated, over 3,050 m" },
+  B4: { rows: [0.05, 0.05, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8], perVolt: 305e-5, name: "external conductors, permanent polymer coating" },
+  A5: { rows: [0.13, 0.13, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8], perVolt: 305e-5, name: "external conductors, conformal coating over assembly" },
+  A6: { rows: [0.13, 0.25, 0.4, 0.5, 0.8, 0.8, 0.8, 0.8, 1.5], perVolt: 305e-5, name: "external component lead/termination, uncoated, sea level to 3,050 m" },
+  A7: { rows: [0.13, 0.13, 0.13, 0.13, 0.4, 0.4, 0.4, 0.8, 0.8], perVolt: 305e-5, name: "external component lead/termination, conformal coating" }
 };
-var PER_VOLT_ABOVE_500 = {
-  B1: 5e-4,
-  B2: 5e-3,
-  B3: 125e-5,
-  B4: 125e-5
-};
-function interpolateSpacing(voltage, condition) {
-  const table = SPACING_TABLE[condition];
-  if (voltage <= VOLTAGE_BP[0]) return table[0];
-  if (voltage >= 500) {
-    return table[table.length - 1] + (voltage - 500) * PER_VOLT_ABOVE_500[condition];
+var CONDITION_COLUMNS = ["B1", "B2", "B4", "A5", "A6", "A7"];
+var ALTITUDE_LIMIT_M = 3050;
+var fmt2 = (v) => String(Number(v.toPrecision(6)));
+function spacingColumn(condition, altitude) {
+  const col = CONDITION_COLUMNS[Math.round(condition)] ?? "B2";
+  if (altitude > ALTITUDE_LIMIT_M && col === "B2") return "B3";
+  if (altitude > ALTITUDE_LIMIT_M && col === "A6") return null;
+  return col;
+}
+function columnSpacing(col, voltage) {
+  const { rows, perVolt } = SPACING_COLUMNS[col];
+  if (voltage > 500) return rows[8] + (voltage - 500) * perVolt;
+  const i = VOLTAGE_ROWS.findIndex((top) => voltage <= top);
+  return rows[i < 0 ? 8 : i];
+}
+function columnMaxVoltage(col, s) {
+  const { rows, perVolt } = SPACING_COLUMNS[col];
+  if (s >= rows[8]) return 500 + (s - rows[8]) / perVolt;
+  let v = NaN;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i] <= s) v = VOLTAGE_ROWS[i];
+    else break;
   }
-  for (let i = 1; i < VOLTAGE_BP.length; i++) {
-    if (voltage <= VOLTAGE_BP[i]) {
-      const frac = (voltage - VOLTAGE_BP[i - 1]) / (VOLTAGE_BP[i] - VOLTAGE_BP[i - 1]);
-      return table[i - 1] + frac * (table[i] - table[i - 1]);
-    }
+  return v;
+}
+function conductorSpacingLimit(condition, voltage, altitude) {
+  const col = spacingColumn(condition, altitude);
+  if (col === null) {
+    return { mm: null, rule: "\u2014", clause: "IPC-2221B Table 6-1, A6 (external component lead/termination, uncoated): sea level to 3,050 m only" };
   }
-  return table[table.length - 1];
+  const { rows, perVolt, name } = SPACING_COLUMNS[col];
+  if (voltage > 500) {
+    return {
+      mm: columnSpacing(col, voltage),
+      rule: `${fmt2(rows[8])} mm + ${fmt2(perVolt)} mm/V above 500 V`,
+      clause: `IPC-2221B Table 6-1 and \xA76.3, ${col} (${name}), above 500 V`
+    };
+  }
+  const i = VOLTAGE_ROWS.findIndex((top) => voltage <= top);
+  return { mm: rows[i], rule: `${fmt2(rows[i])} mm`, clause: `IPC-2221B Table 6-1, ${col} (${name}), ${ROW_LABELS[i]}` };
 }
 function calculateSpacing(inputs) {
   const { voltage, condition, altitude } = inputs;
-  const condKey = condition === 0 ? "B1" : condition === 1 ? "B2" : condition === 2 ? "B3" : "B4";
-  let spacing = interpolateSpacing(voltage, condKey);
-  let altitudeFactor = 1;
-  if (altitude > 3048 && condKey !== "B1") {
-    altitudeFactor = Math.sqrt(altitude / 3048);
-    spacing *= altitudeFactor;
+  const conductorSpacing = inputs.conductorSpacing ?? 0.8;
+  const col = spacingColumn(condition, altitude);
+  const warnings = [];
+  if (col === null) {
+    warnings.push("IPC-2221B gives A6 (uncoated component leads) only from sea level to 3,050 m; it sets no spacing above that");
   }
+  const spacing = col === null ? NaN : columnSpacing(col, voltage);
+  const seaLevel = col === null ? NaN : columnSpacing(CONDITION_COLUMNS[Math.round(condition)] ?? "B2", voltage);
+  const altitudeFactor = col === null ? NaN : spacing / seaLevel;
   const spacingMils = spacing / 0.0254;
-  const spacingB1 = interpolateSpacing(voltage, "B1");
-  const spacingB2 = interpolateSpacing(voltage, "B2") * (altitude > 3048 ? altitudeFactor : 1);
-  const spacingB3 = interpolateSpacing(voltage, "B3") * (altitude > 3048 ? altitudeFactor : 1);
+  const uncoated = altitude > ALTITUDE_LIMIT_M ? "B3" : "B2";
+  const spacingB1 = columnSpacing("B1", voltage);
+  const spacingB2 = columnSpacing(uncoated, voltage);
+  const spacingB3 = columnSpacing("B4", voltage);
+  const spacingPercent = col === null || conductorSpacing <= 0 ? NaN : spacing / conductorSpacing * 100;
+  const maxVoltage = col === null ? NaN : columnMaxVoltage(col, conductorSpacing);
+  if (col !== null && Number.isNaN(maxVoltage)) {
+    warnings.push(`No voltage complies: ${fmt2(conductorSpacing)} mm is below the smallest spacing IPC-2221B Table 6-1 gives in column ${col} (${fmt2(SPACING_COLUMNS[col].rows[0])} mm)`);
+  }
   return {
     values: {
       spacing,
@@ -33185,11 +34931,14 @@ function calculateSpacing(inputs) {
       altitudeFactor,
       spacingB1,
       spacingB2,
-      spacingB3
+      spacingB3,
+      spacingPercent,
+      maxVoltage
     },
-    warnings: void 0
+    ...warnings.length ? { warnings } : {}
   };
 }
+var SOURCE = "IPC-2221B (November 2012), Table 6-1";
 var minimumConductorSpacing = {
   slug: "minimum-conductor-spacing",
   title: "Minimum Conductor Spacing Calculator",
@@ -33222,14 +34971,17 @@ var minimumConductorSpacing = {
       unit: "",
       defaultValue: 1,
       min: 0,
-      max: 3,
+      max: 5,
       step: 1,
       options: [
         { value: 0, label: "B1 Internal" },
         { value: 1, label: "B2 External, uncoated" },
-        { value: 2, label: "B3 External, polymer coated" },
-        { value: 3, label: "B4 External, conformal coated" }
-      ]
+        { value: 2, label: "B4 Polymer coated" },
+        { value: 3, label: "A5 Conformal coated" },
+        { value: 4, label: "A6 Leads, uncoated" },
+        { value: 5, label: "A7 Leads, coated" }
+      ],
+      tooltip: "The IPC-2221B Table 6-1 column; uncoated external conductors above 3,050 m take column B3"
     },
     {
       key: "altitude",
@@ -33239,27 +34991,86 @@ var minimumConductorSpacing = {
       defaultValue: 0,
       min: 0,
       max: 3e4
+    },
+    {
+      key: "conductorSpacing",
+      label: "Conductor Spacing",
+      symbol: "s",
+      unit: "mm",
+      defaultValue: 0.8,
+      min: 0.01,
+      max: 50,
+      tooltip: "The spacing between the two conductors on your board, checked against the IPC-2221B minimum"
     }
   ],
   outputs: [
     { key: "spacing", label: "Minimum Spacing", unit: "mm", primary: true },
     { key: "spacingMils", label: "Minimum Spacing", unit: "mil" },
-    { key: "altitudeFactor", label: "Altitude Derating Factor", unit: "\xD7" },
+    { key: "altitudeFactor", label: "Altitude Factor", unit: "\xD7", tooltip: "The minimum spacing at this altitude over the sea-level value: column B3 over B2 for uncoated external conductors above 3,050 m" },
     { key: "spacingB1", label: "B1 (Internal)", unit: "mm" },
-    { key: "spacingB2", label: "B2 (External Uncoated)", unit: "mm" },
-    { key: "spacingB3", label: "B3 (Polymer Coated)", unit: "mm" }
+    { key: "spacingB2", label: "External Uncoated (B2, or B3 above 3,050 m)", unit: "mm" },
+    { key: "spacingB3", label: "B4 (Polymer Coated)", unit: "mm", tooltip: "Column B4, external conductors with a permanent polymer coating (the key keeps its earlier name)" },
+    {
+      key: "spacingPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The minimum spacing as a percentage of the spacing on the board; above 100 % the board does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "maxVoltage",
+      label: "Compliant Voltage",
+      symbol: "V_max",
+      unit: "V",
+      precision: 1,
+      tooltip: "The highest voltage at which the spacing on the board meets the IPC-2221B minimum for this condition"
+    }
+  ],
+  examples: [
+    { id: "dc-48v-0p5-mm-outer", label: "48 V DC bus, 0.5 mm, uncoated outer layer", values: { voltage: 48, condition: 1, altitude: 0, conductorSpacing: 0.5 } },
+    { id: "mains-240v-3-mm-outer", label: "240 V mains (340 V peak), 3 mm, uncoated outer layer", values: { voltage: 340, condition: 1, altitude: 0, conductorSpacing: 3 } },
+    { id: "avionics-100v-10-km", label: "100 V at 10,000 m, 1 mm, uncoated outer layer", values: { voltage: 100, condition: 1, altitude: 1e4, conductorSpacing: 1 } },
+    { id: "internal-1kv-2-mm", label: "1 kV between inner-layer conductors, 2 mm", values: { voltage: 1e3, condition: 0, altitude: 0, conductorSpacing: 2 } }
   ],
   calculate: calculateSpacing,
+  // One standard, so the Table 6-1 column is the selector: each condition is
+  // a column of the table, and an option input needs two options.
+  standards: {
+    standard: {
+      input: "condition",
+      sources: {
+        0: "IPC-2221B, Generic Standard on Printed Board Design (November 2012), Table 6-1 Electrical Conductor Spacing and \xA76.3 (above 500 V), column B1: internal conductors",
+        1: `${SOURCE}, columns B2 (external conductors, uncoated, sea level to 3,050 m) and B3 (over 3,050 m)`,
+        2: `${SOURCE}, column B4: external conductors with permanent polymer coating`,
+        3: `${SOURCE}, column A5: external conductors with conformal coating over assembly`,
+        4: `${SOURCE}, column A6: external component lead/termination, uncoated, sea level to 3,050 m`,
+        5: `${SOURCE}, column A7: external component lead/termination with conformal coating`
+      }
+    },
+    value: "conductorSpacing",
+    limit: "spacing",
+    limitKind: "minimum",
+    percent: "spacingPercent",
+    clause: (standard, _cls, inputs) => conductorSpacingLimit(standard, inputs.voltage ?? 50, inputs.altitude ?? 0).clause,
+    rule: (standard, _cls, inputs) => conductorSpacingLimit(standard, inputs.voltage ?? 50, inputs.altitude ?? 0).rule,
+    remedies: [
+      { input: "conductorSpacing", output: "spacing", direction: "up" },
+      { input: "voltage", output: "maxVoltage", direction: "down" }
+    ]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
   formula: {
-    primary: "IPC-2221B Table 6.1 lookup with linear interpolation",
-    latex: "d_{min} = \\text{Table}_{6.1}(V, \\text{cond}) \\times \\sqrt{h / 3048}",
+    primary: "IPC-2221B Table 6-1 lookup by voltage band; above 500 V add the per-volt figure to the 500 V value",
+    latex: "d_{min} = \\text{Table}_{6\\text{-}1}(V, \\text{column}), \\quad V > 500: d_{min} = d_{500} + k\\,(V - 500)",
     variables: [
       { symbol: "d_min", description: "Minimum conductor spacing", unit: "mm" },
       { symbol: "V", description: "Applied voltage (DC or peak AC)", unit: "V" },
+      { symbol: "k", description: "Per-volt figure of the column above 500 V", unit: "mm/V" },
       { symbol: "h", description: "Operating altitude", unit: "m" }
     ],
     derivation: [
-      "IPC-2221B Rev B Table 6.1 provides minimum conductor spacing for four conditions: B1 (internal), B2 (external uncoated), B3 (permanent polymer coating), B4 (conformal coating). Above 3048 m altitude, external spacings are multiplied by sqrt(altitude/3048) to account for reduced air breakdown voltage."
+      "IPC-2221B Table 6-1 gives the minimum spacing for voltage bands (0\u201315 V up to 301\u2013500 V) in seven columns: B1 internal conductors; B2 external uncoated, sea level to 3,050 m; B3 external uncoated, over 3,050 m; B4 external with a permanent polymer coating; A5 external with conformal coating over the assembly; A6 uncoated component leads, sea level to 3,050 m; A7 coated component leads. Within a band the value is constant. Above 500 V the per-volt figure is added to the 500 V value: 600 V on B1 is 0.25 + 100 \xD7 0.0025 = 0.50 mm. Above 3,050 m uncoated external conductors take column B3."
     ]
   },
   visualization: { type: "none" },
@@ -33272,7 +35083,7 @@ var minimumConductorSpacing = {
     },
     {
       question: "Why does altitude affect spacing?",
-      answer: "Air breakdown voltage decreases at lower pressure (higher altitude). Above 3048 m (10,000 ft), the dielectric strength of air drops and spacing must increase. Internal conductors (B1) are not affected because the dielectric is solid laminate."
+      answer: "Air breakdown voltage decreases at lower pressure (higher altitude). Above 3,050 m (10,007 ft) IPC-2221B moves uncoated external conductors from column B2 to column B3, which asks for up to ten times the spacing. Internal conductors (B1) and coated conductors are not affected because air is not their insulation."
     },
     {
       question: "Should I use peak or RMS voltage?",
@@ -33452,7 +35263,22 @@ var planarSpiralInductor = {
     ],
     reference: 'Mohan et al., "Simple Accurate Expressions for Planar Spiral Inductances", IEEE JSSC, vol. 34, no. 10, Oct 1999'
   },
+  examples: [
+    { id: "match-22nh-433mhz", label: "22 nH matching coil for 433 MHz, 3 mm square", values: { outerDiameter: 3, innerDiameter: 0.9886623125791758, turns: 3, traceWidth: 0.15, traceSpacing: 0.15, shape: 0 } },
+    { id: "square-10mm-5-turns", label: "10 mm square spiral, 5 turns", values: { outerDiameter: 10, innerDiameter: 4, turns: 5, traceWidth: 0.3, traceSpacing: 0.2, shape: 0 } },
+    { id: "octagonal-6mm-3-turns", label: "6 mm octagonal spiral, 3 turns", values: { outerDiameter: 6, innerDiameter: 3.2, turns: 3, traceWidth: 0.25, traceSpacing: 0.2, shape: 2 } },
+    { id: "circular-20mm-8-turns", label: "20 mm circular coil, 8 turns", values: { outerDiameter: 20, innerDiameter: 8, turns: 8, traceWidth: 0.5, traceSpacing: 0.25, shape: 3 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "spiral",
+      roles: { dout: "outerDiameter", din: "innerDiameter", n: "turns", w: "traceWidth", s: "traceSpacing" },
+      variant: { input: "shape", byValue: { 0: "square", 1: "hexagonal", 2: "octagonal", 3: "circular" } }
+    },
+    synthesis: [{ output: "inductance", solveFor: ["turns", "innerDiameter"] }],
+    curve: { x: "turns", y: "inductance", range: [1, 20], scale: "linear" }
+  },
   relatedCalculators: ["lc-resonance", "pcb-trace-inductance", "skin-depth", "controlled-impedance"],
   relatedBlogPosts: ["planar-spiral-inductor-design"],
   faqs: [
@@ -33612,7 +35438,21 @@ var embeddedResistor = {
       "An embedded resistor is a thin resistive film patterned on an inner PCB layer. Resistance equals sheet resistance (\u03A9/square) times number of squares (length/width). Laser trimming tightens tolerance from \xB110-20% to \xB11-5%."
     ]
   },
+  examples: [
+    { id: "nip-100-ohm-50mw", label: "100 \u03A9 in 25 \u03A9/\u25A1 NiP, rated 50 mW", values: { targetResistance: 100, sheetResistance: 0, width: 0.7071067809839925, trimAllowance: 10, material: 0 } },
+    { id: "nip-50-ohm-termination", label: "50 \u03A9 termination in 25 \u03A9/\u25A1 NiP, 0.5 mm wide", values: { targetResistance: 50, sheetResistance: 0, width: 0.5, trimAllowance: 10, material: 0 } },
+    { id: "tan-1k-pull-up", label: "1 k\u03A9 pull-up in TaN, 0.3 mm wide", values: { targetResistance: 1e3, sheetResistance: 0, width: 0.3, trimAllowance: 10, material: 2 } },
+    { id: "crsio-10k", label: "10 k\u03A9 in 1000 \u03A9/\u25A1 CrSiO, 0.25 mm wide", values: { targetResistance: 1e4, sheetResistance: 0, width: 0.25, trimAllowance: 10, material: 3 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "film-resistor", roles: { w: "width", len: "length", squares: "numSquares", rs: "sheetResistance", r: "targetResistance" } },
+    synthesis: [
+      { output: "maxPower", solveFor: ["width"] },
+      { output: "length", solveFor: ["width"] }
+    ],
+    curve: { x: "width", y: "maxPower", range: [0.2, 5], scale: "log" }
+  },
   relatedCalculators: ["trace-resistance", "voltage-divider", "attenuator-designer", "skin-depth"],
   relatedBlogPosts: ["embedded-resistors-pcb"],
   faqs: [
@@ -33771,7 +35611,18 @@ var viaVoltageDrop = {
       "Via resistance from copper resistivity (temperature-compensated) times barrel length divided by thin-wall annular cross-section \u03C0\xB7t\xB7(D\u2212t). For N parallel vias, divide by N. V_drop = I\xD7R; P = I\xB2R."
     ]
   },
+  examples: [
+    { id: "single-0p3-1a", label: "One 0.3 mm via at 1 A, 1.6 mm board", values: { drillDiameter: 0.3, platingThickness: 25, viaLength: 1.6, current: 1, temperature: 25, numVias: 1 } },
+    { id: "core-rail-10a-6-vias", label: "10 A core rail, six vias at 70 \xB0C, 2 mV drop", values: { drillDiameter: 0.375186032360494, platingThickness: 25, viaLength: 1.6, current: 10, temperature: 70, numVias: 6 } },
+    { id: "usb-c-5v-3a-2-vias", label: "USB-C 5 V at 3 A through two vias", values: { drillDiameter: 0.3, platingThickness: 25, viaLength: 1.6, current: 3, temperature: 40, numVias: 2 } },
+    { id: "class-2-plating-2a", label: "IPC Class 2 plating (20 \xB5m), 0.25 mm drill at 2 A", values: { drillDiameter: 0.25, platingThickness: 20, viaLength: 1.6, current: 2, temperature: 25, numVias: 1 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "via", roles: { d: "drillDiameter", plating: "platingThickness", len: "viaLength", n: "numVias" } },
+    synthesis: [{ output: "vDropMV", solveFor: ["drillDiameter", "platingThickness"] }],
+    curve: { x: "drillDiameter", y: "vDropMV", range: [0.15, 1], scale: "linear" }
+  },
   relatedCalculators: ["via-calculator", "via-thermal-resistance", "padstack-annular-ring", "trace-resistance"],
   relatedBlogPosts: ["via-resistance-power-delivery"],
   faqs: [
@@ -34370,7 +36221,7 @@ var effectiveDielectricConstant = {
       max: 50,
       presets: [
         { label: "50 \u03A9 on 0.2 mm FR-4", values: { traceWidth: 0.36, dielectricHeight: 0.2, dielectricConst: 4.3 } },
-        { label: "50 \u03A9 on 0.508 mm RO4350B", values: { traceWidth: 1.1, dielectricHeight: 0.508, dielectricConst: 3.48 } },
+        { label: "50 \u03A9 on 0.508 mm RO4350B", values: { traceWidth: 1.065, dielectricHeight: 0.508, dielectricConst: 3.66 } },
         { label: "50 \u03A9 on 0.254 mm RT/duroid 5880", values: { traceWidth: 0.78, dielectricHeight: 0.254, dielectricConst: 2.2 } },
         { label: "Narrow 0.1 mm signal trace", values: { traceWidth: 0.1, dielectricHeight: 0.2, dielectricConst: 4.3 } }
       ]
@@ -34392,14 +36243,8 @@ var effectiveDielectricConstant = {
       unit: "",
       defaultValue: 4.3,
       min: 1,
-      max: 20,
-      presets: [
-        { label: "FR-4 (4.3)", values: { dielectricConst: 4.3 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
-        { label: "Rogers RO4003C (3.38)", values: { dielectricConst: 3.38 } },
-        { label: "RT/duroid 5880 (2.2)", values: { dielectricConst: 2.2 } },
-        { label: "Alumina (9.8)", values: { dielectricConst: 9.8 } }
-      ]
+      max: 20
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -34447,7 +36292,8 @@ var effectiveDielectricConstant = {
   ],
   examples: [
     { id: "fr4-0-2-mm-50-ohm", label: "50 \u03A9 on 0.2 mm FR-4", values: { traceWidth: 0.36, dielectricHeight: 0.2, dielectricConst: 4.3 } },
-    { id: "ro4350b-0-508-mm-50-ohm", label: "50 \u03A9 on 0.508 mm RO4350B", values: { traceWidth: 1.1, dielectricHeight: 0.508, dielectricConst: 3.48 } },
+    // RO4350B at its design Dk, 3.66, the material library's value (3.48 is the process Dk).
+    { id: "ro4350b-0-508-mm-50-ohm", label: "50 \u03A9 on 0.508 mm RO4350B", values: { traceWidth: 1.065, dielectricHeight: 0.508, dielectricConst: 3.66 } },
     { id: "rt-duroid-5880-50-ohm", label: "50 \u03A9 on 0.254 mm RT/duroid 5880", values: { traceWidth: 0.78, dielectricHeight: 0.254, dielectricConst: 2.2 } },
     { id: "narrow-0-1-mm-trace", label: "Narrow 0.1 mm signal trace", values: { traceWidth: 0.1, dielectricHeight: 0.2, dielectricConst: 4.3 } }
   ],
@@ -34475,6 +36321,15 @@ var effectiveDielectricConstant = {
     reference: 'E. Hammerstad & \xD8. Jensen, "Accurate Models for Microstrip Computer-Aided Design", IEEE MTT-S 1980; W. J. Getsinger, "Microstrip Dispersion Model", IEEE Trans. MTT-21, 1973'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "microstrip", roles: { w: "traceWidth", h: "dielectricHeight", t: "copperThickness", er: "dielectricConst" } },
+    synthesis: [
+      { output: "z0Ohm", solveFor: ["traceWidth", "dielectricHeight"] },
+      { output: "erEff", solveFor: ["traceWidth"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "erEff", range: [0.02, 5], scale: "log" }
+  },
   relatedCalculators: [
     "microstrip-impedance",
     "controlled-impedance",
@@ -34796,6 +36651,12 @@ var RHO_20 = 1724e-11;
 var ALPHA_CU = 393e-5;
 var K_CU = 385;
 var MIL2_IN_M2 = 254e-7 * 254e-7;
+function microviaChart(standard, conductorClass) {
+  if (standard === 1) {
+    return { k: 0.024, rule: "0.024\xB7\u0394T^0.44\xB7(N\xB7A)^0.725", clause: "IPC-2152 (2009) \xA7A.3.4: the vias\u2019 summed cross-section at least the conductor\u2019s, sized on Figure 5-1 (either curve)" };
+  }
+  return conductorClass === 1 ? { k: 0.048, rule: "0.048\xB7\u0394T^0.44\xB7(N\xB7A)^0.725", clause: "IPC-2221A (2003) \xA76.2, Figure 6-4, chart A, external conductors; note 5, summed cross-section of parallel conductors" } : { k: 0.024, rule: "0.024\xB7\u0394T^0.44\xB7(N\xB7A)^0.725", clause: "IPC-2221A (2003) \xA76.2, Figure 6-4, chart C, internal conductors; note 5, summed cross-section of parallel conductors" };
+}
 function calculateMicroviaCurrentCapacity(inputs) {
   const {
     viaDiameter,
@@ -34846,6 +36707,12 @@ function calculateMicroviaCurrentCapacity(inputs) {
   const deltaTSelfHeat = current * current * rTotal * thetaVia;
   const currentDensityAPerMm2 = current / (n * barrelAreaMm2);
   const aspectRatio = viaDepth / viaDiameter;
+  const kDT = microviaChart(inputs.standard ?? 0, inputs.conductorClass ?? 0).k * Math.pow(tempRise, 0.44);
+  const limitCurrent = kDT * Math.pow(n * areaMil2, 0.725);
+  const limitPercent = current / limitCurrent * 100;
+  const areaNeededMil2 = Math.pow(current / kDT, 1 / 0.725);
+  const minVias = Math.ceil(areaNeededMil2 / areaMil2);
+  const minViaDiameter = (areaNeededMil2 / n * MIL2_IN_M2 / (Math.PI * t) + t) * 1e3;
   const warnings = [];
   if (viaDiameter > 0.15) {
     warnings.push(
@@ -34884,7 +36751,11 @@ function calculateMicroviaCurrentCapacity(inputs) {
       powerDissipationMW,
       deltaTSelfHeat,
       currentDensityAPerMm2,
-      aspectRatio
+      aspectRatio,
+      limitCurrent,
+      limitPercent,
+      minVias,
+      minViaDiameter
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -34985,6 +36856,32 @@ var microviaCurrentCapacity = {
       min: -40,
       max: 150,
       tooltip: "Sets copper resistivity; does not change the IPC-2221 capacity, which is a rise above ambient."
+    },
+    {
+      key: "conductorClass",
+      label: "Chart Curve",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Internal (k = 0.024)" },
+        { value: 1, label: "External (k = 0.048)" }
+      ],
+      tooltip: "The IPC-2221A curve the barrels are read on: internal (conservative; the vias are buried) or external (the pads sink heat). IPC-2152 uses its conservative chart either way."
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "IPC-2221A Fig. 6-4" },
+        { value: 1, label: "IPC-2152 \xA7A.3.4" }
+      ],
+      tooltip: "The rule the design current is checked against, both read at the vias\u2019 summed barrel cross-section"
     }
   ],
   outputs: [
@@ -35004,15 +36901,69 @@ var microviaCurrentCapacity = {
     { key: "powerDissipationMW", label: "Power Dissipation", symbol: "P", unit: "mW" },
     { key: "deltaTSelfHeat", label: "Barrel Self-Heating", symbol: "\u0394T", unit: "\xB0C" },
     { key: "currentDensityAPerMm2", label: "Current Density", symbol: "J", unit: "A/mm\xB2" },
-    { key: "aspectRatio", label: "Aspect Ratio (depth : diameter)", symbol: "", unit: ":1" }
+    { key: "aspectRatio", label: "Aspect Ratio (depth : diameter)", symbol: "", unit: ":1" },
+    {
+      key: "limitCurrent",
+      label: "Current Limit (N vias)",
+      symbol: "I_max",
+      unit: "A",
+      tooltip: "The most current the vias may carry at the allowed rise, read on the chosen chart at their summed barrel cross-section"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The design current as a percentage of the limit; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "minVias",
+      label: "Compliant Via Count",
+      symbol: "N_min",
+      unit: "",
+      precision: 0,
+      tooltip: "The fewest parallel microvias whose summed cross-section carries the design current within the limit"
+    },
+    {
+      key: "minViaDiameter",
+      label: "Compliant Diameter",
+      symbol: "D_min",
+      unit: "mm",
+      precision: 4,
+      tooltip: "The microvia diameter at which the design current equals the limit with this count and plating; at or above it the vias comply"
+    }
   ],
   examples: [
     { id: "hdi-75-um", label: "75 \xB5m advanced HDI", values: { viaDiameter: 0.075, viaDepth: 0.06, platingThickness: 15 } },
     { id: "hdi-100-um", label: "100 \xB5m standard HDI", values: { viaDiameter: 0.1, viaDepth: 0.075, platingThickness: 18 } },
     { id: "hdi-125-um", label: "125 \xB5m relaxed HDI", values: { viaDiameter: 0.125, viaDepth: 0.1, platingThickness: 20 } },
-    { id: "microvia-150-um", label: "150 \xB5m max microvia", values: { viaDiameter: 0.15, viaDepth: 0.125, platingThickness: 25 } }
+    { id: "microvia-150-um", label: "150 \xB5m max microvia", values: { viaDiameter: 0.15, viaDepth: 0.125, platingThickness: 25 } },
+    { id: "rail-1a-six-100-um", label: "1 A rail through six 100 \xB5m microvias", values: { viaDiameter: 0.1, viaDepth: 0.075, platingThickness: 18, current: 1, numVias: 6 } },
+    { id: "rail-2a-eight-100-um", label: "2 A rail through eight 100 \xB5m microvias", values: { viaDiameter: 0.1, viaDepth: 0.075, platingThickness: 18, current: 2, numVias: 8 } }
   ],
   calculate: calculateMicroviaCurrentCapacity,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "IPC-2221A, Generic Standard on Printed Board Design (May 2003), \xA76.2 and Figure 6-4 with its note 5 on parallel conductors, the chart of IPC-2221 (February 1998), read through its published fit I = k\xB7\u0394T^0.44\xB7A^0.725 (I in A, \u0394T in \xB0C, A in mil\xB2)",
+        1: "IPC-2152, Standard for Determining Current Carrying Capacity in Printed Board Design (August 2009), \xA7A.3.4 (vias at least the conductor\u2019s cross-section) with \xA75, Figure 5-1, the conservative chart"
+      }
+    },
+    class: { input: "conductorClass" },
+    value: "current",
+    limit: "limitCurrent",
+    percent: "limitPercent",
+    limitKind: "maximum",
+    clause: (standard, cls) => microviaChart(standard, cls ?? 0).clause,
+    rule: (standard, cls) => microviaChart(standard, cls ?? 0).rule,
+    remedies: [
+      { input: "numVias", output: "minVias", direction: "up" },
+      { input: "viaDiameter", output: "minViaDiameter", direction: "up" },
+      { input: "current", output: "limitCurrent", direction: "down" }
+    ]
+  },
   formula: {
     primary: "I = k\xB7\u0394T^0.44\xB7A^0.725 with A = \u03C0\xB7t\xB7(D \u2212 t) converted to mil\xB2",
     latex: "A = \\pi\\, t\\,(D - t), \\qquad I = k\\,\\Delta T^{0.44} A_{\\text{mil}^2}^{0.725}, \\qquad k = \\begin{cases} 0.024 & \\text{internal} \\\\ 0.048 & \\text{external} \\end{cases}",
@@ -35066,7 +37017,7 @@ var microviaCurrentCapacity = {
     },
     {
       question: "How many microvias do I need for a 2 A rail?",
-      answer: "Using the conservative 0.28 A per via at 10 \xB0C rise, 2 A needs eight vias, and rounding up to ten gives margin for plating variation and uneven current sharing. Placing them in a tight cluster under the pad is standard practice; the array resistance and voltage drop outputs let you check the delivered rail accuracy at the same time."
+      answer: "On the page\u2019s standards check, 2 A at a 10 \xB0C rise needs 16 vias of 100 \xB5m with 18 \xB5m plating. IPC-2221 Figure 6-4 note 5 reads parallel conductors at their summed cross-section, so N vias carry N^0.725 times one via\u2019s 0.28 A on the internal curve, not N times: sixteen carry about 2.06 A, eight only 1.25 A. The Array Capacity output is simply the sum of single vias, 0.28 A \xD7 N, which is why it suggests eight; the check does not use it. On the external curve (k = 0.048) the check needs six. Placing them in a tight cluster under the pad is standard practice; the array resistance and voltage drop outputs let you check the delivered rail accuracy at the same time."
     }
   ]
 };
@@ -35085,6 +37036,8 @@ function calculateEdgeCoupledInternalSymmetric(inputs) {
   const pair = coupledStripline(traceWidth, traceSpacing, planeSpacing, dielectricConst, t);
   const single = symmetricStripline(traceWidth, planeSpacing, dielectricConst, t);
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS7;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS7 / (frequency * Math.sqrt(dielectricConst));
   const warnings = [];
   const couplingLoss = 1 - pair.Zdiff / (2 * single.Z0);
   if (couplingLoss < 0.02) {
@@ -35105,7 +37058,9 @@ function calculateEdgeCoupledInternalSymmetric(inputs) {
       evenImpedance: pair.Zeven,
       uncoupledImpedance: single.Z0,
       couplingCoefficient: (pair.Zeven - pair.Zodd) / (pair.Zeven + pair.Zodd),
-      propagationDelay
+      propagationDelay,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -35133,6 +37088,7 @@ var edgeCoupledInternalSymmetric = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -35142,6 +37098,7 @@ var edgeCoupledInternalSymmetric = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.02,
+      max: 10,
       step: 0.01,
       tooltip: "Gap between the facing edges of the two traces"
     },
@@ -35176,12 +37133,18 @@ var edgeCoupledInternalSymmetric = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
@@ -35226,7 +37189,14 @@ var edgeCoupledInternalSymmetric = {
       unit: "ps/mm",
       precision: 3,
       tooltip: "Both modes travel at the same speed in a stripline \u2014 the dielectric is homogeneous"
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "\u03BBg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "\u03BBg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "lvds-100-ohm-b-0-5-mm", label: "100 \u03A9 LVDS, planes 0.5 mm apart, FR-4", values: { traceWidth: 0.1, traceSpacing: 0.11, planeSpacing: 0.5, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "usb-90-ohm-b-0-5-mm", label: "90 \u03A9 USB, planes 0.5 mm apart, FR-4", values: { traceWidth: 0.12, traceSpacing: 0.088, planeSpacing: 0.5, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "pcie-85-ohm-b-0-5-mm", label: "85 \u03A9 PCIe, planes 0.5 mm apart, FR-4", values: { traceWidth: 0.188, traceSpacing: 0.15, planeSpacing: 0.5, copperThickness: 17.5, dielectricConst: 4.4 } }
   ],
   calculate: calculateEdgeCoupledInternalSymmetric,
   formula: {
@@ -35250,6 +37220,12 @@ var edgeCoupledInternalSymmetric = {
     reference: 'S. B. Cohn, "Shielded Coupled-Strip Transmission Line", IRE Trans. MTT-3 (1955), pp. 29\u201338. Verified against a 2-D method-of-moments solve to 0.008%.'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "coupled", roles: { w: "traceWidth", s: "traceSpacing", b: "planeSpacing", t: "copperThickness", er: "dielectricConst" } },
+    synthesis: [{ output: "diffImpedance", solveFor: ["traceWidth", "traceSpacing"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "diffImpedance", range: [0.03, 1], scale: "log" }
+  },
   relatedCalculators: [
     "edge-coupled-internal-asymmetric",
     "edge-coupled-embedded",
@@ -35296,6 +37272,8 @@ function calculateEdgeCoupledInternalAsymmetric(inputs) {
   );
   const single = asymmetricStripline(traceWidth, heightBelow, heightAbove, dielectricConst, t);
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS8;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS8 / (frequency * Math.sqrt(dielectricConst));
   const warnings = [];
   if (!pair.inRange) {
     warnings.push(
@@ -35322,7 +37300,9 @@ function calculateEdgeCoupledInternalAsymmetric(inputs) {
       uncoupledImpedance: single.Z0,
       offsetRatio: asymmetry,
       propagationDelay,
-      inValidatedRange: pair.inRange ? 1 : 0
+      inValidatedRange: pair.inRange ? 1 : 0,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -35342,7 +37322,7 @@ var edgeCoupledInternalAsymmetric = {
     "dual stripline differential"
   ],
   inputs: [
-    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.13, min: 0.02, step: 0.01 },
+    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.13, min: 0.02, max: 10, step: 0.01 },
     {
       key: "traceSpacing",
       label: "Trace Spacing (edge to edge)",
@@ -35350,6 +37330,7 @@ var edgeCoupledInternalAsymmetric = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -35392,11 +37373,18 @@ var edgeCoupledInternalAsymmetric = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
@@ -35435,7 +37423,14 @@ var edgeCoupledInternalAsymmetric = {
       precision: 0,
       tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
       thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "\u03BBg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "\u03BBg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "lvds-100-ohm-0-15-0-35-mm", label: "100 \u03A9 LVDS, 0.15 mm below and 0.35 mm above, FR-4", values: { traceWidth: 0.1, traceSpacing: 0.13, heightBelow: 0.15, heightAbove: 0.35, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "usb-90-ohm-0-15-0-35-mm", label: "90 \u03A9 USB, 0.15 mm below and 0.35 mm above, FR-4", values: { traceWidth: 0.1, traceSpacing: 0.077, heightBelow: 0.15, heightAbove: 0.35, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "pcie-85-ohm-0-15-0-35-mm", label: "85 \u03A9 PCIe, 0.15 mm below and 0.35 mm above, FR-4", values: { traceWidth: 0.164, traceSpacing: 0.15, heightBelow: 0.15, heightAbove: 0.35, copperThickness: 17.5, dielectricConst: 4.4 } }
   ],
   calculate: calculateEdgeCoupledInternalAsymmetric,
   formula: {
@@ -35463,6 +37458,12 @@ var edgeCoupledInternalAsymmetric = {
     insideOutput: "inValidatedRange"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "coupled", roles: { w: "traceWidth", s: "traceSpacing", h1: "heightBelow", h2: "heightAbove", t: "copperThickness", er: "dielectricConst" } },
+    synthesis: [{ output: "diffImpedance", solveFor: ["traceWidth", "traceSpacing"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "diffImpedance", range: [0.03, 1], scale: "log" }
+  },
   relatedCalculators: [
     "edge-coupled-internal-symmetric",
     "edge-coupled-embedded",
@@ -35526,6 +37527,8 @@ function calculateEdgeCoupledEmbedded(inputs) {
   );
   const delayOdd = Math.sqrt(pair.erEffOdd) / C_MM_PER_PS9;
   const delayEven = Math.sqrt(pair.erEffEven) / C_MM_PER_PS9;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS9 / (frequency * Math.sqrt(pair.erEffOdd));
   const warnings = [];
   if (!pair.inRange) {
     warnings.push(
@@ -35554,7 +37557,9 @@ function calculateEdgeCoupledEmbedded(inputs) {
       erEffEven: pair.erEffEven,
       propagationDelay: delayOdd,
       propagationDelayEven: delayEven,
-      inValidatedRange: pair.inRange ? 1 : 0
+      inValidatedRange: pair.inRange ? 1 : 0,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -35575,7 +37580,7 @@ var edgeCoupledEmbedded = {
     "mode skew microstrip"
   ],
   inputs: [
-    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.2, min: 0.02, step: 0.01 },
+    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.2, min: 0.02, max: 10, step: 0.01 },
     {
       key: "traceSpacing",
       label: "Trace Spacing (edge to edge)",
@@ -35583,6 +37588,7 @@ var edgeCoupledEmbedded = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -35646,11 +37652,18 @@ var edgeCoupledEmbedded = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength of the differential (odd) mode; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
@@ -35710,7 +37723,30 @@ var edgeCoupledEmbedded = {
       precision: 0,
       tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
       thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
+    },
+    {
+      key: "guidedWavelength",
+      label: "Guided Wavelength (odd mode)",
+      symbol: "\u03BBg",
+      unit: "mm",
+      precision: 3,
+      format: "standard",
+      tooltip: "Wavelength of the differential (odd) mode on the pair at the frequency, c/(f\xB7\u221A\u03B5eff,odd)"
+    },
+    {
+      key: "quarterWavelength",
+      label: "Quarter Wavelength (odd mode)",
+      symbol: "\u03BBg/4",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
     }
+  ],
+  examples: [
+    { id: "ethernet-100-ohm-soldermask", label: "100 \u03A9 under 25 \xB5m soldermask, 0.2 mm FR-4", values: { traceWidth: 0.23, traceSpacing: 0.2, substrateHeight: 0.2, coverThickness: 0.025, coverDielectric: 3.5, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "ethernet-100-ohm-bare", label: "100 \u03A9 bare pair with no mask, 0.2 mm FR-4", values: { traceWidth: 0.256, traceSpacing: 0.2, substrateHeight: 0.2, coverThickness: 0, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "usb-90-ohm-soldermask-0-1-mm", label: "90 \u03A9 USB under soldermask, 0.1 mm FR-4", values: { traceWidth: 0.16, traceSpacing: 0.15, substrateHeight: 0.1, coverThickness: 0.025, coverDielectric: 3.5, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "under-0-1-mm-prepreg", label: "Same pair buried under 0.1 mm of FR-4 prepreg", values: { traceWidth: 0.23, traceSpacing: 0.2, substrateHeight: 0.2, coverThickness: 0.1, coverDielectric: 4.4, copperThickness: 35, dielectricConst: 4.4 } }
   ],
   calculate: calculateEdgeCoupledEmbedded,
   formula: {
@@ -35739,6 +37775,15 @@ var edgeCoupledEmbedded = {
     insideOutput: "inValidatedRange"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "coupled",
+      roles: { w: "traceWidth", s: "traceSpacing", h: "substrateHeight", t: "copperThickness", er: "dielectricConst", cover: "coverThickness", coverEr: "coverDielectric" }
+    },
+    synthesis: [{ output: "diffImpedance", solveFor: ["traceWidth", "traceSpacing"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "diffImpedance", range: [0.03, 2], scale: "log" }
+  },
   relatedCalculators: [
     "differential-pair",
     "edge-coupled-internal-symmetric",
@@ -35904,6 +37949,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 0.25,
       min: 0.05,
+      max: 2,
       step: 0.01
     },
     {
@@ -35913,6 +37959,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 0.9,
       min: 0.1,
+      max: 5,
       step: 0.05,
       tooltip: "Clearance opening in the reference planes around the via"
     },
@@ -35923,6 +37970,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 0.8,
       min: 0.1,
+      max: 5,
       step: 0.05
     },
     {
@@ -35932,6 +37980,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 1.6,
       min: 0.1,
+      max: 10,
       step: 0.1
     },
     {
@@ -35941,6 +37990,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 0.4,
       min: 0,
+      max: 10,
       step: 0.05,
       tooltip: "Depth from the entry surface at which the signal leaves the via. The rest of the barrel is stub."
     },
@@ -35952,10 +38002,9 @@ var differentialVia = {
       defaultValue: 4.2,
       min: 1,
       step: 0.01,
+      // The material picker sets it (lib/geometry/materials.ts); Megtron 6 is not in the library yet.
       presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
+        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } }
       ]
     },
     {
@@ -35966,10 +38015,9 @@ var differentialVia = {
       defaultValue: 0.02,
       min: 1e-4,
       step: 1e-3,
+      // The material picker sets it with εr; Megtron 6 is not in the library yet.
       presets: [
-        { label: "FR4 (0.02)", values: { lossTangent: 0.02 } },
-        { label: "Megtron 6 (0.004)", values: { lossTangent: 4e-3 } },
-        { label: "Rogers RO4350B (0.0037)", values: { lossTangent: 37e-4 } }
+        { label: "Megtron 6 (0.004)", values: { lossTangent: 4e-3 } }
       ]
     },
     {
@@ -36070,7 +38118,21 @@ var differentialVia = {
     ],
     reference: "Two-wire and coaxial impedances are standard results; the stub loading follows from S\u2082\u2081 of a shunt admittance. A via transition is three-dimensional, so this is a screening model \u2014 see the linked full-wave tool."
   },
+  examples: [
+    { id: "pcie4-2p4mm-fr4", label: "PCIe 4.0 pair, 2.4 mm FR-4, stub at 24 GHz", values: { barrelDiameter: 0.25, antipadDiameter: 1.1, viaPitch: 0.8, boardThickness: 2.4, exitDepth: 0.9112453477029002, dielectricConst: 4.4, lossTangent: 0.02, startFrequency: 0.1, stopFrequency: 8 } },
+    { id: "backdrilled-1p6mm-fr4", label: "Backdrilled pair, 1.6 mm FR-4, no stub", values: { barrelDiameter: 0.25, antipadDiameter: 1.1, viaPitch: 0.8, boardThickness: 1.6, exitDepth: 1.6, dielectricConst: 4.4, lossTangent: 0.02, startFrequency: 0.1, stopFrequency: 20 } },
+    { id: "backplane-3mm-stub-in-band", label: "3.0 mm backplane, exit near the top: stub in band", values: { barrelDiameter: 0.3, antipadDiameter: 1.2, viaPitch: 0.9, boardThickness: 3, exitDepth: 0.5, dielectricConst: 4.4, lossTangent: 0.02, startFrequency: 0.1, stopFrequency: 20 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "via", roles: { d: "barrelDiameter", antipad: "antipadDiameter", pitch: "viaPitch", len: "boardThickness", er: "dielectricConst", exit: "exitDepth", stub: "stubLength" } },
+    synthesis: [
+      { output: "diffImpedance", solveFor: ["viaPitch", "antipadDiameter", "barrelDiameter"] },
+      { output: "stubResonance", solveFor: ["exitDepth", "boardThickness"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst", tanD: "lossTangent" } },
+    curve: { x: "viaPitch", y: "diffImpedance", range: [0.4, 2], scale: "linear" }
+  },
   relatedCalculators: [
     "via-stub-resonance",
     "via-calculator",
@@ -36365,7 +38427,7 @@ var conductorToPadWidth = {
     "dfm trace width"
   ],
   inputs: [
-    { key: "padDiameter", label: "Pad Diameter", symbol: "D_pad", unit: "mm", defaultValue: 0.6, min: 0.05, step: 0.05 },
+    { key: "padDiameter", label: "Pad Diameter", symbol: "D_pad", unit: "mm", defaultValue: 0.6, min: 0.05, max: 10, step: 0.05 },
     {
       key: "neighbourPitch",
       label: "Pitch to the Neighbouring Pad",
@@ -36373,6 +38435,7 @@ var conductorToPadWidth = {
       unit: "mm",
       defaultValue: 1.27,
       min: 0.1,
+      max: 10,
       step: 0.01,
       presets: [
         { label: "0.5 mm", values: { neighbourPitch: 0.5 } },
@@ -36389,6 +38452,7 @@ var conductorToPadWidth = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.01,
+      max: 1,
       step: 0.01,
       tooltip: "Your fabricator\u2019s copper-to-copper minimum. This is a shop rule, not a constant.",
       presets: [
@@ -36461,7 +38525,18 @@ var conductorToPadWidth = {
     ],
     reference: "IPC-2221B clearance practice; the clearance value itself is a fabricator rule and is an input here."
   },
+  examples: [
+    { id: "dip-two-traces", label: "Two 0.2 mm traces between DIP pins, 1.69 mm pads", values: { padDiameter: 1.69, neighbourPitch: 2.54, minClearance: 0.15, conductorCount: 2 } },
+    { id: "dip-1p6-pads-one-trace", label: "2.54 mm DIP, 1.6 mm pads, one trace", values: { padDiameter: 1.6, neighbourPitch: 2.54, minClearance: 0.15, conductorCount: 1 } },
+    { id: "pitch-1p27-0p8-pads", label: "1.27 mm pitch, 0.8 mm pads, one trace", values: { padDiameter: 0.8, neighbourPitch: 1.27, minClearance: 0.15, conductorCount: 1 } },
+    { id: "pitch-0p8-fine-clearance", label: "0.8 mm pitch, 0.45 mm pads, 0.075 mm clearance", values: { padDiameter: 0.45, neighbourPitch: 0.8, minClearance: 0.075, conductorCount: 1 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "pads", roles: { pad: "padDiameter", pitch: "neighbourPitch", clear: "minClearance", n: "conductorCount", w: "maxTraceWidth" } },
+    synthesis: [{ output: "maxTraceWidth", solveFor: ["padDiameter", "neighbourPitch", "minClearance"] }],
+    curve: { x: "neighbourPitch", y: "maxTraceWidth", range: [1, 2.54], scale: "linear" }
+  },
   relatedCalculators: [
     "bga-breakout-width",
     "maximum-pad-diameter",
@@ -36540,7 +38615,7 @@ function calculateBgaBreakoutWidth(inputs) {
     warnings.push(
       `A ${maxTraceWidth.toFixed(4)} mm trace is beyond standard fabrication; this geometry needs an advanced process or fewer traces per channel`
     );
-  } else if (maxTraceWidth < 0.1) {
+  } else if (maxTraceWidth < 0.1 - 1e-9) {
     warnings.push(
       `A ${maxTraceWidth.toFixed(4)} mm trace is below the 0.1 mm most shops quote as standard \u2014 expect a surcharge`
     );
@@ -36599,6 +38674,7 @@ var bgaBreakoutWidth = {
       unit: "mm",
       defaultValue: 0.4,
       min: 0.05,
+      max: 2,
       step: 0.01,
       tooltip: "Solder-mask-defined or non-solder-mask-defined land, whichever the footprint uses"
     },
@@ -36609,6 +38685,7 @@ var bgaBreakoutWidth = {
       unit: "mm",
       defaultValue: 0.1,
       min: 0.01,
+      max: 1,
       step: 5e-3,
       presets: [
         { label: "Standard (0.1 mm)", values: { minClearance: 0.1 } },
@@ -36694,7 +38771,22 @@ var bgaBreakoutWidth = {
     ],
     reference: "IPC-7351B land geometry; clearance is a fabricator rule and is supplied as an input."
   },
+  examples: [
+    { id: "pbga-1p27-two-5-mil", label: "1.27 mm PBGA, two 5 mil traces per channel", values: { ballPitch: 1.27, landDiameter: 0.635, minClearance: 0.127, tracesPerChannel: 2, diagonalRoute: 0 } },
+    { id: "bga-1p0-0p45-lands", label: "1.0 mm BGA, 0.45 mm lands, one trace", values: { ballPitch: 1, landDiameter: 0.45, minClearance: 0.1, tracesPerChannel: 1, diagonalRoute: 0 } },
+    { id: "bga-0p8-0p4-lands", label: "0.8 mm BGA, 0.4 mm lands, one trace", values: { ballPitch: 0.8, landDiameter: 0.4, minClearance: 0.1, tracesPerChannel: 1, diagonalRoute: 0 } },
+    { id: "bga-0p65-diagonal", label: "0.65 mm BGA, 0.3 mm lands, two traces on the diagonal", values: { ballPitch: 0.65, landDiameter: 0.3, minClearance: 0.075, tracesPerChannel: 2, diagonalRoute: 1 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "bga",
+      roles: { pitch: "ballPitch", land: "landDiameter", clear: "minClearance", n: "tracesPerChannel", w: "maxTraceWidth" },
+      variant: { input: "diagonalRoute", byValue: { 0: "orthogonal", 1: "diagonal" } }
+    },
+    synthesis: [{ output: "maxTraceWidth", solveFor: ["landDiameter", "minClearance"] }],
+    curve: { x: "landDiameter", y: "maxTraceWidth", range: [0.2, 0.55], scale: "linear" }
+  },
   relatedCalculators: [
     "bga-land-pad",
     "conductor-to-pad-width",
@@ -36749,7 +38841,7 @@ function calculateApertureDiagonal(inputs) {
   const diagonal = Math.hypot(apertureLength, apertureWidth);
   const shortSide = Math.min(apertureLength, apertureWidth);
   const coveringDrill = nextStandardDrill(diagonal);
-  const routerCandidates = PCB_DRILL_SIZES.filter((size2) => size2.mm <= shortSide + 1e-9);
+  const routerCandidates = PCB_DRILL_SIZES.filter((size2) => size2.mm <= shortSide + 1e-6);
   const routerBit = routerCandidates.length > 0 ? routerCandidates[routerCandidates.length - 1] : null;
   const smallest = PCB_DRILL_SIZES[0];
   const largest = PCB_DRILL_SIZES[PCB_DRILL_SIZES.length - 1];
@@ -36811,6 +38903,7 @@ var apertureDiagonal = {
       unit: "mm",
       defaultValue: 2,
       min: 0.05,
+      max: 500,
       step: 0.05
     },
     {
@@ -36820,6 +38913,7 @@ var apertureDiagonal = {
       unit: "mm",
       defaultValue: 1,
       min: 0.05,
+      max: 500,
       step: 0.05
     }
   ],
@@ -36885,7 +38979,17 @@ var apertureDiagonal = {
     ],
     reference: "Geometry; tooling grid is stocked metric PCB tooling in 0.05 mm steps. 1 in = 25.4 mm exactly."
   },
+  examples: [
+    { id: "opening-2-by-1p5", label: "2.0 \xD7 1.5 mm opening, one 2.5 mm drill", values: { apertureLength: 2, apertureWidth: 1.5 } },
+    { id: "shell-tab-slot", label: "Connector shell tab slot, 1.7 \xD7 0.6 mm", values: { apertureLength: 1.7, apertureWidth: 0.6 } },
+    { id: "m3-adjustment-slot", label: "M3 adjustment slot, 6.0 \xD7 3.2 mm (routed)", values: { apertureLength: 6, apertureWidth: 3.2 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "aperture", roles: { l: "apertureLength", w: "apertureWidth", diag: "diagonal", drill: "coveringDrillSize", r: "cornerRadius" } },
+    synthesis: [{ output: "diagonal", solveFor: ["apertureLength", "apertureWidth"] }],
+    curve: { x: "apertureLength", y: "diagonal", range: [0.5, 10], scale: "linear" }
+  },
   relatedCalculators: [
     "padstack-annular-ring",
     "maximum-pad-diameter",
@@ -36987,6 +39091,7 @@ var maximumPadDiameter = {
       unit: "mm",
       defaultValue: 1.27,
       min: 0.1,
+      max: 10,
       step: 0.01,
       presets: [
         { label: "0.5 mm", values: { pitch: 0.5 } },
@@ -37003,6 +39108,7 @@ var maximumPadDiameter = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.01,
+      max: 1,
       step: 5e-3,
       presets: [
         { label: "Standard (0.15 mm)", values: { minClearance: 0.15 } },
@@ -37077,7 +39183,18 @@ var maximumPadDiameter = {
     ],
     reference: "IPC-2221B clearance practice; the clearance value is a fabricator rule supplied as an input."
   },
+  examples: [
+    { id: "pitch-1p5-one-trace", label: "1.5 mm pitch, one 0.2 mm trace between", values: { pitch: 1.5, minClearance: 0.15, tracesBetween: 1, traceWidth: 0.2 } },
+    { id: "dip-2p54-one-trace", label: "2.54 mm DIP, one 0.25 mm trace between pins", values: { pitch: 2.54, minClearance: 0.15, tracesBetween: 1, traceWidth: 0.25 } },
+    { id: "bga-1p0-one-trace", label: "1.0 mm BGA, one 0.1 mm trace between lands", values: { pitch: 1, minClearance: 0.1, tracesBetween: 1, traceWidth: 0.1 } },
+    { id: "pitch-0p5-nothing-between", label: "0.5 mm pitch, nothing routed between", values: { pitch: 0.5, minClearance: 0.1, tracesBetween: 0, traceWidth: 0.15 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "pads", roles: { pad: "maxPadDiameter", pitch: "pitch", clear: "minClearance", n: "tracesBetween", w: "traceWidth" } },
+    synthesis: [{ output: "maxPadDiameter", solveFor: ["pitch", "minClearance"] }],
+    curve: { x: "pitch", y: "maxPadDiameter", range: [0.5, 2.54], scale: "linear" }
+  },
   relatedCalculators: [
     "conductor-to-pad-width",
     "bga-breakout-width",
