@@ -98,6 +98,20 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.5.1
+
+No tool, argument or name changed. Thirty-one calculators that computed
+something other than their cited reference now compute it, with the same
+numbers as the website and the REST API (rftools.io changelog, 2026-10-07).
+Among them: `shielding-effectiveness` (reflection loss carries η₀, 45.5 dB
+was missing; multiple reflections added), `ground-plane-impedance` (µ₀·h·l/w,
+with a new optional `separation` input, default 1 mm), `speaker-crossover`
+(2nd-order inductors √2·R/ω_c), `esd-tvs-diode` (IEC 61000-4-2's 3.75 A/kV
+first peak), `common-mode-choke` (a 50 Ω/50 Ω system), `minimum-conductor-spacing`
+(IPC-2221B Table 6-1 by band), `radiated-emission-estimate` (CISPR 32
+Class B at the distance; no margin below 30 MHz or above 6 GHz) and
+`via-thermal-resistance` (IPC-2221 current capacity, new optional `tempRise`).
+
 ### What changed in 2.5.0
 
 No tool was added, removed or renamed, and no tool's arguments changed.
