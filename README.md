@@ -98,6 +98,15 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.5.2
+
+No tool, argument or name changed. `bldc-winding` now counts both coil sides
+in each slot (a double-layer winding), so its fill factor is
+2·N·A_wire/A_slot and is no longer capped at 100 %. Its distribution factor
+comes from the star-of-slots method (12N14P: 0.933, not 0.966), and its
+default maximum current is 5 A, a winding that builds (rftools.io
+changelog, 2026-10-11).
+
 ### What changed in 2.5.1
 
 No tool, argument or name changed. Thirty-one calculators that computed

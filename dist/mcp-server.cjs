@@ -38646,7 +38646,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.5.1",
+  version: "2.5.2",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 255 RF & electronics calculators for AI agents via the MCP",
@@ -45301,7 +45301,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.5.1"
+    version: "2.5.2"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });
