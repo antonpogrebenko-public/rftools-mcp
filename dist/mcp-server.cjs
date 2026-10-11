@@ -21172,6 +21172,9 @@ function selectWireGauge(requiredAreaMm2) {
   }
   return best;
 }
+function gcd(a, b) {
+  return b === 0 ? a : gcd(b, a % b);
+}
 function calculateBldcWinding(inputs) {
   const {
     targetKv,
@@ -21196,13 +21199,11 @@ function calculateBldcWinding(inputs) {
   const fluxPerPole = bGap * poleAreaM2;
   const connectionFactor = isWye ? Math.sqrt(3) : 1;
   const polePairs = safePoles / 2;
-  const slotAngleDeg = 180 * safePoles / safeSlots;
-  const q = safeSlots / (phases * safePoles);
   const coilSpan = Math.round(safeSlots / safePoles);
   const polePitchSlots = safeSlots / safePoles;
   const pitchFactor = Math.abs(Math.sin(coilSpan / polePitchSlots * (Math.PI / 2)));
-  const qRound = Math.max(1, Math.round(q));
-  const distributionFactor = qRound <= 1 ? 1 : Math.sin(qRound * slotAngleDeg * Math.PI / (2 * 180)) / (qRound * Math.sin(slotAngleDeg * Math.PI / (2 * 180)));
+  const qNumerator = safeSlots / gcd(safeSlots, phases * safePoles);
+  const distributionFactor = Math.sin(Math.PI / 6) / (qNumerator * Math.sin(Math.PI / (6 * qNumerator)));
   const windingFactor = Math.abs(pitchFactor * distributionFactor);
   const safeKv = Math.max(targetKv, 1);
   const kvRadS = safeKv * (2 * Math.PI / 60);
@@ -21215,8 +21216,8 @@ function calculateBldcWinding(inputs) {
   const targetCurrentDensity = 6.5;
   const requiredWireArea = maxCurrent / targetCurrentDensity;
   const wire = selectWireGauge(requiredWireArea);
-  const copperAreaPerSlot = turnsPerCoil * wire.areaMm2;
-  const fillFactor = Math.min(copperAreaPerSlot / Math.max(slotAreaMm2, 0.01) * 100, 100);
+  const copperAreaPerSlot = 2 * turnsPerCoil * wire.areaMm2;
+  const fillFactor = copperAreaPerSlot / Math.max(slotAreaMm2, 0.01) * 100;
   const endWindingMm = statorInnerDia * 0.15;
   const meanTurnLengthMm = 2 * statorStackLength + 2 * (slotDepthMm + endWindingMm);
   const meanTurnLengthM = meanTurnLengthMm / 1e3;
@@ -21274,10 +21275,11 @@ var bldcWinding = {
     "concentrated winding"
   ],
   // Defaults: a real 12N14P drone motor, the EMAX MT2213-935KV (emaxmodel.com:
-  // 2213 stator, 22 mm × 13 mm; 935 Kv; 3–4S; 18 A ESC), wound wye for 10 A
+  // 2213 stator, 22 mm × 13 mm; 935 Kv; 3–4S; 18 A ESC), wound wye for 5 A
   // continuous at the 6.5 A/mm² the wire choice assumes. It builds: 4 turns of
-  // AWG 14, 59.7 % fill. The previous defaults (920 Kv, 23 × 10 mm, 20 A)
-  // needed 108 % fill (196 % before the wye factor was corrected).
+  // AWG 18, 47.2 % fill with both coil sides in each slot counted (founder,
+  // 2026-10-11). At 10 A, the default until then, it needs AWG 14 and 119.4 %
+  // fill; the defaults before that (920 Kv, 23 × 10 mm, 20 A) need 260.7 %.
   inputs: [
     {
       key: "targetKv",
@@ -21343,7 +21345,7 @@ var bldcWinding = {
       label: "Max Continuous Current",
       symbol: "I_max",
       unit: "A",
-      defaultValue: 10,
+      defaultValue: 5,
       min: 0.1,
       max: 500,
       tooltip: "Maximum continuous phase current for wire gauge selection"
@@ -21391,7 +21393,7 @@ var bldcWinding = {
       unit: "%",
       precision: 1,
       thresholds: { good: { max: 65 }, warning: { max: 80 }, danger: { min: 80 } },
-      tooltip: "Ratio of copper area to slot area — above 75% is very difficult to wind"
+      tooltip: "Bare copper of both coil sides in a slot over the slot area, 2·N·A_wire/A_slot — above 75% is very difficult to wind"
     },
     { key: "phaseResistance", label: "Phase Resistance", symbol: "R_ph", unit: "mΩ", precision: 1 },
     { key: "coilSpan", label: "Coil Span", symbol: "", unit: "slots", precision: 0 },
@@ -21408,23 +21410,37 @@ var bldcWinding = {
   ],
   calculate: calculateBldcWinding,
   formula: {
-    primary: "N = 1 / (Kv_rad × p × Φ × Kw × C),  Kv_delta = Kv_wye × √3",
-    latex: "N = \\frac{1}{K_{v,rad} \\cdot p \\cdot \\Phi \\cdot K_{w1} \\cdot C_{conn}}, \\quad K_{v,\\Delta} = K_{v,Y} \\times \\sqrt{3}",
+    primary: "N = 1 / (Kv_rad × p × Φ × Kw × C),  Kv_delta = Kv_wye × √3,  FF = 2·N·A_wire / A_slot",
+    latex: "N = \\frac{1}{K_{v,rad} \\cdot p \\cdot \\Phi \\cdot K_{w1} \\cdot C_{conn}}, \\quad K_{v,\\Delta} = K_{v,Y} \\times \\sqrt{3}, \\quad FF = \\frac{2 N A_{wire}}{A_{slot}}",
     variables: [
       { symbol: "N", description: "Turns per coil (series per phase)", unit: "turns" },
       { symbol: "K_v,rad", description: "Motor velocity constant", unit: "rad/s/V" },
       { symbol: "p", description: "Pole pairs", unit: "" },
       { symbol: "Φ", description: "Flux per pole", unit: "Wb" },
       { symbol: "K_w1", description: "Fundamental winding factor", unit: "" },
-      { symbol: "C", description: "Connection factor (√3 for wye, 1 for delta)", unit: "" }
+      { symbol: "C", description: "Connection factor (√3 for wye, 1 for delta)", unit: "" },
+      { symbol: "FF", description: "Fill factor: bare copper of the two coil sides in each slot over the slot area", unit: "%" },
+      { symbol: "A_wire", description: "Bare copper area of one wire", unit: "mm²" },
+      { symbol: "A_slot", description: "Slot area, estimated from the bore as for an inrunner", unit: "mm²" }
     ],
-    reference: "Hanselman, D. — Brushless Permanent Magnet Motor Design, 2nd ed."
+    derivation: [
+      "K_w1 = k_p·k_d. For q = S/(3P) = z/n in lowest terms, the star-of-slots method gives k_d = sin(π/6)/(z·sin(π/(6z))); k_p = sin(span/(S/P)·π/2) with span = round(S/P)",
+      "FF = 2·N·A_wire/A_slot: one coil on every tooth puts two coil sides in each slot. It is reported as computed, above 100 % too",
+      "A_slot = (0.55·π·d_s/S) × (0.2·d_s), an inrunner-bore estimate; an outrunner's slot is smaller, so its real fill is higher"
+    ],
+    reference: "Hanselman, D. — Brushless Permanent Magnet Motor Design, 2nd ed.; Bianchi, N. & Dai Pré, M., IEE Proc. Electric Power Applications, 2006 (winding factor); Pyrhönen, Jokinen & Hrabovcová, Design of Rotating Electrical Machines, Wiley 2008, section 2.9 (slot fill)"
   },
   visualization: { type: "none" },
   relatedCalculators: ["bldc-motor", "bldc-efficiency", "bldc-thermal", "motor-winding-resistance"],
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"],
   liveWidgets: [
     { type: "bldc-winding", position: "below-outputs" }
+  ],
+  assumptions: [
+    {
+      code: "slot-area-inrunner-bore",
+      text: "The slot area is estimated from the stator bore as for an inrunner, 0.55·πd/S wide by 0.2·d deep. An outrunner's slot is smaller, so its real fill factor is higher than shown."
+    }
   ]
 };
 
@@ -43259,8 +43275,8 @@ var LETTER_DRILLS = LETTER_GAUGE.map(([c2, d]) => ({
 var FRACTIONAL_DRILLS = Array.from({ length: 64 }, (_, i) => {
   const sixtyFourths = i + 1;
   const divide = (a, b) => {
-    const gcd = (x, y) => y === 0 ? x : gcd(y, x % y);
-    const g = gcd(a, b);
+    const gcd2 = (x, y) => y === 0 ? x : gcd2(y, x % y);
+    const g = gcd2(a, b);
     return [a / g, b / g];
   };
   const [num, den] = divide(sixtyFourths, 64);
