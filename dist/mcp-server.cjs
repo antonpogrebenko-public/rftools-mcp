@@ -2346,36 +2346,129 @@ var smithChart = {
   }
 };
 
+// src/lib/calculators/constants.ts
+var COPPER_RESISTIVITY_20C = 1 / 58e6;
+
+// src/lib/calculators/validity.ts
+function bound(value, unit) {
+  if (!unit) return String(value);
+  return unit === "°" ? `${value}°` : `${value} ${unit}`;
+}
+function range(b) {
+  if (b.min !== void 0 && b.min === b.max) return `exactly ${bound(b.min, b.unit)}`;
+  if (b.min !== void 0 && b.max !== void 0) {
+    return `${String(b.min)} to ${bound(b.max, b.unit)}`;
+  }
+  if (b.min !== void 0) return `at least ${bound(b.min, b.unit)}`;
+  return `at most ${bound(b.max, b.unit)}`;
+}
+function checkValidity(bounds, values) {
+  const warnings = [];
+  for (const b of bounds ?? []) {
+    if (!(b.quantity in values)) {
+      throw new Error(`checkValidity: no value given for the bounded quantity "${b.quantity}"`);
+    }
+    const v = values[b.quantity];
+    if (Number.isNaN(v)) continue;
+    let breach = null;
+    if (b.min !== void 0 && v < b.min) breach = `below ${bound(b.min, b.unit)}`;
+    else if (b.max !== void 0 && v > b.max) breach = `above ${bound(b.max, b.unit)}`;
+    if (breach === null) continue;
+    warnings.push(
+      `${b.label ?? b.quantity} is ${breach}; the model holds for ${range(b)} (${b.source}). The result is extrapolated.`
+    );
+  }
+  return warnings;
+}
+
 // src/lib/calculators/pcb/trace-width-current.ts
+var B = 0.44;
+var C = 0.725;
+var K_2221_EXTERNAL = 0.048;
+var K_2221_INTERNAL = 0.024;
+var K_2152_FIGURE_5_1 = 0.024;
+var COPPER_UM_PER_OZ = 35;
+var MM_PER_MIL = 0.0254;
+var FIGURE_5_1 = "IPC-2152 (2009) Figure 5-1, which is IPC-2221 (1998) Figure 6-4 chart C";
+var CHART_A = "IPC-2221 (1998) Figure 6-4 chart A";
+var TRACE_WIDTH_VALIDITY = [
+  {
+    quantity: "tempRise",
+    min: 10,
+    max: 45,
+    label: "Temperature rise ΔT on IPC-2152 Figure 5-1",
+    unit: "°C",
+    source: `${FIGURE_5_1}: curves at 10, 20, 30 and 45 °C`
+  },
+  {
+    quantity: "area2152",
+    max: 700,
+    label: "Cross-section on IPC-2152 Figure 5-1",
+    unit: "sq mil",
+    source: `${FIGURE_5_1}: drawn to 700 sq mil`
+  },
+  {
+    quantity: "riseChartA",
+    min: 10,
+    max: 100,
+    label: "Temperature rise ΔT on IPC-2221 chart A (external layer)",
+    unit: "°C",
+    source: `${CHART_A}: curves at 10, 20, 30, 45, 60, 75 and 100 °C`
+  },
+  {
+    quantity: "areaChartA",
+    max: 700,
+    label: "Cross-section on IPC-2221 chart A (external layer)",
+    unit: "sq mil",
+    source: `${CHART_A}: drawn to 700 sq mil`
+  },
+  {
+    quantity: "copperWeight",
+    min: 0.5,
+    max: 3,
+    label: "Copper weight",
+    unit: "oz",
+    source: "IPC-2221 (1998) Figure 6-4 chart B: ½, 1, 2 and 3 oz"
+  }
+];
 function calculateTraceWidth(inputs) {
   const { current, copperWeight, tempRise, traceLength, isExternal } = inputs;
-  const copperMil = copperWeight * 1.37;
-  const k = isExternal > 0.5 ? 0.048 : 0.024;
-  const b = isExternal > 0.5 ? 0.44 : 0.44;
-  const c2 = isExternal > 0.5 ? 0.725 : 0.725;
-  const area2221 = Math.pow(current / (k * Math.pow(tempRise, b)), 1 / c2);
-  const width2221Mil = area2221 / copperMil;
-  const width2221mm = width2221Mil * 0.0254;
-  const factor2152 = isExternal > 0.5 ? 0.75 : 0.85;
-  const width2152mm = width2221mm * factor2152;
-  const rho20 = 172e-10;
+  const traceWidth = inputs.traceWidth ?? 0.5;
+  const external = isExternal > 0.5;
+  if (!(traceWidth > 0)) return { values: {}, errors: ["Trace width must be greater than 0"] };
+  const copperMil = copperWeight * COPPER_UM_PER_OZ / 1e3 / MM_PER_MIL;
+  const k2221 = external ? K_2221_EXTERNAL : K_2221_INTERNAL;
+  const area2221 = Math.pow(current / (k2221 * Math.pow(tempRise, B)), 1 / C);
+  const width2221mm = area2221 / copperMil * MM_PER_MIL;
+  const area2152 = Math.pow(current / (K_2152_FIGURE_5_1 * Math.pow(tempRise, B)), 1 / C);
+  const width2152mm = area2152 / copperMil * MM_PER_MIL;
   const alpha = 393e-5;
   const tempC = 25 + tempRise;
-  const rho = rho20 * (1 + alpha * (tempC - 20));
-  const widthM = width2221mm * 1e-3;
-  const thicknessM = copperMil * 0.0254 * 1e-3;
+  const rho = COPPER_RESISTIVITY_20C * (1 + alpha * (tempC - 20));
+  const widthM = traceWidth * 1e-3;
+  const thicknessM = copperMil * MM_PER_MIL * 1e-3;
   const lengthM = traceLength * 1e-3;
   const resistance = rho * lengthM / (widthM * thicknessM);
   const voltageDrop2 = current * resistance;
   const powerDiss = current * current * resistance;
+  const inChartRange = tempRise >= 10 && tempRise <= 45 && area2152 <= 700 ? 1 : 0;
+  const warnings = checkValidity(TRACE_WIDTH_VALIDITY, {
+    tempRise,
+    area2152,
+    riseChartA: external ? tempRise : NaN,
+    areaChartA: external ? area2221 : NaN,
+    copperWeight
+  });
   return {
     values: {
       width2221mm,
       width2152mm,
       resistance,
       voltageDrop: voltageDrop2,
-      powerDiss
-    }
+      powerDiss,
+      inChartRange
+    },
+    warnings
   };
 }
 var traceWidthCurrent = {
@@ -2384,7 +2477,7 @@ var traceWidthCurrent = {
   shortTitle: "Trace Width",
   metaTitle: "PCB Trace Width Calculator — Free IPC-2221 Tool",
   category: "pcb",
-  description: "Calculate minimum PCB trace width for current capacity per IPC-2221 and IPC-2152. Get resistance, voltage drop, and power dissipation. Free, instant results.",
+  description: "Calculate minimum PCB trace width for current capacity per IPC-2221 and IPC-2152’s conservative Figure 5-1. Get resistance, voltage drop, and power dissipation at the width you draw. Free, instant results.",
   keywords: ["trace width calculator", "pcb trace current", "ipc-2221 calculator", "ipc-2152", "pcb current capacity", "trace ampacity"],
   inputs: [
     {
@@ -2407,7 +2500,7 @@ var traceWidthCurrent = {
       min: 0.5,
       max: 4,
       step: 0.5,
-      tooltip: "Copper thickness (1 oz = 35 μm = 1.37 mil)",
+      tooltip: "Copper thickness (1 oz = 35 μm = 1.378 mil)",
       presets: [
         { label: "½ oz", values: { copperWeight: 0.5 } },
         { label: "1 oz (standard)", values: { copperWeight: 1 } },
@@ -2455,6 +2548,16 @@ var traceWidthCurrent = {
         { label: "External layer", values: { isExternal: 1 } },
         { label: "Internal layer", values: { isExternal: 0 } }
       ]
+    },
+    {
+      key: "traceWidth",
+      label: "Drawn Trace Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 0.5,
+      min: 0.01,
+      max: 100,
+      tooltip: "The width as drawn: the DC resistance, voltage drop and power are computed for it; the minimum widths do not use it"
     }
   ],
   outputs: [
@@ -2463,54 +2566,81 @@ var traceWidthCurrent = {
       label: "Min Width (IPC-2221)",
       unit: "mm",
       precision: 3,
+      tooltip: "IPC-2221 Figure 6-4 through its published fit: chart A (k = 0.048) on an external layer, chart C (k = 0.024) on an internal one",
       thresholds: { warning: { min: 3 } }
     },
     {
       key: "width2152mm",
-      label: "Min Width (IPC-2152)",
+      label: "Min Width (IPC-2152 Fig. 5-1)",
       unit: "mm",
-      precision: 3
+      precision: 3,
+      tooltip: "IPC-2152 Figure 5-1, the conservative chart IPC-2152 recommends for internal and external conductors: the same on either layer"
     },
     {
       key: "resistance",
-      label: "DC Resistance",
+      label: "DC Resistance (Drawn Width)",
       unit: "Ω",
       precision: 6,
-      format: "engineering"
+      format: "engineering",
+      tooltip: "At the drawn trace width and a 25 °C ambient plus the allowed rise"
     },
     {
       key: "voltageDrop",
-      label: "Voltage Drop",
+      label: "Voltage Drop (Drawn Width)",
       unit: "V",
       precision: 4,
+      tooltip: "Current × the DC resistance of the drawn trace width",
       thresholds: { warning: { min: 0.1 } }
     },
     {
       key: "powerDiss",
-      label: "Power Dissipation",
+      label: "Power Dissipation (Drawn Width)",
       unit: "W",
-      precision: 4
+      precision: 4,
+      tooltip: "Current² × the DC resistance of the drawn trace width"
+    },
+    {
+      key: "inChartRange",
+      label: "Within IPC-2152 Fig. 5-1 Range",
+      unit: "",
+      precision: 0,
+      tooltip: "1 when the rise is between 10 and 45 °C and the cross-section at most 700 sq mil, the range Figure 5-1 draws",
+      thresholds: { danger: { max: 0.5 } }
     }
   ],
   calculate: calculateTraceWidth,
   formula: {
-    primary: "A = \\left(\\frac{I}{k \\cdot \\Delta T^b}\\right)^{1/c}",
+    primary: "A = (I / (k·ΔT^0.44))^(1/0.725),  W_min = A / t,  R = ρ(T)·L / (W·t)",
+    latex: "A = \\left(\\frac{I}{k \\cdot \\Delta T^{0.44}}\\right)^{1/0.725},\\qquad W_{min} = \\frac{A}{t},\\qquad R = \\frac{\\rho(T)\\,L}{W\\,t}",
     variables: [
-      { symbol: "A", description: "Cross-sectional area (mil²)", unit: "mil²" },
+      { symbol: "A", description: "Minimum cross-section", unit: "mil²" },
       { symbol: "I", description: "Current", unit: "A" },
       { symbol: "ΔT", description: "Temperature rise above ambient", unit: "°C" },
-      { symbol: "k,b,c", description: "IPC-2221 empirical coefficients", unit: "" }
+      { symbol: "k", description: "Chart constant: IPC-2221 0.048 external, 0.024 internal; IPC-2152 Figure 5-1 0.024 on either layer", unit: "" },
+      { symbol: "W_min", description: "Minimum trace width", unit: "mil" },
+      { symbol: "t", description: "Copper thickness, 1.378 mil (35 µm) per ounce", unit: "mil" },
+      { symbol: "R", description: "DC resistance of the drawn trace", unit: "Ω" },
+      { symbol: "ρ(T)", description: "Copper resistivity, 1/58 Ω·mm²/m at 20 °C, rising 0.393 % per °C", unit: "Ω·m" },
+      { symbol: "L", description: "Trace length", unit: "mm" },
+      { symbol: "W", description: "Drawn trace width", unit: "mm" }
     ],
-    reference: "IPC-2221B Section 6.2; IPC-2152"
+    derivation: [
+      "IPC prints charts, not formulas: I = k·ΔT^0.44·A^0.725 is the published fit to them",
+      "IPC-2221 (1998) and IPC-2221A (2003) Figure 6-4: k = 0.048 for an external layer (chart A), 0.024 for an internal one (chart C)",
+      "IPC-2152 (2009) Figure 5-1, its conservative chart for every conductor, is IPC-2221 chart C kept: k = 0.024 on either layer",
+      "Solved for the cross-section, A = (I/(k·ΔT^0.44))^(1/0.725), and divided by the copper thickness for the width",
+      "The resistance, voltage drop and power are for the drawn width W, at a 25 °C ambient plus the allowed rise"
+    ],
+    reference: "IPC-2221A (May 2003) §6.2, Figure 6-4 (the chart of IPC-2221, February 1998), through its published fit; IPC-2152 (August 2009) §5, Figure 5-1"
   },
   assumptions: [
     {
       code: "ipc-2221-fit",
-      text: "The IPC-2221 width is the standard’s chart fit A = (I/(k·ΔT^0.44))^(1/0.725), with A in mil², k = 0.048 for an external layer and 0.024 for an internal one."
+      text: "The IPC-2221 width is IPC-2221 Figure 6-4 through its published fit A = (I/(k·ΔT^0.44))^(1/0.725), with A in mil², k = 0.048 for an external layer (chart A) and 0.024 for an internal one (chart C). Chart A draws 10 to 100 °C and chart C 10 to 45 °C, both to 700 sq mil; the curves include IPC-2221’s 10 % derating, and its note 2 (a further 15 % for boards 0.8 mm or thinner or copper 108 µm or thicker) is not applied."
     },
     {
-      code: "ipc-2152-scaled",
-      text: "The IPC-2152 width is not read from IPC-2152’s charts: it is the IPC-2221 width scaled by a fixed 0.75 (external) or 0.85 (internal), with none of IPC-2152’s corrections for board thickness or nearby copper planes."
+      code: "ipc-2152-figure-5-1",
+      text: "The IPC-2152 width is read on IPC-2152 Figure 5-1, the chart IPC-2152 recommends for internal and external conductors in all environments, through the same fit with k = 0.024 on either layer. It is the conservative answer for a board about which nothing else is known: IPC-2152’s detailed method, which narrows the trace for the board’s thickness and a copper plane under it, is not applied."
     },
     {
       code: "steady-state-dc",
@@ -2518,28 +2648,48 @@ var traceWidthCurrent = {
     },
     {
       code: "copper-weight",
-      text: "Copper is 1.37 mil (34.8 µm) thick per ounce, and the trace cross-section is a rectangle of that thickness."
+      text: "Copper is 35 µm (1.378 mil) thick per ounce, and the trace cross-section is a rectangle of that thickness."
     },
     {
       code: "resistance-at-temperature",
-      text: "Resistance, voltage drop and power use the IPC-2221 width and ρ = 1.72×10⁻⁸ Ω·m at 20 °C with α = 0.00393 /°C, evaluated at a 25 °C ambient plus the allowed rise."
+      text: "Resistance, voltage drop and power are for the drawn trace width, with ρ = 1/58 Ω·mm²/m (IEC 60028, 1.7241×10⁻⁸ Ω·m) at 20 °C and α = 0.00393 /°C, evaluated at a 25 °C ambient plus the allowed rise."
     }
   ],
+  fittedModel: {
+    description: "IPC-2152 Figure 5-1 through I = 0.024·ΔT^0.44·A^0.725, checked against IPC-2221 (1998) Figure 6-4 chart C (the same chart) at 10 to 45 °C and up to 700 sq mil: the cross-section is within −3.5 % to +4.4 % of 12 chart readings, and 11.3 % short at 10 °C and 700 sq mil",
+    worstCaseError: 0.12,
+    insideOutput: "inChartRange"
+  },
+  validity: TRACE_WIDTH_VALIDITY,
   visualization: { type: "none" },
   relatedCalculators: ["microstrip-impedance", "trace-resistance", "via-calculator"],
   relatedBlogPosts: ["microstrip-impedance-design-guide", "microstrip-impedance", "pcb-trace-width-current-capacity"],
   verificationData: [
     {
-      inputs: { current: 1, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1 },
-      expectedOutputs: { width2221mm: 0.302 },
-      tolerance: 0.02,
-      source: "IPC-2221B formula: A=(I/(k·ΔT^b))^(1/c), k=0.048 b=0.44 c=0.725"
+      inputs: { current: 1, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1, traceWidth: 0.5 },
+      expectedOutputs: { width2221mm: 0.3004 },
+      tolerance: 1e-3,
+      source: "IPC-2221A (2003) Figure 6-4 chart A through its published fit A = (I/(k·ΔT^0.44))^(1/0.725), k = 0.048, at 35 µm per ounce"
     },
     {
-      inputs: { current: 5, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1 },
-      expectedOutputs: { width2221mm: 2.782 },
-      tolerance: 0.02,
-      source: "IPC-2221B formula: A=(I/(k·ΔT^b))^(1/c), k=0.048 b=0.44 c=0.725"
+      inputs: { current: 5, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1, traceWidth: 0.5 },
+      expectedOutputs: { width2221mm: 2.7655 },
+      tolerance: 1e-3,
+      source: "IPC-2221A (2003) Figure 6-4 chart A through its published fit A = (I/(k·ΔT^0.44))^(1/0.725), k = 0.048, at 35 µm per ounce"
+    },
+    {
+      // 300 sq mil / 1.378 mil = 217.7 mil = 5.530 mm
+      inputs: { current: 4, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1, traceWidth: 0.5 },
+      expectedOutputs: { width2152mm: 5.53 },
+      tolerance: 0.05,
+      source: 'J. Olson, "Determining Circuit Board Current Carrying Capability" (CID+, 2010): IPC-2152 Figure 5-1 read at 4 A and a 10 °C rise, about 300 sq mil'
+    },
+    {
+      // 680 sq mil / 1.378 mil = 493.5 mil = 12.534 mm
+      inputs: { current: 10, copperWeight: 1, tempRise: 20, traceLength: 100, isExternal: 0, traceWidth: 0.5 },
+      expectedOutputs: { width2152mm: 12.534 },
+      tolerance: 0.05,
+      source: 'J. Olson, "Determining Circuit Board Current Carrying Capability" (CID+, 2010): IPC-2152 Figure 5-1 read at 10 A and a 20 °C rise, about 680 sq mil'
     }
   ]
 };
@@ -3554,7 +3704,7 @@ var viaCalculator = {
       "IPC-2141A gives the pad-to-antipad capacitance as C = 0.0554*er*T*D/(D_a - D) pF with dimensions in mm. Both plates appear: the pad is one, the antipad edge is the other, and the gap between them is the denominator. Widening the clearance is the cheapest way to cut via capacitance, which is why high-speed stack-ups specify oversized antipads.",
       "Current capacity uses the plated annulus. Copper deposits on the wall of the drilled hole, so it occupies radius d/2 - t out to d/2, giving A = pi*t*(d - t). Growing the plating outward from the drill radius instead overstates the area by roughly 18 percent on a 0.3 mm via with 25 um plating, and overstates the current by about 13 percent."
     ],
-    reference: 'IPC-2141A; IPC-2221B; Howard Johnson "High-Speed Signal Propagation"'
+    reference: 'IPC-2141A; IPC-2221A (2003) Figure 6-4, chart A (the chart of IPC-2221, 1998), through its published fit, for the current capacity; Howard Johnson "High-Speed Signal Propagation"'
   },
   assumptions: [
     {
@@ -4760,7 +4910,7 @@ var L_KEYS = ["L1_uH", "L4_uH", "L6_uH", "L8_uH", "L10_uH"];
 var BP_L_KEYS = ["bpL1_uH", "bpL3_uH", "bpL5_uH", "bpL7_uH", "bpL9_uH"];
 var BP_C_KEYS = ["bpC2_nF", "bpC4_nF", "bpC6_nF", "bpC8_nF", "bpC10_nF"];
 function ladderValues(g, filterType, omega, z0, q) {
-  const C7 = [0, 0, 0, 0, 0];
+  const C8 = [0, 0, 0, 0, 0];
   const L = [0, 0, 0, 0, 0];
   const bpL = [0, 0, 0, 0, 0];
   const bpC = [0, 0, 0, 0, 0];
@@ -4769,23 +4919,23 @@ function ladderValues(g, filterType, omega, z0, q) {
     const m = Math.floor(k / 2);
     const odd = k % 2 === 0;
     if (filterType === 1) {
-      if (odd) C7[m] = 1 / (omega * gk * z0) * 1e9;
+      if (odd) C8[m] = 1 / (omega * gk * z0) * 1e9;
       else L[m] = z0 / (omega * gk) * 1e6;
     } else if (filterType === 2) {
       if (odd) {
-        C7[m] = gk / (omega * delta * z0) * 1e9;
+        C8[m] = gk / (omega * delta * z0) * 1e9;
         bpL[m] = delta * z0 / (omega * gk) * 1e6;
       } else {
         L[m] = gk * z0 / (omega * delta) * 1e6;
         bpC[m] = delta / (omega * gk * z0) * 1e9;
       }
     } else if (odd) {
-      C7[m] = gk / (omega * z0) * 1e9;
+      C8[m] = gk / (omega * z0) * 1e9;
     } else {
       L[m] = gk * z0 / omega * 1e6;
     }
   });
-  return { C: C7, L, bpL, bpC };
+  return { C: C8, L, bpL, bpC };
 }
 function calculateFilterDesigner(inputs) {
   const { responseType = 0, filterType, fc, order, impedance, qFactor: qFactor2, eSeries = 0 } = inputs;
@@ -4801,7 +4951,7 @@ function calculateFilterDesigner(inputs) {
   const type = Math.round(filterType);
   const g = (isChebyshev ? CHEBYSHEV_05_G : BUTTERWORTH_G)[clampedOrder];
   const tau_ns = clampedOrder === 1 && !isChebyshev ? 1 / omega_c * 1e9 : 0;
-  const { C: C7, L, bpL, bpC } = ladderValues(g, type, omega_c, impedance, qFactor2 > 0 ? qFactor2 : 1);
+  const { C: C8, L, bpL, bpC } = ladderValues(g, type, omega_c, impedance, qFactor2 > 0 ? qFactor2 : 1);
   let attenuation_at_2fc;
   if (isChebyshev) {
     const epsilon = Math.sqrt(Math.pow(10, CHEBYSHEV_RIPPLE_DB / 10) - 1);
@@ -4829,14 +4979,14 @@ function calculateFilterDesigner(inputs) {
       maxComponentError = Math.max(maxComponentError, Math.abs(result.error));
       return result.snapped;
     };
-    for (const arr of [C7, L, bpL, bpC]) {
+    for (const arr of [C8, L, bpL, bpC]) {
       for (let i = 0; i < arr.length; i++) arr[i] = snapValue(arr[i]);
     }
     fcShiftPercent = maxComponentError * 0.5;
   }
   const values = {};
   C_KEYS.forEach((k, i) => {
-    values[k] = C7[i];
+    values[k] = C8[i];
   });
   L_KEYS.forEach((k, i) => {
     values[k] = L[i];
@@ -7733,6 +7883,32 @@ var heatsinkCalculator = {
 };
 
 // src/lib/calculators/thermal/pcb-trace-temp.ts
+var FIGURE_5_12 = "IPC-2152 (2009) Figure 5-1, which is IPC-2221 (1998) Figure 6-4 chart C";
+var TRACE_TEMP_VALIDITY = [
+  {
+    quantity: "tempRise2152",
+    min: 10,
+    max: 45,
+    label: "Temperature rise on IPC-2152 Figure 5-1",
+    unit: "°C",
+    source: `${FIGURE_5_12}: curves at 10, 20, 30 and 45 °C`
+  },
+  {
+    quantity: "area",
+    max: 700,
+    label: "Cross-section",
+    unit: "sq mil",
+    source: "IPC-2221 (1998) Figure 6-4, charts A and C, and IPC-2152 (2009) Figure 5-1: drawn to 700 sq mil"
+  },
+  {
+    quantity: "copperWeight",
+    min: 0.5,
+    max: 3,
+    label: "Copper weight",
+    unit: "oz",
+    source: "IPC-2221 (1998) Figure 6-4 chart B: ½, 1, 2 and 3 oz"
+  }
+];
 function calculatePcbTraceTemp(inputs) {
   const { current, traceWidth, copperWeight, ambientTemp, traceLength } = inputs;
   if (current <= 0) {
@@ -7750,14 +7926,26 @@ function calculatePcbTraceTemp(inputs) {
   const tempRise = Math.pow(current / (0.048 * Math.pow(crossSection_mils2, 0.725)), 1 / 0.44);
   const maxTemp = ambientTemp + tempRise;
   const currentCapacity = 0.048 * Math.pow(crossSection_mils2, 0.725) * Math.pow(10, 0.44);
+  const tempRise2152 = Math.pow(current / (0.024 * Math.pow(crossSection_mils2, 0.725)), 1 / 0.44);
+  const maxTemp2152 = ambientTemp + tempRise2152;
+  const inChartRange = tempRise2152 >= 10 && tempRise2152 <= 45 && crossSection_mils2 <= 700 ? 1 : 0;
+  const warnings = checkValidity(TRACE_TEMP_VALIDITY, {
+    tempRise2152,
+    area: crossSection_mils2,
+    copperWeight
+  });
   return {
     values: {
       tempRise,
       maxTemp,
       traceResistance: traceResistance2,
       powerDissipated,
-      currentCapacity
-    }
+      currentCapacity,
+      tempRise2152,
+      maxTemp2152,
+      inChartRange
+    },
+    warnings
   };
 }
 var pcbTraceTemp = {
@@ -7766,7 +7954,7 @@ var pcbTraceTemp = {
   shortTitle: "Trace Temp",
   metaTitle: "PCB Trace Temperature Rise — Free Thermal Design Tool",
   category: "thermal",
-  description: "Calculate PCB copper trace temperature rise under load current with the IPC-2221 external-layer fit. Enter trace width, thickness, and current to get ΔT above ambient. Essential for thermal PCB design and reliability engineering. Free, instant results.",
+  description: "Calculate PCB copper trace temperature rise under load current with the IPC-2221 external-layer fit and IPC-2152 Figure 5-1. Enter trace width, thickness, and current to get ΔT above ambient. Essential for thermal PCB design and reliability engineering. Free, instant results.",
   keywords: ["PCB trace temperature", "IPC-2152", "trace heating", "copper trace", "current capacity", "thermal"],
   inputs: [
     {
@@ -7820,7 +8008,7 @@ var pcbTraceTemp = {
   outputs: [
     {
       key: "tempRise",
-      label: "Temperature Rise",
+      label: "Temperature Rise (IPC-2221)",
       symbol: "ΔT",
       unit: "°C",
       precision: 1,
@@ -7832,7 +8020,7 @@ var pcbTraceTemp = {
     },
     {
       key: "maxTemp",
-      label: "Maximum Trace Temperature",
+      label: "Maximum Trace Temperature (IPC-2221)",
       symbol: "T_max",
       unit: "°C",
       precision: 1,
@@ -7858,31 +8046,88 @@ var pcbTraceTemp = {
     },
     {
       key: "currentCapacity",
-      label: "Current Capacity (ΔT=10°C)",
+      label: "Current Capacity (IPC-2221, ΔT=10°C)",
       symbol: "I_max",
       unit: "A",
       precision: 2
+    },
+    {
+      key: "tempRise2152",
+      label: "Temperature Rise (IPC-2152 Fig. 5-1)",
+      symbol: "ΔT₂₁₅₂",
+      unit: "°C",
+      precision: 1,
+      tooltip: "IPC-2152 Figure 5-1, the conservative chart for internal and external conductors: 4.832 times the IPC-2221 external-layer rise",
+      thresholds: {
+        good: { max: 10 },
+        warning: { max: 30 },
+        danger: { max: 30 }
+      }
+    },
+    {
+      key: "maxTemp2152",
+      label: "Maximum Trace Temperature (IPC-2152 Fig. 5-1)",
+      symbol: "T_max,2152",
+      unit: "°C",
+      precision: 1,
+      thresholds: {
+        good: { max: 55 },
+        warning: { max: 85 },
+        danger: { max: 85 }
+      }
+    },
+    {
+      key: "inChartRange",
+      label: "Within IPC-2152 Fig. 5-1 Range",
+      unit: "",
+      precision: 0,
+      tooltip: "1 when the Figure 5-1 rise is between 10 and 45 °C and the cross-section at most 700 sq mil, the range the chart draws",
+      thresholds: { danger: { max: 0.5 } }
     }
   ],
   calculate: calculatePcbTraceTemp,
   formula: {
-    primary: "ΔT = (I / (k × A^c))^(1/b) = (I / (0.048 × A^0.725))^(1/0.44) — IPC-2221 external-layer fit",
-    latex: "\\Delta T = \\left(\\frac{I}{k \\cdot A^{0.725}}\\right)^{1/0.44},\\quad k = 0.048 \\text{ (external)},\\ A \\text{ in mil}^2",
+    primary: "ΔT = (I / (k × A^c))^(1/b) = (I / (0.048 × A^0.725))^(1/0.44) — IPC-2221 external-layer fit; ΔT₂₁₅₂ = (I / (0.024 × A^0.725))^(1/0.44) — IPC-2152 Figure 5-1",
+    latex: "\\Delta T = \\left(\\frac{I}{k \\cdot A^{0.725}}\\right)^{1/0.44},\\quad k = 0.048 \\text{ (IPC-2221, external)},\\ 0.024 \\text{ (IPC-2152 Fig. 5-1)},\\ A \\text{ in mil}^2",
     variables: [
       { symbol: "ΔT", description: "Temperature rise above ambient", unit: "°C" },
       { symbol: "I", description: "Trace current", unit: "A" },
-      { symbol: "k", description: "IPC-2221 constant (external: 0.048)", unit: "" },
+      { symbol: "k", description: "Chart constant: 0.048 on IPC-2221 chart A (external), 0.024 on IPC-2152 Figure 5-1 (any layer)", unit: "" },
       { symbol: "b", description: "IPC-2221 exponent (0.44)", unit: "" },
       { symbol: "c", description: "IPC-2221 cross-section exponent (0.725)", unit: "" },
       { symbol: "A", description: "Conductor cross-section (width × thickness)", unit: "mil²" }
     ],
     derivation: [
-      "IPC-2221 fit to its conductor charts: I = k · ΔT^0.44 · A^0.725, k = 0.048 for external layers (0.024 internal, not applied here)",
-      "Solved for the rise: ΔT = (I / (k · A^0.725))^(1/0.44)",
-      "IPC-2152 (2009) replaces the charts with newer data and publishes no closed form; this calculator does not implement it"
+      "IPC prints charts, not formulas: I = k · ΔT^0.44 · A^0.725 is the published fit to them",
+      "IPC-2221 chart A, external layers: k = 0.048, so ΔT = (I / (0.048 · A^0.725))^(1/0.44)",
+      "IPC-2152 (2009) Figure 5-1, its conservative chart for internal and external conductors, is IPC-2221's internal chart: k = 0.024, so its rise is 2^(1/0.44) = 4.832 times chart A's"
     ],
-    reference: "IPC-2221B Appendix B (external layers)"
+    reference: "IPC-2221A (May 2003) §6.2, Figure 6-4, chart A (the chart of IPC-2221, February 1998), through its published fit; IPC-2152 (August 2009) §5, Figure 5-1"
   },
+  assumptions: [
+    {
+      code: "ipc-2221-external-fit",
+      text: "The IPC-2221 rise is IPC-2221 Figure 6-4 chart A, the external-layer chart, through its published fit with k = 0.048; chart A draws 10 to 100 °C up to 700 sq mil, and the internal-layer chart is not applied to this rise."
+    },
+    {
+      code: "ipc-2152-figure-5-1",
+      text: "The IPC-2152 rise is read on IPC-2152 Figure 5-1, the chart IPC-2152 recommends for internal and external conductors in all environments, through the same fit with k = 0.024 on either layer; IPC-2152’s corrections for board thickness and a nearby copper plane are not applied."
+    },
+    {
+      code: "copper-weight",
+      text: "Copper is 35 µm thick per ounce, and the trace cross-section is a rectangle of that thickness."
+    },
+    {
+      code: "resistance-at-20c",
+      text: "The trace resistance and power use ρ = 0.01724 Ω·mm²/m at 20 °C, not corrected for the trace’s temperature."
+    }
+  ],
+  fittedModel: {
+    description: "IPC-2152 Figure 5-1 through I = 0.024·ΔT^0.44·A^0.725, checked against IPC-2221 (1998) Figure 6-4 chart C (the same chart) at 10 to 45 °C and up to 700 sq mil: the rise is within −5.7 % to +7.3 % of 12 chart readings, and 18 % low at 10 °C and 700 sq mil",
+    worstCaseError: 0.18,
+    insideOutput: "inChartRange"
+  },
+  validity: TRACE_TEMP_VALIDITY,
   visualization: { type: "none" },
   relatedCalculators: ["heatsink-calculator", "trace-width-current", "trace-resistance"],
   relatedBlogPosts: ["pcb-trace-width-current-capacity", "trace-width-current"]
@@ -8720,8 +8965,8 @@ function calculateQFactor(inputs) {
     const L = value * 1e-6;
     reactance = omega * L;
   } else {
-    const C7 = value * 1e-9;
-    reactance = 1 / (omega * C7);
+    const C8 = value * 1e-9;
+    reactance = 1 / (omega * C8);
   }
   const qFactor2 = reactance / esr;
   const bandwidth = frequency * 1e3 / qFactor2;
@@ -10411,38 +10656,6 @@ var freeSpacePathLoss = {
     ]
   }
 };
-
-// src/lib/calculators/validity.ts
-function bound(value, unit) {
-  if (!unit) return String(value);
-  return unit === "°" ? `${value}°` : `${value} ${unit}`;
-}
-function range(b) {
-  if (b.min !== void 0 && b.min === b.max) return `exactly ${bound(b.min, b.unit)}`;
-  if (b.min !== void 0 && b.max !== void 0) {
-    return `${String(b.min)} to ${bound(b.max, b.unit)}`;
-  }
-  if (b.min !== void 0) return `at least ${bound(b.min, b.unit)}`;
-  return `at most ${bound(b.max, b.unit)}`;
-}
-function checkValidity(bounds, values) {
-  const warnings = [];
-  for (const b of bounds ?? []) {
-    if (!(b.quantity in values)) {
-      throw new Error(`checkValidity: no value given for the bounded quantity "${b.quantity}"`);
-    }
-    const v = values[b.quantity];
-    if (Number.isNaN(v)) continue;
-    let breach = null;
-    if (b.min !== void 0 && v < b.min) breach = `below ${bound(b.min, b.unit)}`;
-    else if (b.max !== void 0 && v > b.max) breach = `above ${bound(b.max, b.unit)}`;
-    if (breach === null) continue;
-    warnings.push(
-      `${b.label ?? b.quantity} is ${breach}; the model holds for ${range(b)} (${b.source}). The result is extrapolated.`
-    );
-  }
-  return warnings;
-}
 
 // src/lib/calculators/rf/radar-range-equation.ts
 var ALBERSHEIM_VALIDITY = [
@@ -13182,7 +13395,7 @@ var loopAntenna = {
 };
 
 // src/lib/calculators/antenna/helical-antenna.ts
-var C = 299792458;
+var C2 = 299792458;
 var KRAUS = "Kraus & Marhefka, Antennas for All Applications, 3rd ed. (2002), ch. 8; Balanis, Antenna Theory, 4th ed. (2016), §10.3.1";
 var HELICAL_VALIDITY = [
   { quantity: "circumferenceWavelengths", min: 0.75, max: 1.33, label: "Circumference C/λ", source: KRAUS },
@@ -13203,7 +13416,7 @@ function calculateHelicalAntenna(inputs) {
   if (conductorDiameter >= spacing) {
     return { values: {}, errors: ["The conductor must be thinner than the turn spacing, or adjacent turns touch"] };
   }
-  const wavelength = C / (frequency * 1e6) * 1e3;
+  const wavelength = C2 / (frequency * 1e6) * 1e3;
   const circumference = Math.PI * diameter;
   const cl = circumference / wavelength;
   const sl = spacing / wavelength;
@@ -13485,9 +13698,9 @@ function sici(x) {
 }
 
 // src/lib/calculators/antenna/monopole-antenna.ts
-var C2 = 299792458;
+var C3 = 299792458;
 var MU0 = 125663706212e-17;
-var ETA0 = MU0 * C2;
+var ETA0 = MU0 * C3;
 var PATTERN_STEPS = 900;
 var UNREPORTED_OFFSET = 0.01;
 var MONOPOLE_VALIDITY = [
@@ -13522,7 +13735,7 @@ function calculateMonopoleAntenna(inputs) {
   if (!(velocityFactor > 0 && velocityFactor <= 1)) {
     return { values: {}, errors: ["Velocity factor must be between 0 and 1"] };
   }
-  const lambda = C2 / (frequency * 1e6);
+  const lambda = C3 / (frequency * 1e6);
   const k = 2 * Math.PI / lambda;
   const h = height / 1e3;
   const a = conductorDiameter / 2e3;
@@ -13971,7 +14184,7 @@ var antennaDowntilt = {
 };
 
 // src/lib/calculators/rf/line-of-sight.ts
-var C3 = 299792458;
+var C4 = 299792458;
 var EARTH_RADIUS2 = 6371e3;
 var LINE_OF_SIGHT_VALIDITY = [
   {
@@ -14005,7 +14218,7 @@ function calculateLineOfSight(inputs) {
   const d = pathLength * 1e3;
   const d1 = pointDistance * 1e3;
   const d2 = d - d1;
-  const lambda = C3 / (frequency * 1e9);
+  const lambda = C4 / (frequency * 1e9);
   const horizon1 = Math.sqrt(2 * ae * antennaHeight1);
   const horizon2 = Math.sqrt(2 * ae * antennaHeight2);
   const bulge = d1 * d2 / (2 * ae);
@@ -14228,7 +14441,7 @@ var lineOfSight = {
 };
 
 // src/lib/calculators/rf/wilkinson-power-divider.ts
-var C4 = 299792458;
+var C5 = 299792458;
 var RANGE_SOURCE = "the realisable line-impedance range entered on this page; Pozar, Microwave Engineering, 4th ed. (2012), Example 8.6, p. 424, takes 20 to 120 Ω as the practical microstrip extremes";
 function wilkinsonValidity(zMin, zMax) {
   const line = (quantity, label) => ({
@@ -14266,7 +14479,7 @@ function calculateWilkinson(inputs) {
   const port3Transformer = z0 / Math.sqrt(K);
   const port2Share = -10 * Math.log10(1 + powerRatio);
   const port3Share = 10 * Math.log10(powerRatio / (1 + powerRatio));
-  const quarterWaveLength = C4 / (4 * frequency * 1e9 * Math.sqrt(effPermittivity)) * 1e3;
+  const quarterWaveLength = C5 / (4 * frequency * 1e9 * Math.sqrt(effPermittivity)) * 1e3;
   const warnings = checkValidity(wilkinsonValidity(zMin, zMax), {
     arm2Impedance,
     arm3Impedance,
@@ -14691,9 +14904,9 @@ var directionalCoupler = {
 };
 
 // src/lib/calculators/rf/circular-waveguide.ts
-var C5 = 299792458;
+var C6 = 299792458;
 var MU02 = 125663706212e-17;
-var ETA02 = MU02 * C5;
+var ETA02 = MU02 * C6;
 var NP_TO_DB = 20 / Math.LN10;
 var TM_ROOTS = [
   [2.4048255577, 5.5200781103, 8.6537279129, 11.791534439, 14.9309177085],
@@ -14744,10 +14957,10 @@ function calculateCircularWaveguide(inputs) {
   const f = frequency * 1e9;
   const sqrtEr = Math.sqrt(permittivity);
   const chi = type === 0 ? TE_ROOTS[n][m - 1] : TM_ROOTS[n][m - 1];
-  const cutoff = C5 * chi / (2 * Math.PI * a * sqrtEr);
-  const te11Cutoff = C5 * TE_ROOTS[1][0] / (2 * Math.PI * a * sqrtEr);
-  const tm01Cutoff = C5 * TM_ROOTS[0][0] / (2 * Math.PI * a * sqrtEr);
-  const k = 2 * Math.PI * f * sqrtEr / C5;
+  const cutoff = C6 * chi / (2 * Math.PI * a * sqrtEr);
+  const te11Cutoff = C6 * TE_ROOTS[1][0] / (2 * Math.PI * a * sqrtEr);
+  const tm01Cutoff = C6 * TM_ROOTS[0][0] / (2 * Math.PI * a * sqrtEr);
+  const k = 2 * Math.PI * f * sqrtEr / C6;
   const kc = chi / a;
   const eta = ETA02 / sqrtEr;
   const sigma = conductivity * 1e6;
@@ -14786,8 +14999,8 @@ function calculateCircularWaveguide(inputs) {
   values.propagates = 1;
   values.beta = beta;
   values.guideWavelength = 2 * Math.PI / beta * 1e3;
-  values.phaseVelocity = phaseVelocity / C5;
-  values.groupVelocity = C5 / (permittivity * phaseVelocity);
+  values.phaseVelocity = phaseVelocity / C6;
+  values.groupVelocity = C6 / (permittivity * phaseVelocity);
   values.waveImpedance = type === 0 ? k * eta / beta : beta * eta / k;
   values.conductorAttenuation = alphaC * NP_TO_DB;
   values.dielectricAttenuation = alphaD * NP_TO_DB;
@@ -23497,15 +23710,15 @@ var strainGaugeBridge = {
 function calculatePt100Resistance(inputs) {
   const { temperature, r0 } = inputs;
   const A = 39083e-7;
-  const B = -5775e-10;
-  const C7 = -4183e-15;
+  const B2 = -5775e-10;
+  const C8 = -4183e-15;
   let resistance;
   if (temperature >= 0) {
-    resistance = r0 * (1 + A * temperature + B * temperature ** 2);
+    resistance = r0 * (1 + A * temperature + B2 * temperature ** 2);
   } else {
-    resistance = r0 * (1 + A * temperature + B * temperature ** 2 + C7 * (temperature - 100) * temperature ** 3);
+    resistance = r0 * (1 + A * temperature + B2 * temperature ** 2 + C8 * (temperature - 100) * temperature ** 3);
   }
-  const sensitivityOhmPerDeg = temperature >= 0 ? r0 * (A + 2 * B * temperature) : r0 * (A + 2 * B * temperature + C7 * (4 * temperature ** 3 - 300 * temperature ** 2));
+  const sensitivityOhmPerDeg = temperature >= 0 ? r0 * (A + 2 * B2 * temperature) : r0 * (A + 2 * B2 * temperature + C8 * (4 * temperature ** 3 - 300 * temperature ** 2));
   return { values: { resistance, sensitivityOhmPerDeg } };
 }
 var pt100Resistance = {
@@ -29845,13 +30058,13 @@ var emiFilterLc = {
     const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)}μF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)}nF` : `${+(uf * 1e6).toPrecision(3)}pF`;
     const fmtL = (uh) => uh >= 1 ? `${+uh.toPrecision(3)}μH` : `${+(uh * 1e3).toPrecision(3)}nH`;
     const L = fmtL(outputs.inductance);
-    const C7 = fmtC(outputs.capacitance);
+    const C8 = fmtC(outputs.capacitance);
     return [{
       label: "Pi LC EMI Filter",
       elements: [
-        { type: "C", placement: "shunt", label: `C1 ${C7}` },
+        { type: "C", placement: "shunt", label: `C1 ${C8}` },
         { type: "L", placement: "series", label: `L ${L}` },
-        { type: "C", placement: "shunt", label: `C2 ${C7}` }
+        { type: "C", placement: "shunt", label: `C2 ${C8}` }
       ]
     }];
   },
@@ -34639,14 +34852,14 @@ var fusingCurrent = {
 
 // src/lib/calculators/unit-conversion/length-units.ts
 var MM_PER_INCH = 25.4;
-var MM_PER_MIL = MM_PER_INCH / 1e3;
+var MM_PER_MIL2 = MM_PER_INCH / 1e3;
 var MM_PER_OZ_COPPER = 0.0348;
 function calculateLengthUnits(inputs) {
   const { millimeter } = inputs;
   return {
     values: {
       micrometer: millimeter * 1e3,
-      mil: millimeter / MM_PER_MIL,
+      mil: millimeter / MM_PER_MIL2,
       inch: millimeter / MM_PER_INCH,
       centimeter: millimeter / 10,
       meter: millimeter / 1e3,
@@ -36297,11 +36510,11 @@ function calculateViaStepResponse(inputs) {
   const inductanceNH = 0.2 * h * (Math.log(4 * h / d) + 0.5);
   const capacitancePF = 0.0554 * er * h * d1 / (d2 - d1);
   const L = inductanceNH * 1e-9;
-  const C7 = capacitancePF * 1e-12;
-  const zViaOhm = Math.sqrt(L / C7);
-  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C7)) / 1e9;
-  const excessC = C7 - L / (z0 * z0);
-  const excessL = L - C7 * z0 * z0;
+  const C8 = capacitancePF * 1e-12;
+  const zViaOhm = Math.sqrt(L / C8);
+  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C8)) / 1e9;
+  const excessC = C8 - L / (z0 * z0);
+  const excessL = L - C8 * z0 * z0;
   const excessCapacitancePF = excessC * 1e12;
   const excessInductanceNH = excessL * 1e9;
   const trIn = riseTime * 1e-12;
@@ -36764,13 +36977,13 @@ var microviaCurrentCapacity = {
     ],
     derivation: [
       "Plating deposits on the wall of the laser-drilled hole, so the copper occupies an annulus from radius D/2 − t out to D/2. Its area is π[(D/2)² − (D/2 − t)²] = π·t·(D − t). A 100 µm microvia with 18 µm plating has about 0.00464 mm² of copper — roughly one fifth of a 0.3 mm through-hole via.",
-      "IPC-2221 gives conductor current capacity as I = k·ΔT^0.44·A^0.725 with A in square mils. The exponents come from a fit to measured trace data: capacity rises sub-linearly with area because a wider conductor also has more of itself far from the cooling surface.",
-      "The constant k encodes how easily heat escapes. IPC specifies 0.024 for internal conductors and 0.048 for external ones — a 2× derating for being buried in laminate. A microvia is buried, but it is also very short and bonded at both ends to copper pads that conduct heat away far better than laminate does. Both bounds are reported because the honest answer lies between them.",
+      "IPC-2221 publishes conductor current capacity as a chart (Figure 6-4); I = k·ΔT^0.44·A^0.725 with A in square mils is the published fit to it. Capacity rises sub-linearly with area because a wider conductor also has more of itself far from the cooling surface.",
+      "The constant k encodes how easily heat escapes. The fit gives 0.024 on IPC-2221's internal-conductor chart and 0.048 on its external one — a 2× derating for being buried in laminate. A microvia is buried, but it is also very short and bonded at both ends to copper pads that conduct heat away far better than laminate does. Both bounds are reported because the honest answer lies between them.",
       "DC resistance follows from the same area: R = ρ(T)·L/A with ρ(T) = ρ₂₀[1 + α(T − 20)]. Because a microvia is only 50–100 µm long, R is a fraction of a milliohm even at that small cross-section — a 100 µm microvia is well under a milliohm, considerably less than a 1.6 mm through-hole via despite having far less copper.",
       "That short length is also why steady-state self-heating is a red herring. Modelling the barrel as a conduction path of thermal resistance θ = L/(k_Cu·A) gives tens of °C/W, so at a few hundred milliwatts the rise is thousandths of a degree. The barrel is not what fails.",
       "What does fail is the target-pad interface. Under thermal cycling the z-axis expansion of the dielectric pulls the plated barrel away from the target pad, and microvia reliability is qualified by thermal shock testing (IPC-TM-650 2.6.27), not by a current formula. Stacked microvias are worse than staggered ones for exactly this reason."
     ],
-    reference: "IPC-2221B (conductor current capacity); IPC-2226 (HDI design, microvia definition and aspect ratio); IPC-6012 (plating thickness classes); IPC-TM-650 2.6.27 (microvia thermal shock)"
+    reference: "IPC-2221A (2003) Figure 6-4 (conductor current capacity, the chart of IPC-2221, 1998), through its published fit; IPC-2226 (HDI design, microvia definition and aspect ratio); IPC-6012 (plating thickness classes); IPC-TM-650 2.6.27 (microvia thermal shock)"
   },
   visualization: { type: "none" },
   relatedCalculators: [
@@ -37505,7 +37718,7 @@ var edgeCoupledEmbedded = {
 };
 
 // src/lib/calculators/pcb/differential-via.ts
-var C6 = 299792458;
+var C7 = 299792458;
 var ETA_03 = 376.730313412;
 var MU_02 = 4e-7 * Math.PI;
 var SIGMA_CU = 58e6;
@@ -37545,10 +37758,10 @@ function calculateDifferentialVia(inputs) {
   const commonImpedance = evenImpedance / 2;
   const singleEnded = evenImpedance;
   const stubLength = Math.max(boardThickness - exitDepth, 0);
-  const vp = C6 / sqrtEr;
+  const vp = C7 / sqrtEr;
   const stubResonance = stubLength > 0 ? vp / (4 * stubLength * 1e-3) / 1e9 : 0;
   const lossPerMm = (fHz) => {
-    const dielectric2 = Math.PI * fHz * sqrtEr * lossTangent / C6 * NEPER_TO_DB * 1e-3;
+    const dielectric2 = Math.PI * fHz * sqrtEr * lossTangent / C7 * NEPER_TO_DB * 1e-3;
     const surfaceR = Math.sqrt(Math.PI * fHz * MU_02 / SIGMA_CU);
     const perimeter = Math.PI * barrelDiameter * 1e-3;
     const conductor2 = 2 * surfaceR / (diffImpedance * perimeter) * NEPER_TO_DB * 1e-3;
