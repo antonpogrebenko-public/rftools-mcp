@@ -98,6 +98,16 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.5.4
+
+No tool or name changed. `trace-width-current`'s IPC-2152 width
+(`width2152mm`) is now IPC-2152 Figure 5-1 (the conservative chart, by its
+published closed form) instead of IPC-2221 × 0.75/0.85, which erred on the
+unsafe side: 5 A at a 10 °C rise in 1 oz copper needs 7.19 mm, not 2.09 mm.
+A new optional `traceWidth` input sets the width that resistance, voltage
+drop and power are computed at. `pcb-trace-temp` adds the Figure 5-1 rise
+and maximum temperature (rftools.io changelog, 2026-10-12).
+
 ### What changed in 2.5.3
 
 No tool, argument or name changed. Twelve calculators now compute the model
