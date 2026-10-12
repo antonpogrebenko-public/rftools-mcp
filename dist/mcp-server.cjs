@@ -1342,10 +1342,11 @@ function calculateCoaxImpedance(inputs) {
   }
   const ratio = D / d;
   const lnRatio = Math.log(ratio);
-  const impedance = 60 / Math.sqrt(er) * lnRatio;
-  const eps0 = 8854187817e-21;
+  const mu0 = 125663706212e-17;
+  const eps0 = 88541878128e-22;
+  const eta0 = mu0 * 299792458;
+  const impedance = eta0 / (2 * Math.PI) / Math.sqrt(er) * lnRatio;
   const capacitancePFm = 2 * Math.PI * eps0 * er / lnRatio * 1e12;
-  const mu0 = 4 * Math.PI * 1e-7;
   const inductanceNHm = mu0 / (2 * Math.PI) * lnRatio * 1e9;
   const velocityFactor = 1 / Math.sqrt(er);
   const c2 = 299792458;
@@ -1481,13 +1482,19 @@ var coaxImpedance = {
   ],
   calculate: calculateCoaxImpedance,
   formula: {
-    primary: "Z_0 = \\frac{60}{\\sqrt{\\varepsilon_r}} \\ln\\!\\left(\\frac{D}{d}\\right)",
+    primary: "Z_0 = \\frac{\\eta_0}{2\\pi\\sqrt{\\varepsilon_r}} \\ln\\!\\left(\\frac{D}{d}\\right)",
     variables: [
       { symbol: "D", description: "Inner diameter of outer conductor", unit: "mm" },
       { symbol: "d", description: "Outer diameter of inner conductor", unit: "mm" },
-      { symbol: "εᵣ", description: "Relative permittivity of dielectric", unit: "" }
+      { symbol: "εᵣ", description: "Relative permittivity of dielectric", unit: "" },
+      { symbol: "η₀", description: "Impedance of free space, µ₀·c = 376.730 Ω (η₀/2π = 59.9585 Ω)", unit: "Ω" }
     ],
-    reference: 'Wadell, "Transmission Line Design Handbook" 1991, Chapter 3'
+    derivation: [
+      "L′ = (µ₀/2π)·ln(D/d) and C′ = 2π·ε₀·εr/ln(D/d) (Pozar §2.2)",
+      "Z₀ = √(L′/C′) = (η₀/2π)·ln(D/d)/√εr, with η₀ = µ₀·c = √(µ₀/ε₀)",
+      "CODATA 2018: µ₀ = 1.25663706212×10⁻⁶ H/m, ε₀ = 8.8541878128×10⁻¹² F/m, c = 299 792 458 m/s exact"
+    ],
+    reference: 'Pozar, Microwave Engineering, 4th ed. (2011), §2.2 and §3.5; CODATA 2018; Wadell, "Transmission Line Design Handbook" 1991, Chapter 3'
   },
   visualization: { type: "cross-section", layers: ["inner", "dielectric", "outer"] },
   relatedCalculators: ["microstrip-impedance", "vswr-return-loss"],
@@ -1496,15 +1503,21 @@ var coaxImpedance = {
   verificationData: [
     {
       inputs: { innerDiameter: 0.9, outerDiameter: 2.95, dielectricConstant: 2.3 },
-      expectedOutputs: { impedance: 46.97 },
+      expectedOutputs: { impedance: 46.935 },
       tolerance: 0.01,
-      source: "Z₀ = (60/√2.3)·ln(2.95/0.9) = 46.97Ω"
+      source: "Z₀ = (59.9585/√2.3)·ln(2.95/0.9) = 46.935Ω (η₀/2π, Pozar §3.5)"
     },
     {
       inputs: { innerDiameter: 1, outerDiameter: 3.73, dielectricConstant: 1 },
-      expectedOutputs: { impedance: 78.98 },
+      expectedOutputs: { impedance: 78.93 },
       tolerance: 0.01,
-      source: "60·ln(3.73) = 78.98Ω air-dielectric coax"
+      source: "59.9585·ln(3.73) = 78.930Ω air-dielectric coax (η₀/2π)"
+    }
+  ],
+  assumptions: [
+    {
+      code: "codata-2018-constants",
+      text: "Z₀, C′ and L′ use the CODATA 2018 µ₀ and ε₀ and the exact speed of light, so Z₀ = (η₀/2π)·ln(D/d)/√εr equals √(L′/C′); the line is a lossless TEM coaxial line."
     }
   ],
   methodology: {
@@ -3328,7 +3341,8 @@ function calculateVia(inputs) {
     };
   }
   const warnings = [];
-  const impedance = 60 / Math.sqrt(er) * Math.log(Da / d);
+  const eta0 = 125663706212e-17 * 299792458;
+  const impedance = eta0 / (2 * Math.PI) / Math.sqrt(er) * Math.log(Da / d);
   const capacitancePF = 0.0554 * er * T * D / (Da - D);
   const inductanceNH = 0.2 * T * (Math.log(4 * T / d) + 0.5);
   const aspectRatio = T / d;
@@ -3525,17 +3539,18 @@ var viaCalculator = {
   ],
   calculate: calculateVia,
   formula: {
-    primary: "C_{via} \\approx \\frac{0.0554\\,\\varepsilon_r\\,T\\,D}{D_a-D}\\ \\text{pF},\\quad Z_{via} \\approx \\frac{60}{\\sqrt{\\varepsilon_r}}\\ln\\frac{D_a}{d},\\quad L_{via} \\approx 0.2h\\left(\\ln\\frac{4h}{d}+0.5\\right)\\ \\text{nH}",
+    primary: "C_{via} \\approx \\frac{0.0554\\,\\varepsilon_r\\,T\\,D}{D_a-D}\\ \\text{pF},\\quad Z_{via} \\approx \\frac{\\eta_0}{2\\pi\\sqrt{\\varepsilon_r}}\\ln\\frac{D_a}{d},\\quad L_{via} \\approx 0.2h\\left(\\ln\\frac{4h}{d}+0.5\\right)\\ \\text{nH}",
     variables: [
       { symbol: "T", description: "Board thickness", unit: "mm" },
       { symbol: "d", description: "Via drill diameter", unit: "mm" },
       { symbol: "D", description: "Pad diameter", unit: "mm" },
       { symbol: "D_a", description: "Antipad (plane clearance) diameter", unit: "mm" },
       { symbol: "εᵣ", description: "Dielectric constant", unit: "" },
-      { symbol: "h", description: "Via height (= board thickness)", unit: "mm" }
+      { symbol: "h", description: "Via height (= board thickness)", unit: "mm" },
+      { symbol: "η₀", description: "Impedance of free space, µ₀·c = 376.730 Ω (η₀/2π = 59.9585 Ω)", unit: "Ω" }
     ],
     derivation: [
-      "The via behaves as a short section of coaxial line: the plated barrel is the inner conductor and the plane clearance - the antipad - is the outer one. Z = (60/sqrt(er))*ln(D_a/d) follows directly, so the plane clearance sets the impedance and the pad does not enter it at all.",
+      "The via behaves as a short section of coaxial line: the plated barrel is the inner conductor and the plane clearance - the antipad - is the outer one. Z = (eta0/2pi)/sqrt(er)*ln(D_a/d) follows directly, with eta0/2pi = 59.9585 ohm from the CODATA 2018 mu0 and the exact c, so the plane clearance sets the impedance and the pad does not enter it at all.",
       "IPC-2141A gives the pad-to-antipad capacitance as C = 0.0554*er*T*D/(D_a - D) pF with dimensions in mm. Both plates appear: the pad is one, the antipad edge is the other, and the gap between them is the denominator. Widening the clearance is the cheapest way to cut via capacitance, which is why high-speed stack-ups specify oversized antipads.",
       "Current capacity uses the plated annulus. Copper deposits on the wall of the drilled hole, so it occupies radius d/2 - t out to d/2, giving A = pi*t*(d - t). Growing the plating outward from the drill radius instead overstates the area by roughly 18 percent on a 0.3 mm via with 25 um plating, and overstates the current by about 13 percent."
     ],
@@ -3548,7 +3563,7 @@ var viaCalculator = {
     },
     {
       code: "coaxial-impedance",
-      text: "Impedance treats the drilled barrel and the antipad edge as a coaxial line, Z = (60/√εr)·ln(D_antipad/d); the pads, the unused stub and return vias are not modelled."
+      text: "Impedance treats the drilled barrel and the antipad edge as a coaxial line, Z = (η₀/2π)·ln(D_antipad/d)/√εr with η₀/2π = 59.9585 Ω; the pads, the unused stub and return vias are not modelled."
     },
     {
       code: "ipc-2141-capacitance",
@@ -10083,11 +10098,39 @@ var controlledImpedance = {
 };
 
 // src/lib/calculators/emc/ferrite-bead.ts
+function susceptance(frequencyMhz, inductanceUh, capacitancePf) {
+  const w = 2 * Math.PI * frequencyMhz * 1e6;
+  return w * capacitancePf * 1e-12 - 1 / (w * inductanceUh * 1e-6);
+}
 function calculateFerriteBead(inputs) {
   const { impedance100MHz, dcResistance, loadImpedance, frequency } = inputs;
-  const beadImpedance = impedance100MHz * Math.pow(frequency / 100, 0.5);
-  const insertionLoss = 20 * Math.log10(1 + beadImpedance / loadImpedance);
-  const voltageDivider2 = loadImpedance / (loadImpedance + beadImpedance) * 100;
+  const beadInductance = inputs.beadInductance ?? 1.208;
+  const parasiticCapacitance = inputs.parasiticCapacitance ?? 1.678;
+  const sourceImpedance = inputs.sourceImpedance ?? 0;
+  const rdc = dcResistance;
+  const b100 = susceptance(100, beadInductance, parasiticCapacitance);
+  const a = impedance100MHz * impedance100MHz - rdc * rdc;
+  if (a <= 0) {
+    return { values: {}, errors: ["The impedance at 100 MHz must be above the DC resistance"] };
+  }
+  const disc = rdc * rdc - a * a * b100 * b100 + a;
+  if (disc < 0) {
+    const zMax = Math.sqrt(rdc * rdc + (1 + Math.sqrt(1 + 4 * b100 * b100 * rdc * rdc)) / (2 * b100 * b100));
+    return {
+      values: {},
+      errors: [`With this inductance and capacitance the bead can reach at most about ${Math.round(zMax)} Ω at 100 MHz; lower the impedance at 100 MHz or change L and C`]
+    };
+  }
+  const g = (rdc + Math.sqrt(disc)) / a;
+  const b = susceptance(frequency, beadInductance, parasiticCapacitance);
+  const s = g * g + b * b;
+  const zReal = rdc + g / s;
+  const zImag = -b / s;
+  const beadImpedance = Math.hypot(zReal, zImag);
+  const loop = sourceImpedance + loadImpedance;
+  const loopWithBead = Math.hypot(loop + zReal, zImag);
+  const insertionLoss = 20 * Math.log10(loopWithBead / loop);
+  const voltageDivider2 = loadImpedance / loopWithBead * 100;
   const dcVoltageDrop = dcResistance * 1e3;
   const warnings = [];
   if (dcVoltageDrop > 100) {
@@ -10159,6 +10202,33 @@ var ferriteBead = {
       unit: "MHz",
       defaultValue: 100,
       min: 0.1
+    },
+    {
+      key: "beadInductance",
+      label: "Bead Inductance",
+      symbol: "L",
+      unit: "µH",
+      defaultValue: 1.208,
+      min: 1e-3,
+      tooltip: "L of the bead's equivalent circuit, fitted where the impedance curve rises (AN-1368 eq. 1). The default is the note's fit of a Tyco BMB2A1000LN2"
+    },
+    {
+      key: "parasiticCapacitance",
+      label: "Parasitic Capacitance",
+      symbol: "C",
+      unit: "pF",
+      defaultValue: 1.678,
+      min: 0,
+      tooltip: "C of the equivalent circuit, fitted where the impedance curve falls above its peak (AN-1368 eq. 2)"
+    },
+    {
+      key: "sourceImpedance",
+      label: "Source Impedance",
+      symbol: "R_S",
+      unit: "Ω",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "Resistance of the source that drives the bead; 0 Ω is an ideal supply rail"
     }
   ],
   outputs: [
@@ -10193,17 +10263,44 @@ var ferriteBead = {
   ],
   calculate: calculateFerriteBead,
   formula: {
-    primary: "IL = 20×log₁₀(1 + Z_bead/R_L), Z_bead ≈ Z_100MHz × (f/100MHz)^0.5",
+    primary: "Z_bead = R_DC + (1/R_AC + 1/(jωL) + jωC)⁻¹,  IL = 20·log₁₀(|R_S + R_L + Z_bead| / (R_S + R_L))",
+    latex: "Z_{bead} = R_{DC} + \\left(\\frac{1}{R_{AC}} + \\frac{1}{j\\omega L} + j\\omega C\\right)^{-1},\\qquad IL = 20\\log_{10}\\frac{|R_S + R_L + Z_{bead}|}{R_S + R_L}",
     variables: [
       { symbol: "IL", description: "Insertion loss", unit: "dB" },
       { symbol: "Z_bead", description: "Bead impedance at frequency", unit: "Ω" },
       { symbol: "R_L", description: "Load impedance", unit: "Ω" },
-      { symbol: "Z_100", description: "Bead impedance at 100 MHz", unit: "Ω" }
-    ]
+      { symbol: "Z_100", description: "Bead impedance at 100 MHz", unit: "Ω" },
+      { symbol: "R_DC", description: "DC resistance", unit: "Ω" },
+      { symbol: "R_AC", description: "Loss resistance, set so that |Z_bead| at 100 MHz is Z_100", unit: "Ω" },
+      { symbol: "L", description: "Bead inductance", unit: "µH" },
+      { symbol: "C", description: "Parasitic capacitance", unit: "pF" },
+      { symbol: "R_S", description: "Source impedance", unit: "Ω" }
+    ],
+    derivation: [
+      "AN-1368 Figure 3: R_DC in series with R_AC ∥ L ∥ C. Below its peak the bead is inductive, at the peak resistive (about R_AC), above it capacitive",
+      "R_AC is solved so that |Z_bead(100 MHz)| = Z_100: (Z_100² − R_DC²)(G² + B²) = 2·R_DC·G + 1, with G = 1/R_AC and B = ωC − 1/(ωL) at 100 MHz",
+      "A series impedance between R_S and R_L: IL = 20·log₁₀|(R_S + R_L + Z_bead)/(R_S + R_L)| and V_L/V_S = |R_L/(R_S + R_L + Z_bead)|",
+      "The default L = 1.208 µH and C = 1.678 pF are AN-1368's fit of a Tyco BMB2A1000LN2"
+    ],
+    reference: "Eco & Limjoco, Ferrite Bead Demystified, Analog Devices AN-1368 (Rev. 0, 2015), Figure 3 and eqs. 1-2; Paul, Introduction to Electromagnetic Compatibility, 2nd ed. (2006), insertion loss of a series element"
   },
   visualization: { type: "none" },
   relatedCalculators: ["shielding-effectiveness", "filter-designer", "microstrip-impedance"],
-  relatedBlogPosts: ["emc-fcc-ce-testing-guide"]
+  relatedBlogPosts: ["emc-fcc-ce-testing-guide"],
+  assumptions: [
+    {
+      code: "an-1368-equivalent-circuit",
+      text: "The bead is AN-1368's R_DC + (R_AC ∥ L ∥ C) circuit, with R_AC set so that |Z| at 100 MHz is the entered datasheet value; the default L and C are the note's fit of a Tyco BMB2A1000LN2."
+    },
+    {
+      code: "no-dc-bias",
+      text: "DC bias is not modelled. It lowers a bead's impedance: AN-1368 shows a TDK MPZ1608S101A falling from 100 Ω to 10 Ω at 100 MHz at half its rated current."
+    },
+    {
+      code: "resistive-source-and-load",
+      text: "The source and the load are resistive."
+    }
+  ]
 };
 
 // src/lib/calculators/rf/free-space-path-loss.ts
@@ -10315,9 +10412,52 @@ var freeSpacePathLoss = {
   }
 };
 
+// src/lib/calculators/validity.ts
+function bound(value, unit) {
+  if (!unit) return String(value);
+  return unit === "°" ? `${value}°` : `${value} ${unit}`;
+}
+function range(b) {
+  if (b.min !== void 0 && b.min === b.max) return `exactly ${bound(b.min, b.unit)}`;
+  if (b.min !== void 0 && b.max !== void 0) {
+    return `${String(b.min)} to ${bound(b.max, b.unit)}`;
+  }
+  if (b.min !== void 0) return `at least ${bound(b.min, b.unit)}`;
+  return `at most ${bound(b.max, b.unit)}`;
+}
+function checkValidity(bounds, values) {
+  const warnings = [];
+  for (const b of bounds ?? []) {
+    if (!(b.quantity in values)) {
+      throw new Error(`checkValidity: no value given for the bounded quantity "${b.quantity}"`);
+    }
+    const v = values[b.quantity];
+    if (Number.isNaN(v)) continue;
+    let breach = null;
+    if (b.min !== void 0 && v < b.min) breach = `below ${bound(b.min, b.unit)}`;
+    else if (b.max !== void 0 && v > b.max) breach = `above ${bound(b.max, b.unit)}`;
+    if (breach === null) continue;
+    warnings.push(
+      `${b.label ?? b.quantity} is ${breach}; the model holds for ${range(b)} (${b.source}). The result is extrapolated.`
+    );
+  }
+  return warnings;
+}
+
 // src/lib/calculators/rf/radar-range-equation.ts
+var ALBERSHEIM_VALIDITY = [
+  { quantity: "pd", min: 0.1, max: 0.9, label: "P_d", source: "Albersheim 1981" },
+  { quantity: "pfa", min: 1e-7, max: 1e-3, label: "P_fa", source: "Albersheim 1981" },
+  { quantity: "pulses", min: 1, max: 8096, label: "Pulses integrated", source: "Albersheim 1981" }
+];
 function calculateRadarRangeEquation(inputs) {
   const { peakPower, gain, frequency, rcs, noiseFigure, bandwidth } = inputs;
+  const pd = inputs.pd ?? 0.9;
+  const pfa = inputs.pfa ?? 1e-6;
+  const pulses = Math.max(1, Math.round(inputs.pulses ?? 1));
+  if (!(pd > 0 && pd < 1) || !(pfa > 0 && pfa < 1)) {
+    return { values: {}, errors: ["P_d and P_fa must each lie between 0 and 1"] };
+  }
   const Pt = peakPower * 1e3;
   const G_linear = Math.pow(10, gain / 10);
   const f_Hz = frequency * 1e9;
@@ -10328,7 +10468,14 @@ function calculateRadarRangeEquation(inputs) {
   const B_Hz = bandwidth * 1e6;
   const k = 1380649e-29;
   const T = 290;
-  const Pmin = k * T * B_Hz * F_linear;
+  const A = Math.log(0.62 / pfa);
+  const Bd = Math.log(pd / (1 - pd));
+  const argument = A + 0.12 * A * Bd + 1.7 * Bd;
+  if (!(argument > 0)) {
+    return { values: {}, errors: ["Albersheim's equation has no solution for this P_d and P_fa: P_d must be well above P_fa"] };
+  }
+  const snrRequiredDb = -5 * Math.log10(pulses) + (6.2 + 4.54 / Math.sqrt(pulses + 0.44)) * Math.log10(argument);
+  const Pmin = k * T * B_Hz * F_linear * Math.pow(10, snrRequiredDb / 10);
   const numerator = Pt * G_linear * G_linear * lambda * lambda * sigma;
   const denominator = Math.pow(4 * Math.PI, 3) * Pmin;
   const R_m = Math.pow(Math.max(numerator / denominator, 0), 0.25);
@@ -10336,13 +10483,15 @@ function calculateRadarRangeEquation(inputs) {
   const R_ref = 1e3;
   const Pr_W = Pt * G_linear * G_linear * lambda * lambda * sigma / (Math.pow(4 * Math.PI, 3) * Math.pow(R_ref, 4));
   const receivedPower = 10 * Math.log10(Pr_W * 1e3);
-  const snrAtMaxRange = 0;
+  const snrAtMaxRange = snrRequiredDb;
+  const warnings = checkValidity(ALBERSHEIM_VALIDITY, { pd, pfa, pulses });
   return {
     values: {
       maxRange,
       snrAtMaxRange,
       receivedPower
-    }
+    },
+    ...warnings.length > 0 && { warnings }
   };
 }
 var radarRangeEquation = {
@@ -10419,6 +10568,37 @@ var radarRangeEquation = {
       defaultValue: 1,
       min: 1e-3,
       tooltip: "Receiver noise bandwidth in MHz"
+    },
+    {
+      key: "pd",
+      label: "Probability of Detection",
+      symbol: "P_d",
+      unit: "",
+      defaultValue: 0.9,
+      min: 0.01,
+      max: 0.999,
+      tooltip: "Required probability of detecting the target; Albersheim's equation holds for 0.1 to 0.9"
+    },
+    {
+      key: "pfa",
+      label: "Probability of False Alarm",
+      symbol: "P_fa",
+      unit: "",
+      defaultValue: 1e-6,
+      min: 1e-12,
+      max: 0.1,
+      tooltip: "Allowed probability that noise alone crosses the threshold, e.g. 1e-6; Albersheim's equation holds for 1e-7 to 1e-3"
+    },
+    {
+      key: "pulses",
+      label: "Pulses Integrated",
+      symbol: "N",
+      unit: "",
+      defaultValue: 1,
+      min: 1,
+      max: 8096,
+      step: 1,
+      tooltip: "Pulses integrated noncoherently before detection; 1 is a single pulse"
     }
   ],
   outputs: [
@@ -10435,7 +10615,7 @@ var radarRangeEquation = {
       symbol: "SNR",
       unit: "dB",
       precision: 1,
-      tooltip: "SNR equals 0 dB (unity) at maximum detection range by definition"
+      tooltip: "The single-pulse SNR that P_d and P_fa need (Albersheim's equation, nonfluctuating target); maximum range is where the echo reaches it"
     },
     {
       key: "receivedPower",
@@ -10447,15 +10627,26 @@ var radarRangeEquation = {
   ],
   calculate: calculateRadarRangeEquation,
   formula: {
-    primary: "R_max = (Pt·G²·λ²·σ / ((4π)³·Pmin))^(1/4)",
+    primary: "R_max = (Pt·G²·λ²·σ / ((4π)³·k·T₀·B·F·SNR_req))^(1/4),  SNR_req = −5·log₁₀N + (6.2 + 4.54/√(N + 0.44))·log₁₀(A + 0.12AB + 1.7B)",
     variables: [
       { symbol: "R_max", description: "Maximum detection range", unit: "m" },
       { symbol: "Pt", description: "Peak transmit power", unit: "W" },
       { symbol: "G", description: "Antenna gain (linear)", unit: "" },
       { symbol: "λ", description: "Wavelength", unit: "m" },
       { symbol: "σ", description: "Radar cross section", unit: "m²" },
-      { symbol: "Pmin", description: "Minimum detectable signal (kTBF)", unit: "W" }
-    ]
+      { symbol: "Pmin", description: "Minimum detectable signal (kTBF)", unit: "W" },
+      { symbol: "SNR_req", description: "Single-pulse SNR the detection requirement needs", unit: "dB" },
+      { symbol: "A", description: "ln(0.62/P_fa)", unit: "" },
+      { symbol: "B", description: "ln(P_d/(1 − P_d))", unit: "" },
+      { symbol: "N", description: "Pulses integrated noncoherently", unit: "" }
+    ],
+    derivation: [
+      "The echo Pt·G²·λ²·σ/((4π)³·R⁴) equals the noise k·T₀·B·F times SNR_req at R_max, with T₀ = 290 K",
+      "SNR_req from Albersheim's equation (1981) for a nonfluctuating target, within 0.2 dB of Robertson's curves for 0.1 ≤ P_d ≤ 0.9, 10⁻⁷ ≤ P_fa ≤ 10⁻³, 1 ≤ N ≤ 8096",
+      "So R_max = R(SNR = 1)·10^(−SNR_req/40)",
+      "P_d 0.9 and P_fa 10⁻⁶ need 13.11 dB for one pulse (Skolnik, Fig. 2.7: 13.2 dB; the exact single-pulse value is 13.18 dB)"
+    ],
+    reference: "Albersheim, A closed-form approximation to Robertson's detection characteristics, Proc. IEEE 69(7), 1981, p. 839; Skolnik, Introduction to Radar Systems, 3rd ed. (2001), Fig. 2.7"
   },
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "noise-figure-cascade", "eirp-calculator"],
@@ -10468,9 +10659,21 @@ var radarRangeEquation = {
     references: [
       { title: "Introduction to Radar Systems, 3rd ed.", source: "Merrill I. Skolnik (2001), Chapter 1 — The Nature of Radar" },
       { title: "Principles of Modern Radar: Basic Principles", source: "Mark A. Richards, James A. Scheer, William A. Holm (2010)" },
-      { title: "Radar Handbook, 3rd ed.", source: "Merrill I. Skolnik, editor (2008)" }
+      { title: "Radar Handbook, 3rd ed.", source: "Merrill I. Skolnik, editor (2008)" },
+      { title: "A closed-form approximation to Robertson's detection characteristics", source: "Walter J. Albersheim, Proc. IEEE 69(7), 1981, p. 839" }
     ]
-  }
+  },
+  validity: ALBERSHEIM_VALIDITY,
+  assumptions: [
+    {
+      code: "albersheim-nonfluctuating",
+      text: "The required SNR is Albersheim's closed form for a nonfluctuating target with N pulses integrated noncoherently, within 0.2 dB of Robertson's curves for 0.1 ≤ P_d ≤ 0.9, 10⁻⁷ ≤ P_fa ≤ 10⁻³ and 1 ≤ N ≤ 8096."
+    },
+    {
+      code: "lossless-290-k",
+      text: "No system, propagation or processing losses are included, and the noise temperature is 290 K."
+    }
+  ]
 };
 
 // src/lib/calculators/rf/power-amplifier-efficiency.ts
@@ -12977,38 +13180,6 @@ var loopAntenna = {
     ]
   }
 };
-
-// src/lib/calculators/validity.ts
-function bound(value, unit) {
-  if (!unit) return String(value);
-  return unit === "°" ? `${value}°` : `${value} ${unit}`;
-}
-function range(b) {
-  if (b.min !== void 0 && b.min === b.max) return `exactly ${bound(b.min, b.unit)}`;
-  if (b.min !== void 0 && b.max !== void 0) {
-    return `${String(b.min)} to ${bound(b.max, b.unit)}`;
-  }
-  if (b.min !== void 0) return `at least ${bound(b.min, b.unit)}`;
-  return `at most ${bound(b.max, b.unit)}`;
-}
-function checkValidity(bounds, values) {
-  const warnings = [];
-  for (const b of bounds ?? []) {
-    if (!(b.quantity in values)) {
-      throw new Error(`checkValidity: no value given for the bounded quantity "${b.quantity}"`);
-    }
-    const v = values[b.quantity];
-    if (Number.isNaN(v)) continue;
-    let breach = null;
-    if (b.min !== void 0 && v < b.min) breach = `below ${bound(b.min, b.unit)}`;
-    else if (b.max !== void 0 && v > b.max) breach = `above ${bound(b.max, b.unit)}`;
-    if (breach === null) continue;
-    warnings.push(
-      `${b.label ?? b.quantity} is ${breach}; the model holds for ${range(b)} (${b.source}). The result is extrapolated.`
-    );
-  }
-  return warnings;
-}
 
 // src/lib/calculators/antenna/helical-antenna.ts
 var C = 299792458;
@@ -20021,31 +20192,65 @@ var bjtBiasPoint = {
 // src/lib/calculators/general/mosfet-operating-point.ts
 function calculateMosfetOperatingPoint(inputs) {
   const { vgs, vth, kn, vds, vdd, rdLoad } = inputs;
+  const biasMode = inputs.biasMode ?? 0;
   const vgsEff = Math.max(0, vgs - vth);
   const vdsSat = vgsEff;
   let id;
   let region;
-  if (vgsEff <= 0) {
-    id = 0;
-    region = 0;
-  } else if (vds >= vdsSat) {
-    id = kn / 2 * vgsEff * vgsEff;
-    region = 2;
+  let vdsOperating;
+  const warnings = [];
+  if (biasMode !== 1) {
+    if (vgsEff <= 0) {
+      id = 0;
+      region = 0;
+      vdsOperating = vdd;
+    } else {
+      const idSat = kn / 2 * vgsEff * vgsEff;
+      const vdsAtSat = vdd - idSat * rdLoad;
+      if (vdsAtSat >= vgsEff) {
+        id = idSat;
+        region = 2;
+        vdsOperating = vdsAtSat;
+      } else {
+        const b = kn * vgsEff + 1 / rdLoad;
+        const c2 = 2 * vdd / rdLoad;
+        vdsOperating = c2 / (b + Math.sqrt(b * b - kn * c2));
+        id = (vdd - vdsOperating) / rdLoad;
+        region = 1;
+      }
+    }
   } else {
-    id = kn * (vgsEff * vds - vds * vds / 2);
-    region = 1;
+    vdsOperating = vds;
+    if (vgsEff <= 0) {
+      id = 0;
+      region = 0;
+    } else if (vds >= vdsSat) {
+      id = kn / 2 * vgsEff * vgsEff;
+      region = 2;
+    } else {
+      id = kn * (vgsEff * vds - vds * vds / 2);
+      region = 1;
+    }
+    id = Math.max(0, id);
+    if (Math.abs(vds + id * rdLoad - vdd) > 0.01 * vdd) {
+      const idShown = Math.round(id * 1e3) / 1e3;
+      warnings.push(
+        `V_DS was entered (Bias Mode 1): ${vds} V + ${idShown} mA × ${rdLoad} kΩ is not the ${vdd} V supply, so this point is off the load line; Bias Mode 0 solves for it`
+      );
+    }
   }
-  id = Math.max(0, id);
-  const powerDissipation = id * vds;
-  const gm = region === 2 ? kn * vgsEff : region === 1 ? kn * vds : 0;
+  const powerDissipation = id * vdsOperating;
+  const gm = region === 2 ? kn * vgsEff : region === 1 ? kn * vdsOperating : 0;
   return {
     values: {
       id,
       vdsSat,
       powerDissipation,
       gm,
-      region
-    }
+      region,
+      vdsOperating
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
   };
 }
 var mosfetOperatingPoint = {
@@ -20097,7 +20302,8 @@ var mosfetOperatingPoint = {
       symbol: "V_DS",
       unit: "V",
       defaultValue: 10,
-      min: 0
+      min: 0,
+      tooltip: "Used only when Bias Mode is 1; by default V_DS is solved from V_DD and R_D"
     },
     {
       key: "vdd",
@@ -20114,6 +20320,21 @@ var mosfetOperatingPoint = {
       unit: "kΩ",
       defaultValue: 1,
       min: 1e-3
+    },
+    {
+      key: "biasMode",
+      label: "Bias Mode",
+      symbol: "",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      tooltip: "0 = solve the load line V_DS = V_DD − I_D·R_D; 1 = use the entered V_DS",
+      presets: [
+        { label: "Load line", values: { biasMode: 0 } },
+        { label: "V_DS as entered", values: { biasMode: 1 } }
+      ]
     }
   ],
   outputs: [
@@ -20151,18 +20372,36 @@ var mosfetOperatingPoint = {
       symbol: "region",
       unit: "",
       precision: 0
+    },
+    {
+      key: "vdsOperating",
+      label: "V_DS at the Operating Point",
+      symbol: "V_DS,Q",
+      unit: "V",
+      precision: 4
     }
   ],
   calculate: calculateMosfetOperatingPoint,
   formula: {
-    primary: "I_D = k_n/2 × (V_GS−V_th)² (sat), I_D = k_n × [(V_GS−V_th)V_DS − V_DS²/2] (triode)",
+    primary: "I_D = k_n/2 × (V_GS−V_th)² (sat), I_D = k_n × [(V_GS−V_th)V_DS − V_DS²/2] (triode), with V_DS = V_DD − I_D·R_D",
     variables: [
       { symbol: "V_GS", description: "Gate-source voltage", unit: "V" },
       { symbol: "V_th", description: "Threshold voltage", unit: "V" },
       { symbol: "k_n", description: "Process transconductance parameter", unit: "A/V²" },
       { symbol: "V_DS", description: "Drain-source voltage", unit: "V" },
-      { symbol: "g_m", description: "Transconductance", unit: "A/V" }
-    ]
+      { symbol: "g_m", description: "Transconductance", unit: "A/V" },
+      { symbol: "V_DD", description: "Supply voltage", unit: "V" },
+      { symbol: "R_D", description: "Drain load resistance", unit: "kΩ" },
+      { symbol: "I_D", description: "Drain current", unit: "mA" }
+    ],
+    derivation: [
+      "Solve the device equation together with the load line V_DS = V_DD − I_D·R_D and check the region (Sedra & Smith, Example 5.5)",
+      "Saturation first: I_D = (k_n/2)·V_ov² with V_ov = V_GS − V_th, valid if V_DS = V_DD − I_D·R_D ≥ V_ov",
+      "Otherwise triode: V_DS is the smaller root of (k_n/2)·V_DS² − (k_n·V_ov + 1/R_D)·V_DS + V_DD/R_D = 0",
+      "Cut-off when V_ov ≤ 0: I_D = 0 and V_DS = V_DD",
+      "Bias Mode 1 evaluates the square law at the entered V_DS instead, and warns when V_DS + I_D·R_D is not V_DD"
+    ],
+    reference: "Sedra & Smith, Microelectronic Circuits, 7th ed. (Oxford, 2015), §5.3, Example 5.5 and Exercise 5.11"
   },
   visualization: { type: "none" },
   relatedCalculators: ["bjt-bias-point", "mosfet-power-dissipation", "transistor-switch"]
@@ -20966,11 +21205,16 @@ function calculateBldcMotor(inputs) {
   const iMaxEff = Math.sqrt(safeNoLoad * stallCurrent);
   const inputPower = safeVoltage * iMaxEff;
   const THRUST_COEFFICIENT = 0.11;
+  const POWER_COEFFICIENT = 0.047;
   const AIR_DENSITY = 1.225;
   const G0 = 9.80665;
-  const loadedRpm = noLoadRpm * 0.75;
-  const revPerSecond = Math.max(loadedRpm, 0) / 60;
   const propDiaM = safePropDia * 0.0254;
+  const a = POWER_COEFFICIENT * AIR_DENSITY * Math.pow(propDiaM, 5) / (2 * Math.PI);
+  const b = 2 * Math.PI / (kv_radV * kv_radV * safeRmOhm);
+  const c2 = (safeVoltage / safeRmOhm - safeNoLoad) / kv_radV;
+  const revPerSecond = c2 > 0 ? 2 * c2 / (b + Math.sqrt(b * b + 4 * a * c2)) : 0;
+  const loadedRpm = revPerSecond * 60;
+  const loadedCurrent = safeVoltage / safeRmOhm - 2 * Math.PI * revPerSecond / (kv_radV * safeRmOhm);
   const thrustN = THRUST_COEFFICIENT * AIR_DENSITY * revPerSecond * revPerSecond * Math.pow(propDiaM, 4);
   const thrust = thrustN / G0 * 1e3;
   return {
@@ -20981,7 +21225,9 @@ function calculateBldcMotor(inputs) {
       stallTorque,
       maxEfficiency,
       inputPower,
-      thrust
+      thrust,
+      loadedRpm,
+      loadedCurrent
     }
   };
 }
@@ -21114,25 +21360,48 @@ var bldcMotor = {
       symbol: "F_thrust",
       unit: "g",
       precision: 0,
-      tooltip: "Static thrust C_T·ρ·n²·D⁴ with C_T = 0.11 (small two-blade propellers, published range 0.08–0.15), sea-level air and 75% of no-load RPM under prop load. Actual thrust varies with prop pitch, air density, and throttle."
+      tooltip: "Static thrust C_T·ρ·n²·D⁴ with C_T = 0.11, sea-level air, at the loaded speed where the motor torque equals the propeller torque (C_P = 0.047). Actual thrust varies with prop pitch, air density, and throttle."
+    },
+    {
+      key: "loadedRpm",
+      label: "Loaded Speed",
+      symbol: "N_L",
+      unit: "RPM",
+      precision: 0,
+      tooltip: "Full-throttle speed with the propeller on, where Q_m = (I − I₀)/K_v equals Q_p = C_P·ρ·n²·D⁵/(2π) (Drela 2007)"
+    },
+    {
+      key: "loadedCurrent",
+      label: "Loaded Current",
+      symbol: "I_L",
+      unit: "A",
+      precision: 2,
+      tooltip: "Motor current at the loaded speed, I = (V − Ω/K_v)/R"
     }
   ],
   calculate: calculateBldcMotor,
   formula: {
-    primary: "N_0 = K_v × V, K_t = 60/(2π × K_v), T_stall = K_t × I_stall, F_thrust = C_T·ρ·n²·D⁴",
+    primary: "N_0 = K_v × V, K_t = 60/(2π × K_v), T_stall = K_t × I_stall, F_thrust = C_T·ρ·n²·D⁴ at (I − I₀)/K_v = C_P·ρ·n²·D⁵/(2π)",
     variables: [
       { symbol: "K_v", description: "Velocity constant", unit: "RPM/V" },
       { symbol: "K_t", description: "Torque constant", unit: "Nm/A" },
       { symbol: "N_0", description: "No-load speed", unit: "RPM" },
       { symbol: "I_stall", description: "Stall current", unit: "A" },
-      { symbol: "R_m", description: "Winding resistance", unit: "Ω" }
+      { symbol: "R_m", description: "Winding resistance", unit: "Ω" },
+      { symbol: "I_0", description: "No-load current", unit: "A" },
+      { symbol: "n", description: "Loaded speed, where motor and propeller torques balance", unit: "rev/s" },
+      { symbol: "C_T", description: "Static thrust coefficient", unit: "" },
+      { symbol: "C_P", description: "Static power coefficient", unit: "" },
+      { symbol: "F_thrust", description: "Static thrust", unit: "g" }
     ],
     derivation: [
-      "Static thrust F_thrust = C_T·ρ·n²·D⁴, n in rev/s and D in m, reported in grams-force",
-      "C_T = 0.11, inside the 0.08–0.15 static range of small two-blade propellers; ρ = 1.225 kg/m³",
-      "Loaded speed n = 0.75 × N_0 / 60"
+      "Motor (Drela 2007, eqs. 1-6): I = (V − Ω/K_v)/R and Q_m = (I − I₀)/K_v, with Ω = 2πn and K_v in rad/s/V",
+      "Propeller: P = C_P·ρ·n³·D⁵, so Q_p = C_P·ρ·n²·D⁵/(2π)",
+      "Q_m(n) = Q_p(n) is a quadratic in n with one positive root, the loaded speed",
+      "Static thrust F_thrust = C_T·ρ·n²·D⁴ at that n, n in rev/s and D in m, reported in grams-force",
+      "C_T = 0.11 and C_P = 0.047 from one propeller's static data (UIUC, GWS Direct Drive 5×3); ρ = 1.225 kg/m³"
     ],
-    reference: "Brandt & Selig, Propeller Performance Data at Low Reynolds Numbers, AIAA 2011-1255; UIUC Propeller Data Site"
+    reference: "Drela, First-Order DC Electric Motor Model (MIT, 2007); UIUC Propeller Data Site, Vol. 2, GWS Direct Drive 5×3 static data (gwsdd_5x3_static_0323rd.txt); Brandt & Selig, Propeller Performance Data at Low Reynolds Numbers, AIAA 2011-1255"
   },
   visualization: { type: "none" },
   relatedCalculators: ["bldc-winding", "bldc-efficiency", "bldc-thermal", "dc-motor-speed", "stepper-motor"],
@@ -21140,11 +21409,11 @@ var bldcMotor = {
   assumptions: [
     {
       code: "static-thrust-coefficient",
-      text: "Thrust uses a static thrust coefficient C_T = 0.11, inside the 0.08–0.15 range published for small two-blade propellers, with sea-level air at 1.225 kg/m³."
+      text: "Thrust uses a static thrust coefficient C_T = 0.11, from the UIUC Propeller Data Site static data of a GWS Direct Drive 5×3 (C_T 0.102–0.113) and inside the 0.08–0.15 range published for small two-blade propellers, with sea-level air at 1.225 kg/m³."
     },
     {
-      code: "loaded-speed-75-percent",
-      text: "The propeller turns at 75% of the no-load speed under load."
+      code: "motor-propeller-balance",
+      text: "The propeller turns where the motor's torque (I − I₀)/K_v (Drela 2007) equals the propeller's C_P·ρ·n²·D⁵/(2π), with C_P = 0.047 from the same propeller's static data; every propeller is taken to have these coefficients."
     }
   ]
 };
@@ -21454,10 +21723,10 @@ function calculateBldcEfficiency(inputs) {
   const safeI = Math.max(operatingCurrent, 1e-3);
   const safePP = Math.max(polePairs, 1);
   const inputPower = safeV * safeI;
-  const copperLoss = safeI * safeI * safeRm * 1.5;
+  const copperLoss = safeI * safeI * safeRm;
   const rpm = safeKv * safeV * (1 - safeI * safeRm / safeV);
   const noLoadPower = safeV * safeI0;
-  const noLoadCopper = safeI0 * safeI0 * safeRm * 1.5;
+  const noLoadCopper = safeI0 * safeI0 * safeRm;
   const ironLossRef = Math.max(noLoadPower - noLoadCopper, 0);
   const noLoadRpm = safeKv * safeV;
   const ironLossScale = noLoadRpm > 0 ? Math.pow(Math.max(rpm, 0) / noLoadRpm, 1.5) : 1;
@@ -21511,7 +21780,7 @@ var bldcEfficiency = {
   ],
   inputs: [
     { key: "kvRating", label: "Kv Rating", symbol: "K_v", unit: "RPM/V", defaultValue: 920, min: 1, max: 1e4 },
-    { key: "phaseResistance", label: "Phase Resistance", symbol: "R_ph", unit: "mΩ", defaultValue: 45, min: 0.1, tooltip: "Phase-to-phase winding resistance" },
+    { key: "phaseResistance", label: "Terminal Resistance (phase to phase)", symbol: "R_tt", unit: "mΩ", defaultValue: 45, min: 0.1, tooltip: "Winding resistance measured between two motor leads, as datasheets quote it; the supply current flows through it under block commutation" },
     { key: "noLoadCurrent", label: "No-Load Current", symbol: "I_0", unit: "A", defaultValue: 1.5, min: 1e-3, tooltip: "Current drawn at no mechanical load (iron + friction losses)" },
     {
       key: "supplyVoltage",
@@ -21530,7 +21799,7 @@ var bldcEfficiency = {
     { key: "polePairs", label: "Pole Pairs", symbol: "p", unit: "", defaultValue: 7, min: 1, max: 30 }
   ],
   outputs: [
-    { key: "copperLoss", label: "Copper Loss", symbol: "P_Cu", unit: "W", precision: 2 },
+    { key: "copperLoss", label: "Copper Loss", symbol: "P_Cu", unit: "W", precision: 2, tooltip: "I²·R_tt: the supply current through the terminal resistance (block commutation)" },
     { key: "ironLoss", label: "Iron Loss", symbol: "P_Fe", unit: "W", precision: 2 },
     { key: "mechanicalLoss", label: "Mechanical Loss", symbol: "P_mech", unit: "W", precision: 2 },
     { key: "totalLoss", label: "Total Loss", symbol: "P_loss", unit: "W", precision: 2 },
@@ -21551,19 +21820,38 @@ var bldcEfficiency = {
   ],
   calculate: calculateBldcEfficiency,
   formula: {
-    primary: "η = P_out / P_in, P_Cu = I²R, P_Fe ≈ k·(RPM)^1.5, I_opt = √(I₀·I_stall)",
-    latex: "\\eta = \\frac{P_{out}}{P_{in}}, \\quad P_{Cu} = I^2 R, \\quad I_{opt} = \\sqrt{I_0 \\cdot I_{stall}}",
+    primary: "η = P_out / P_in, P_Cu = I²·R_tt, P_Fe ≈ k·(RPM)^1.5, I_opt = √(I₀·I_stall), I_stall = V/R_tt",
+    latex: "\\eta = \\frac{P_{out}}{P_{in}}, \\quad P_{Cu} = I^2 R_{tt}, \\quad I_{opt} = \\sqrt{I_0 \\cdot I_{stall}}, \\quad I_{stall} = \\frac{V}{R_{tt}}",
     variables: [
       { symbol: "η", description: "Motor efficiency", unit: "%" },
       { symbol: "P_Cu", description: "Copper (I²R) losses", unit: "W" },
       { symbol: "P_Fe", description: "Iron (core) losses", unit: "W" },
-      { symbol: "I_opt", description: "Current for peak efficiency", unit: "A" }
+      { symbol: "I_opt", description: "Current for peak efficiency", unit: "A" },
+      { symbol: "I", description: "Supply current", unit: "A" },
+      { symbol: "R_tt", description: "Terminal resistance, measured between two motor leads", unit: "Ω" },
+      { symbol: "I_stall", description: "Stall current, V/R_tt", unit: "A" }
     ],
-    reference: "Hanselman, D. — Brushless Permanent Magnet Motor Design"
+    derivation: [
+      "Block (six-step) commutation: two phases conduct at a time, so the supply current I flows through the terminal resistance R_tt measured between two leads (maxon Formulae Handbook, 2012, p. 37)",
+      "Copper loss P_Cu = I²·R_tt, and I₀²·R_tt at no load (Drela 2007, eq. 3)",
+      "Loaded speed N = K_v·(V − I·R_tt)",
+      "Drela's efficiency (1 − I₀/I)(1 − I·R_tt/V) peaks where I²·R_tt = I₀·V, at I_opt = √(I₀·V/R_tt) = √(I₀·I_stall)"
+    ],
+    reference: "Drela, First-Order DC Electric Motor Model (MIT, 2007), eqs. 3, 7 and 9; maxon, Formulae Handbook (J. Braun, maxon academy, 2012), p. 37; Hanselman, D. — Brushless Permanent Magnet Motor Design"
   },
   visualization: { type: "none" },
   relatedCalculators: ["bldc-motor", "bldc-winding", "bldc-thermal", "motor-efficiency"],
-  relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-motor", "bldc-winding-turns-wire-gauge-patterns"]
+  relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-motor", "bldc-winding-turns-wire-gauge-patterns"],
+  assumptions: [
+    {
+      code: "block-commutation-terminal-resistance",
+      text: "The motor is driven by block (six-step) commutation, so the supply current flows through the terminal resistance measured between two leads and the copper loss is I²·R (Drela 2007; maxon Formulae Handbook 2012, p. 37). A sinusoidal drive with I the phase rms current would give 1.5·I²·R for the same resistance."
+    },
+    {
+      code: "no-load-loss-split",
+      text: "The no-load input power V·I₀ less the no-load copper loss I₀²·R is iron loss, scaled with speed to the power 1.5; the mechanical loss is taken equal to the no-load copper loss."
+    }
+  ]
 };
 
 // src/lib/calculators/motor/bldc-thermal.ts
@@ -21588,19 +21876,34 @@ function calculateBldcThermal(inputs) {
   const safeI = Math.max(operatingCurrent, 1e-3);
   const safeIPeak = Math.max(peakCurrent, 1e-3);
   const totalThermalRes = thermalResWC + thermalResCA;
-  const copperLoss = safeI * safeI * safeRm * 1.5;
-  const tempRise = copperLoss * totalThermalRes;
+  const warnings = [];
+  const coldRise = totalThermalRes * safeRm * safeI * safeI;
+  const feedback = COPPER_TEMP_COEFF * coldRise;
+  let tempRise = NaN;
+  if (feedback < 1) {
+    tempRise = coldRise * (1 + COPPER_TEMP_COEFF * (ambientTemp - 25)) / (1 - feedback);
+  } else {
+    const runawayCurrent = 1 / Math.sqrt(COPPER_TEMP_COEFF * totalThermalRes * safeRm);
+    warnings.push(
+      `No steady state at ${safeI} A: α·Rθ·R₂₅·I² = ${Math.round(feedback * 100) / 100} ≥ 1, so the copper loss grows with the winding temperature faster than the thermal path removes it and the winding runs away. Below ${Math.round(runawayCurrent * 100) / 100} A it settles.`
+    );
+  }
   const steadyStateTemp = ambientTemp + tempRise;
   const thermalMargin = maxWindingTemp - steadyStateTemp;
   const deratedCurrent = Math.sqrt(
-    Math.max(maxWindingTemp - ambientTemp, 0) / (1.5 * safeRm * Math.max(totalThermalRes, 0.01))
+    Math.max(maxWindingTemp - ambientTemp, 0) / (Math.max(totalThermalRes, 0.01) * safeRm * (1 + COPPER_TEMP_COEFF * (maxWindingTemp - 25)))
   );
   const thermalCapacitance = 10;
-  const tau = thermalCapacitance * totalThermalRes;
-  const peakLoss = safeIPeak * safeIPeak * safeRm * 1.5;
-  const peakSteadyState = ambientTemp + peakLoss * totalThermalRes;
-  const timeToLimit = peakSteadyState > maxWindingTemp ? tau * Math.log((peakSteadyState - ambientTemp) / Math.max(peakSteadyState - maxWindingTemp, 0.01)) : Infinity;
-  const safeTimeToLimit = Number.isFinite(timeToLimit) ? timeToLimit : 9999;
+  const peakLoss = safeIPeak * safeIPeak * safeRm * (1 + COPPER_TEMP_COEFF * (ambientTemp - 25));
+  const k = (totalThermalRes !== 0 ? 1 / totalThermalRes : Infinity) - COPPER_TEMP_COEFF * safeIPeak * safeIPeak * safeRm;
+  const riseToLimit = maxWindingTemp - ambientTemp;
+  const reach = k * riseToLimit / peakLoss;
+  let timeToLimit = Infinity;
+  if (riseToLimit <= 0) timeToLimit = 0;
+  else if (peakLoss > 0 && reach < 1) {
+    timeToLimit = k === 0 ? thermalCapacitance * riseToLimit / peakLoss : -thermalCapacitance / k * Math.log1p(-reach);
+  }
+  if (timeToLimit === Infinity) warnings.push("At this peak current the winding settles below the temperature limit, so it never reaches it.");
   const hotResistanceMohm = safeRm * (1 + COPPER_TEMP_COEFF * (steadyStateTemp - 25)) * 1e3;
   return {
     values: {
@@ -21608,9 +21911,10 @@ function calculateBldcThermal(inputs) {
       steadyStateTemp,
       thermalMargin,
       deratedCurrent,
-      timeToLimit: safeTimeToLimit,
+      timeToLimit,
       hotResistance: hotResistanceMohm
-    }
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
   };
 }
 var bldcThermal = {
@@ -21634,7 +21938,7 @@ var bldcThermal = {
     "copper temperature coefficient"
   ],
   inputs: [
-    { key: "phaseResistance", label: "Phase Resistance (at 25°C)", symbol: "R_ph", unit: "mΩ", defaultValue: 45, min: 0.1, tooltip: "Cold resistance at 25°C reference temperature" },
+    { key: "phaseResistance", label: "Terminal Resistance (phase to phase, at 25°C)", symbol: "R_25", unit: "mΩ", defaultValue: 45, min: 0.1, tooltip: "Cold resistance at 25°C, measured between two motor leads; the supply current flows through it under block commutation" },
     { key: "continuousCurrent", label: "Rated Continuous Current", symbol: "I_cont", unit: "A", defaultValue: 20, min: 0.1, tooltip: "Manufacturer rated continuous current" },
     { key: "peakCurrent", label: "Peak Current", symbol: "I_peak", unit: "A", defaultValue: 40, min: 0.1, tooltip: "Short-duration maximum current" },
     { key: "thermalResWC", label: "Thermal Resistance (Winding→Case)", symbol: "Rθ_wc", unit: "°C/W", defaultValue: 2.5, min: 0.01, tooltip: "From motor datasheet or measurement" },
@@ -21654,8 +21958,8 @@ var bldcThermal = {
     { key: "operatingCurrent", label: "Operating Current", symbol: "I_op", unit: "A", defaultValue: 15, min: 0.01, tooltip: "Current you intend to run continuously" }
   ],
   outputs: [
-    { key: "tempRise", label: "Temperature Rise", symbol: "ΔT", unit: "°C", precision: 1 },
-    { key: "steadyStateTemp", label: "Steady-State Winding Temp", symbol: "T_w", unit: "°C", precision: 1 },
+    { key: "tempRise", label: "Temperature Rise", symbol: "ΔT", unit: "°C", precision: 1, tooltip: "Rθ·I²·R(T) at the steady state, with the resistance at that temperature; absent where the winding runs away" },
+    { key: "steadyStateTemp", label: "Steady-State Winding Temp", symbol: "T_w", unit: "°C", precision: 1, tooltip: "Absent where α·Rθ·R₂₅·I² ≥ 1: no steady state exists (thermal runaway)" },
     {
       key: "thermalMargin",
       label: "Thermal Margin",
@@ -21665,25 +21969,54 @@ var bldcThermal = {
       thresholds: { good: { min: 30 }, warning: { min: 10 }, danger: { min: 0 } },
       tooltip: "Remaining temperature headroom before insulation limit"
     },
-    { key: "deratedCurrent", label: "Derated Continuous Current", symbol: "I_derated", unit: "A", precision: 2, tooltip: "Max continuous current for this ambient + thermal path" },
-    { key: "timeToLimit", label: "Time to Thermal Limit (at peak)", symbol: "t_limit", unit: "s", precision: 1, tooltip: "Estimated time from cold start at peak current until winding reaches max temp" },
+    { key: "deratedCurrent", label: "Derated Continuous Current", symbol: "I_derated", unit: "A", precision: 2, tooltip: "Max continuous current for this ambient + thermal path, with the resistance at the maximum winding temperature" },
+    { key: "timeToLimit", label: "Time to Thermal Limit (at peak)", symbol: "t_limit", unit: "s", precision: 1, tooltip: "Estimated time from ambient at peak current until the winding reaches max temp, with the resistance rising as it heats (one 10 J/°C thermal mass)" },
     { key: "hotResistance", label: "Hot Resistance", symbol: "R_hot", unit: "mΩ", precision: 1, tooltip: "Winding resistance at steady-state temperature (α = 0.00393/°C for copper)" }
   ],
   calculate: calculateBldcThermal,
   formula: {
-    primary: "ΔT = P_loss × Rθ_total,  I_derated = √((T_max−T_amb) / (1.5·R·Rθ)),  R_hot = R_cold·(1+α·ΔT)",
-    latex: "\\Delta T = P_{loss} \\cdot R_{\\theta}, \\quad I_{derated} = \\sqrt{\\frac{T_{max} - T_{amb}}{1.5 \\cdot R \\cdot R_{\\theta}}}, \\quad R_{hot} = R_{cold}(1 + \\alpha \\Delta T)",
+    primary: "ΔT = Rθ·I²·R(T), R(T) = R_25·(1 + α(T − 25)), so ΔT = Rθ·R_25·I²·(1 + α(T_amb − 25)) / (1 − α·Rθ·R_25·I²);  I_derated = √((T_max − T_amb) / (Rθ·R_25·(1 + α(T_max − 25))))",
+    latex: "\\Delta T = \\frac{R_{\\theta} R_{25} I^2 \\left(1 + \\alpha (T_{amb} - 25)\\right)}{1 - \\alpha R_{\\theta} R_{25} I^2}, \\quad I_{derated} = \\sqrt{\\frac{T_{max} - T_{amb}}{R_{\\theta} R_{25} \\left(1 + \\alpha (T_{max} - 25)\\right)}}, \\quad R_{hot} = R_{25}\\left(1 + \\alpha (T - 25)\\right)",
     variables: [
       { symbol: "ΔT", description: "Temperature rise above ambient", unit: "°C" },
       { symbol: "Rθ", description: "Total thermal resistance (winding→case + case→ambient)", unit: "°C/W" },
       { symbol: "α", description: "Copper temperature coefficient (0.00393/°C)", unit: "1/°C" },
-      { symbol: "I_derated", description: "Maximum safe continuous current", unit: "A" }
+      { symbol: "I_derated", description: "Maximum safe continuous current", unit: "A" },
+      { symbol: "R_25", description: "Terminal resistance at 25 °C, measured between two motor leads", unit: "Ω" },
+      { symbol: "I", description: "Supply current", unit: "A" },
+      { symbol: "T", description: "Winding temperature", unit: "°C" },
+      { symbol: "C_th", description: "Thermal mass of the winding, 10 J/°C", unit: "J/°C" }
     ],
-    reference: "IEC 60034-1 — Rotating electrical machines; NEMA MG-1"
+    derivation: [
+      "Copper loss with the terminal resistance under block commutation: P = I²·R(T), with R(T) = R_25·(1 + α(T − 25)) and α = 0.00393/°C",
+      "Steady state ΔT = Rθ·P(T) is linear in T: ΔT = Rθ·R_25·I²·(1 + α(T_amb − 25)) / (1 − α·Rθ·R_25·I²) (maxon Formulae Handbook, 2012, §9.2)",
+      "No steady state where α·Rθ·R_25·I² ≥ 1: the loss grows with temperature faster than the thermal path removes it (thermal runaway)",
+      "Derated current: the I whose steady state is T_max, with the resistance at T_max",
+      "Time to the limit at peak current: C_th·dT/dt = I²·R(T) − (T − T_amb)/Rθ from T_amb, linear in T, so t = −(C_th/k)·ln(1 − k·(T_max − T_amb)/P_a) with P_a = I²·R(T_amb) and k = 1/Rθ − α·I²·R_25"
+    ],
+    reference: "maxon, Formulae Handbook (J. Braun, maxon academy, 2012), §9.2, p. 49; maxon, Key information (2009), p. 40; Drela, First-Order DC Electric Motor Model (MIT, 2007); IEC 60034-1 — Rotating electrical machines; NEMA MG-1"
   },
   visualization: { type: "none" },
   relatedCalculators: ["bldc-winding", "bldc-efficiency", "motor-heat-dissipation", "bldc-motor"],
-  relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"]
+  relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"],
+  assumptions: [
+    {
+      code: "block-commutation-terminal-resistance",
+      text: "The supply current flows through the terminal resistance measured between two leads (block commutation), so the copper loss is I²·R (Drela 2007; maxon Formulae Handbook 2012, p. 37)."
+    },
+    {
+      code: "resistance-rises-with-temperature",
+      text: "The winding resistance rises as R₂₅·(1 + 0.00393·(T − 25 °C)) and the steady state, the derated current and the time to the limit use the resistance at the temperature they reach (maxon Formulae Handbook 2012, §9.2). Where α·Rθ·R₂₅·I² ≥ 1 there is no steady state and its values are absent."
+    },
+    {
+      code: "copper-loss-only",
+      text: "Copper loss is the only heat source: iron and friction losses do not heat the winding."
+    },
+    {
+      code: "single-thermal-mass",
+      text: "The time to the limit treats the winding as one thermal mass of 10 J/°C, a rough figure for a small motor, starting from ambient temperature."
+    }
+  ]
 };
 
 // src/lib/calculators/motor/servo-motor.ts
@@ -22415,12 +22748,15 @@ var hBridgeSelection = {
 // src/lib/calculators/motor/motor-driver-power.ts
 function calculateMotorDriverPower(inputs) {
   const { motorCurrent, rdson, dutyCycle, switchingFreq, gateCharge, supplyVoltage } = inputs;
-  const conductionLoss = motorCurrent * motorCurrent * rdson * (dutyCycle / 100);
-  const switchingLoss = switchingFreq * gateCharge * supplyVoltage * 1e-9;
-  const totalLossPerFet = conductionLoss + switchingLoss;
-  const totalLossBridge = totalLossPerFet * 4;
-  const efficiency = supplyVoltage * motorCurrent > 0 ? (1 - totalLossBridge / (supplyVoltage * motorCurrent)) * 100 : 0;
-  return { values: { conductionLoss, switchingLoss, totalLossPerFet, totalLossBridge, efficiency } };
+  const transitionTime = inputs.transitionTime ?? 50;
+  const conductionLoss = motorCurrent * motorCurrent * rdson;
+  const switchingLoss = supplyVoltage * motorCurrent * transitionTime * 1e-9 * switchingFreq;
+  const totalLossPerFet = Math.max(conductionLoss, conductionLoss * (dutyCycle / 100) + switchingLoss);
+  const totalLossBridge = 2 * conductionLoss + switchingLoss;
+  const gateDriveLoss = 2 * gateCharge * 1e-9 * supplyVoltage * switchingFreq;
+  const supplyPower = supplyVoltage * motorCurrent * (dutyCycle / 100);
+  const efficiency = supplyPower > 0 ? (1 - (totalLossBridge + gateDriveLoss) / supplyPower) * 100 : 0;
+  return { values: { conductionLoss, switchingLoss, totalLossPerFet, totalLossBridge, efficiency, gateDriveLoss } };
 }
 var motorDriverPower = {
   slug: "motor-driver-power",
@@ -22436,26 +22772,54 @@ var motorDriverPower = {
     { key: "rdson", label: "RDS(on)", symbol: "R_DS", unit: "Ω", defaultValue: 0.015, min: 1e-3, step: 1e-3 },
     { key: "dutyCycle", label: "PWM Duty Cycle", symbol: "D", unit: "%", defaultValue: 75, min: 0, max: 100 },
     { key: "switchingFreq", label: "Switching Frequency", symbol: "f_sw", unit: "Hz", defaultValue: 2e4, min: 100 },
-    { key: "gateCharge", label: "Gate Charge Qg", symbol: "Qg", unit: "nC", defaultValue: 30, min: 0.1, tooltip: "From MOSFET datasheet" }
+    { key: "gateCharge", label: "Gate Charge Qg", symbol: "Qg", unit: "nC", defaultValue: 30, min: 0.1, tooltip: "From MOSFET datasheet" },
+    { key: "transitionTime", label: "Transition Time", symbol: "t_sw", unit: "ns", defaultValue: 50, min: 0, tooltip: "Rise or fall time of the hard-switched FET, taken equal: TI SLVA504A's 0.5·V·I·(t_r + t_f)·f is then V·I·t_sw·f" }
   ],
   outputs: [
-    { key: "conductionLoss", label: "Conduction Loss / FET", symbol: "P_cond", unit: "W", precision: 3 },
-    { key: "switchingLoss", label: "Switching Loss / FET", symbol: "P_sw", unit: "W", precision: 3 },
-    { key: "totalLossPerFet", label: "Total Loss / FET", symbol: "P_FET", unit: "W", precision: 3 },
-    { key: "totalLossBridge", label: "Total Bridge Loss", symbol: "P_bridge", unit: "W", precision: 2 },
-    { key: "efficiency", label: "Driver Efficiency (est.)", symbol: "η", unit: "%", precision: 1 }
+    { key: "conductionLoss", label: "Conduction Loss / Conducting FET", symbol: "P_cond", unit: "W", precision: 3, tooltip: "I²·R_DS(on); two FETs conduct at any instant" },
+    { key: "switchingLoss", label: "Switching Loss (hard-switched FET)", symbol: "P_sw", unit: "W", precision: 3, tooltip: "V·I·t_sw·f, in the one FET hard-switched each period" },
+    { key: "totalLossPerFet", label: "Hottest FET", symbol: "P_FET", unit: "W", precision: 3, tooltip: "The larger of I²·R (the high side that conducts all period) and I²·R·D + P_sw (the low side, which also switches)" },
+    { key: "totalLossBridge", label: "Total Bridge Loss", symbol: "P_bridge", unit: "W", precision: 2, tooltip: "2·I²·R + P_sw (TI SLVA504A); the gate drive is reported apart" },
+    { key: "efficiency", label: "Driver Efficiency (est.)", symbol: "η", unit: "%", precision: 1, tooltip: "1 − (bridge loss + gate drive)/(V·I·D), against the power the supply delivers" },
+    { key: "gateDriveLoss", label: "Gate-Drive Loss", symbol: "P_gate", unit: "W", precision: 4, tooltip: "2·Q_g·V·f for the two FETs that switch each period, dissipated in the gate driver (IR AN-1070)" }
   ],
   calculate: calculateMotorDriverPower,
   formula: {
-    primary: "P_cond = I² × R_DS × D,  P_sw = f × Qg × V",
+    primary: "P_bridge = 2·I²·R_DS + V·I·t_sw·f,  P_FET = max(I²·R_DS, I²·R_DS·D + V·I·t_sw·f),  P_gate = 2·Qg·V·f",
     variables: [
       { symbol: "R_DS", description: "On-state resistance", unit: "Ω" },
-      { symbol: "Qg", description: "Gate charge", unit: "nC" }
-    ]
+      { symbol: "Qg", description: "Gate charge", unit: "nC" },
+      { symbol: "t_sw", description: "Transition time of the hard-switched FET", unit: "ns" },
+      { symbol: "D", description: "PWM duty cycle", unit: "" },
+      { symbol: "P_bridge", description: "Loss in the four FETs of the bridge", unit: "W" },
+      { symbol: "P_gate", description: "Gate-drive loss, dissipated in the driver", unit: "W" }
+    ],
+    derivation: [
+      "Sign-magnitude PWM, synchronous recirculation (TI SLVA504A, Table 1-1): one high-side FET conducts all period, the low side during the on-time, the opposite high side during the off-time",
+      "Two FETs conduct at any instant, so the bridge conducts 2·I²·R_DS at any duty cycle",
+      "The low-side FET is hard-switched: 0.5·V·I·(t_r + t_f)·f = V·I·t_sw·f with rise and fall equal (SLVA504A eq. 2)",
+      "Hottest FET: the high side at I²·R_DS, or the low side at I²·R_DS·D + V·I·t_sw·f",
+      "Gate drive 2·Qg·V·f for the two complementary FETs that switch each period, dissipated in the driver (IR AN-1070)"
+    ],
+    reference: "TI SLVA504A, Calculating Power Dissipation for a H-Bridge or Half Bridge Driver (A. Gopalan, 2012, revised 2021), Table 1-1 and eqs. 1-2; International Rectifier AN-1070 (J. Cerezo), P_GATE"
   },
   visualization: { type: "none" },
   relatedCalculators: ["h-bridge-selection", "mosfet-power-dissipation", "motor-efficiency"],
-  relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
+  relatedBlogPosts: ["dc-motor-control-pwm-drivers"],
+  assumptions: [
+    {
+      code: "sign-magnitude-synchronous",
+      text: "An H-bridge driven by sign-magnitude PWM with synchronous (high-side) recirculation: two FETs carry the motor current at any instant and one is hard-switched each period (TI SLVA504A, Table 1-1)."
+    },
+    {
+      code: "equal-rise-and-fall",
+      text: "The rise and fall times are equal, so SLVA504A's 0.5·V·I·(t_r + t_f)·f is V·I·t_sw·f. The dead-time diode conduction (SLVA504A eq. 3) is not included."
+    },
+    {
+      code: "gate-drive-at-supply-voltage",
+      text: "The gate charge is delivered at the supply voltage, 2·Qg·V·f, and is counted in the driver efficiency, as an integrated driver dissipates it; it is not a FET loss."
+    }
+  ]
 };
 
 // src/lib/calculators/motor/pid-tuning.ts
@@ -28683,18 +29047,15 @@ var modbusFrameTiming = {
 };
 
 // src/lib/calculators/protocol/ethernet-cable.ts
+var IL_COEFFICIENTS = {
+  1: { a: 1.967, b: 0.023, c: 0.05, fMaxMhz: 100, name: "Category 5e" },
+  2: { a: 1.808, b: 0.017, c: 0.2, fMaxMhz: 250, name: "Category 6" },
+  3: { a: 1.82, b: 91e-4, c: 0.25, fMaxMhz: 500, name: "Category 6A" },
+  4: { a: 1.8, b: 5e-3, c: 0.25, fMaxMhz: 2e3, name: "Category 8" }
+};
+var SIGNALLING_MHZ = { 1: 31.25, 2: 62.5, 3: 400 };
 function calculateEthernetCable(inputs) {
   const { cableType, length, speed } = inputs;
-  const attTable = {
-    1: { 1: 22, 2: 36, 3: 60 },
-    // Cat5e
-    2: { 1: 20, 2: 33, 3: 45 },
-    // Cat6
-    3: { 1: 18, 2: 30, 3: 32 },
-    // Cat6a
-    4: { 1: 15, 2: 25, 3: 40 }
-    // Cat8
-  };
   const maxLenTable = {
     // Cat5e at 10G: IEEE 802.3an (10GBASE-T) specifies no Category 5e channel,
     // so no length is compliant; 0 m is that maximum, not a sentinel.
@@ -28703,15 +29064,18 @@ function calculateEthernetCable(inputs) {
     // Cat6: 55m at 10G
     3: { 1: 100, 2: 100, 3: 100 },
     // Cat6a: 100m at 10G
-    4: { 1: 100, 2: 100, 3: 30 }
-    // Cat8: 30m at 10G (data center use)
+    4: { 1: 30, 2: 30, 3: 30 }
+    // Cat8: a 30 m channel with two connectors (TIA-568.2-D), at every speed
   };
   const ct = Math.round(cableType);
   const sp = Math.round(speed);
-  if (!attTable[ct] || !attTable[ct][sp]) {
+  const coefficients = IL_COEFFICIENTS[ct];
+  const f = SIGNALLING_MHZ[sp];
+  if (!coefficients || f === void 0) {
     return { values: {}, errors: ["Invalid cable type or speed selection"] };
   }
-  const attPerHundredM = attTable[ct][sp];
+  const { a, b, c: c2 } = coefficients;
+  const attPerHundredM = a * Math.sqrt(f) + b * f + c2 / Math.sqrt(f);
   const attenuation = length / 100 * attPerHundredM;
   const maxLength = maxLenTable[ct][sp];
   const headroom = maxLength - length;
@@ -28721,6 +29085,16 @@ function calculateEthernetCable(inputs) {
   if (unspecified) {
     warnings.push(
       "IEEE 802.3an specifies 10GBASE-T over Category 6 (to 55 m) or Category 6A (to 100 m); it specifies no reach on Category 5e"
+    );
+  }
+  if (f > coefficients.fMaxMhz) {
+    warnings.push(
+      `${coefficients.name} is specified only to ${coefficients.fMaxMhz} MHz: the insertion loss at ${f} MHz is extrapolated from its TIA-568-C.2 limit equation`
+    );
+  }
+  if (ct === 4) {
+    warnings.push(
+      "The Category 8 insertion loss uses draft coefficients (1.8, 0.005, 0.25: TIA Category 8 draft d0.7, quoted by the IEEE 802.3bq channel model), not a published TIA-568.2-D limit"
     );
   }
   return {
@@ -28792,7 +29166,7 @@ var ethernetCable = {
       symbol: "Att",
       unit: "dB",
       precision: 1,
-      tooltip: "Estimated signal attenuation at given length"
+      tooltip: "Cable insertion loss at the PHY's signalling frequency (31.25, 62.5 or 400 MHz), from the TIA-568-C.2 horizontal-cable limit; Category 8 uses draft coefficients"
     },
     {
       key: "maxLength",
@@ -28825,15 +29199,38 @@ var ethernetCable = {
   ],
   calculate: calculateEthernetCable,
   formula: {
-    primary: "Att = \\frac{L}{100} \\times Att_{100m}",
+    primary: "Att = (L/100)·(a·√f + b·f + c/√f)",
+    latex: "Att = \\frac{L}{100}\\left(a\\sqrt{f} + b\\,f + \\frac{c}{\\sqrt{f}}\\right)",
     variables: [
       { symbol: "L", description: "Cable length", unit: "m" },
-      { symbol: "Att_100m", description: "Attenuation per 100 m at given speed", unit: "dB" }
+      { symbol: "Att_100m", description: "Attenuation per 100 m at given speed", unit: "dB" },
+      { symbol: "f", description: "The PHY's signalling frequency: 31.25 MHz (100BASE-TX), 62.5 MHz (1000BASE-T), 400 MHz (10GBASE-T)", unit: "MHz" },
+      { symbol: "a, b, c", description: "Insertion-loss coefficients: Cat5e 1.967/0.023/0.050, Cat6 1.808/0.017/0.200, Cat6A 1.82/0.0091/0.25, Cat8 1.8/0.005/0.25 (draft)", unit: "" }
     ],
-    reference: "IEEE 802.3 / TIA-568 cabling standards; IEEE 802.3an-2006 and TIA TSB-155 (10GBASE-T: Category 6 to 55 m, 6A to 100 m, no Category 5e)"
+    derivation: [
+      "Att_100m = a·√f + b·f + c/√f is the horizontal-cable insertion-loss limit (TIA-568-C.2 Table 27); the coefficients reproduce every tabulated cell within 0.05 dB",
+      "f is the frequency the PHY signals at: MLT-3 at 125 Mbaud for 100BASE-TX, 62.5 MHz for 1000BASE-T, 800 Mbaud for 10GBASE-T",
+      "Above a category's specified range (Cat5e 100 MHz, Cat6 250 MHz) the limit equation is extrapolated, with a warning, as TSB-155 does for Cat6 at 10GBASE-T",
+      "Category 8 is a 30 m channel with two connectors (TIA-568.2-D); its coefficients are the draft d0.7 values quoted by IEEE 802.3bq"
+    ],
+    reference: "ANSI/TIA-568-C.2 (2009) Table 27, horizontal-cable insertion loss, carried into ANSI/TIA-568.2-D (2018); IEEE 802.3an-2006 and TIA TSB-155 (10GBASE-T: Category 6 to 55 m, 6A to 100 m, no Category 5e); IEEE 802.3bq channel model (Category 8 draft coefficients)"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["rs485-termination", "usb-termination", "can-bus-timing"]
+  relatedCalculators: ["rs485-termination", "usb-termination", "can-bus-timing"],
+  assumptions: [
+    {
+      code: "phy-signalling-frequency",
+      text: "The attenuation is the cable's insertion-loss limit at the PHY's signalling frequency: 31.25 MHz for 100BASE-TX, 62.5 MHz for 1000BASE-T and 400 MHz for 10GBASE-T."
+    },
+    {
+      code: "horizontal-cable-limit",
+      text: "The loss is the TIA-568-C.2 horizontal-cable limit per 100 m scaled to the length; patch cords and connectors are not added."
+    },
+    {
+      code: "cat8-draft-coefficients",
+      text: "Category 8 uses the draft d0.7 insertion-loss coefficients quoted by the IEEE 802.3bq channel model, and its 30 m channel at every speed."
+    }
+  ]
 };
 
 // src/lib/calculators/pcb/power-plane-impedance.ts
@@ -30053,6 +30450,7 @@ var powerSupplyRippleFilter = {
 };
 
 // src/lib/calculators/emc/cable-shield-effectiveness.ts
+var C06 = 299792458;
 var cableShieldEffectiveness = {
   slug: "cable-shield-effectiveness",
   title: "Cable Shield Effectiveness",
@@ -30064,7 +30462,9 @@ var cableShieldEffectiveness = {
   inputs: [
     { key: "shieldResistance", label: "Shield DC Resistance", symbol: "R_sh", unit: "mΩ/m", defaultValue: 10, min: 1e-3, tooltip: "Per metre, from cable datasheet" },
     { key: "cableLength", label: "Cable Length", symbol: "l", unit: "m", defaultValue: 2, min: 0.01 },
-    { key: "frequency", label: "Frequency", symbol: "f", unit: "MHz", defaultValue: 10, min: 1e-3 }
+    { key: "frequency", label: "Frequency", symbol: "f", unit: "MHz", defaultValue: 10, min: 1e-3 },
+    { key: "transferInductance", label: "Transfer Inductance", symbol: "M_T", unit: "nH/m", defaultValue: 0.159155, min: 0, tooltip: "Per metre, from the cable datasheet or a transfer-impedance measurement. The default puts the inductive corner of a 10 mΩ/m shield at 10 MHz" },
+    { key: "lineImpedance", label: "Line Impedance", symbol: "Z₁", unit: "Ω", defaultValue: 50, min: 0.1, tooltip: "Characteristic impedance of the line inside the shield, which the coupled voltage is compared with" }
   ],
   outputs: [
     { key: "shieldingEffectDb", label: "Shielding Effectiveness", symbol: "SE", unit: "dB", precision: 1, thresholds: { good: { min: 40 }, warning: { min: 20 } } },
@@ -30072,19 +30472,53 @@ var cableShieldEffectiveness = {
   ],
   calculate: (inputs) => {
     const { shieldResistance, cableLength, frequency } = inputs;
-    const ztDcMohm = shieldResistance * cableLength;
-    const freqMhz = frequency;
-    const ztAc = ztDcMohm * Math.sqrt(1 + (freqMhz / 10) ** 2);
-    const shieldingEffectDb = Math.max(0, 40 - 20 * Math.log10(ztAc / 10));
-    return { values: { shieldingEffectDb, transferImpedance: ztAc } };
+    const transferInductance = inputs.transferInductance ?? 0.159155;
+    const lineImpedance = inputs.lineImpedance ?? 50;
+    const reactance = 2 * Math.PI * frequency * transferInductance;
+    const transferImpedance = Math.hypot(shieldResistance, reactance) * cableLength;
+    const shieldingEffectDb = 20 * Math.log10(lineImpedance / (transferImpedance * 1e-3));
+    const warnings = [];
+    const wavelength = C06 / (frequency * 1e6);
+    if (cableLength > wavelength / 6) {
+      warnings.push("The cable is longer than a sixth of a wavelength at this frequency, so the short-cable relation SE = 20·log₁₀(Z₁/(|Z_T|·l)) does not hold; the result is only an estimate (Hähner & Mund 1998)");
+    }
+    if (transferImpedance * 1e-3 >= lineImpedance) {
+      warnings.push("The transfer impedance times the length is at least the line impedance, so the screen no longer couples weakly and the short-screen approximation fails");
+    }
+    return { values: { shieldingEffectDb, transferImpedance }, warnings: warnings.length ? warnings : void 0 };
   },
   formula: {
-    primary: "SE = 20·log₁₀(V_no-shield / V_shield)",
-    variables: []
+    primary: "SE = 20·log₁₀(Z₁ / (|Z_T|·l)),  Z_T = R_T + jωM_T",
+    latex: "SE = 20\\log_{10}\\frac{Z_1}{|Z_T|\\,l},\\qquad Z_T = R_T + j\\omega M_T",
+    variables: [
+      { symbol: "SE", description: "Shielding effectiveness: line voltage over the voltage coupled through the screen", unit: "dB" },
+      { symbol: "Z_1", description: "Line impedance", unit: "Ω" },
+      { symbol: "Z_T", description: "Transfer impedance per metre", unit: "mΩ/m" },
+      { symbol: "R_T", description: "Shield DC resistance per metre", unit: "mΩ/m" },
+      { symbol: "M_T", description: "Transfer inductance per metre", unit: "nH/m" },
+      { symbol: "l", description: "Cable length", unit: "m" }
+    ],
+    derivation: [
+      "A current I on the screen drives Z_T·l·I into the line, so for an electrically short screen U₂/U₁ ≈ Z_T·l/Z₁ (Hähner & Mund, eq. 3-1)",
+      "Z_T = R_T + jωM_T: the DC resistance, plus a transfer inductance that dominates above f = R_T/(2πM_T) (eq. 3-2)",
+      "SE = 20·log₁₀(Z₁/(|Z_T|·l)); doubling the length lowers it by 6.02 dB",
+      "The relation holds while l < λ₀/6, about 30 MHz for a 1 m cable"
+    ],
+    reference: "Hähner & Mund, Screening of Cables in the MHz to GHz Frequency Range — Extended Application of a Simple Measuring Method (1998), eqs. 3-1 and 3-2, the method behind IEC 62153-4-4; Vance, IEEE Trans. EMC 17(2), 1975"
   },
   visualization: { type: "none" },
   relatedCalculators: ["shielding-effectiveness", "radiated-emission-estimate", "emi-margin-budget"],
-  relatedBlogPosts: ["emi-filter-design-cispr-compliance"]
+  relatedBlogPosts: ["emi-filter-design-cispr-compliance"],
+  assumptions: [
+    {
+      code: "electrically-short-screen",
+      text: "The screen is electrically short: SE = 20·log₁₀(Z₁/(|Z_T|·l)) holds up to about a sixth of a wavelength, and a longer cable is flagged, not corrected."
+    },
+    {
+      code: "transfer-impedance-r-plus-jwm",
+      text: "The transfer impedance is R_T + jωM_T; the diffusion term of a solid screen, R₀·γd/sinh(γd), is not modelled, and equals R₀ at low frequency."
+    }
+  ]
 };
 
 // src/lib/calculators/emc/chassis-resonance.ts
@@ -31055,7 +31489,7 @@ function calculateClassDEfficiency(inputs) {
   }
   const rdsonOhms = rdson / 1e3;
   const loadCurrent = Math.sqrt(outputPower / loadImpedance);
-  const conductionLoss = loadCurrent * loadCurrent * rdsonOhms * mosfetCount;
+  const conductionLoss = loadCurrent * loadCurrent * rdsonOhms * mosfetCount / 2;
   const quiescentLoss = supplyVoltage * quiescentCurrent / 1e3;
   const totalLoss = conductionLoss + quiescentLoss;
   const totalInput = outputPower + totalLoss;
@@ -31078,26 +31512,47 @@ var classDEfficiency = {
       { label: "8 Ω", values: { loadImpedance: 8 } }
     ] },
     { key: "rdson", label: "MOSFET RDS(on)", symbol: "R_DS", unit: "mΩ", defaultValue: 50, min: 1, tooltip: "Per MOSFET in milliohms" },
-    { key: "mosfetCount", label: "Number of MOSFETs", symbol: "N", unit: "", defaultValue: 4, min: 2, step: 2 },
+    { key: "mosfetCount", label: "Number of MOSFETs", symbol: "N", unit: "", defaultValue: 4, min: 2, step: 2, tooltip: "Half bridge 2, full bridge (BTL) 4. One FET of each half bridge carries the load at a time, so N/2 conduct" },
     { key: "quiescentCurrent", label: "Quiescent Current", symbol: "I_q", unit: "mA", defaultValue: 30, min: 0 }
   ],
   outputs: [
     { key: "efficiency", label: "Efficiency", symbol: "η", unit: "%", precision: 1, thresholds: { good: { min: 85 }, warning: { min: 70 } } },
-    { key: "conductionLoss", label: "Conduction Loss", symbol: "P_cond", unit: "W", precision: 2 },
+    { key: "conductionLoss", label: "Conduction Loss", symbol: "P_cond", unit: "W", precision: 2, tooltip: "I²·R_DS(on)·N/2: the FETs that carry the load current at once" },
     { key: "quiescentLoss", label: "Quiescent Loss", symbol: "P_q", unit: "W", precision: 2 },
     { key: "totalLoss", label: "Total Power Loss", symbol: "P_loss", unit: "W", precision: 2, tooltip: "Total heat dissipated — use for heatsink sizing" },
     { key: "totalInput", label: "Total Input Power", symbol: "P_in", unit: "W", precision: 1 }
   ],
   calculate: calculateClassDEfficiency,
   formula: {
-    primary: "η = P_out / (P_out + P_cond + P_q) × 100%",
+    primary: "η = P_out / (P_out + P_cond + P_q) × 100%, P_cond = I²·R_DS·N/2, I = √(P_out/Z_L), P_q = V_s·I_q",
     variables: [
-      { symbol: "R_DS", description: "MOSFET on-resistance", unit: "Ω" }
-    ]
+      { symbol: "R_DS", description: "MOSFET on-resistance", unit: "Ω" },
+      { symbol: "P_cond", description: "Conduction loss of the FETs carrying the load", unit: "W" },
+      { symbol: "I", description: "Load current, rms", unit: "A" },
+      { symbol: "N", description: "Number of MOSFETs: 2 for a half bridge, 4 for a full bridge", unit: "" },
+      { symbol: "P_q", description: "Quiescent loss", unit: "W" }
+    ],
+    derivation: [
+      "Load current I = √(P_out/Z_L), the rms current into a resistive load",
+      "Each FET dissipates I_D,rms²·R_DS(on) while it conducts (IR AN-1070)",
+      "A half bridge (N = 2) carries the load through one FET at a time and a full bridge (N = 4) through two (Infineon AN-1198), so P_cond = I²·R_DS·N/2",
+      "Quiescent loss P_q = V_s·I_q; switching and gate-drive losses are not included"
+    ],
+    reference: "International Rectifier AN-1070 (J. Cerezo), Class D Audio Amplifier Performance Relationship to MOSFET Parameters; Infineon AN-1198 (I. Ferstenberg, 2013), Bridging Class D Amplifiers"
   },
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "audio-snr", "amplifier-clipping"],
-  relatedBlogPosts: ["audio-amplifier-design-guide"]
+  relatedBlogPosts: ["audio-amplifier-design-guide"],
+  assumptions: [
+    {
+      code: "fets-in-conduction-path",
+      text: "One FET of each half bridge carries the load current at any instant, so N/2 FETs conduct: one in a half bridge (N = 2), two in a full bridge (N = 4) (IR AN-1070; Infineon AN-1198)."
+    },
+    {
+      code: "no-switching-or-gate-loss",
+      text: "Switching loss 0.5·I·V·(t_r + t_f)·f_sw, output-capacitance loss and gate-drive loss 2·Q_g·V·f_sw (IR AN-1070) are not included, so the efficiency is an upper bound."
+    }
+  ]
 };
 
 // src/lib/calculators/audio/audio-adc-snr.ts
