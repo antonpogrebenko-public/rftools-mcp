@@ -98,6 +98,25 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.5.5
+
+No tool or argument changed. Calculator inputs and outputs follow the
+rftools.io input audit (changelog, 2026-10-12):
+- **Twelve inputs that never changed a result are retired**: a call that
+  still sends one is computed and answered with the warning "Input 'X' is
+  not read by this calculator and was ignored." (`get_calculator_schema`
+  no longer lists them).
+- **Eight inputs now drive new outputs**: patch-antenna's feed resistance at
+  the inset, flyback's primary inductance, solar autonomy, the RS-485 baud
+  rate against the cable's maximum, the ADC's Nyquist zone and alias,
+  bldc-thermal's share of the rating, bldc-winding's no-load speed, and the
+  ISM band. Yagi reports `assumedBoomLength`.
+- **Four constant outputs are removed** (breaking): balun-transformer
+  `vswr` and `insertionLoss`, opamp-bandwidth `slewLimited`, capacitor-code
+  `voltageCode`.
+- **`loop-antenna`'s gain includes its radiation efficiency** (it always read
+  1.76 dBi); a `radiationEfficiency` output is added.
+
 ### What changed in 2.5.4
 
 No tool or name changed. `trace-width-current`'s IPC-2152 width
