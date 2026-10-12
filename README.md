@@ -98,6 +98,24 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.5.3
+
+No tool, argument or name changed. Twelve calculators now compute the model
+they cite (rftools.io changelog, 2026-10-12):
+- `mosfet-operating-point` solves the drain load line (11.96 mA at the
+  defaults, not 450 mA; `biasMode` 1 keeps the entered V_DS);
+- `radar-range-equation` takes the range at the required SNR (Albersheim,
+  new `pd`, `pfa` and `pulses` inputs);
+- `cable-shield-effectiveness` refers the shielding to a 50 Ω line;
+- `ferrite-bead` uses a complex bead model (AN-1368);
+- `bldc-motor` solves the loaded speed;
+- `ethernet-cable` uses TIA-568-C.2 insertion loss at each PHY's signalling
+  frequency (Category 8 on IEEE 802.3bq draft coefficients);
+- `bldc-efficiency` and `bldc-thermal` take I²·R copper loss, and
+  bldc-thermal's hot resistance (it is null above the runaway current);
+- `class-d-efficiency` and `motor-driver-power` count two conducting FETs;
+- `coax-impedance` and `via-calculator` use η₀/2π.
+
 ### What changed in 2.5.2
 
 No tool, argument or name changed. `bldc-winding` now counts both coil sides
