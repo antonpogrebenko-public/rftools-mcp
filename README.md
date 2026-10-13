@@ -98,6 +98,29 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.5.6
+
+No tool changed. `simulate_emi_radiated`'s fields now use the exact π·µ₀/c and
+µ₀ (once the worker deploys), and calculator results follow the rftools.io
+formula follow-up (changelog, 2026-10-13):
+- **Seven outputs are removed** (breaking): differential-via's five
+  impedances (a field solution showed they depend on the plane pitch, which
+  is not an input), usb-termination `eyeOpening` and parabolic-dish-antenna
+  `noiseTemperature`.
+- **Values that do not exist are null** (breaking): USB 3.0 rise time,
+  crosstalk above the weak-coupling limit, sealed subwoofer at Qts ≥ 0.707,
+  spiral Q at or above resonance, a lossless LC circuit's Q, a via with no
+  stub; and a refused input returns no values instead of zeros.
+- **Models corrected:** the planar spiral's self-resonance and Q, Paul's
+  two-end crosstalk with a far-end output, Margolis & Small port tuning,
+  coupled-microstrip pcb-crosstalk, Balanis' slot model for the patch, LC Q
+  in parallel mode plus the impedance at resonance, microvia arrays, via
+  self-heating, BGA escape rows, IPC-2222 aspect ratios.
+- **Exact constants:** one η₀ = µ₀·c, η₀/2π in every microstrip impedance
+  (−0.069 %), and IEC 60028 copper.
+- **New inputs:** planar-spiral-inductor `frequency`, pcb-crosstalk
+  `dielectricConst`, aperture-diagonal `routerBit`.
+
 ### What changed in 2.5.5
 
 No tool or argument changed. Calculator inputs and outputs follow the

@@ -62,7 +62,7 @@
     }
   ],
   "formula": {
-    "primary": "Z_0 = \\frac{60}{\\sqrt{\\varepsilon_{eff}}} \\ln\\!\\left(\\frac{F}{u} + \\sqrt{1 + \\frac{4}{u^2}}\\right)",
+    "primary": "Z_0 = \\frac{\\eta_0}{2\\pi\\sqrt{\\varepsilon_{eff}}} \\ln\\!\\left(\\frac{F}{u} + \\sqrt{1 + \\frac{4}{u^2}}\\right)",
     "reference": "Hammerstad & Jensen (1980); Wadell, \"Transmission Line Design Handbook\" 1991"
   }
 }
