@@ -45,6 +45,11 @@ var COPPER_RESISTIVITY_20C = 1 / 58e6;
 var MU_0 = 125663706212e-17;
 var SPEED_OF_LIGHT = 299792458;
 var FREE_SPACE_IMPEDANCE = MU_0 * SPEED_OF_LIGHT;
+var CIRCULAR_MIL = Math.PI / 4 * 254e-7 * 254e-7;
+var FOOT = 0.3048;
+var COPPER_ALPHA_20C = 393e-5;
+var TM650_RESISTIVITY_20C = 10.827 * CIRCULAR_MIL / FOOT / (1 + COPPER_ALPHA_20C * 5);
+var TM650_RESISTIVITY_HALF_OZ_20C = 11.529 * CIRCULAR_MIL / FOOT / (1 + COPPER_ALPHA_20C * 5);
 
 // src/lib/calculators/rf/microstrip-impedance.ts
 var ETA_0 = FREE_SPACE_IMPEDANCE;
@@ -2348,462 +2353,6 @@ var smithChart = {
   }
 };
 
-// src/lib/calculators/validity.ts
-function bound(value, unit) {
-  if (!unit) return String(value);
-  return unit === "°" ? `${value}°` : `${value} ${unit}`;
-}
-function range(b) {
-  if (b.min !== void 0 && b.min === b.max) return `exactly ${bound(b.min, b.unit)}`;
-  if (b.min !== void 0 && b.max !== void 0) {
-    return `${String(b.min)} to ${bound(b.max, b.unit)}`;
-  }
-  if (b.min !== void 0) return `at least ${bound(b.min, b.unit)}`;
-  return `at most ${bound(b.max, b.unit)}`;
-}
-function checkValidity(bounds, values) {
-  const warnings = [];
-  for (const b of bounds ?? []) {
-    if (!(b.quantity in values)) {
-      throw new Error(`checkValidity: no value given for the bounded quantity "${b.quantity}"`);
-    }
-    const v = values[b.quantity];
-    if (Number.isNaN(v)) continue;
-    let breach = null;
-    if (b.min !== void 0 && v < b.min) breach = `below ${bound(b.min, b.unit)}`;
-    else if (b.max !== void 0 && v > b.max) breach = `above ${bound(b.max, b.unit)}`;
-    if (breach === null) continue;
-    warnings.push(
-      `${b.label ?? b.quantity} is ${breach}; the model holds for ${range(b)} (${b.source}). The result is extrapolated.`
-    );
-  }
-  return warnings;
-}
-
-// src/lib/calculators/pcb/trace-width-current.ts
-var B = 0.44;
-var C = 0.725;
-var K_2221_EXTERNAL = 0.048;
-var K_2221_INTERNAL = 0.024;
-var K_2152_FIGURE_5_1 = 0.024;
-var COPPER_UM_PER_OZ = 35;
-var MM_PER_MIL = 0.0254;
-var FIGURE_5_1 = "IPC-2152 (2009) Figure 5-1, which is IPC-2221 (1998) Figure 6-4 chart C";
-var CHART_A = "IPC-2221 (1998) Figure 6-4 chart A";
-var TRACE_WIDTH_VALIDITY = [
-  {
-    quantity: "tempRise",
-    min: 10,
-    max: 45,
-    label: "Temperature rise ΔT on IPC-2152 Figure 5-1",
-    unit: "°C",
-    source: `${FIGURE_5_1}: curves at 10, 20, 30 and 45 °C`
-  },
-  {
-    quantity: "area2152",
-    max: 700,
-    label: "Cross-section on IPC-2152 Figure 5-1",
-    unit: "sq mil",
-    source: `${FIGURE_5_1}: drawn to 700 sq mil`
-  },
-  {
-    quantity: "riseChartA",
-    min: 10,
-    max: 100,
-    label: "Temperature rise ΔT on IPC-2221 chart A (external layer)",
-    unit: "°C",
-    source: `${CHART_A}: curves at 10, 20, 30, 45, 60, 75 and 100 °C`
-  },
-  {
-    quantity: "areaChartA",
-    max: 700,
-    label: "Cross-section on IPC-2221 chart A (external layer)",
-    unit: "sq mil",
-    source: `${CHART_A}: drawn to 700 sq mil`
-  },
-  {
-    quantity: "copperWeight",
-    min: 0.5,
-    max: 3,
-    label: "Copper weight",
-    unit: "oz",
-    source: "IPC-2221 (1998) Figure 6-4 chart B: ½, 1, 2 and 3 oz"
-  }
-];
-function calculateTraceWidth(inputs) {
-  const { current, copperWeight, tempRise, traceLength, isExternal } = inputs;
-  const traceWidth = inputs.traceWidth ?? 0.5;
-  const external = isExternal > 0.5;
-  if (!(traceWidth > 0)) return { values: {}, errors: ["Trace width must be greater than 0"] };
-  const copperMil = copperWeight * COPPER_UM_PER_OZ / 1e3 / MM_PER_MIL;
-  const k2221 = external ? K_2221_EXTERNAL : K_2221_INTERNAL;
-  const area2221 = Math.pow(current / (k2221 * Math.pow(tempRise, B)), 1 / C);
-  const width2221mm = area2221 / copperMil * MM_PER_MIL;
-  const area2152 = Math.pow(current / (K_2152_FIGURE_5_1 * Math.pow(tempRise, B)), 1 / C);
-  const width2152mm = area2152 / copperMil * MM_PER_MIL;
-  const alpha = 393e-5;
-  const tempC = 25 + tempRise;
-  const rho = COPPER_RESISTIVITY_20C * (1 + alpha * (tempC - 20));
-  const widthM = traceWidth * 1e-3;
-  const thicknessM = copperMil * MM_PER_MIL * 1e-3;
-  const lengthM = traceLength * 1e-3;
-  const resistance = rho * lengthM / (widthM * thicknessM);
-  const voltageDrop2 = current * resistance;
-  const powerDiss = current * current * resistance;
-  const inChartRange = tempRise >= 10 && tempRise <= 45 && area2152 <= 700 ? 1 : 0;
-  const warnings = checkValidity(TRACE_WIDTH_VALIDITY, {
-    tempRise,
-    area2152,
-    riseChartA: external ? tempRise : NaN,
-    areaChartA: external ? area2221 : NaN,
-    copperWeight
-  });
-  return {
-    values: {
-      width2221mm,
-      width2152mm,
-      resistance,
-      voltageDrop: voltageDrop2,
-      powerDiss,
-      inChartRange
-    },
-    warnings
-  };
-}
-var traceWidthCurrent = {
-  slug: "trace-width-current",
-  title: "PCB Trace Width Calculator (IPC-2221 / IPC-2152)",
-  shortTitle: "Trace Width",
-  metaTitle: "PCB Trace Width Calculator — Free IPC-2221 Tool",
-  category: "pcb",
-  description: "Calculate minimum PCB trace width for current capacity per IPC-2221 and IPC-2152’s conservative Figure 5-1. Get resistance, voltage drop, and power dissipation at the width you draw. Free, instant results.",
-  keywords: ["trace width calculator", "pcb trace current", "ipc-2221 calculator", "ipc-2152", "pcb current capacity", "trace ampacity"],
-  inputs: [
-    {
-      key: "current",
-      label: "Current",
-      symbol: "I",
-      unit: "A",
-      defaultValue: 1,
-      min: 0.01,
-      max: 100,
-      step: 0.1,
-      tooltip: "RMS current through the trace"
-    },
-    {
-      key: "copperWeight",
-      label: "Copper Weight",
-      symbol: "T",
-      unit: "oz",
-      defaultValue: 1,
-      min: 0.5,
-      max: 4,
-      step: 0.5,
-      tooltip: "Copper thickness (1 oz = 35 μm = 1.378 mil)",
-      presets: [
-        { label: "½ oz", values: { copperWeight: 0.5 } },
-        { label: "1 oz (standard)", values: { copperWeight: 1 } },
-        { label: "2 oz", values: { copperWeight: 2 } },
-        { label: "3 oz", values: { copperWeight: 3 } }
-      ]
-    },
-    {
-      key: "tempRise",
-      label: "Temperature Rise",
-      symbol: "ΔT",
-      unit: "°C",
-      defaultValue: 10,
-      min: 1,
-      max: 100,
-      step: 1,
-      tooltip: "Allowed temperature rise above ambient",
-      presets: [
-        { label: "5°C (tight)", values: { tempRise: 5 } },
-        { label: "10°C (standard)", values: { tempRise: 10 } },
-        { label: "20°C (relaxed)", values: { tempRise: 20 } }
-      ]
-    },
-    {
-      key: "traceLength",
-      label: "Trace Length",
-      symbol: "L",
-      unit: "mm",
-      defaultValue: 100,
-      min: 1,
-      max: 1e4,
-      step: 1,
-      tooltip: "Length of the trace (for resistance/voltage drop)"
-    },
-    {
-      key: "isExternal",
-      label: "Layer Type",
-      symbol: "",
-      unit: "",
-      defaultValue: 1,
-      min: 0,
-      max: 1,
-      tooltip: "1 = external (outer) layer, 0 = internal layer",
-      presets: [
-        { label: "External layer", values: { isExternal: 1 } },
-        { label: "Internal layer", values: { isExternal: 0 } }
-      ]
-    },
-    {
-      key: "traceWidth",
-      label: "Drawn Trace Width",
-      symbol: "W",
-      unit: "mm",
-      defaultValue: 0.5,
-      min: 0.01,
-      max: 100,
-      tooltip: "The width as drawn: the DC resistance, voltage drop and power are computed for it; the minimum widths do not use it"
-    }
-  ],
-  outputs: [
-    {
-      key: "width2221mm",
-      label: "Min Width (IPC-2221)",
-      unit: "mm",
-      precision: 3,
-      tooltip: "IPC-2221 Figure 6-4 through its published fit: chart A (k = 0.048) on an external layer, chart C (k = 0.024) on an internal one",
-      thresholds: { warning: { min: 3 } }
-    },
-    {
-      key: "width2152mm",
-      label: "Min Width (IPC-2152 Fig. 5-1)",
-      unit: "mm",
-      precision: 3,
-      tooltip: "IPC-2152 Figure 5-1, the conservative chart IPC-2152 recommends for internal and external conductors: the same on either layer"
-    },
-    {
-      key: "resistance",
-      label: "DC Resistance (Drawn Width)",
-      unit: "Ω",
-      precision: 6,
-      format: "engineering",
-      tooltip: "At the drawn trace width and a 25 °C ambient plus the allowed rise"
-    },
-    {
-      key: "voltageDrop",
-      label: "Voltage Drop (Drawn Width)",
-      unit: "V",
-      precision: 4,
-      tooltip: "Current × the DC resistance of the drawn trace width",
-      thresholds: { warning: { min: 0.1 } }
-    },
-    {
-      key: "powerDiss",
-      label: "Power Dissipation (Drawn Width)",
-      unit: "W",
-      precision: 4,
-      tooltip: "Current² × the DC resistance of the drawn trace width"
-    },
-    {
-      key: "inChartRange",
-      label: "Within IPC-2152 Fig. 5-1 Range",
-      unit: "",
-      precision: 0,
-      tooltip: "1 when the rise is between 10 and 45 °C and the cross-section at most 700 sq mil, the range Figure 5-1 draws",
-      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
-    }
-  ],
-  calculate: calculateTraceWidth,
-  formula: {
-    primary: "A = (I / (k·ΔT^0.44))^(1/0.725),  W_min = A / t,  R = ρ(T)·L / (W·t)",
-    latex: "A = \\left(\\frac{I}{k \\cdot \\Delta T^{0.44}}\\right)^{1/0.725},\\qquad W_{min} = \\frac{A}{t},\\qquad R = \\frac{\\rho(T)\\,L}{W\\,t}",
-    variables: [
-      { symbol: "A", description: "Minimum cross-section", unit: "mil²" },
-      { symbol: "I", description: "Current", unit: "A" },
-      { symbol: "ΔT", description: "Temperature rise above ambient", unit: "°C" },
-      { symbol: "k", description: "Chart constant: IPC-2221 0.048 external, 0.024 internal; IPC-2152 Figure 5-1 0.024 on either layer", unit: "" },
-      { symbol: "W_min", description: "Minimum trace width", unit: "mil" },
-      { symbol: "t", description: "Copper thickness, 1.378 mil (35 µm) per ounce", unit: "mil" },
-      { symbol: "R", description: "DC resistance of the drawn trace", unit: "Ω" },
-      { symbol: "ρ(T)", description: "Copper resistivity, 1/58 Ω·mm²/m at 20 °C, rising 0.393 % per °C", unit: "Ω·m" },
-      { symbol: "L", description: "Trace length", unit: "mm" },
-      { symbol: "W", description: "Drawn trace width", unit: "mm" }
-    ],
-    derivation: [
-      "IPC prints charts, not formulas: I = k·ΔT^0.44·A^0.725 is the published fit to them",
-      "IPC-2221 (1998) and IPC-2221A (2003) Figure 6-4: k = 0.048 for an external layer (chart A), 0.024 for an internal one (chart C)",
-      "IPC-2152 (2009) Figure 5-1, its conservative chart for every conductor, is IPC-2221 chart C kept: k = 0.024 on either layer",
-      "Solved for the cross-section, A = (I/(k·ΔT^0.44))^(1/0.725), and divided by the copper thickness for the width",
-      "The resistance, voltage drop and power are for the drawn width W, at a 25 °C ambient plus the allowed rise"
-    ],
-    reference: "IPC-2221A (May 2003) §6.2, Figure 6-4 (the chart of IPC-2221, February 1998), through its published fit; IPC-2152 (August 2009) §5, Figure 5-1"
-  },
-  assumptions: [
-    {
-      code: "ipc-2221-fit",
-      text: "The IPC-2221 width is IPC-2221 Figure 6-4 through its published fit A = (I/(k·ΔT^0.44))^(1/0.725), with A in mil², k = 0.048 for an external layer (chart A) and 0.024 for an internal one (chart C). Chart A draws 10 to 100 °C and chart C 10 to 45 °C, both to 700 sq mil; the curves include IPC-2221’s 10 % derating, and its note 2 (a further 15 % for boards 0.8 mm or thinner or copper 108 µm or thicker) is not applied."
-    },
-    {
-      code: "ipc-2152-figure-5-1",
-      text: "The IPC-2152 width is read on IPC-2152 Figure 5-1, the chart IPC-2152 recommends for internal and external conductors in all environments, through the same fit with k = 0.024 on either layer. It is the conservative answer for a board about which nothing else is known: IPC-2152’s detailed method, which narrows the trace for the board’s thickness and a copper plane under it, is not applied."
-    },
-    {
-      code: "steady-state-dc",
-      text: "Steady DC (or RMS) current in a single trace: pulsed currents, skin effect and heating from neighbouring traces are not modelled."
-    },
-    {
-      code: "copper-weight",
-      text: "Copper is 35 µm (1.378 mil) thick per ounce, and the trace cross-section is a rectangle of that thickness."
-    },
-    {
-      code: "resistance-at-temperature",
-      text: "Resistance, voltage drop and power are for the drawn trace width, with ρ = 1/58 Ω·mm²/m (IEC 60028, 1.7241×10⁻⁸ Ω·m) at 20 °C and α = 0.00393 /°C, evaluated at a 25 °C ambient plus the allowed rise."
-    }
-  ],
-  fittedModel: {
-    description: "IPC-2152 Figure 5-1 through I = 0.024·ΔT^0.44·A^0.725, checked against IPC-2221 (1998) Figure 6-4 chart C (the same chart) at 10 to 45 °C and up to 700 sq mil: the cross-section is within −3.5 % to +4.4 % of 12 chart readings, and 11.3 % short at 10 °C and 700 sq mil",
-    worstCaseError: 0.12,
-    insideOutput: "inChartRange"
-  },
-  validity: TRACE_WIDTH_VALIDITY,
-  visualization: { type: "none" },
-  relatedCalculators: ["microstrip-impedance", "trace-resistance", "via-calculator"],
-  relatedBlogPosts: ["microstrip-impedance-design-guide", "microstrip-impedance", "pcb-trace-width-current-capacity"],
-  verificationData: [
-    {
-      inputs: { current: 1, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1, traceWidth: 0.5 },
-      expectedOutputs: { width2221mm: 0.3004 },
-      tolerance: 1e-3,
-      source: "IPC-2221A (2003) Figure 6-4 chart A through its published fit A = (I/(k·ΔT^0.44))^(1/0.725), k = 0.048, at 35 µm per ounce"
-    },
-    {
-      inputs: { current: 5, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1, traceWidth: 0.5 },
-      expectedOutputs: { width2221mm: 2.7655 },
-      tolerance: 1e-3,
-      source: "IPC-2221A (2003) Figure 6-4 chart A through its published fit A = (I/(k·ΔT^0.44))^(1/0.725), k = 0.048, at 35 µm per ounce"
-    },
-    {
-      // 300 sq mil / 1.378 mil = 217.7 mil = 5.530 mm
-      inputs: { current: 4, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1, traceWidth: 0.5 },
-      expectedOutputs: { width2152mm: 5.53 },
-      tolerance: 0.05,
-      source: 'J. Olson, "Determining Circuit Board Current Carrying Capability" (CID+, 2010): IPC-2152 Figure 5-1 read at 4 A and a 10 °C rise, about 300 sq mil'
-    },
-    {
-      // 680 sq mil / 1.378 mil = 493.5 mil = 12.534 mm
-      inputs: { current: 10, copperWeight: 1, tempRise: 20, traceLength: 100, isExternal: 0, traceWidth: 0.5 },
-      expectedOutputs: { width2152mm: 12.534 },
-      tolerance: 0.05,
-      source: 'J. Olson, "Determining Circuit Board Current Carrying Capability" (CID+, 2010): IPC-2152 Figure 5-1 read at 10 A and a 20 °C rise, about 680 sq mil'
-    }
-  ]
-};
-
-// src/lib/calculators/pcb/trace-resistance.ts
-function calculateTraceResistance(inputs) {
-  const { traceWidth, traceLength, copperThickness, temperature } = inputs;
-  const rho20 = COPPER_RESISTIVITY_20C;
-  const alpha = 393e-5;
-  const rho = rho20 * (1 + alpha * (temperature - 20));
-  const widthM = traceWidth * 1e-3;
-  const lengthM = traceLength * 1e-3;
-  const thicknessM = copperThickness * 1e-6;
-  const resistance = rho * lengthM / (widthM * thicknessM);
-  const sheetResistance = rho / thicknessM * 1e3;
-  return {
-    values: {
-      resistance,
-      resistanceMOhm: resistance * 1e3,
-      sheetResistance
-    }
-  };
-}
-var traceResistance = {
-  slug: "trace-resistance",
-  title: "PCB Trace Resistance Calculator",
-  shortTitle: "Trace Resistance",
-  metaTitle: "PCB Trace Resistance Calculator — Free Online Tool",
-  category: "pcb",
-  description: "Calculate PCB copper trace DC resistance from width, length, thickness, and temperature. Get sheet resistance and temp coefficient. Free, instant results.",
-  keywords: ["pcb trace resistance", "copper trace resistance", "trace impedance dc", "pcb resistance calculator"],
-  inputs: [
-    {
-      key: "traceWidth",
-      label: "Trace Width",
-      unit: "mm",
-      defaultValue: 0.5,
-      min: 0.05,
-      max: 50
-    },
-    {
-      key: "traceLength",
-      label: "Trace Length",
-      unit: "mm",
-      defaultValue: 100,
-      min: 0.1,
-      max: 1e4
-    },
-    {
-      key: "copperThickness",
-      label: "Copper Thickness",
-      unit: "μm",
-      defaultValue: 35,
-      min: 1,
-      max: 200,
-      presets: [
-        { label: "½ oz (17.5 μm)", values: { copperThickness: 17.5 } },
-        { label: "1 oz (35 μm)", values: { copperThickness: 35 } },
-        { label: "2 oz (70 μm)", values: { copperThickness: 70 } }
-      ]
-    },
-    {
-      key: "temperature",
-      label: "Temperature",
-      unit: "°C",
-      defaultValue: 25,
-      min: -55,
-      max: 150
-    }
-  ],
-  outputs: [
-    {
-      key: "resistance",
-      label: "Resistance",
-      unit: "Ω",
-      precision: 6,
-      format: "engineering"
-    },
-    {
-      key: "resistanceMOhm",
-      label: "Resistance",
-      unit: "mΩ",
-      precision: 3
-    },
-    {
-      key: "sheetResistance",
-      label: "Sheet Resistance",
-      unit: "mΩ/□",
-      precision: 2
-    }
-  ],
-  calculate: calculateTraceResistance,
-  formula: {
-    primary: "R = \\rho(T) \\cdot \\frac{L}{W \\cdot T_c}",
-    variables: [
-      { symbol: "ρ(T)", description: "Resistivity at temperature T", unit: "Ω·m" },
-      { symbol: "L", description: "Trace length", unit: "m" },
-      { symbol: "W", description: "Trace width", unit: "m" },
-      { symbol: "Tc", description: "Copper thickness", unit: "m" }
-    ],
-    reference: "IPC-2221B; copper ρ₂₀ = 1/58 Ω·mm²/m = 1.7241×10⁻⁸ Ω·m (IEC 60028), α = 3.93×10⁻³ /°C"
-  },
-  visualization: { type: "none" },
-  relatedCalculators: ["trace-width-current", "microstrip-impedance"],
-  relatedBlogPosts: ["pcb-trace-width-current-capacity"],
-  verificationData: [
-    {
-      inputs: { traceWidth: 1, traceLength: 1e3, copperThickness: 35, temperature: 20 },
-      expectedOutputs: { resistance: 0.491 },
-      tolerance: 0.02,
-      source: "ρ₂₀(Cu) = 1/58 Ω·mm²/m = 1.7241×10⁻⁸ Ω·m (IEC 60028)"
-    }
-  ]
-};
-
 // src/lib/pcb/impedance.ts
 var ETA_02 = FREE_SPACE_IMPEDANCE;
 function hammerstadJensen(w, h, er, t) {
@@ -3142,6 +2691,979 @@ function ellipticK(k) {
   }
   return Math.PI / (2 * a);
 }
+
+// src/lib/pcb/trace-thermal.ts
+var SIGMA = 5670374419e-17;
+var G0 = 9.80665;
+var KX = 0.8;
+var KY = 0.3;
+var KCU = 390;
+var BOARD_WIDTH = 0.0762;
+var CONVECTION_LENGTH = 0.1422 * 0.3657 / (2 * (0.1422 + 0.3657));
+var EPS_COPPER = 0.1;
+var EPS_LAMINATE = 0.9;
+var OZ = 35e-6;
+var AIR_T = [250, 300, 350, 400, 450, 500, 550, 600];
+var AIR_K = [0.0223, 0.0263, 0.03, 0.0338, 0.0373, 0.0407, 0.0439, 0.0469];
+var AIR_NU = [1144e-8, 1589e-8, 2092e-8, 2641e-8, 3239e-8, 3879e-8, 4557e-8, 5269e-8];
+var AIR_AL = [159e-7, 225e-7, 299e-7, 383e-7, 472e-7, 567e-7, 667e-7, 769e-7];
+var TRACE_THERMAL_COEFFICIENTS = {
+  // external, no plane
+  cTop: 0.850676,
+  sExt: 0.642339,
+  cConExt: 0.843727,
+  cLogExt: 4.2855,
+  // internal, no plane
+  sInt: 0.70614,
+  cConInt: 0.285366,
+  cLogInt: 6.81905,
+  // external, plane
+  cDExt: 0.937968,
+  cPExt: 0.985382,
+  sPlaneExt: 0.611628,
+  cFeedExt: 5.17955,
+  cFringeExt: 0.0914,
+  cTopPlane: 0.72718,
+  // internal, plane
+  cDInt: 1.01474,
+  cPInt: 1.04442,
+  sPlaneInt: 0.572191,
+  cUpInt: 0.615651,
+  cCoverInt: 6.48201,
+  cFeedInt: 9.72099,
+  cFringeInt: 0.380035
+};
+var C = TRACE_THERMAL_COEFFICIENTS;
+var TRACE_THERMAL_FIT = {
+  /** 3,168 fixture rows inside the range: worst 2.809 %, rms 1.18 %. */
+  insideWorst: 0.0281,
+  insideRms: 0.0118,
+  /** All 49,032 rows: the rise to 30.81 %, G′ to 27.98 % (0.05 mm traces). */
+  wholeWorstRise: 0.3081,
+  wholeWorstG: 0.2798
+};
+function interp(x, xp, fp) {
+  const n = xp.length;
+  if (x <= xp[0]) return fp[0];
+  if (x >= xp[n - 1]) return fp[n - 1];
+  let k = 0;
+  while (x > xp[k + 1]) k++;
+  return fp[k] + (x - xp[k]) / (xp[k + 1] - xp[k]) * (fp[k + 1] - fp[k]);
+}
+function convection(theta, ambientK, up) {
+  const th = Math.max(theta, 1e-6);
+  const tf = ambientK + th / 2;
+  const k = interp(tf, AIR_T, AIR_K);
+  const nu = interp(tf, AIR_T, AIR_NU);
+  const al = interp(tf, AIR_T, AIR_AL);
+  const ra = G0 / tf * th * CONVECTION_LENGTH ** 3 / (nu * al);
+  let nusselt;
+  if (up) nusselt = ra < 1e7 ? 0.54 * ra ** 0.25 : 0.15 * ra ** (1 / 3);
+  else nusselt = 0.27 * ra ** 0.25;
+  return nusselt * k / CONVECTION_LENGTH;
+}
+function radiation(theta, ambientK, eps) {
+  const ts = ambientK + theta;
+  return eps * SIGMA * (ts * ts + ambientK * ambientK) * (ts + ambientK);
+}
+function stripOnSlab(w, d) {
+  const kk = Math.sqrt(KX * KY);
+  const a = Math.PI * w * Math.sqrt(KY / KX) / (4 * d);
+  if (a > 20) return 2 * kk * (2 / Math.PI) * (a + Math.LN2);
+  return 2 * kk * ellipticKc(1 / Math.cosh(a)) / ellipticKc(Math.tanh(a));
+}
+function fin(K, H, w) {
+  if (!(K * H > 0)) return 0;
+  return 2 * Math.sqrt(K * H) * Math.tanh(Math.max(BOARD_WIDTH - w, 0) / 2 * Math.sqrt(H / K));
+}
+function fedFin(g, r) {
+  return g > 0 ? 1 / (1 / g + r) : 0;
+}
+function traceThermalConductance(board, widthMm, rise) {
+  const w = widthMm * 1e-3;
+  const t = board.boardThickness * 1e-3;
+  const tc = board.copperOz * OZ;
+  const tp = board.planeCopperOz * OZ;
+  const ambientK = board.ambient + 273.15;
+  const kk = Math.sqrt(KX * KY);
+  const ta = (t - tc) / 2;
+  const surfaces = (s) => {
+    const th = s * rise;
+    return {
+      top: convection(th, ambientK, true) + radiation(th, ambientK, EPS_LAMINATE),
+      bottom: convection(th, ambientK, false) + radiation(th, ambientK, EPS_LAMINATE)
+    };
+  };
+  const hTrace = convection(rise, ambientK, true) + radiation(rise, ambientK, EPS_COPPER);
+  let none;
+  if (!board.internal) {
+    const { top: ht, bottom: hb } = surfaces(C.sExt);
+    const rc = C.cConExt * Math.log1p(C.cLogExt * t / w) / (Math.PI * kk);
+    none = C.cTop * hTrace * (w + 2 * tc) + w * hb / (1 + hb * t / KY) + fedFin(fin(KX * t, ht + hb, w), rc);
+  } else {
+    const { top: ht, bottom: hb } = surfaces(C.sInt);
+    const rc = C.cConInt * Math.log1p(C.cLogInt * t / w) / (Math.PI * kk);
+    none = w * (ht / (1 + ht * ta / KY) + hb / (1 + hb * ta / KY)) + fedFin(fin(KX * t, ht + hb, w), rc);
+  }
+  if (!(board.planeDistance > 0)) return none;
+  const d = board.planeDistance * 1e-3;
+  let plane;
+  if (!board.internal) {
+    const { top: ht, bottom: hb } = surfaces(C.sPlaneExt);
+    const gd = C.cDExt * stripOnSlab(w, d) + C.cFringeExt * kk;
+    const below = Math.max(t - d - tp, 0);
+    const kp = KCU * tp + KX * below;
+    const hpt = ht / (1 + ht * d / KY);
+    const hpb = hb / (1 + hb * below / KY);
+    const wf = Math.min(w + C.cFeedExt * d, 0.999 * BOARD_WIDTH);
+    const gp = C.cPExt * (fin(kp, hpt + hpb, wf) + hpb * wf + hpt * Math.max(wf - w, 0));
+    plane = C.cTopPlane * hTrace * (w + 2 * tc) + gd * gp / (gd + gp);
+  } else {
+    const { top: ht, bottom: hb } = surfaces(C.sPlaneInt);
+    const gd = C.cDInt * stripOnSlab(w, d) + C.cFringeInt * kk * Math.log1p(C.cCoverInt * ta / d);
+    const below = Math.max(ta - d - tp, 0);
+    const above = ta + tc + d;
+    const kp = KCU * tp + KX * below;
+    const hpt = ht / (1 + ht * above / KY);
+    const hpb = hb / (1 + hb * below / KY);
+    const wf = Math.min(w + C.cFeedInt * d, 0.999 * BOARD_WIDTH);
+    const gp = C.cPInt * (fin(kp, hpt + hpb, wf) + hpb * wf + hpt * Math.max(wf - w, 0));
+    const gup = C.cUpInt * w * ht / (1 + ht * ta / KY);
+    plane = gup + gd * gp / (gd + gp);
+  }
+  return Math.max(plane, none);
+}
+function resistivity(copperOz) {
+  return copperOz < 1 ? TM650_RESISTIVITY_HALF_OZ_20C : TM650_RESISTIVITY_20C;
+}
+function jouleHeat(board, widthMm, current, rise) {
+  const area = widthMm * 1e-3 * board.copperOz * OZ;
+  return current * current * resistivity(board.copperOz) * (1 + COPPER_ALPHA_20C * (board.ambient + rise - 20)) / area;
+}
+var RISE_MIN = 0.01;
+var RISE_MAX = 2e3;
+var RISE_SCAN = 200;
+var RISE_BISECTIONS = 60;
+function traceThermalRise(board, widthMm, current) {
+  if (!(current > 0)) return 0;
+  const f = (rise) => rise * traceThermalConductance(board, widthMm, rise) - jouleHeat(board, widthMm, current, rise);
+  const bisect = (lo, hi) => {
+    let a = lo;
+    let b = hi;
+    for (let n = 0; n < RISE_BISECTIONS; n++) {
+      const m = 0.5 * (a + b);
+      if (f(m) < 0) a = m;
+      else b = m;
+    }
+    return 0.5 * (a + b);
+  };
+  if (f(RISE_MIN) >= 0) return bisect(0, RISE_MIN);
+  const lnLo = Math.log(RISE_MIN);
+  const step = (Math.log(RISE_MAX) - lnLo) / (RISE_SCAN - 1);
+  let prev = RISE_MIN;
+  for (let k = 1; k < RISE_SCAN; k++) {
+    const x = Math.exp(lnLo + k * step);
+    if (f(x) >= 0) return bisect(prev, x);
+    prev = x;
+  }
+  return null;
+}
+var WIDTH_MIN_MM = 1e-3;
+var WIDTH_MAX_MM = 1e3;
+var WIDTH_BISECTIONS = 64;
+function traceThermalWidth(board, current, rise) {
+  const f = (widthMm) => rise * traceThermalConductance(board, widthMm, rise) - jouleHeat(board, widthMm, current, rise);
+  let a = Math.log(WIDTH_MIN_MM);
+  let b = Math.log(WIDTH_MAX_MM);
+  for (let n = 0; n < WIDTH_BISECTIONS; n++) {
+    const m = 0.5 * (a + b);
+    if (f(Math.exp(m)) < 0) a = m;
+    else b = m;
+  }
+  return Math.exp(0.5 * (a + b));
+}
+var TRACE_THERMAL_MARGIN = { external: 0.15, internal: 0.15 };
+function traceThermalMargin(internal) {
+  return internal ? TRACE_THERMAL_MARGIN.internal : TRACE_THERMAL_MARGIN.external;
+}
+function boardSpecificWidth(board, current, allowedRise) {
+  return traceThermalWidth(board, current, allowedRise / (1 + traceThermalMargin(board.internal)));
+}
+function planeRoom(board) {
+  const t = board.boardThickness;
+  const tcMm = board.copperOz * 0.035;
+  const traceBottom = board.internal ? t / 2 - tcMm / 2 : t;
+  return traceBottom - board.planeDistance - board.planeCopperOz * 0.035;
+}
+function traceThermalRefusal(board) {
+  if (!(board.boardThickness > 0)) return "Board thickness must be greater than 0";
+  if (!(board.planeDistance >= 0)) return "Distance to the plane must be 0 (no plane) or more";
+  if (board.planeDistance > 0 && !(board.planeCopperOz > 0)) return "Plane copper weight must be greater than 0";
+  if (board.internal && !(board.boardThickness > board.copperOz * 0.035)) {
+    return "An internal trace needs a board thicker than its copper";
+  }
+  return null;
+}
+function planeFits(board) {
+  if (!(board.planeDistance > 0)) return true;
+  return planeRoom(board) >= 0;
+}
+var TRACE_THERMAL_RANGE = {
+  description: "Width 0.25–5.1 mm (internal from 1.27 mm), copper ½–3 oz, board 1.4–3.2 mm, a plane from 0.1 mm under the trace to where it fits, plane copper ½–2 oz, rise 5–100 °C, ambient 0–85 °C",
+  worstCase: 0.029,
+  contains: (g) => {
+    const width = g.width;
+    const inside = width >= (g.internal ? 1.27 : 0.25) && width <= 5.1 && g.copperOz >= 0.5 && g.copperOz <= 3 && g.boardThickness >= 1.4 && g.boardThickness <= 3.2 && g.rise >= 5 && g.rise <= 100 && g.ambient >= 0 && g.ambient <= 85;
+    if (!inside) return false;
+    if (!(g.planeDistance > 0)) return true;
+    return g.planeDistance >= 0.1 && g.planeCopperOz >= 0.5 && g.planeCopperOz <= 2 && planeFits({
+      copperOz: g.copperOz,
+      boardThickness: g.boardThickness,
+      planeDistance: g.planeDistance,
+      planeCopperOz: g.planeCopperOz,
+      internal: g.internal > 0.5,
+      ambient: g.ambient
+    });
+  }
+};
+var TRACE_THERMAL_METHOD = "rftools thermal model (board-specific)";
+var TRACE_THERMAL_VALIDITY = [
+  {
+    quantity: "thermalWidthExternal",
+    min: 0.25,
+    max: 5.1,
+    label: "Trace width in the rftools thermal model (external layer)",
+    unit: "mm",
+    source: `${TRACE_THERMAL_METHOD}: validated from 0.25 to 5.1 mm (10 to 200 mil); at 10 mm it runs about 20 % cooler than Brooks & Adam's (2015) fit to IPC-2152's test data`
+  },
+  {
+    quantity: "thermalWidthInternal",
+    min: 1.27,
+    max: 5.1,
+    label: "Trace width in the rftools thermal model (internal layer)",
+    unit: "mm",
+    source: `${TRACE_THERMAL_METHOD}: validated from 1.27 to 5.1 mm (50 to 200 mil) on an internal layer; at 0.25 mm it runs up to 20 % cooler than Brooks & Adam's (2015) internal fits`
+  },
+  {
+    quantity: "thermalCopperWeight",
+    min: 0.5,
+    max: 3,
+    label: "Copper weight in the rftools thermal model",
+    unit: "oz",
+    source: `${TRACE_THERMAL_METHOD}: validated for 0.5 to 3 oz copper`
+  },
+  {
+    quantity: "thermalBoardThin",
+    min: 1.4,
+    label: "Board thickness in the rftools thermal model",
+    unit: "mm",
+    source: `${TRACE_THERMAL_METHOD}: validated on boards 1.4 to 3.2 mm thick. IPC-2152's published thickness data show thinner boards running hotter than this model predicts; until measurements settle it, use the IPC-2152 Figure 5-1 width`
+  },
+  {
+    quantity: "thermalBoardThick",
+    max: 3.2,
+    label: "Board thickness in the rftools thermal model",
+    unit: "mm",
+    source: `${TRACE_THERMAL_METHOD}: validated on boards 1.4 to 3.2 mm thick`
+  },
+  {
+    quantity: "thermalPlaneDistance",
+    min: 0.1,
+    label: "Distance to the plane in the rftools thermal model",
+    unit: "mm",
+    source: `${TRACE_THERMAL_METHOD}: validated for a plane from 0.1 mm under the trace to the bottom of the board`
+  },
+  {
+    quantity: "thermalPlaneRoom",
+    min: 0,
+    label: "Board left under the plane",
+    unit: "mm",
+    source: `${TRACE_THERMAL_METHOD}: the plane, at its distance under the trace and of its copper weight, must lie inside the board`
+  },
+  {
+    quantity: "thermalPlaneCopper",
+    min: 0.5,
+    max: 2,
+    label: "Plane copper weight in the rftools thermal model",
+    unit: "oz",
+    source: `${TRACE_THERMAL_METHOD}: validated for 0.5 to 2 oz planes`
+  },
+  {
+    quantity: "thermalRise",
+    min: 5,
+    max: 100,
+    label: "Temperature rise in the rftools thermal model (before its margin)",
+    unit: "°C",
+    source: `${TRACE_THERMAL_METHOD}: fitted and validated from 5 to 100 °C`
+  },
+  {
+    quantity: "thermalAmbient",
+    min: 0,
+    max: 85,
+    label: "Ambient temperature in the rftools thermal model",
+    unit: "°C",
+    source: `${TRACE_THERMAL_METHOD}: fitted from 0 to 85 °C`
+  }
+];
+function traceThermalValidityValues(board, widthMm, rise) {
+  const plane = board.planeDistance > 0;
+  return {
+    thermalWidthExternal: board.internal ? NaN : widthMm,
+    thermalWidthInternal: board.internal ? widthMm : NaN,
+    thermalCopperWeight: board.copperOz,
+    thermalBoardThin: board.boardThickness,
+    thermalBoardThick: board.boardThickness,
+    thermalPlaneDistance: plane ? board.planeDistance : NaN,
+    thermalPlaneRoom: plane ? planeRoom(board) : NaN,
+    thermalPlaneCopper: plane ? board.planeCopperOz : NaN,
+    thermalRise: rise,
+    thermalAmbient: board.ambient
+  };
+}
+function traceThermalInRange(board, widthMm, rise) {
+  return TRACE_THERMAL_RANGE.contains({
+    width: widthMm,
+    copperOz: board.copperOz,
+    boardThickness: board.boardThickness,
+    planeDistance: board.planeDistance,
+    planeCopperOz: board.planeCopperOz,
+    internal: board.internal ? 1 : 0,
+    rise,
+    ambient: board.ambient
+  }) ? 1 : 0;
+}
+var TRACE_THERMAL_RUNAWAY = "No steady state below 2000 °C in the rftools thermal model: at this current the trace's resistance rises with its temperature faster than the board and the air remove the heat, so the trace runs away. The board-specific rise is not reported.";
+
+// src/lib/calculators/validity.ts
+function bound(value, unit) {
+  if (!unit) return String(value);
+  return unit === "°" ? `${value}°` : `${value} ${unit}`;
+}
+function range(b) {
+  if (b.min !== void 0 && b.min === b.max) return `exactly ${bound(b.min, b.unit)}`;
+  if (b.min !== void 0 && b.max !== void 0) {
+    return `${String(b.min)} to ${bound(b.max, b.unit)}`;
+  }
+  if (b.min !== void 0) return `at least ${bound(b.min, b.unit)}`;
+  return `at most ${bound(b.max, b.unit)}`;
+}
+function checkValidity(bounds, values) {
+  const warnings = [];
+  for (const b of bounds ?? []) {
+    if (!(b.quantity in values)) {
+      throw new Error(`checkValidity: no value given for the bounded quantity "${b.quantity}"`);
+    }
+    const v = values[b.quantity];
+    if (Number.isNaN(v)) continue;
+    let breach = null;
+    if (b.min !== void 0 && v < b.min) breach = `below ${bound(b.min, b.unit)}`;
+    else if (b.max !== void 0 && v > b.max) breach = `above ${bound(b.max, b.unit)}`;
+    if (breach === null) continue;
+    warnings.push(
+      `${b.label ?? b.quantity} is ${breach}; the model holds for ${range(b)} (${b.source}). The result is extrapolated.`
+    );
+  }
+  return warnings;
+}
+
+// src/lib/calculators/pcb/trace-thermal-declarations.ts
+var MARGIN_PERCENT = `${Math.round(TRACE_THERMAL_MARGIN.external * 100)} %`;
+if (TRACE_THERMAL_MARGIN.external !== TRACE_THERMAL_MARGIN.internal) {
+  throw new Error("trace-thermal-declarations states one margin for both layers; they now differ");
+}
+var TRACE_THERMAL_FITTED_MODEL = {
+  description: `${TRACE_THERMAL_METHOD}, a closed-form thermal network fitted to rftools' own committed 2-D solver of the trace's cross-section: ${TRACE_THERMAL_RANGE.description} (the rise before the margin). Inside that range its rise is within ${(TRACE_THERMAL_FIT.insideWorst * 100).toFixed(2)} % of 3,168 solver results`,
+  worstCaseError: TRACE_THERMAL_RANGE.worstCase,
+  insideOutput: "inModelRange"
+};
+function traceThermalAssumptions(figure, ambient) {
+  return [
+    {
+      code: "thermal-model-own-method",
+      text: `The board-specific ${figure} is the ${TRACE_THERMAL_METHOD}: the site's own steady-state model of a long trace on an FR-4 board in still air, with an optional copper plane under it. It is not IPC-2152 and does not read IPC-2152's charts; it is a closed form fitted to a committed 2-D solver, which is checked against published results (Brooks & Adam 2015; Jouppi 2010; Olson 2010).`
+    },
+    {
+      code: "thermal-model-fr4",
+      text: "The laminate is FR-4, conducting 0.8 W/(m·K) in the plane of the board and 0.3 W/(m·K) through it (Graebner 1995; Azar & Graebner 1996). A laminate that conducts less runs hotter."
+    },
+    {
+      code: "thermal-model-still-air",
+      text: "The board is horizontal, in still air at sea level. Its faces lose heat by natural convection (the McAdams horizontal-plate correlations, over the 51.2 mm length of the IPC-TM-650 2.5.4.1A test board) and by radiation, with an emissivity of 0.9 for the laminate and 0.1 for the bare copper trace. Forced air, an enclosure and other orientations are not modelled."
+    },
+    {
+      code: "thermal-model-long-trace",
+      text: "The trace is long and alone. Heat drawn off through pads, vias and leads at its ends, and heat from neighbouring traces and components, are not modelled; a short trace with heat-sunk ends runs cooler."
+    },
+    {
+      code: "thermal-model-plane",
+      text: "An internal trace lies at the middle of the board's thickness. A plane is one solid copper layer under the trace, across a 76.2 mm (3 in) wide board, the stated distance of dielectric below the trace. A plane above the trace, a second plane, or a plane cut away under the trace is not modelled."
+    },
+    {
+      code: "thermal-model-margin",
+      text: figure === "width" ? `The board-specific width includes a ${MARGIN_PERCENT} margin for the model's measured disagreement with published data: it is the width at which the model's rise is the allowed rise divided by ${1 + TRACE_THERMAL_MARGIN.external}.` : `The board-specific rise includes a ${MARGIN_PERCENT} margin for the model's measured disagreement with published data: it is ${1 + TRACE_THERMAL_MARGIN.external} times the model's rise.`
+    },
+    {
+      code: "thermal-model-heat",
+      text: "The model's Joule heat uses the copper resistivity of IPC-TM-650 2.5.4.1A, 10.827 Ω·cmil/ft at 25 °C for 1 oz and heavier copper and 11.529 Ω·cmil/ft for lighter, rising 0.393 % per °C. The resistance and power outputs keep 1/58 Ω·mm²/m."
+    },
+    { code: "thermal-model-ambient", text: ambient },
+    {
+      code: "thermal-model-range",
+      text: `Outside the model's validated range (${TRACE_THERMAL_RANGE.description}) the board-specific ${figure} is still reported, flagged with a warning naming the bound. On boards thinner than 1.4 mm, IPC-2152's published thickness data show traces running hotter than the model predicts, so the IPC-2152 Figure 5-1 ${figure} is the one to use there.`
+    }
+  ];
+}
+var TRACE_THERMAL_METHODOLOGY = {
+  references: [
+    {
+      title: "IPC-TM-650 2.5.4.1A, Conductor Temperature Rise Due to Current Changes in Conductors",
+      source: "IPC, Rev. A, August 1997: the test board, still air and copper resistivity the model is validated under"
+    },
+    {
+      title: "Trace Currents and Temperatures Revisited",
+      source: "D. Brooks and J. Adam, UltraCAD, April 2015 (edit of 20 July 2015): Eq. 3-2 and the internal fits to IPC-2152's test data, the binding anchors",
+      url: "https://www.mathscinotes.com/wp-content/uploads/2016/06/pcbtempr.pdf"
+    },
+    {
+      title: "The Value of IPC-2152",
+      source: "M. R. Jouppi, IPC APEX 2010: Figure 11, the plane coefficients the model reproduces within 0.057"
+    },
+    {
+      title: "Determining Circuit Board Current Carrying Capability",
+      source: "J. Olson, 2010: the copper-weight multipliers the model reproduces within 0.026, and the board-thickness modifier it disagrees with",
+      url: "https://www.frontdoor.biz/PCBportal/HowTo2152.pdf"
+    },
+    {
+      title: "Thermal Management of Boards and Current-Carrying Capacity of Traces",
+      source: "J. Adam, Bodo's Power Systems, October 2011, pp. 40–42: a Euro-board case, recorded for information"
+    },
+    {
+      title: "Thermal Conductivity of Printed Wiring Boards",
+      source: "J. E. Graebner, Electronics Cooling 1(2), October 1995; and K. Azar and J. E. Graebner, SEMI-THERM XII (1996), pp. 169–182: FR-4's in-plane and through-plane conductivity"
+    },
+    {
+      title: "Fundamentals of Heat and Mass Transfer",
+      source: "F. P. Incropera, D. P. DeWitt et al., 6th ed., eqs. 9.30–9.32 (after McAdams) and Table A.4: the horizontal-plate convection and the air's properties"
+    }
+  ],
+  validationNote: `The board-specific figures are the ${TRACE_THERMAL_METHOD}, not IPC-2152. The 2-D solver the model is fitted to (within ${(TRACE_THERMAL_FIT.insideWorst * 100).toFixed(1)} % in rise inside its range) is licensed by exact limits and, run under each source's own conditions, agrees with Brooks & Adam's (2015) fit to IPC-2152's external test data within −13.3 % to +12.0 % in rise, with their internal fits within −10.6 % to +3.5 %, with Jouppi's (2010) plane coefficients within 0.057 and with Olson's (2010) copper multipliers within 0.026. A ${MARGIN_PERCENT} margin on the rise covers its worst under-prediction. It disagrees with IPC-2152's data in two places: its board-thickness modifier makes thin boards far hotter than the physics does (1.6 against 1.13 times the cross-section on a 0.97 mm board), and at 10 mm a trace runs about 20 % cooler than Brooks & Adam's fit. Boards under 1.4 mm and traces over 5.1 mm are therefore flagged, and the IPC-2152 Figure 5-1 figure beside it stays the conservative answer.`
+};
+
+// src/lib/calculators/pcb/trace-width-current.ts
+var B = 0.44;
+var C2 = 0.725;
+var K_2221_EXTERNAL = 0.048;
+var K_2221_INTERNAL = 0.024;
+var K_2152_FIGURE_5_1 = 0.024;
+var COPPER_UM_PER_OZ = 35;
+var MM_PER_MIL = 0.0254;
+var FIGURE_5_1 = "IPC-2152 (2009) Figure 5-1, which is IPC-2221 (1998) Figure 6-4 chart C";
+var CHART_A = "IPC-2221 (1998) Figure 6-4 chart A";
+var TRACE_WIDTH_VALIDITY = [
+  {
+    quantity: "tempRise",
+    min: 10,
+    max: 45,
+    label: "Temperature rise ΔT on IPC-2152 Figure 5-1",
+    unit: "°C",
+    source: `${FIGURE_5_1}: curves at 10, 20, 30 and 45 °C`
+  },
+  {
+    quantity: "area2152",
+    max: 700,
+    label: "Cross-section on IPC-2152 Figure 5-1",
+    unit: "sq mil",
+    source: `${FIGURE_5_1}: drawn to 700 sq mil`
+  },
+  {
+    quantity: "riseChartA",
+    min: 10,
+    max: 100,
+    label: "Temperature rise ΔT on IPC-2221 chart A (external layer)",
+    unit: "°C",
+    source: `${CHART_A}: curves at 10, 20, 30, 45, 60, 75 and 100 °C`
+  },
+  {
+    quantity: "areaChartA",
+    max: 700,
+    label: "Cross-section on IPC-2221 chart A (external layer)",
+    unit: "sq mil",
+    source: `${CHART_A}: drawn to 700 sq mil`
+  },
+  {
+    quantity: "copperWeight",
+    min: 0.5,
+    max: 3,
+    label: "Copper weight",
+    unit: "oz",
+    source: "IPC-2221 (1998) Figure 6-4 chart B: ½, 1, 2 and 3 oz"
+  }
+];
+var BOARD_AMBIENT = 25;
+function calculateTraceWidth(inputs) {
+  const { current, copperWeight, tempRise, traceLength, isExternal } = inputs;
+  const traceWidth = inputs.traceWidth ?? 0.5;
+  const boardThickness = inputs.boardThickness ?? 1.6;
+  const planeDistance = inputs.planeDistance ?? 0;
+  const planeCopperWeight = inputs.planeCopperWeight ?? 0.5;
+  const external = isExternal > 0.5;
+  if (!(current > 0)) return { values: {}, errors: ["Current must be positive"] };
+  if (!(tempRise > 0)) return { values: {}, errors: ["Temperature rise must be positive"] };
+  if (!(copperWeight > 0)) return { values: {}, errors: ["Copper weight must be positive"] };
+  if (!(traceLength > 0)) return { values: {}, errors: ["Trace length must be positive"] };
+  if (!(traceWidth > 0)) return { values: {}, errors: ["Trace width must be greater than 0"] };
+  const board = {
+    copperOz: copperWeight,
+    boardThickness,
+    planeDistance,
+    planeCopperOz: planeCopperWeight,
+    internal: !external,
+    ambient: BOARD_AMBIENT
+  };
+  const refusal = traceThermalRefusal(board);
+  if (refusal) return { values: {}, errors: [refusal] };
+  const copperMil = copperWeight * COPPER_UM_PER_OZ / 1e3 / MM_PER_MIL;
+  const k2221 = external ? K_2221_EXTERNAL : K_2221_INTERNAL;
+  const area2221 = Math.pow(current / (k2221 * Math.pow(tempRise, B)), 1 / C2);
+  const width2221mm = area2221 / copperMil * MM_PER_MIL;
+  const area2152 = Math.pow(current / (K_2152_FIGURE_5_1 * Math.pow(tempRise, B)), 1 / C2);
+  const width2152mm = area2152 / copperMil * MM_PER_MIL;
+  const alpha = 393e-5;
+  const tempC = 25 + tempRise;
+  const rho = COPPER_RESISTIVITY_20C * (1 + alpha * (tempC - 20));
+  const widthM = traceWidth * 1e-3;
+  const thicknessM = copperMil * MM_PER_MIL * 1e-3;
+  const lengthM = traceLength * 1e-3;
+  const resistance = rho * lengthM / (widthM * thicknessM);
+  const voltageDrop2 = current * resistance;
+  const powerDiss = current * current * resistance;
+  const inChartRange = tempRise >= 10 && tempRise <= 45 && area2152 <= 700 ? 1 : 0;
+  const warnings = checkValidity(TRACE_WIDTH_VALIDITY, {
+    tempRise,
+    area2152,
+    riseChartA: external ? tempRise : NaN,
+    areaChartA: external ? area2221 : NaN,
+    copperWeight
+  });
+  let widthBoardMm;
+  if (!(current > 0)) widthBoardMm = 0;
+  else if (!(tempRise > 0) || !(copperWeight > 0)) widthBoardMm = Infinity;
+  else widthBoardMm = boardSpecificWidth(board, current, tempRise);
+  const modelRise = tempRise / (1 + traceThermalMargin(board.internal));
+  const inModelRange = traceThermalInRange(board, widthBoardMm, modelRise);
+  warnings.push(...checkValidity(TRACE_THERMAL_VALIDITY, traceThermalValidityValues(board, widthBoardMm, modelRise)));
+  return {
+    values: {
+      width2221mm,
+      width2152mm,
+      resistance,
+      voltageDrop: voltageDrop2,
+      powerDiss,
+      inChartRange,
+      widthBoardMm,
+      inModelRange
+    },
+    warnings
+  };
+}
+var traceWidthCurrent = {
+  slug: "trace-width-current",
+  title: "PCB Trace Width Calculator (IPC-2221 / IPC-2152)",
+  shortTitle: "Trace Width",
+  metaTitle: "PCB Trace Width Calculator — Free IPC-2221 Tool",
+  category: "pcb",
+  description: "Calculate minimum PCB trace width for current capacity per IPC-2221 and IPC-2152’s conservative Figure 5-1. Get resistance, voltage drop, and power dissipation at the width you draw. Free, instant results.",
+  keywords: ["trace width calculator", "pcb trace current", "ipc-2221 calculator", "ipc-2152", "pcb current capacity", "trace ampacity"],
+  inputs: [
+    {
+      key: "current",
+      label: "Current",
+      symbol: "I",
+      unit: "A",
+      defaultValue: 1,
+      min: 0.01,
+      max: 100,
+      step: 0.1,
+      tooltip: "RMS current through the trace"
+    },
+    {
+      key: "copperWeight",
+      label: "Copper Weight",
+      symbol: "T",
+      unit: "oz",
+      defaultValue: 1,
+      min: 0.5,
+      max: 4,
+      step: 0.5,
+      tooltip: "Copper thickness (1 oz = 35 μm = 1.378 mil)",
+      presets: [
+        { label: "½ oz", values: { copperWeight: 0.5 } },
+        { label: "1 oz (standard)", values: { copperWeight: 1 } },
+        { label: "2 oz", values: { copperWeight: 2 } },
+        { label: "3 oz", values: { copperWeight: 3 } }
+      ]
+    },
+    {
+      key: "tempRise",
+      label: "Temperature Rise",
+      symbol: "ΔT",
+      unit: "°C",
+      defaultValue: 10,
+      min: 1,
+      max: 100,
+      step: 1,
+      tooltip: "Allowed temperature rise above ambient",
+      presets: [
+        { label: "5°C (tight)", values: { tempRise: 5 } },
+        { label: "10°C (standard)", values: { tempRise: 10 } },
+        { label: "20°C (relaxed)", values: { tempRise: 20 } }
+      ]
+    },
+    {
+      key: "traceLength",
+      label: "Trace Length",
+      symbol: "L",
+      unit: "mm",
+      defaultValue: 100,
+      min: 1,
+      max: 1e4,
+      step: 1,
+      tooltip: "Length of the trace (for resistance/voltage drop)"
+    },
+    {
+      key: "isExternal",
+      label: "Layer Type",
+      symbol: "",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 1,
+      tooltip: "1 = external (outer) layer, 0 = internal layer",
+      presets: [
+        { label: "External layer", values: { isExternal: 1 } },
+        { label: "Internal layer", values: { isExternal: 0 } }
+      ]
+    },
+    {
+      key: "traceWidth",
+      label: "Drawn Trace Width",
+      symbol: "W",
+      unit: "mm",
+      defaultValue: 0.5,
+      min: 0.01,
+      max: 100,
+      tooltip: "The width as drawn: the DC resistance, voltage drop and power are computed for it; the minimum widths do not use it"
+    },
+    {
+      key: "boardThickness",
+      label: "Board Thickness",
+      symbol: "h",
+      unit: "mm",
+      defaultValue: 1.6,
+      min: 0.2,
+      max: 6,
+      step: 0.1,
+      tooltip: "The whole board’s thickness. Only the board-specific width (rftools thermal model) reads it; the model is validated from 1.4 to 3.2 mm"
+    },
+    {
+      key: "planeDistance",
+      label: "Distance to Plane Below",
+      symbol: "d",
+      unit: "mm",
+      defaultValue: 0,
+      min: 0,
+      max: 6,
+      step: 0.05,
+      tooltip: "The dielectric between the trace and the nearest solid copper plane under it; 0 means no plane. Only the board-specific width reads it"
+    },
+    {
+      key: "planeCopperWeight",
+      label: "Plane Copper Weight",
+      symbol: "T_p",
+      unit: "oz",
+      defaultValue: 0.5,
+      min: 0.5,
+      max: 2,
+      step: 0.5,
+      tooltip: "The copper weight of that plane (35 µm per ounce). Only the board-specific width reads it, and only when there is a plane"
+    }
+  ],
+  outputs: [
+    {
+      key: "width2221mm",
+      label: "Min Width (IPC-2221)",
+      unit: "mm",
+      precision: 3,
+      tooltip: "IPC-2221 Figure 6-4 through its published fit: chart A (k = 0.048) on an external layer, chart C (k = 0.024) on an internal one",
+      thresholds: { warning: { min: 3 } }
+    },
+    {
+      key: "width2152mm",
+      label: "Min Width (IPC-2152 Fig. 5-1)",
+      unit: "mm",
+      precision: 3,
+      tooltip: "IPC-2152 Figure 5-1, the conservative chart IPC-2152 recommends for internal and external conductors: the same on either layer"
+    },
+    {
+      key: "resistance",
+      label: "DC Resistance (Drawn Width)",
+      unit: "Ω",
+      precision: 6,
+      format: "engineering",
+      tooltip: "At the drawn trace width and a 25 °C ambient plus the allowed rise"
+    },
+    {
+      key: "voltageDrop",
+      label: "Voltage Drop (Drawn Width)",
+      unit: "V",
+      precision: 4,
+      tooltip: "Current × the DC resistance of the drawn trace width",
+      thresholds: { warning: { min: 0.1 } }
+    },
+    {
+      key: "powerDiss",
+      label: "Power Dissipation (Drawn Width)",
+      unit: "W",
+      precision: 4,
+      tooltip: "Current² × the DC resistance of the drawn trace width"
+    },
+    {
+      key: "inChartRange",
+      label: "Within IPC-2152 Fig. 5-1 Range",
+      unit: "",
+      precision: 0,
+      tooltip: "1 when the rise is between 10 and 45 °C and the cross-section at most 700 sq mil, the range Figure 5-1 draws",
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
+    },
+    {
+      key: "widthBoardMm",
+      label: "Min Width (This Board, Thermal Model)",
+      unit: "mm",
+      precision: 3,
+      tooltip: `${TRACE_THERMAL_METHOD}: rftools’ own model of a long trace on this FR-4 board in still air, with the plane, if any, under it, and a 15 % margin on the rise. It is not IPC-2152; inside its validated range it is never wider than the Figure 5-1 width`
+    },
+    {
+      key: "inModelRange",
+      label: "Within Thermal Model Range",
+      unit: "",
+      precision: 0,
+      tooltip: `1 when the board-specific width lies inside the range the thermal model was validated over: ${TRACE_THERMAL_RANGE.description}, the rise before the margin`,
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
+    }
+  ],
+  calculate: calculateTraceWidth,
+  formula: {
+    primary: "A = (I / (k·ΔT^0.44))^(1/0.725),  W_min = A / t,  R = ρ(T)·L / (W·t);  board-specific: (ΔT/(1+m))·G′(W_board) = I²·ρ_v(T) / (W_board·t)",
+    latex: "A = \\left(\\frac{I}{k \\cdot \\Delta T^{0.44}}\\right)^{1/0.725},\\qquad W_{min} = \\frac{A}{t},\\qquad R = \\frac{\\rho(T)\\,L}{W\\,t},\\qquad \\frac{\\Delta T}{1+m}\\,G'(W_{board}) = \\frac{I^2\\,\\rho_v(T)}{W_{board}\\,t}",
+    variables: [
+      { symbol: "A", description: "Minimum cross-section", unit: "mil²" },
+      { symbol: "I", description: "Current", unit: "A" },
+      { symbol: "ΔT", description: "Temperature rise above ambient", unit: "°C" },
+      { symbol: "k", description: "Chart constant: IPC-2221 0.048 external, 0.024 internal; IPC-2152 Figure 5-1 0.024 on either layer", unit: "" },
+      { symbol: "W_min", description: "Minimum trace width", unit: "mil" },
+      { symbol: "t", description: "Copper thickness, 1.378 mil (35 µm) per ounce", unit: "mil" },
+      { symbol: "R", description: "DC resistance of the drawn trace", unit: "Ω" },
+      { symbol: "ρ(T)", description: "Copper resistivity, 1/58 Ω·mm²/m at 20 °C, rising 0.393 % per °C", unit: "Ω·m" },
+      { symbol: "L", description: "Trace length", unit: "mm" },
+      { symbol: "W", description: "Drawn trace width", unit: "mm" },
+      { symbol: "W_board", description: "Board-specific minimum width, from the rftools thermal model (not IPC-2152)", unit: "mm" },
+      { symbol: "G′", description: "The thermal model’s conductance per metre from the trace to the air: through the board, the plane if any, and the trace’s own surface", unit: "W/(m·K)" },
+      { symbol: "ρ_v(T)", description: "Copper resistivity for the model’s heat, from IPC-TM-650 2.5.4.1A: 10.827 Ω·cmil/ft at 25 °C for 1 oz and heavier, 11.529 for lighter copper", unit: "Ω·m" },
+      { symbol: "m", description: "The model’s margin on the rise, 15 % on either layer", unit: "" }
+    ],
+    derivation: [
+      "IPC prints charts, not formulas: I = k·ΔT^0.44·A^0.725 is the published fit to them",
+      "IPC-2221 (1998) and IPC-2221A (2003) Figure 6-4: k = 0.048 for an external layer (chart A), 0.024 for an internal one (chart C)",
+      "IPC-2152 (2009) Figure 5-1, its conservative chart for every conductor, is IPC-2221 chart C kept: k = 0.024 on either layer",
+      "Solved for the cross-section, A = (I/(k·ΔT^0.44))^(1/0.725), and divided by the copper thickness for the width",
+      "The resistance, voltage drop and power are for the drawn width W, at a 25 °C ambient plus the allowed rise",
+      "The board-specific width is the rftools thermal model, not IPC-2152: a network of the trace, the FR-4 board, the plane if any and still air, whose conductance G′ is fitted to rftools’ own 2-D solver",
+      "It is the width at which the heat balance holds at the allowed rise divided by 1 + m, m = 15 %, the margin that covers the model’s worst disagreement with published data",
+      "Inside its validated range it is never wider than the Figure 5-1 width; boards under 1.4 mm and traces over 5.1 mm are flagged, as published data show them hotter than the model predicts"
+    ],
+    reference: "IPC-2221A (May 2003) §6.2, Figure 6-4 (the chart of IPC-2221, February 1998), through its published fit; IPC-2152 (August 2009) §5, Figure 5-1; the board-specific width: rftools thermal model (board-specific), fitted to its own 2-D solver and checked against Brooks & Adam (2015), Jouppi (2010) and Olson (2010)"
+  },
+  assumptions: [
+    {
+      code: "ipc-2221-fit",
+      text: "The IPC-2221 width is IPC-2221 Figure 6-4 through its published fit A = (I/(k·ΔT^0.44))^(1/0.725), with A in mil², k = 0.048 for an external layer (chart A) and 0.024 for an internal one (chart C). Chart A draws 10 to 100 °C and chart C 10 to 45 °C, both to 700 sq mil; the curves include IPC-2221’s 10 % derating, and its note 2 (a further 15 % for boards 0.8 mm or thinner or copper 108 µm or thicker) is not applied."
+    },
+    {
+      code: "ipc-2152-figure-5-1",
+      text: "The IPC-2152 width is read on IPC-2152 Figure 5-1, the chart IPC-2152 recommends for internal and external conductors in all environments, through the same fit with k = 0.024 on either layer. It is the conservative answer for a board about which nothing else is known: IPC-2152’s detailed method, which narrows the trace for the board’s thickness and a copper plane under it, is not applied."
+    },
+    {
+      code: "steady-state-dc",
+      text: "Steady DC (or RMS) current in a single trace: pulsed currents, skin effect and heating from neighbouring traces are not modelled."
+    },
+    {
+      code: "copper-weight",
+      text: "Copper is 35 µm (1.378 mil) thick per ounce, and the trace cross-section is a rectangle of that thickness."
+    },
+    {
+      code: "resistance-at-temperature",
+      text: "Resistance, voltage drop and power are for the drawn trace width, with ρ = 1/58 Ω·mm²/m (IEC 60028, 1.7241×10⁻⁸ Ω·m) at 20 °C and α = 0.00393 /°C, evaluated at a 25 °C ambient plus the allowed rise."
+    },
+    ...traceThermalAssumptions(
+      "width",
+      "The board-specific width is computed at a 25 °C ambient, the temperature IPC-TM-650 2.5.4.1A tests at; the allowed rise is above that ambient."
+    )
+  ],
+  // Figure 5-1's fit first: it is `provenance.validRange.model`, as before
+  // this calculator carried a second model (Decision 9).
+  fittedModel: [
+    {
+      description: "IPC-2152 Figure 5-1 through I = 0.024·ΔT^0.44·A^0.725, checked against IPC-2221 (1998) Figure 6-4 chart C (the same chart) at 10 to 45 °C and up to 700 sq mil: the cross-section is within −3.5 % to +4.4 % of 12 chart readings, and 11.3 % short at 10 °C and 700 sq mil",
+      worstCaseError: 0.12,
+      insideOutput: "inChartRange"
+    },
+    TRACE_THERMAL_FITTED_MODEL
+  ],
+  validity: [...TRACE_WIDTH_VALIDITY, ...TRACE_THERMAL_VALIDITY],
+  methodology: TRACE_THERMAL_METHODOLOGY,
+  visualization: { type: "none" },
+  relatedCalculators: ["microstrip-impedance", "trace-resistance", "via-calculator"],
+  relatedBlogPosts: ["microstrip-impedance-design-guide", "microstrip-impedance", "pcb-trace-width-current-capacity"],
+  verificationData: [
+    {
+      inputs: { current: 1, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1, traceWidth: 0.5 },
+      expectedOutputs: { width2221mm: 0.3004 },
+      tolerance: 1e-3,
+      source: "IPC-2221A (2003) Figure 6-4 chart A through its published fit A = (I/(k·ΔT^0.44))^(1/0.725), k = 0.048, at 35 µm per ounce"
+    },
+    {
+      inputs: { current: 5, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1, traceWidth: 0.5 },
+      expectedOutputs: { width2221mm: 2.7655 },
+      tolerance: 1e-3,
+      source: "IPC-2221A (2003) Figure 6-4 chart A through its published fit A = (I/(k·ΔT^0.44))^(1/0.725), k = 0.048, at 35 µm per ounce"
+    },
+    {
+      // 300 sq mil / 1.378 mil = 217.7 mil = 5.530 mm
+      inputs: { current: 4, copperWeight: 1, tempRise: 10, traceLength: 100, isExternal: 1, traceWidth: 0.5 },
+      expectedOutputs: { width2152mm: 5.53 },
+      tolerance: 0.05,
+      source: 'J. Olson, "Determining Circuit Board Current Carrying Capability" (CID+, 2010): IPC-2152 Figure 5-1 read at 4 A and a 10 °C rise, about 300 sq mil'
+    },
+    {
+      // 680 sq mil / 1.378 mil = 493.5 mil = 12.534 mm
+      inputs: { current: 10, copperWeight: 1, tempRise: 20, traceLength: 100, isExternal: 0, traceWidth: 0.5 },
+      expectedOutputs: { width2152mm: 12.534 },
+      tolerance: 0.05,
+      source: 'J. Olson, "Determining Circuit Board Current Carrying Capability" (CID+, 2010): IPC-2152 Figure 5-1 read at 10 A and a 20 °C rise, about 680 sq mil'
+    }
+  ]
+};
+
+// src/lib/calculators/pcb/trace-resistance.ts
+function calculateTraceResistance(inputs) {
+  const { traceWidth, traceLength, copperThickness, temperature } = inputs;
+  const rho20 = COPPER_RESISTIVITY_20C;
+  const alpha = 393e-5;
+  const rho = rho20 * (1 + alpha * (temperature - 20));
+  const widthM = traceWidth * 1e-3;
+  const lengthM = traceLength * 1e-3;
+  const thicknessM = copperThickness * 1e-6;
+  const resistance = rho * lengthM / (widthM * thicknessM);
+  const sheetResistance = rho / thicknessM * 1e3;
+  return {
+    values: {
+      resistance,
+      resistanceMOhm: resistance * 1e3,
+      sheetResistance
+    }
+  };
+}
+var traceResistance = {
+  slug: "trace-resistance",
+  title: "PCB Trace Resistance Calculator",
+  shortTitle: "Trace Resistance",
+  metaTitle: "PCB Trace Resistance Calculator — Free Online Tool",
+  category: "pcb",
+  description: "Calculate PCB copper trace DC resistance from width, length, thickness, and temperature. Get sheet resistance and temp coefficient. Free, instant results.",
+  keywords: ["pcb trace resistance", "copper trace resistance", "trace impedance dc", "pcb resistance calculator"],
+  inputs: [
+    {
+      key: "traceWidth",
+      label: "Trace Width",
+      unit: "mm",
+      defaultValue: 0.5,
+      min: 0.05,
+      max: 50
+    },
+    {
+      key: "traceLength",
+      label: "Trace Length",
+      unit: "mm",
+      defaultValue: 100,
+      min: 0.1,
+      max: 1e4
+    },
+    {
+      key: "copperThickness",
+      label: "Copper Thickness",
+      unit: "μm",
+      defaultValue: 35,
+      min: 1,
+      max: 200,
+      presets: [
+        { label: "½ oz (17.5 μm)", values: { copperThickness: 17.5 } },
+        { label: "1 oz (35 μm)", values: { copperThickness: 35 } },
+        { label: "2 oz (70 μm)", values: { copperThickness: 70 } }
+      ]
+    },
+    {
+      key: "temperature",
+      label: "Temperature",
+      unit: "°C",
+      defaultValue: 25,
+      min: -55,
+      max: 150
+    }
+  ],
+  outputs: [
+    {
+      key: "resistance",
+      label: "Resistance",
+      unit: "Ω",
+      precision: 6,
+      format: "engineering"
+    },
+    {
+      key: "resistanceMOhm",
+      label: "Resistance",
+      unit: "mΩ",
+      precision: 3
+    },
+    {
+      key: "sheetResistance",
+      label: "Sheet Resistance",
+      unit: "mΩ/□",
+      precision: 2
+    }
+  ],
+  calculate: calculateTraceResistance,
+  formula: {
+    primary: "R = \\rho(T) \\cdot \\frac{L}{W \\cdot T_c}",
+    variables: [
+      { symbol: "ρ(T)", description: "Resistivity at temperature T", unit: "Ω·m" },
+      { symbol: "L", description: "Trace length", unit: "m" },
+      { symbol: "W", description: "Trace width", unit: "m" },
+      { symbol: "Tc", description: "Copper thickness", unit: "m" }
+    ],
+    reference: "IPC-2221B; copper ρ₂₀ = 1/58 Ω·mm²/m = 1.7241×10⁻⁸ Ω·m (IEC 60028), α = 3.93×10⁻³ /°C"
+  },
+  visualization: { type: "none" },
+  relatedCalculators: ["trace-width-current", "microstrip-impedance"],
+  relatedBlogPosts: ["pcb-trace-width-current-capacity"],
+  verificationData: [
+    {
+      inputs: { traceWidth: 1, traceLength: 1e3, copperThickness: 35, temperature: 20 },
+      expectedOutputs: { resistance: 0.491 },
+      tolerance: 0.02,
+      source: "ρ₂₀(Cu) = 1/58 Ω·mm²/m = 1.7241×10⁻⁸ Ω·m (IEC 60028)"
+    }
+  ]
+};
 
 // src/lib/calculators/pcb/differential-pair.ts
 function calculateDifferentialPair(inputs) {
@@ -4883,7 +5405,7 @@ var L_KEYS = ["L1_uH", "L4_uH", "L6_uH", "L8_uH", "L10_uH"];
 var BP_L_KEYS = ["bpL1_uH", "bpL3_uH", "bpL5_uH", "bpL7_uH", "bpL9_uH"];
 var BP_C_KEYS = ["bpC2_nF", "bpC4_nF", "bpC6_nF", "bpC8_nF", "bpC10_nF"];
 function ladderValues(g, filterType, omega, z0, q) {
-  const C8 = [0, 0, 0, 0, 0];
+  const C9 = [0, 0, 0, 0, 0];
   const L = [0, 0, 0, 0, 0];
   const bpL = [0, 0, 0, 0, 0];
   const bpC = [0, 0, 0, 0, 0];
@@ -4892,23 +5414,23 @@ function ladderValues(g, filterType, omega, z0, q) {
     const m = Math.floor(k / 2);
     const odd = k % 2 === 0;
     if (filterType === 1) {
-      if (odd) C8[m] = 1 / (omega * gk * z0) * 1e9;
+      if (odd) C9[m] = 1 / (omega * gk * z0) * 1e9;
       else L[m] = z0 / (omega * gk) * 1e6;
     } else if (filterType === 2) {
       if (odd) {
-        C8[m] = gk / (omega * delta * z0) * 1e9;
+        C9[m] = gk / (omega * delta * z0) * 1e9;
         bpL[m] = delta * z0 / (omega * gk) * 1e6;
       } else {
         L[m] = gk * z0 / (omega * delta) * 1e6;
         bpC[m] = delta / (omega * gk * z0) * 1e9;
       }
     } else if (odd) {
-      C8[m] = gk / (omega * z0) * 1e9;
+      C9[m] = gk / (omega * z0) * 1e9;
     } else {
       L[m] = gk * z0 / omega * 1e6;
     }
   });
-  return { C: C8, L, bpL, bpC };
+  return { C: C9, L, bpL, bpC };
 }
 function calculateFilterDesigner(inputs) {
   const { responseType = 0, filterType, fc, order, impedance, qFactor: qFactor2, eSeries = 0 } = inputs;
@@ -4924,7 +5446,7 @@ function calculateFilterDesigner(inputs) {
   const type = Math.round(filterType);
   const g = (isChebyshev ? CHEBYSHEV_05_G : BUTTERWORTH_G)[clampedOrder];
   const tau_ns = clampedOrder === 1 && !isChebyshev ? 1 / omega_c * 1e9 : 0;
-  const { C: C8, L, bpL, bpC } = ladderValues(g, type, omega_c, impedance, qFactor2 > 0 ? qFactor2 : 1);
+  const { C: C9, L, bpL, bpC } = ladderValues(g, type, omega_c, impedance, qFactor2 > 0 ? qFactor2 : 1);
   let attenuation_at_2fc;
   if (isChebyshev) {
     const epsilon = Math.sqrt(Math.pow(10, CHEBYSHEV_RIPPLE_DB / 10) - 1);
@@ -4952,14 +5474,14 @@ function calculateFilterDesigner(inputs) {
       maxComponentError = Math.max(maxComponentError, Math.abs(result.error));
       return result.snapped;
     };
-    for (const arr of [C8, L, bpL, bpC]) {
+    for (const arr of [C9, L, bpL, bpC]) {
       for (let i = 0; i < arr.length; i++) arr[i] = snapValue(arr[i]);
     }
     fcShiftPercent = maxComponentError * 0.5;
   }
   const values = {};
   C_KEYS.forEach((k, i) => {
-    values[k] = C8[i];
+    values[k] = C9[i];
   });
   L_KEYS.forEach((k, i) => {
     values[k] = L[i];
@@ -7961,12 +8483,29 @@ var TRACE_TEMP_VALIDITY = [
 ];
 function calculatePcbTraceTemp(inputs) {
   const { current, traceWidth, copperWeight, ambientTemp, traceLength } = inputs;
+  const boardThickness = inputs.boardThickness ?? 1.6;
+  const planeDistance = inputs.planeDistance ?? 0;
+  const planeCopperWeight = inputs.planeCopperWeight ?? 0.5;
+  const isExternal = inputs.isExternal ?? 1;
   if (current <= 0) {
     return { values: {}, errors: ["Current must be greater than 0"] };
   }
   if (traceWidth <= 0) {
     return { values: {}, errors: ["Trace width must be greater than 0"] };
   }
+  if (!(copperWeight > 0)) {
+    return { values: {}, errors: ["Copper weight must be greater than 0"] };
+  }
+  const board = {
+    copperOz: copperWeight,
+    boardThickness,
+    planeDistance,
+    planeCopperOz: planeCopperWeight,
+    internal: !(isExternal > 0.5),
+    ambient: ambientTemp
+  };
+  const refusal = traceThermalRefusal(board);
+  if (refusal) return { values: {}, errors: [refusal] };
   const thickness = copperWeight * 0.035;
   const crossSection = traceWidth * thickness;
   const resistance_per_m = COPPER_RESISTIVITY_20C * 1e6 / crossSection;
@@ -7984,6 +8523,13 @@ function calculatePcbTraceTemp(inputs) {
     area: crossSection_mils2,
     copperWeight
   });
+  const modelRise = copperWeight > 0 ? traceThermalRise(board, traceWidth, current) : Infinity;
+  const rise = modelRise ?? NaN;
+  const tempRiseBoard = (1 + traceThermalMargin(board.internal)) * rise;
+  const maxTempBoard = ambientTemp + tempRiseBoard;
+  const inModelRange = traceThermalInRange(board, traceWidth, rise);
+  warnings.push(...checkValidity(TRACE_THERMAL_VALIDITY, traceThermalValidityValues(board, traceWidth, rise)));
+  if (modelRise === null) warnings.push(TRACE_THERMAL_RUNAWAY);
   return {
     values: {
       tempRise,
@@ -7993,7 +8539,10 @@ function calculatePcbTraceTemp(inputs) {
       currentCapacity,
       tempRise2152,
       maxTemp2152,
-      inChartRange
+      inChartRange,
+      tempRiseBoard,
+      maxTempBoard,
+      inModelRange
     },
     warnings
   };
@@ -8053,6 +8602,53 @@ var pcbTraceTemp = {
       unit: "mm",
       defaultValue: 100,
       min: 1
+    },
+    {
+      key: "boardThickness",
+      label: "Board Thickness",
+      symbol: "h",
+      unit: "mm",
+      defaultValue: 1.6,
+      min: 0.2,
+      max: 6,
+      step: 0.1,
+      tooltip: "The whole board’s thickness. Only the board-specific rise (rftools thermal model) reads it; the model is validated from 1.4 to 3.2 mm"
+    },
+    {
+      key: "planeDistance",
+      label: "Distance to Plane Below",
+      symbol: "d",
+      unit: "mm",
+      defaultValue: 0,
+      min: 0,
+      max: 6,
+      step: 0.05,
+      tooltip: "The dielectric between the trace and the nearest solid copper plane under it; 0 means no plane. Only the board-specific rise reads it"
+    },
+    {
+      key: "planeCopperWeight",
+      label: "Plane Copper Weight",
+      symbol: "T_p",
+      unit: "oz",
+      defaultValue: 0.5,
+      min: 0.5,
+      max: 2,
+      step: 0.5,
+      tooltip: "The copper weight of that plane (35 µm per ounce). Only the board-specific rise reads it, and only when there is a plane"
+    },
+    {
+      key: "isExternal",
+      label: "Layer Type",
+      symbol: "",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 1,
+      tooltip: "1 = external (outer) layer, 0 = internal layer. It changes only the board-specific rise; the IPC-2221 rise is always chart A, external, and Figure 5-1 is the same on either layer",
+      presets: [
+        { label: "External layer", values: { isExternal: 1 } },
+        { label: "Internal layer", values: { isExternal: 0 } }
+      ]
     }
   ],
   outputs: [
@@ -8133,26 +8729,70 @@ var pcbTraceTemp = {
       precision: 0,
       tooltip: "1 when the Figure 5-1 rise is between 10 and 45 °C and the cross-section at most 700 sq mil, the range the chart draws",
       thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
+    },
+    {
+      key: "tempRiseBoard",
+      label: "Temperature Rise (This Board, Thermal Model)",
+      symbol: "ΔT_board",
+      unit: "°C",
+      precision: 1,
+      tooltip: `${TRACE_THERMAL_METHOD}: rftools’ own model of a long trace on this FR-4 board in still air, with the plane, if any, under it, and a 15 % margin on the rise. It is not IPC-2152; inside its validated range it is never above the Figure 5-1 rise`,
+      thresholds: {
+        good: { max: 10 },
+        warning: { max: 30 },
+        danger: { max: 30 }
+      }
+    },
+    {
+      key: "maxTempBoard",
+      label: "Maximum Trace Temperature (This Board, Thermal Model)",
+      symbol: "T_max,board",
+      unit: "°C",
+      precision: 1,
+      thresholds: {
+        good: { max: 55 },
+        warning: { max: 85 },
+        danger: { max: 85 }
+      }
+    },
+    {
+      key: "inModelRange",
+      label: "Within Thermal Model Range",
+      unit: "",
+      precision: 0,
+      tooltip: `1 when the board-specific rise lies inside the range the thermal model was validated over: ${TRACE_THERMAL_RANGE.description}, the rise before the margin`,
+      thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
     }
   ],
   calculate: calculatePcbTraceTemp,
   formula: {
-    primary: "ΔT = (I / (k × A^c))^(1/b) = (I / (0.048 × A^0.725))^(1/0.44) — IPC-2221 external-layer fit; ΔT₂₁₅₂ = (I / (0.024 × A^0.725))^(1/0.44) — IPC-2152 Figure 5-1",
-    latex: "\\Delta T = \\left(\\frac{I}{k \\cdot A^{0.725}}\\right)^{1/0.44},\\quad k = 0.048 \\text{ (IPC-2221, external)},\\ 0.024 \\text{ (IPC-2152 Fig. 5-1)},\\ A \\text{ in mil}^2",
+    primary: "ΔT = (I / (k × A^c))^(1/b) = (I / (0.048 × A^0.725))^(1/0.44) — IPC-2221 external-layer fit; ΔT₂₁₅₂ = (I / (0.024 × A^0.725))^(1/0.44) — IPC-2152 Figure 5-1; ΔT_board = (1 + m)·ΔT*, ΔT*·G′(ΔT*) = I²·ρ_v(T_A + ΔT*) / (W·t) — rftools thermal model (board-specific)",
+    latex: "\\Delta T = \\left(\\frac{I}{k \\cdot A^{0.725}}\\right)^{1/0.44},\\quad k = 0.048 \\text{ (IPC-2221, external)},\\ 0.024 \\text{ (IPC-2152 Fig. 5-1)},\\ A \\text{ in mil}^2;\\qquad \\Delta T_{board} = (1+m)\\,\\Delta T^{*},\\quad \\Delta T^{*}\\,G'(\\Delta T^{*}) = \\frac{I^2\\,\\rho_v(T_A + \\Delta T^{*})}{W\\,t}",
     variables: [
       { symbol: "ΔT", description: "Temperature rise above ambient", unit: "°C" },
       { symbol: "I", description: "Trace current", unit: "A" },
       { symbol: "k", description: "Chart constant: 0.048 on IPC-2221 chart A (external), 0.024 on IPC-2152 Figure 5-1 (any layer)", unit: "" },
       { symbol: "b", description: "IPC-2221 exponent (0.44)", unit: "" },
       { symbol: "c", description: "IPC-2221 cross-section exponent (0.725)", unit: "" },
-      { symbol: "A", description: "Conductor cross-section (width × thickness)", unit: "mil²" }
+      { symbol: "A", description: "Conductor cross-section (width × thickness)", unit: "mil²" },
+      { symbol: "ΔT_board", description: "Board-specific temperature rise, from the rftools thermal model (not IPC-2152)", unit: "°C" },
+      { symbol: "ΔT*", description: "The thermal model’s rise before its margin", unit: "°C" },
+      { symbol: "G′", description: "The thermal model’s conductance per metre from the trace to the air: through the board, the plane if any, and the trace’s own surface", unit: "W/(m·K)" },
+      { symbol: "ρ_v", description: "Copper resistivity for the model’s heat, from IPC-TM-650 2.5.4.1A: 10.827 Ω·cmil/ft at 25 °C for 1 oz and heavier, 11.529 for lighter copper", unit: "Ω·m" },
+      { symbol: "T_A", description: "Ambient temperature", unit: "°C" },
+      { symbol: "W", description: "Trace width", unit: "mm" },
+      { symbol: "t", description: "Copper thickness, 35 µm per ounce", unit: "mm" },
+      { symbol: "m", description: "The model’s margin on the rise, 15 % on either layer", unit: "" }
     ],
     derivation: [
       "IPC prints charts, not formulas: I = k · ΔT^0.44 · A^0.725 is the published fit to them",
       "IPC-2221 chart A, external layers: k = 0.048, so ΔT = (I / (0.048 · A^0.725))^(1/0.44)",
-      "IPC-2152 (2009) Figure 5-1, its conservative chart for internal and external conductors, is IPC-2221's internal chart: k = 0.024, so its rise is 2^(1/0.44) = 4.832 times chart A's"
+      "IPC-2152 (2009) Figure 5-1, its conservative chart for internal and external conductors, is IPC-2221's internal chart: k = 0.024, so its rise is 2^(1/0.44) = 4.832 times chart A's",
+      "The board-specific rise is the rftools thermal model, not IPC-2152: a network of the trace, the FR-4 board, the plane if any and still air at the ambient, whose conductance G′ is fitted to rftools’ own 2-D solver",
+      "Its rise ΔT* balances the heat the trace sheds against the Joule heat, which rises with the copper’s temperature; the reported rise is (1 + m)·ΔT*, m = 15 %, the margin that covers the model’s worst disagreement with published data",
+      "Inside its validated range it is never above the Figure 5-1 rise; boards under 1.4 mm and traces over 5.1 mm are flagged, as published data show them hotter than the model predicts"
     ],
-    reference: "IPC-2221A (May 2003) §6.2, Figure 6-4, chart A (the chart of IPC-2221, February 1998), through its published fit; IPC-2152 (August 2009) §5, Figure 5-1"
+    reference: "IPC-2221A (May 2003) §6.2, Figure 6-4, chart A (the chart of IPC-2221, February 1998), through its published fit; IPC-2152 (August 2009) §5, Figure 5-1; the board-specific rise: rftools thermal model (board-specific), fitted to its own 2-D solver and checked against Brooks & Adam (2015), Jouppi (2010) and Olson (2010)"
   },
   assumptions: [
     {
@@ -8170,14 +8810,24 @@ var pcbTraceTemp = {
     {
       code: "resistance-at-20c",
       text: "The trace resistance and power use ρ = 1/58 Ω·mm²/m (IEC 60028, 1.7241×10⁻⁸ Ω·m) at 20 °C, not corrected for the trace’s temperature."
-    }
+    },
+    ...traceThermalAssumptions(
+      "rise",
+      "The board-specific rise is computed at the ambient entered: it sets the air’s properties, the radiation and the copper’s resistivity, so a hotter ambient gives a somewhat larger rise."
+    )
   ],
-  fittedModel: {
-    description: "IPC-2152 Figure 5-1 through I = 0.024·ΔT^0.44·A^0.725, checked against IPC-2221 (1998) Figure 6-4 chart C (the same chart) at 10 to 45 °C and up to 700 sq mil: the rise is within −5.7 % to +7.3 % of 12 chart readings, and 18 % low at 10 °C and 700 sq mil",
-    worstCaseError: 0.18,
-    insideOutput: "inChartRange"
-  },
-  validity: TRACE_TEMP_VALIDITY,
+  // Figure 5-1's fit first: it is `provenance.validRange.model`, as before
+  // this calculator carried a second model (Decision 9).
+  fittedModel: [
+    {
+      description: "IPC-2152 Figure 5-1 through I = 0.024·ΔT^0.44·A^0.725, checked against IPC-2221 (1998) Figure 6-4 chart C (the same chart) at 10 to 45 °C and up to 700 sq mil: the rise is within −5.7 % to +7.3 % of 12 chart readings, and 18 % low at 10 °C and 700 sq mil",
+      worstCaseError: 0.18,
+      insideOutput: "inChartRange"
+    },
+    TRACE_THERMAL_FITTED_MODEL
+  ],
+  validity: [...TRACE_TEMP_VALIDITY, ...TRACE_THERMAL_VALIDITY],
+  methodology: TRACE_THERMAL_METHODOLOGY,
   visualization: { type: "none" },
   relatedCalculators: ["heatsink-calculator", "trace-width-current", "trace-resistance"],
   relatedBlogPosts: ["pcb-trace-width-current-capacity", "trace-width-current"]
@@ -8652,10 +9302,10 @@ var shieldingEffectiveness = {
 
 // src/lib/calculators/general/wire-gauge.ts
 function calculateWireGauge(inputs) {
-  const { awg, current, length, resistivity } = inputs;
+  const { awg, current, length, resistivity: resistivity2 } = inputs;
   const diameter = 0.127 * Math.pow(92, (36 - awg) / 39);
   const crossSection = Math.PI * Math.pow(diameter / 2, 2);
-  const resistance = resistivity * length / crossSection;
+  const resistance = resistivity2 * length / crossSection;
   const voltageDrop2 = current * resistance;
   const currentCapacity = 2.5 * crossSection;
   return {
@@ -9015,8 +9665,8 @@ function calculateQFactor(inputs) {
     const L = value * 1e-6;
     reactance = omega * L;
   } else {
-    const C8 = value * 1e-9;
-    reactance = 1 / (omega * C8);
+    const C9 = value * 1e-9;
+    reactance = 1 / (omega * C9);
   }
   const qFactor2 = reactance / esr;
   const bandwidth = frequency * 1e3 / qFactor2;
@@ -13497,7 +14147,7 @@ var loopAntenna = {
 };
 
 // src/lib/calculators/antenna/helical-antenna.ts
-var C2 = 299792458;
+var C3 = 299792458;
 var KRAUS = "Kraus & Marhefka, Antennas for All Applications, 3rd ed. (2002), ch. 8; Balanis, Antenna Theory, 4th ed. (2016), §10.3.1";
 var HELICAL_VALIDITY = [
   { quantity: "circumferenceWavelengths", min: 0.75, max: 1.33, label: "Circumference C/λ", source: KRAUS },
@@ -13518,7 +14168,7 @@ function calculateHelicalAntenna(inputs) {
   if (conductorDiameter >= spacing) {
     return { values: {}, errors: ["The conductor must be thinner than the turn spacing, or adjacent turns touch"] };
   }
-  const wavelength = C2 / (frequency * 1e6) * 1e3;
+  const wavelength = C3 / (frequency * 1e6) * 1e3;
   const circumference = Math.PI * diameter;
   const cl = circumference / wavelength;
   const sl = spacing / wavelength;
@@ -13800,9 +14450,9 @@ function sici(x) {
 }
 
 // src/lib/calculators/antenna/monopole-antenna.ts
-var C3 = 299792458;
+var C4 = 299792458;
 var MU0 = 125663706212e-17;
-var ETA0 = MU0 * C3;
+var ETA0 = MU0 * C4;
 var PATTERN_STEPS = 900;
 var UNREPORTED_OFFSET = 0.01;
 var MONOPOLE_VALIDITY = [
@@ -13837,7 +14487,7 @@ function calculateMonopoleAntenna(inputs) {
   if (!(velocityFactor > 0 && velocityFactor <= 1)) {
     return { values: {}, errors: ["Velocity factor must be between 0 and 1"] };
   }
-  const lambda = C3 / (frequency * 1e6);
+  const lambda = C4 / (frequency * 1e6);
   const k = 2 * Math.PI / lambda;
   const h = height / 1e3;
   const a = conductorDiameter / 2e3;
@@ -14286,7 +14936,7 @@ var antennaDowntilt = {
 };
 
 // src/lib/calculators/rf/line-of-sight.ts
-var C4 = 299792458;
+var C5 = 299792458;
 var EARTH_RADIUS2 = 6371e3;
 var LINE_OF_SIGHT_VALIDITY = [
   {
@@ -14320,7 +14970,7 @@ function calculateLineOfSight(inputs) {
   const d = pathLength * 1e3;
   const d1 = pointDistance * 1e3;
   const d2 = d - d1;
-  const lambda = C4 / (frequency * 1e9);
+  const lambda = C5 / (frequency * 1e9);
   const horizon1 = Math.sqrt(2 * ae * antennaHeight1);
   const horizon2 = Math.sqrt(2 * ae * antennaHeight2);
   const bulge = d1 * d2 / (2 * ae);
@@ -14543,7 +15193,7 @@ var lineOfSight = {
 };
 
 // src/lib/calculators/rf/wilkinson-power-divider.ts
-var C5 = 299792458;
+var C6 = 299792458;
 var RANGE_SOURCE = "the realisable line-impedance range entered on this page; Pozar, Microwave Engineering, 4th ed. (2012), Example 8.6, p. 424, takes 20 to 120 Ω as the practical microstrip extremes";
 function wilkinsonValidity(zMin, zMax) {
   const line = (quantity, label) => ({
@@ -14581,7 +15231,7 @@ function calculateWilkinson(inputs) {
   const port3Transformer = z0 / Math.sqrt(K);
   const port2Share = -10 * Math.log10(1 + powerRatio);
   const port3Share = 10 * Math.log10(powerRatio / (1 + powerRatio));
-  const quarterWaveLength = C5 / (4 * frequency * 1e9 * Math.sqrt(effPermittivity)) * 1e3;
+  const quarterWaveLength = C6 / (4 * frequency * 1e9 * Math.sqrt(effPermittivity)) * 1e3;
   const warnings = checkValidity(wilkinsonValidity(zMin, zMax), {
     arm2Impedance,
     arm3Impedance,
@@ -15006,9 +15656,9 @@ var directionalCoupler = {
 };
 
 // src/lib/calculators/rf/circular-waveguide.ts
-var C6 = 299792458;
+var C7 = 299792458;
 var MU02 = 125663706212e-17;
-var ETA02 = MU02 * C6;
+var ETA02 = MU02 * C7;
 var NP_TO_DB = 20 / Math.LN10;
 var TM_ROOTS = [
   [2.4048255577, 5.5200781103, 8.6537279129, 11.791534439, 14.9309177085],
@@ -15059,10 +15709,10 @@ function calculateCircularWaveguide(inputs) {
   const f = frequency * 1e9;
   const sqrtEr = Math.sqrt(permittivity);
   const chi = type === 0 ? TE_ROOTS[n][m - 1] : TM_ROOTS[n][m - 1];
-  const cutoff = C6 * chi / (2 * Math.PI * a * sqrtEr);
-  const te11Cutoff = C6 * TE_ROOTS[1][0] / (2 * Math.PI * a * sqrtEr);
-  const tm01Cutoff = C6 * TM_ROOTS[0][0] / (2 * Math.PI * a * sqrtEr);
-  const k = 2 * Math.PI * f * sqrtEr / C6;
+  const cutoff = C7 * chi / (2 * Math.PI * a * sqrtEr);
+  const te11Cutoff = C7 * TE_ROOTS[1][0] / (2 * Math.PI * a * sqrtEr);
+  const tm01Cutoff = C7 * TM_ROOTS[0][0] / (2 * Math.PI * a * sqrtEr);
+  const k = 2 * Math.PI * f * sqrtEr / C7;
   const kc = chi / a;
   const eta = ETA02 / sqrtEr;
   const sigma = conductivity * 1e6;
@@ -15101,8 +15751,8 @@ function calculateCircularWaveguide(inputs) {
   values.propagates = 1;
   values.beta = beta;
   values.guideWavelength = 2 * Math.PI / beta * 1e3;
-  values.phaseVelocity = phaseVelocity / C6;
-  values.groupVelocity = C6 / (permittivity * phaseVelocity);
+  values.phaseVelocity = phaseVelocity / C7;
+  values.groupVelocity = C7 / (permittivity * phaseVelocity);
   values.waveImpedance = type === 0 ? k * eta / beta : beta * eta / k;
   values.conductorAttenuation = alphaC * NP_TO_DB;
   values.dielectricAttenuation = alphaD * NP_TO_DB;
@@ -21580,7 +22230,7 @@ function calculateBldcMotor(inputs) {
   const THRUST_COEFFICIENT = 0.11;
   const POWER_COEFFICIENT = 0.047;
   const AIR_DENSITY = 1.225;
-  const G0 = 9.80665;
+  const G02 = 9.80665;
   const propDiaM = safePropDia * 0.0254;
   const a = POWER_COEFFICIENT * AIR_DENSITY * Math.pow(propDiaM, 5) / (2 * Math.PI);
   const b = 2 * Math.PI / (kv_radV * kv_radV * safeRmOhm);
@@ -21589,7 +22239,7 @@ function calculateBldcMotor(inputs) {
   const loadedRpm = revPerSecond * 60;
   const loadedCurrent = safeVoltage / safeRmOhm - 2 * Math.PI * revPerSecond / (kv_radV * safeRmOhm);
   const thrustN = THRUST_COEFFICIENT * AIR_DENSITY * revPerSecond * revPerSecond * Math.pow(propDiaM, 4);
-  const thrust = thrustN / G0 * 1e3;
+  const thrust = thrustN / G02 * 1e3;
   return {
     values: {
       noLoadRpm,
@@ -23900,14 +24550,14 @@ function calculatePt100Resistance(inputs) {
   const { temperature, r0 } = inputs;
   const A = 39083e-7;
   const B2 = -5775e-10;
-  const C8 = -4183e-15;
+  const C9 = -4183e-15;
   let resistance;
   if (temperature >= 0) {
     resistance = r0 * (1 + A * temperature + B2 * temperature ** 2);
   } else {
-    resistance = r0 * (1 + A * temperature + B2 * temperature ** 2 + C8 * (temperature - 100) * temperature ** 3);
+    resistance = r0 * (1 + A * temperature + B2 * temperature ** 2 + C9 * (temperature - 100) * temperature ** 3);
   }
-  const sensitivityOhmPerDeg = temperature >= 0 ? r0 * (A + 2 * B2 * temperature) : r0 * (A + 2 * B2 * temperature + C8 * (4 * temperature ** 3 - 300 * temperature ** 2));
+  const sensitivityOhmPerDeg = temperature >= 0 ? r0 * (A + 2 * B2 * temperature) : r0 * (A + 2 * B2 * temperature + C9 * (4 * temperature ** 3 - 300 * temperature ** 2));
   return { values: { resistance, sensitivityOhmPerDeg } };
 }
 var pt100Resistance = {
@@ -30223,13 +30873,13 @@ var emiFilterLc = {
     const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)}μF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)}nF` : `${+(uf * 1e6).toPrecision(3)}pF`;
     const fmtL = (uh) => uh >= 1 ? `${+uh.toPrecision(3)}μH` : `${+(uh * 1e3).toPrecision(3)}nH`;
     const L = fmtL(outputs.inductance);
-    const C8 = fmtC(outputs.capacitance);
+    const C9 = fmtC(outputs.capacitance);
     return [{
       label: "Pi LC EMI Filter",
       elements: [
-        { type: "C", placement: "shunt", label: `C1 ${C8}` },
+        { type: "C", placement: "shunt", label: `C1 ${C9}` },
         { type: "L", placement: "series", label: `L ${L}` },
-        { type: "C", placement: "shunt", label: `C2 ${C8}` }
+        { type: "C", placement: "shunt", label: `C2 ${C9}` }
       ]
     }];
   },
@@ -30643,8 +31293,8 @@ var radiatedEmissionEstimate = {
 function calculateGroundPlaneImpedance(inputs) {
   const { length, width, thickness, frequency, conductivity } = inputs;
   const separation = inputs.separation ?? 1;
-  const resistivity = 1 / (conductivity * 1e6);
-  const dcResistance = resistivity * length * 1e-3 / (width * 1e-3 * thickness * 1e-6);
+  const resistivity2 = 1 / (conductivity * 1e6);
+  const dcResistance = resistivity2 * length * 1e-3 / (width * 1e-3 * thickness * 1e-6);
   const mu0 = 4 * Math.PI * 1e-7;
   const freqHz = frequency * 1e6;
   const sigma = conductivity * 1e6;
@@ -36879,11 +37529,11 @@ function calculateViaStepResponse(inputs) {
   const inductanceNH = 0.2 * h * (Math.log(4 * h / d) + 0.5);
   const capacitancePF = 0.0554 * er * h * d1 / (d2 - d1);
   const L = inductanceNH * 1e-9;
-  const C8 = capacitancePF * 1e-12;
-  const zViaOhm = Math.sqrt(L / C8);
-  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C8)) / 1e9;
-  const excessC = C8 - L / (z0 * z0);
-  const excessL = L - C8 * z0 * z0;
+  const C9 = capacitancePF * 1e-12;
+  const zViaOhm = Math.sqrt(L / C9);
+  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C9)) / 1e9;
+  const excessC = C9 - L / (z0 * z0);
+  const excessL = L - C9 * z0 * z0;
   const excessCapacitancePF = excessC * 1e12;
   const excessInductanceNH = excessL * 1e9;
   const trIn = riseTime * 1e-12;
@@ -38104,7 +38754,7 @@ var edgeCoupledEmbedded = {
 };
 
 // src/lib/calculators/pcb/differential-via.ts
-var C7 = 299792458;
+var C8 = 299792458;
 var ETA_05 = FREE_SPACE_IMPEDANCE;
 var MU_03 = 4e-7 * Math.PI;
 var SIGMA_CU = 58e6;
@@ -38138,10 +38788,10 @@ function calculateDifferentialVia(inputs) {
   const sqrtEr = Math.sqrt(dielectricConst);
   const zDense = ETA_05 / (Math.PI * sqrtEr) * Math.log(antipadDiameter / barrelDiameter);
   const stubLength = Math.max(boardThickness - exitDepth, 0);
-  const vp = C7 / sqrtEr;
+  const vp = C8 / sqrtEr;
   const stubResonance = stubLength > 0 ? vp / (4 * stubLength * 1e-3) / 1e9 : Infinity;
   const lossPerMm = (fHz) => {
-    const dielectric2 = Math.PI * fHz * sqrtEr * lossTangent / C7 * NEPER_TO_DB * 1e-3;
+    const dielectric2 = Math.PI * fHz * sqrtEr * lossTangent / C8 * NEPER_TO_DB * 1e-3;
     const surfaceR = Math.sqrt(Math.PI * fHz * MU_03 / SIGMA_CU);
     const conductor2 = surfaceR * (1 / (barrelDiameter * 1e-3) + 1 / (antipadDiameter * 1e-3)) / (Math.PI * zDense) * NEPER_TO_DB * 1e-3;
     return { dielectric: dielectric2, conductor: conductor2 };
@@ -39702,7 +40352,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.5.6",
+  version: "2.5.7",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 255 RF & electronics calculators for AI agents via the MCP",
@@ -40090,6 +40740,12 @@ var CATEGORIES = {
   }
 };
 
+// src/lib/calculators/fitted-models.ts
+function fittedModels(def) {
+  if (def.fittedModel === void 0) return [];
+  return Array.isArray(def.fittedModel) ? def.fittedModel : [def.fittedModel];
+}
+
 // src/lib/provenance/build.ts
 var ENGINE_VERSION_PATTERN = /^[a-z][a-z0-9-]*@\S+$/;
 function text(value) {
@@ -40137,20 +40793,20 @@ function buildValidRange(def, inputs, values) {
     anyBound = true;
     if (liesOutside(inputs[input.key], bound2)) outside.push(input.key);
   }
-  let model = null;
-  if (def.fittedModel) {
-    const flag = values?.[def.fittedModel.insideOutput];
-    model = {
-      description: def.fittedModel.description,
-      worstCaseError: def.fittedModel.worstCaseError,
+  const models = fittedModels(def).map((fit) => {
+    const flag = values?.[fit.insideOutput];
+    return {
+      description: fit.description,
+      worstCaseError: fit.worstCaseError,
       inside: flag === 1 ? true : flag === 0 ? false : null
     };
-  }
+  });
+  const model = models[0] ?? null;
   let status;
-  if (outside.length > 0 || model?.inside === false) status = "outside";
-  else if (!anyBound && !model || model && model.inside === null) status = "unknown";
+  if (outside.length > 0 || models.some((m) => m.inside === false)) status = "outside";
+  else if (!anyBound && models.length === 0 || models.some((m) => m.inside === null)) status = "unknown";
   else status = "inside";
-  return { status, bounds, outside, model };
+  return models.length > 1 ? { status, bounds, outside, model, models } : { status, bounds, outside, model };
 }
 function buildCalculatorProvenance(def, inputs, { engineVersion, startedAt, values, now }) {
   if (!ENGINE_VERSION_PATTERN.test(engineVersion)) {
@@ -40187,9 +40843,10 @@ function outOfRangeWarnings(provenance) {
       `Input '${key}' = ${inputs[key]} is outside the range this calculator is stated for (${describeBound(bound2)}); the result is extrapolated.`
     );
   }
-  if (validRange.model?.inside === false) {
+  for (const model of validRange.models ?? (validRange.model ? [validRange.model] : [])) {
+    if (model.inside !== false) continue;
     warnings.push(
-      `The inputs lie outside the fitted model's validated range (${validRange.model.description}); its worst-case error of ${+(validRange.model.worstCaseError * 100).toFixed(2)}% applies only inside it.`
+      `The inputs lie outside the fitted model's validated range (${model.description}); its worst-case error of ${+(model.worstCaseError * 100).toFixed(2)}% applies only inside it.`
     );
   }
   return warnings;
@@ -46357,7 +47014,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.5.6"
+    version: "2.5.7"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });

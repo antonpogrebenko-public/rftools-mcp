@@ -98,6 +98,21 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.5.7
+
+No tool changed. Results follow rftools.io's trace thermal model (changelog,
+2026-10-14):
+- **`trace-width-current` gains `widthBoardMm`** and **`pcb-trace-temp`
+  gains `tempRiseBoard` and `maxTempBoard`**: the width and rise for this
+  board, from rftools' own thermal model (never labelled IPC-2152), with
+  `inModelRange` and a 15 % margin. New optional inputs: `boardThickness`,
+  `planeDistance`, `planeCopperWeight` (and `isExternal` on
+  `pcb-trace-temp`).
+- **`provenance.validRange.models`** lists both fitted models on these two
+  calculators, each with its own `inside`.
+- Both calculators refuse a zero or negative current, rise, copper weight or
+  length, as the API does.
+
 ### What changed in 2.5.6
 
 No tool changed. `simulate_emi_radiated`'s fields now use the exact π·µ₀/c and

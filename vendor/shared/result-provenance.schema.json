@@ -102,7 +102,7 @@
       }
     },
     "validRange": {
-      "description": "The input bounds the method is stated for and whether the given inputs lay inside them. `inside`: every stated bound holds and any fitted model reports inside. `outside`: an input lies outside its bound (named in `outside`) or the fitted model reports outside. `unknown`: no bound is stated, or whether they hold could not be determined.",
+      "description": "The input bounds the method is stated for and whether the given inputs lay inside them. `inside`: every stated bound holds and any fitted model reports inside. `outside`: an input lies outside its bound (named in `outside`) or a fitted model reports outside. `unknown`: no bound is stated, or whether they hold could not be determined.",
       "type": "object",
       "required": ["status", "bounds", "outside", "model"],
       "additionalProperties": true,
@@ -124,6 +124,12 @@
             { "type": "null" },
             { "$ref": "#/$defs/fittedModel" }
           ]
+        },
+        "models": {
+          "description": "Every fitted model the values rest on, in the calculator's order, each with its own `inside`. Present only when there are two or more; `model` is then the first.",
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/fittedModel" }
         }
       },
       "allOf": [
@@ -140,7 +146,8 @@
                   { "type": "null" },
                   { "type": "object", "properties": { "inside": { "const": true } } }
                 ]
-              }
+              },
+              "models": { "items": { "properties": { "inside": { "const": true } } } }
             }
           }
         },
@@ -159,6 +166,14 @@
                     "type": "object",
                     "required": ["inside"],
                     "properties": { "inside": { "const": false } }
+                  }
+                }
+              },
+              {
+                "required": ["models"],
+                "properties": {
+                  "models": {
+                    "contains": { "type": "object", "required": ["inside"], "properties": { "inside": { "const": false } } }
                   }
                 }
               }
