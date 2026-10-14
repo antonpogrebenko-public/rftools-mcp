@@ -41,6 +41,15 @@
         "minimum": 1,
         "maximum": 200,
         "x-unit": "μm"
+      },
+      "frequency": {
+        "type": "number",
+        "title": "Frequency",
+        "description": "Frequency (GHz). Used only for the guided wavelength; the impedance does not depend on it in this model",
+        "default": 2.4,
+        "minimum": 0.001,
+        "maximum": 300,
+        "x-unit": "GHz"
       }
     }
   },
@@ -59,6 +68,16 @@
       "key": "propagationDelay",
       "label": "Propagation Delay",
       "unit": "ps/mm"
+    },
+    {
+      "key": "guidedWavelength",
+      "label": "Guided Wavelength",
+      "unit": "mm"
+    },
+    {
+      "key": "quarterWavelength",
+      "label": "Quarter Wavelength",
+      "unit": "mm"
     }
   ],
   "formula": {

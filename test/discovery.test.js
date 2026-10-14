@@ -125,13 +125,13 @@ test('an omitted input takes its default and is listed in defaultedInputs', asyn
     slug: 'microstrip-impedance',
     inputs: { traceWidth: 3, substrateHeight: 1.6, dielectricConstant: 4.3 },
   });
-  assert.deepEqual(r.json.defaultedInputs, ['copperThickness']);
+  assert.deepEqual(r.json.defaultedInputs, ['copperThickness', 'frequency']);
   assert.equal(r.json.provenance.inputs.copperThickness, 35);
   const none = await s.call('run_calculation', { slug: 'microstrip-impedance', inputs: {} });
-  assert.deepEqual(none.json.defaultedInputs, ['traceWidth', 'substrateHeight', 'dielectricConstant', 'copperThickness']);
+  assert.deepEqual(none.json.defaultedInputs, ['traceWidth', 'substrateHeight', 'dielectricConstant', 'copperThickness', 'frequency']);
   const all = await s.call('run_calculation', {
     slug: 'microstrip-impedance',
-    inputs: { traceWidth: 3, substrateHeight: 1.6, dielectricConstant: 4.3, copperThickness: 35 },
+    inputs: { traceWidth: 3, substrateHeight: 1.6, dielectricConstant: 4.3, copperThickness: 35, frequency: 2.4 },
   });
   assert.deepEqual(all.json.defaultedInputs, []);
 });
@@ -149,12 +149,23 @@ test('a value above its maximum is computed, with a warning naming the input and
   assert.ok(r.json.warnings.some((w) => w.startsWith("Input 'traceWidth' = 100 is outside the range") && w.includes('0.01 to 50 mm')));
 });
 
+// Outputs added since 2.3.0. A 2.3.0 caller receives them too, after the ones it
+// already read; every output 2.3.0 returned keeps its key, label, unit and value.
+const ADDED_SINCE_2_3_0 = {
+  // site-redesign W5: the guided wavelength at a new `frequency` input (default 2.4 GHz).
+  'microstrip-impedance': ['guidedWavelength', 'quarterWavelength'],
+  // site-redesign W2: the C1 range at the target margin, the wavelength and the Fresnel radius.
+  'rf-link-budget': ['maxRangeAtTarget', 'wavelength', 'fresnelRadius'],
+};
+
 test('a 2.3.0-style call with declared keys returns what 2.3.0 returned', async () => {
   const { calls } = fixture('run-calculation-2.3.0.json');
   assert.ok(Object.keys(calls).length >= 3);
   for (const [slug, { inputs, results, warnings }] of Object.entries(calls)) {
     const r = await s.call('run_calculation', { slug, inputs });
-    assert.deepEqual(r.json.results, results, slug);
+    const added = ADDED_SINCE_2_3_0[slug] ?? [];
+    assert.deepEqual(r.json.results.slice(results.length).map((o) => o.key), added, slug);
+    assert.deepEqual(r.json.results.slice(0, results.length), results, slug);
     assert.deepEqual(r.json.warnings ?? [], warnings, slug);
   }
 });

@@ -55,6 +55,7 @@ var TM650_RESISTIVITY_HALF_OZ_20C = 11.529 * CIRCULAR_MIL / FOOT / (1 + COPPER_A
 var ETA_0 = FREE_SPACE_IMPEDANCE;
 function calculateMicrostrip(inputs) {
   const { traceWidth: w, substrateHeight: h, dielectricConstant: er, copperThickness } = inputs;
+  const frequency = inputs.frequency ?? 2.4;
   const t = copperThickness / 1e3;
   const dw = t / Math.PI * (1 + Math.log(2 * h / t));
   const wEff = w + dw;
@@ -66,11 +67,14 @@ function calculateMicrostrip(inputs) {
   const z0 = ETA_0 / (2 * Math.PI * Math.sqrt(erEff)) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
   const c2 = 299.792458;
   const tpd = 1 / c2 * Math.sqrt(erEff) * 1e3;
+  const guidedWavelength = c2 / (frequency * Math.sqrt(erEff));
   return {
     values: {
       impedance: z0,
       effectiveDielectric: erEff,
-      propagationDelay: tpd
+      propagationDelay: tpd,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     }
   };
 }
@@ -123,15 +127,8 @@ var microstripImpedance = {
       min: 1,
       max: 100,
       step: 0.01,
-      tooltip: "Relative permittivity of the substrate material",
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConstant: 4.2 } },
-        { label: "FR4-HF (4.0)", values: { dielectricConstant: 4 } },
-        { label: "Rogers 4003C (3.38)", values: { dielectricConstant: 3.38 } },
-        { label: "Rogers 4350B (3.48)", values: { dielectricConstant: 3.48 } },
-        { label: "PTFE/Rogers 5880 (2.2)", values: { dielectricConstant: 2.2 } },
-        { label: "Alumina 96% (9.6)", values: { dielectricConstant: 9.6 } }
-      ]
+      tooltip: "Relative permittivity of the substrate material"
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -148,11 +145,22 @@ var microstripImpedance = {
         { label: "1 oz (35 μm)", values: { copperThickness: 35 } },
         { label: "2 oz (70 μm)", values: { copperThickness: 70 } }
       ]
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
     {
       key: "impedance",
+      primary: true,
       label: "Characteristic Impedance",
       symbol: "Z₀",
       unit: "Ω",
@@ -178,7 +186,29 @@ var microstripImpedance = {
       unit: "ps/mm",
       precision: 2,
       format: "standard"
+    },
+    {
+      key: "guidedWavelength",
+      label: "Guided Wavelength",
+      symbol: "λg",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
+    },
+    {
+      key: "quarterWavelength",
+      label: "Quarter Wavelength",
+      symbol: "λg/4",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
     }
+  ],
+  examples: [
+    { id: "fr4-0-2-mm-50-ohm", label: "50 Ω on 0.2 mm FR-4 prepreg", values: { traceWidth: 0.3445, substrateHeight: 0.2, dielectricConstant: 4.4, copperThickness: 35 } },
+    { id: "ro4350b-0-508-mm-50-ohm", label: "50 Ω on 0.508 mm RO4350B", values: { traceWidth: 1.0635, substrateHeight: 0.508, dielectricConstant: 3.66, copperThickness: 35 } },
+    { id: "fr4-1-6-mm-50-ohm", label: "50 Ω on a 1.6 mm two-layer FR-4 board", values: { traceWidth: 3, substrateHeight: 1.6, dielectricConstant: 4.4, copperThickness: 35 } },
+    { id: "rt-duroid-5880-0-254-mm-50-ohm", label: "50 Ω on 0.254 mm RT/duroid 5880", values: { traceWidth: 0.7587, substrateHeight: 0.254, dielectricConstant: 2.2, copperThickness: 17.5 } }
   ],
   calculate: calculateMicrostrip,
   formula: {
@@ -192,6 +222,12 @@ var microstripImpedance = {
     reference: 'Hammerstad & Jensen (1980); Wadell, "Transmission Line Design Handbook" 1991'
   },
   visualization: { type: "cross-section", layers: ["trace", "substrate", "ground"] },
+  geometry: {
+    drawing: { family: "microstrip", roles: { w: "traceWidth", h: "substrateHeight", t: "copperThickness", er: "dielectricConstant" } },
+    synthesis: [{ output: "impedance", solveFor: ["traceWidth", "substrateHeight"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "traceWidth", y: "impedance", range: [0.1, 5], scale: "linear" }
+  },
   relatedCalculators: ["vswr-return-loss", "trace-width-current", "rf-link-budget", "microstrip-mitered-bend"],
   relatedTools: ["impedance-matching", "pdn-impedance", "fdtd-sparam"],
   relatedBlogPosts: ["coax-loss", "eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"],
@@ -249,6 +285,14 @@ var microstripImpedance = {
 };
 
 // src/lib/calculators/rf/rf-link-budget.ts
+var C0 = 299792458;
+var MAX_EXTRA_LOSSES = 4;
+function extraLossSum(inputs) {
+  const count = Math.max(0, Math.min(MAX_EXTRA_LOSSES, Math.round(inputs.extraLossCount ?? 0)));
+  let sum = 0;
+  for (let n = 1; n <= count; n++) sum += inputs[`extraLoss${n}`] ?? 0;
+  return sum;
+}
 function calculateLinkBudget(inputs) {
   const {
     txPower,
@@ -263,16 +307,18 @@ function calculateLinkBudget(inputs) {
     rxCableLoss,
     rxSensitivity
   } = inputs;
-  const c2 = 299792458;
-  const lambda = c2 / (frequency * 1e6);
+  const targetMargin = inputs.targetMargin ?? 10;
+  const lambda = C0 / (frequency * 1e6);
   const distM = distance * 1e3;
   const fspl = 20 * Math.log10(4 * Math.PI * distM / lambda);
-  const totalAdditionalLoss = rainFade + atmosphericLoss + pointingLoss;
+  const totalAdditionalLoss = rainFade + atmosphericLoss + pointingLoss + extraLossSum(inputs);
   const eirp = txPower + txGain - txCableLoss;
   const rxPower = eirp - fspl - totalAdditionalLoss + rxGain - rxCableLoss;
   const linkMargin2 = rxPower - rxSensitivity;
   const maxRangeM = lambda / (4 * Math.PI) * Math.pow(10, (eirp - totalAdditionalLoss + rxGain - rxCableLoss - rxSensitivity) / 20);
   const maxRangeKm = maxRangeM / 1e3;
+  const maxRangeAtTarget = maxRangeKm * Math.pow(10, -targetMargin / 20);
+  const fresnelRadius = Math.sqrt(lambda * distM / 4);
   return {
     values: {
       fspl,
@@ -280,7 +326,11 @@ function calculateLinkBudget(inputs) {
       rxPower,
       linkMargin: linkMargin2,
       maxRangeKm,
-      totalAdditionalLoss
+      totalAdditionalLoss,
+      wavelength: lambda * 1e3,
+      // mm
+      fresnelRadius,
+      maxRangeAtTarget
     }
   };
 }
@@ -302,9 +352,15 @@ var rfLinkBudget = {
     { key: "rainFade", label: "Rain Fade", symbol: "L_rain", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "Rain attenuation per ITU-R P.838. Use 0 for line-of-sight ground links; 3–20 dB for satellite links above 10 GHz in heavy rain zones." },
     { key: "atmosphericLoss", label: "Atmospheric Loss", symbol: "L_atm", unit: "dB", defaultValue: 0.5, min: 0, max: 20, group: "Channel", tooltip: "Gaseous absorption (O₂ at 60 GHz: ~15 dB/km; H₂O at 22 GHz: ~0.2 dB/km). Use 0.5 dB typical for sub-6 GHz terrestrial links." },
     { key: "pointingLoss", label: "Pointing Loss", symbol: "L_pt", unit: "dB", defaultValue: 0, min: 0, max: 10, group: "Channel", tooltip: "Antenna misalignment loss. Pencil-beam dishes: 0.5–3 dB. Omnidirectional or wide-beam antennas: 0 dB." },
+    { key: "extraLossCount", label: "Extra Loss Terms", unit: "", defaultValue: 0, min: 0, max: MAX_EXTRA_LOSSES, step: 1, group: "Channel", tooltip: "How many extra loss terms the budget includes, such as polarisation mismatch, body loss or foliage" },
+    { key: "extraLoss1", label: "Extra Loss 1", symbol: "L_1", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss2", label: "Extra Loss 2", symbol: "L_2", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss3", label: "Extra Loss 3", symbol: "L_3", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss4", label: "Extra Loss 4", symbol: "L_4", unit: "dB", defaultValue: 0, min: 0, max: 50, group: "Channel", tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
     { key: "rxGain", label: "RX Antenna Gain", symbol: "Gᵣₓ", unit: "dBi", defaultValue: 3, min: -30, max: 60, group: "Receiver", tooltip: "RX antenna gain in dBi" },
     { key: "rxCableLoss", label: "RX Cable Loss", symbol: "Lᵣₓ", unit: "dB", defaultValue: 1, min: 0, max: 20, group: "Receiver", tooltip: "RX cable + connector losses" },
-    { key: "rxSensitivity", label: "RX Sensitivity", symbol: "Sᵣₓ", unit: "dBm", defaultValue: -90, min: -160, max: 0, group: "Receiver", tooltip: "Minimum receivable signal level" }
+    { key: "rxSensitivity", label: "RX Sensitivity", symbol: "Sᵣₓ", unit: "dBm", defaultValue: -90, min: -160, max: 0, group: "Receiver", tooltip: "Minimum receivable signal level" },
+    { key: "targetMargin", label: "Target Link Margin", symbol: "M_t", unit: "dB", defaultValue: 10, min: 0, max: 60, group: "Receiver", tooltip: "The fade margin the link must keep above the receiver sensitivity. The status passes at or above it and fails below 0 dB." }
   ],
   outputs: [
     {
@@ -331,6 +387,8 @@ var rfLinkBudget = {
     },
     {
       key: "linkMargin",
+      primary: true,
+      signed: "explicit",
       label: "Link Margin",
       symbol: "LM",
       unit: "dB",
@@ -354,7 +412,30 @@ var rfLinkBudget = {
       symbol: "L_total",
       unit: "dB",
       precision: 2,
-      tooltip: "Sum of rain fade + atmospheric loss + pointing loss"
+      tooltip: "Sum of rain fade, atmospheric loss, pointing loss and any extra loss terms"
+    },
+    {
+      key: "maxRangeAtTarget",
+      label: "Range at Target Margin",
+      symbol: "d_t",
+      unit: "km",
+      precision: 2,
+      tooltip: "The distance at which the link margin falls to the target margin"
+    },
+    {
+      key: "wavelength",
+      label: "Wavelength",
+      symbol: "λ",
+      unit: "mm",
+      precision: 2
+    },
+    {
+      key: "fresnelRadius",
+      label: "First Fresnel Zone Radius",
+      symbol: "r₁",
+      unit: "m",
+      precision: 2,
+      tooltip: "Radius of the first Fresnel zone at the middle of the path. Keep at least 60 % of it clear of obstacles."
     }
   ],
   calculate: calculateLinkBudget,
@@ -365,13 +446,48 @@ var rfLinkBudget = {
       { symbol: "d", description: "Distance", unit: "m" },
       { symbol: "λ", description: "Wavelength (c/f)", unit: "m" },
       { symbol: "EIRP", description: "Pₜₓ + Gₜₓ − Lₜₓ", unit: "dBm" },
-      { symbol: "Pᵣₓ", description: "EIRP − FSPL − L_rain − L_atm − L_pt + Gᵣₓ − Lᵣₓ", unit: "dBm" },
+      { symbol: "Pᵣₓ", description: "EIRP − FSPL − L_rain − L_atm − L_pt − ΣLₙ + Gᵣₓ − Lᵣₓ", unit: "dBm" },
       { symbol: "L_rain", description: "Rain fade (ITU-R P.838)", unit: "dB" },
       { symbol: "L_atm", description: "Atmospheric / gaseous absorption", unit: "dB" },
       { symbol: "L_pt", description: "Antenna pointing / misalignment loss", unit: "dB" }
     ],
-    reference: 'Friis, "A Note on a Simple Transmission Formula" (1946)'
+    reference: 'Friis, "A Note on a Simple Transmission Formula" (1946)',
+    substitution: [
+      { symbol: "FSPL", expression: "20·log₁₀(4π × {distance} × {frequency} / c)", output: "fspl" },
+      { symbol: "EIRP", expression: "{txPower} + {txGain} − {txCableLoss}", output: "eirp" },
+      { symbol: "Pᵣₓ", expression: "EIRP − FSPL − L_total + {rxGain} − {rxCableLoss}", output: "rxPower" },
+      { symbol: "LM", expression: "Pᵣₓ − ({rxSensitivity})", output: "linkMargin" }
+    ]
   },
+  sweep: {
+    input: "distance",
+    output: "rxPower",
+    range: [0.01, 100],
+    scale: "log",
+    lines: [
+      { id: "rx-sensitivity", kind: "limit", label: "Rx sensitivity", value: (i) => i.rxSensitivity, fails: "below" },
+      { id: "target-margin", kind: "target", label: "Target", value: (i) => i.rxSensitivity + i.targetMargin }
+    ]
+  },
+  target: { output: "linkMargin", input: "targetMargin", sense: "min", failAt: 0 },
+  terms: { count: "extraLossCount", keys: ["extraLoss{n}"], maxRows: MAX_EXTRA_LOSSES, label: "loss term" },
+  examples: [
+    {
+      id: "wifi-bridge-2g4",
+      label: "2.4 GHz Wi-Fi bridge, 2 km",
+      values: { txPower: 20, txGain: 16, txCableLoss: 1, frequency: 2437, distance: 2, rainFade: 0, atmosphericLoss: 0.5, pointingLoss: 0.5, rxGain: 16, rxCableLoss: 1, rxSensitivity: -80 }
+    },
+    {
+      id: "lora-915-10km",
+      label: "915 MHz LoRa node, 10 km",
+      values: { txPower: 20, txGain: 2.15, txCableLoss: 0.5, frequency: 915, distance: 10, rainFade: 0, atmosphericLoss: 0, pointingLoss: 0, rxGain: 6, rxCableLoss: 2, rxSensitivity: -137, extraLossCount: 1, extraLoss1: 20 }
+    },
+    {
+      id: "ku-vsat-downlink",
+      label: "Ku-band VSAT downlink",
+      values: { txPower: 50, txGain: 32, txCableLoss: 1, frequency: 11700, distance: 38e3, rainFade: 3, atmosphericLoss: 0.5, pointingLoss: 0.5, rxGain: 41, rxCableLoss: 0.5, rxSensitivity: -96 }
+    }
+  ],
   visualization: { type: "signal-chain" },
   relatedCalculators: ["db-converter", "vswr-return-loss", "eirp-calculator", "free-space-path-loss", "line-of-sight", "5g-nr-link-budget", "lora-link-budget", "ble-link-budget"],
   relatedTools: ["sat-link-budget", "rf-cascade"],
@@ -419,6 +535,7 @@ function calculateVSWR(inputs) {
     }
   };
 }
+var vswrOf = (gamma) => (1 + gamma) / (1 - gamma);
 var vswrReturnLoss = {
   slug: "vswr-return-loss",
   title: "VSWR & Return Loss Calculator",
@@ -450,6 +567,7 @@ var vswrReturnLoss = {
   outputs: [
     {
       key: "returnLoss",
+      primary: true,
       label: "Return Loss",
       symbol: "RL",
       unit: "dB",
@@ -495,6 +613,33 @@ var vswrReturnLoss = {
     }
   ],
   calculate: calculateVSWR,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["vswr", "returnLoss", "gamma", "mismatchLoss", "reflectedPct", "transmittedPct"],
+      free: ["vswr"],
+      inverse: {
+        returnLoss: (rl) => vswrOf(10 ** (-rl / 20)),
+        gamma: (g) => vswrOf(g),
+        mismatchLoss: (ml) => vswrOf(Math.sqrt(1 - 10 ** (-ml / 10))),
+        reflectedPct: (p) => vswrOf(Math.sqrt(p / 100)),
+        transmittedPct: (p) => vswrOf(Math.sqrt(1 - p / 100))
+      },
+      picks: { field: "vswr", values: [1.1, 1.2, 1.5, 2, 3] },
+      reference: { field: "vswr", values: [1.1, 1.2, 1.5, 2, 3, 5] },
+      scales: {
+        axis: { field: "returnLoss", range: [0, 40], scale: "linear" },
+        fields: [
+          { key: "vswr", ticks: [10, 5, 3, 2, 1.5, 1.2, 1.1, 1.05, 1.02] },
+          { key: "returnLoss" },
+          { key: "gamma", ticks: [0.9, 0.7, 0.5, 0.3, 0.1, 0.05, 0.02, 0.01] },
+          { key: "mismatchLoss", ticks: [3, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 5e-3, 2e-3] }
+        ],
+        band: { id: "antenna-spec", field: "vswr", from: 1, to: 2, label: "typical antenna spec VSWR ≤ 2.0" },
+        ends: { id: "match", low: "worse match", high: "better match" }
+      }
+    }]
+  },
   formula: {
     primary: "|\\Gamma| = \\frac{VSWR - 1}{VSWR + 1}, \\quad RL = -20 \\log_{10}|\\Gamma|",
     latex: "\\text{VSWR} = \\frac{1+|\\Gamma|}{1-|\\Gamma|}, \\quad RL = -20\\log_{10}|\\Gamma|",
@@ -563,6 +708,7 @@ function calculateDB(inputs) {
     }
   };
 }
+var dbmOfWatts = (w) => 10 * Math.log10(w * 1e3);
 var dbConverter = {
   slug: "db-converter",
   title: "dBm Power Converter",
@@ -610,14 +756,48 @@ var dbConverter = {
   ],
   outputs: [
     { key: "dbw", label: "Power", symbol: "P", unit: "dBW", precision: 3 },
-    { key: "watts", label: "Power", symbol: "P", unit: "W", precision: 6, format: "engineering" },
+    { key: "watts", label: "Power", symbol: "P", unit: "W", precision: 6, format: "engineering", primary: true },
     { key: "mwatts", label: "Power", symbol: "P", unit: "mW", precision: 4 },
     { key: "uwatts", label: "Power", symbol: "P", unit: "μW", precision: 2 },
     { key: "vrms", label: "Voltage", symbol: "V", unit: "V RMS", precision: 5 },
     { key: "mvrms", label: "Voltage", symbol: "V", unit: "mV RMS", precision: 2 },
     { key: "dbuv", label: "Voltage", symbol: "V", unit: "dBμV", precision: 2 }
   ],
+  examples: [
+    { id: "cable-tv-75-ohm-0-dbmv", label: "75 Ω cable TV channel at 0 dBmV (1 mV)", values: { dbm: -48.750612633917, impedance: 75 } },
+    { id: "audio-line-600-ohm-0-dbm", label: "600 Ω audio line at 0 dBm (0.775 V)", values: { dbm: 0, impedance: 600 } },
+    { id: "receiver-sensitivity-50-ohm", label: "Receiver sensitivity, −110 dBm at 50 Ω", values: { dbm: -110, impedance: 50 } }
+  ],
   calculate: calculateDB,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["dbm", "dbw", "watts", "mwatts", "uwatts", "vrms", "mvrms", "dbuv"],
+      free: ["dbm"],
+      params: ["impedance"],
+      inverse: {
+        dbw: (v) => v + 30,
+        watts: (w) => dbmOfWatts(w),
+        mwatts: (mw) => dbmOfWatts(mw / 1e3),
+        uwatts: (uw) => dbmOfWatts(uw / 1e6),
+        // P = V²/Z at the held system impedance.
+        vrms: (v, inputs) => dbmOfWatts(v * v / inputs.impedance),
+        mvrms: (mv, inputs) => dbmOfWatts((mv / 1e3) ** 2 / inputs.impedance),
+        dbuv: (dbuv, inputs) => dbmOfWatts((10 ** (dbuv / 20) / 1e6) ** 2 / inputs.impedance)
+      },
+      picks: { field: "dbm", values: [-30, -10, 0, 10, 20, 30] },
+      reference: { field: "dbm", values: [-30, -20, -10, 0, 10, 20, 30, 40] },
+      scales: {
+        axis: { field: "dbm", range: [-60, 60], scale: "linear" },
+        fields: [
+          { key: "dbm", ticks: [-60, -50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60] },
+          { key: "watts", ticks: [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "vrms" },
+          { key: "dbuv" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "P_{dBm} = 10 \\log_{10}\\!\\left(\\frac{P_{mW}}{1\\,\\text{mW}}\\right)",
     latex: "P_{dBm} = 10\\log_{10}\\left(\\frac{P_{mW}}{1\\text{ mW}}\\right)",
@@ -888,6 +1068,7 @@ var noiseFigureCascade = {
   outputs: [
     {
       key: "cascadedNF",
+      primary: true,
       label: "Cascaded Noise Figure",
       symbol: "NF_total",
       unit: "dB",
@@ -1108,6 +1289,7 @@ var skinDepth = {
   outputs: [
     {
       key: "skinDepthUm",
+      primary: true,
       label: "Skin Depth",
       symbol: "δ",
       unit: "μm",
@@ -1143,8 +1325,19 @@ var skinDepth = {
       { symbol: "μ", description: "Magnetic permeability (μ₀·μᵣ)", unit: "H/m" },
       { symbol: "σ", description: "Electrical conductivity", unit: "S/m" }
     ],
-    reference: 'Griffiths, "Introduction to Electrodynamics" 4th ed., Chapter 9'
+    reference: 'Griffiths, "Introduction to Electrodynamics" 4th ed., Chapter 9',
+    substitution: [
+      { symbol: "δ", expression: "1 / √(π × {frequency} × μ₀ × {relativePermeability} × {conductivity})", output: "skinDepthUm" },
+      { symbol: "R_s", expression: "1 / ({conductivity} × δ)", output: "surfaceResistance" }
+    ]
   },
+  sweep: { input: "frequency", range: [0.01, 1e5], scale: "log" },
+  examples: [
+    { id: "copper-2g4", label: "Copper at 2.4 GHz", values: { frequency: 2400, conductivity: 58e6, relativePermeability: 1 } },
+    { id: "aluminium-100m", label: "Aluminium at 100 MHz", values: { frequency: 100, conductivity: 377e5, relativePermeability: 1 } },
+    { id: "steel-50k", label: "Mild steel at 50 kHz", values: { frequency: 0.05, conductivity: 6e6, relativePermeability: 200 } },
+    { id: "copper-13m56", label: "Copper at 13.56 MHz (RFID)", values: { frequency: 13.56, conductivity: 58e6, relativePermeability: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "skin-depth-percentage",
@@ -1201,6 +1394,7 @@ function calculateWavelengthFrequency(inputs) {
     }
   };
 }
+var mhzOfWavelengthMm = (lambdaMm, medium) => 299792458 / (lambdaMm * Math.sqrt(medium) / 1e3) / 1e6;
 var wavelengthFrequency = {
   slug: "wavelength-frequency",
   title: "Wavelength & Frequency Calculator",
@@ -1216,7 +1410,7 @@ var wavelengthFrequency = {
       symbol: "f",
       unit: "MHz",
       unitOptions: [
-        { label: "Hz", factor: 1e-3 },
+        { label: "Hz", factor: 1e-6 },
         { label: "kHz", factor: 1e-3 },
         { label: "MHz", factor: 1 },
         { label: "GHz", factor: 1e3 }
@@ -1266,6 +1460,7 @@ var wavelengthFrequency = {
     },
     {
       key: "actualWavelengthMm",
+      primary: true,
       label: "Wavelength in Medium",
       symbol: "λ",
       unit: "mm",
@@ -1301,7 +1496,39 @@ var wavelengthFrequency = {
       tooltip: "Wave number k = 2π/λ in the medium"
     }
   ],
+  examples: [
+    { id: "gps-l1-ptfe-coax", label: "GPS L1 in PTFE coax, εᵣ 2.1", values: { frequency: 1575.42, medium: 2.1 } },
+    { id: "stripline-fr4-2g4", label: "2.4 GHz stripline in FR4, εᵣ 4.2", values: { frequency: 2400, medium: 4.2 } },
+    { id: "rogers-4003c-5g8", label: "5.8 GHz stripline in Rogers 4003C, εᵣ 3.38", values: { frequency: 5800, medium: 3.38 } }
+  ],
   calculate: calculateWavelengthFrequency,
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: ["frequency", "wavelengthMm", "actualWavelengthMm", "halfWaveMm", "quarterWaveMm", "wavenumber"],
+      free: ["frequency"],
+      params: ["medium"],
+      inverse: {
+        wavelengthMm: (l) => mhzOfWavelengthMm(l, 1),
+        actualWavelengthMm: (l, inputs) => mhzOfWavelengthMm(l, inputs.medium),
+        halfWaveMm: (l, inputs) => mhzOfWavelengthMm(2 * l, inputs.medium),
+        quarterWaveMm: (l, inputs) => mhzOfWavelengthMm(4 * l, inputs.medium),
+        wavenumber: (k, inputs) => mhzOfWavelengthMm(2 * Math.PI / k / 1e-3, inputs.medium)
+      },
+      picks: { field: "frequency", values: [100, 433, 915, 2400, 5800, 24e3] },
+      reference: { field: "frequency", values: [10, 30, 100, 300, 1e3, 3e3, 1e4, 3e4] },
+      scales: {
+        axis: { field: "frequency", range: [1, 1e5], scale: "log" },
+        fields: [
+          { key: "frequency" },
+          { key: "actualWavelengthMm" },
+          { key: "halfWaveMm" },
+          { key: "quarterWaveMm" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "\\lambda = \\frac{c}{f\\sqrt{\\varepsilon_r}}",
     variables: [
@@ -1365,13 +1592,17 @@ function calculateCoaxImpedance(inputs) {
   const c2 = 299792458;
   const sumM = (D + d) * 1e-3;
   const cutoffFreqGHz = 2 * c2 / (Math.PI * sumM * Math.sqrt(er)) * 1e-9;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 299.792458 / (frequency * Math.sqrt(er));
   return {
     values: {
       impedance,
       capacitancePFm,
       inductanceNHm,
       velocityFactor,
-      cutoffFreqGHz
+      cutoffFreqGHz,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     }
   };
 }
@@ -1404,7 +1635,7 @@ var coaxImpedance = {
         { label: "RG-59", values: { innerDiameter: 0.584, outerDiameter: 3.66, dielectricConstant: 2.3 } },
         { label: "RG-174", values: { innerDiameter: 0.48, outerDiameter: 1.8, dielectricConstant: 2.3 } },
         { label: "RG-213", values: { innerDiameter: 2.26, outerDiameter: 7.24, dielectricConstant: 2.26 } },
-        { label: "LMR-400", values: { innerDiameter: 2.74, outerDiameter: 8.13, dielectricConstant: 1.38 } }
+        { label: "LMR-400", values: { innerDiameter: 2.74, outerDiameter: 7.24, dielectricConstant: 1.38 } }
       ]
     },
     {
@@ -1432,19 +1663,24 @@ var coaxImpedance = {
       min: 1,
       max: 20,
       step: 0.01,
-      tooltip: "Relative permittivity of the insulating dielectric between conductors",
-      presets: [
-        { label: "Air (1.0)", values: { dielectricConstant: 1 } },
-        { label: "PTFE (2.2)", values: { dielectricConstant: 2.2 } },
-        { label: "Polyethylene (2.25)", values: { dielectricConstant: 2.25 } },
-        { label: "Foam PE (1.45)", values: { dielectricConstant: 1.45 } },
-        { label: "PVC (3.5)", values: { dielectricConstant: 3.5 } }
-      ]
+      tooltip: "Relative permittivity of the insulating dielectric between conductors"
+      // The material picker sets it (lib/geometry/materials.ts, coax-dielectric).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
     {
       key: "impedance",
+      primary: true,
       label: "Characteristic Impedance",
       symbol: "Z₀",
       unit: "Ω",
@@ -1491,7 +1727,18 @@ var coaxImpedance = {
       precision: 2,
       format: "standard",
       tooltip: "Frequency above which higher-order modes can propagate (TE11 mode)"
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "λg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "λg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "rg-58", label: "RG-58", values: { innerDiameter: 0.9, outerDiameter: 2.95, dielectricConstant: 2.3 } },
+    { id: "rg-59", label: "RG-59", values: { innerDiameter: 0.584, outerDiameter: 3.66, dielectricConstant: 2.3 } },
+    { id: "rg-174", label: "RG-174", values: { innerDiameter: 0.48, outerDiameter: 1.8, dielectricConstant: 2.3 } },
+    { id: "rg-213", label: "RG-213", values: { innerDiameter: 2.26, outerDiameter: 7.24, dielectricConstant: 2.26 } },
+    // D is the shield's inside, the 7.24 mm dielectric diameter; 8.13 mm is the braid's outside.
+    { id: "lmr-400", label: "LMR-400", values: { innerDiameter: 2.74, outerDiameter: 7.24, dielectricConstant: 1.38 } },
+    { id: "rg-402-semi-rigid", label: "RG-402 semi-rigid (0.141″), PTFE", values: { innerDiameter: 0.92, outerDiameter: 2.98, dielectricConstant: 2.1 } }
   ],
   calculate: calculateCoaxImpedance,
   formula: {
@@ -1510,6 +1757,12 @@ var coaxImpedance = {
     reference: 'Pozar, Microwave Engineering, 4th ed. (2011), §2.2 and §3.5; CODATA 2018; Wadell, "Transmission Line Design Handbook" 1991, Chapter 3'
   },
   visualization: { type: "cross-section", layers: ["inner", "dielectric", "outer"] },
+  geometry: {
+    drawing: { family: "coax", roles: { d: "innerDiameter", D: "outerDiameter", er: "dielectricConstant" } },
+    synthesis: [{ output: "impedance", solveFor: ["innerDiameter", "outerDiameter"] }],
+    material: { library: "coax-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "innerDiameter", y: "impedance", range: [0.1, 2.8], scale: "log" }
+  },
   relatedCalculators: ["microstrip-impedance", "vswr-return-loss"],
   relatedTools: ["impedance-matching"],
   relatedBlogPosts: ["esd-clamp-selection", "s-parameter-pipeline-connector-deembedding"],
@@ -1602,8 +1855,9 @@ var coaxLoss = {
       min: 0,
       max: CABLES.length - 1,
       step: 1,
-      tooltip: `0=${CABLES[0].name}, 1=${CABLES[1].name}, ... ${CABLES.length - 1}=${CABLES[CABLES.length - 1].name}`,
-      presets: CABLES.map((c2, i) => ({ label: c2.name, values: { cableIndex: i } }))
+      tooltip: "Loss is interpolated from the cable's datasheet attenuation table",
+      presets: CABLES.map((c2, i) => ({ label: c2.name, values: { cableIndex: i } })),
+      options: CABLES.map((c2, i) => ({ value: i, label: c2.name }))
     },
     {
       key: "frequencyMHz",
@@ -1728,7 +1982,8 @@ var ismCoexistence = {
       min: 0,
       max: BANDS.length - 1,
       step: 1,
-      presets: BANDS.map((b, i) => ({ label: b.name, values: { bandIndex: i } }))
+      presets: BANDS.map((b, i) => ({ label: b.name, values: { bandIndex: i } })),
+      options: BANDS.map((b, i) => ({ value: i, label: b.name }))
     },
     {
       key: "dutyCycle1_pct",
@@ -1956,6 +2211,7 @@ var attenuatorDesigner = {
   outputs: [
     {
       key: "piR1",
+      primary: true,
       label: "Pi Shunt Resistor (exact)",
       symbol: "R1π",
       unit: "Ω",
@@ -2133,6 +2389,43 @@ function calculateSmithChart(inputs) {
     }
   };
 }
+function loadOfGamma(mag, angleDeg, z0) {
+  if (!(mag >= 0 && mag <= 1)) return null;
+  const theta = angleDeg / 180 * Math.PI;
+  const re = mag * Math.cos(theta);
+  const im = mag * Math.sin(theta);
+  const den = (1 - re) * (1 - re) + im * im;
+  if (den === 0) return null;
+  return { resistance: z0 * (1 - mag * mag) / den, reactance: z0 * 2 * im / den };
+}
+function editSmith(field, value, state) {
+  const z0 = state.inputs.referenceImpedance;
+  const angle = state.values.gamma_ang;
+  const mag = state.values.gamma_mag;
+  switch (field) {
+    case "resistance":
+      return value >= 0 ? { resistance: value } : null;
+    case "reactance":
+      return { reactance: value };
+    case "normalizedR":
+      return value >= 0 ? { resistance: value * z0 } : null;
+    case "normalizedX":
+      return { reactance: value * z0 };
+    case "gamma_mag":
+      return loadOfGamma(value, angle, z0);
+    // A matched load has no angle to set.
+    case "gamma_ang":
+      return mag === 0 ? value === 0 ? { resistance: z0, reactance: 0 } : null : loadOfGamma(mag, value, z0);
+    case "vswr":
+      return value >= 1 ? loadOfGamma((value - 1) / (value + 1), angle, z0) : null;
+    case "returnLoss":
+      return value >= 0 ? loadOfGamma(10 ** (-value / 20), angle, z0) : null;
+    case "mismatchLoss":
+      return value >= 0 ? loadOfGamma(Math.sqrt(1 - 10 ** (-value / 10)), angle, z0) : null;
+    default:
+      return null;
+  }
+}
 var smithChart = {
   slug: "smith-chart",
   title: "Online Smith Chart Calculator",
@@ -2207,6 +2500,7 @@ var smithChart = {
   outputs: [
     {
       key: "gamma_mag",
+      primary: true,
       label: "Reflection Coefficient |Γ|",
       symbol: "|Γ|",
       unit: "",
@@ -2274,7 +2568,47 @@ var smithChart = {
       precision: 4
     }
   ],
+  examples: [
+    { id: "matched-50-ohm", label: "Matched (50 Ω)", values: { resistance: 50, reactance: 0, referenceImpedance: 50 } },
+    { id: "25-ohm-vswr-2", label: "25 Ω (VSWR 2)", values: { resistance: 25, reactance: 0, referenceImpedance: 50 } },
+    { id: "100-ohm-vswr-2", label: "100 Ω (VSWR 2)", values: { resistance: 100, reactance: 0, referenceImpedance: 50 } },
+    { id: "short-circuit", label: "Short (0 Ω)", values: { resistance: 0, reactance: 0, referenceImpedance: 50 } },
+    { id: "75-ohm-cable", label: "75 Ω Cable", values: { resistance: 75, reactance: 0, referenceImpedance: 50 } },
+    { id: "reactive-50-j50", label: "Reactive (50+j50)", values: { resistance: 50, reactance: 50, referenceImpedance: 50 } }
+  ],
   calculate: calculateSmithChart,
+  // The page keeps its own chart (SmithCard), so the scales are per field.
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: [
+        "resistance",
+        "reactance",
+        "normalizedR",
+        "normalizedX",
+        "gamma_mag",
+        "gamma_ang",
+        "vswr",
+        "returnLoss",
+        "mismatchLoss"
+      ],
+      free: ["resistance", "reactance"],
+      params: ["referenceImpedance"],
+      systems: [["resistance", "reactance"], ["gamma_mag", "gamma_ang"]],
+      edit: editSmith,
+      picks: { field: "resistance", values: [25, 50, 75, 100, 200] },
+      reference: { field: "vswr", values: [1.1, 1.2, 1.5, 2, 3, 5] },
+      scales: {
+        fields: [
+          { key: "gamma_mag", range: [0, 1], scale: "linear" },
+          { key: "gamma_ang", range: [-180, 180], scale: "linear", ticks: [-180, -90, 0, 90, 180] },
+          { key: "vswr", range: [1, 10], scale: "log", ticks: [1, 1.2, 1.5, 2, 3, 5, 10] },
+          { key: "returnLoss", range: [0, 40], scale: "linear" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "Γ = (Z - Z₀) / (Z + Z₀)",
     latex: "\\Gamma = \\frac{Z_L - Z_0}{Z_L + Z_0}, \\quad \\text{VSWR} = \\frac{1+|\\Gamma|}{1-|\\Gamma|}",
@@ -2488,9 +2822,9 @@ var OFFSET_COUPLED_ODD = [1.104095, 2.193833, -0.906962, 0.245485, 1.175407, 1.3
 var OFFSET_COUPLED_EVEN = [0.725767, 2.700093, -1.581169, 0.293423, 1.228106, 2.065153, 2.977705, 1.755071];
 function offsetCoupledExcess(c2, wb, sb, m) {
   if (!(m > 0)) return 0;
-  const [A, p0, p1, alpha, beta, gamma, decay, q] = c2;
+  const [A2, p0, p1, alpha, beta, gamma, decay, q] = c2;
   const power = Math.max(p0 + p1 * sb, 0.3);
-  return A * Math.pow(m, power) * (Math.pow(wb, alpha) / Math.pow(1 + beta * wb, gamma)) * Math.exp(-decay * Math.pow(sb, q));
+  return A2 * Math.pow(m, power) * (Math.pow(wb, alpha) / Math.pow(1 + beta * wb, gamma)) * Math.exp(-decay * Math.pow(sb, q));
 }
 var OFFSET_COUPLED_RANGE = {
   description: "w/b 0.05–0.8, s/b 0.05–1.0, nearer gap 0.125–0.5 of the plane spacing",
@@ -3150,6 +3484,12 @@ var TRACE_THERMAL_METHODOLOGY = {
 };
 
 // src/lib/calculators/pcb/trace-width-current.ts
+function traceCurrentChart(standard, external) {
+  if (standard === 1) {
+    return { k: 0.024, rule: "0.024·ΔT^0.44·A^0.725", clause: "IPC-2152 (2009) §5, Figure 5-1, internal and external conductors, all environments" };
+  }
+  return external ? { k: 0.048, rule: "0.048·ΔT^0.44·A^0.725", clause: "IPC-2221A (2003) §6.2, Figure 6-4, chart A, external conductors" } : { k: 0.024, rule: "0.024·ΔT^0.44·A^0.725", clause: "IPC-2221A (2003) §6.2, Figure 6-4, chart C, internal conductors" };
+}
 var B = 0.44;
 var C2 = 0.725;
 var K_2221_EXTERNAL = 0.048;
@@ -3252,6 +3592,11 @@ function calculateTraceWidth(inputs) {
   const modelRise = tempRise / (1 + traceThermalMargin(board.internal));
   const inModelRange = traceThermalInRange(board, widthBoardMm, modelRise);
   warnings.push(...checkValidity(TRACE_THERMAL_VALIDITY, traceThermalValidityValues(board, widthBoardMm, modelRise)));
+  const standard = inputs.standard ?? 0;
+  const kDT = traceCurrentChart(standard, external).k * Math.pow(tempRise, B);
+  const limitCurrent = kDT * Math.pow(traceWidth / MM_PER_MIL * copperMil, C2);
+  const limitPercent = current / limitCurrent * 100;
+  const minTraceWidth = Math.pow(current / kDT, 1 / C2) / copperMil * MM_PER_MIL;
   return {
     values: {
       width2221mm,
@@ -3259,6 +3604,9 @@ function calculateTraceWidth(inputs) {
       resistance,
       voltageDrop: voltageDrop2,
       powerDiss,
+      limitCurrent,
+      limitPercent,
+      minTraceWidth,
       inChartRange,
       widthBoardMm,
       inModelRange
@@ -3338,10 +3686,14 @@ var traceWidthCurrent = {
       defaultValue: 1,
       min: 0,
       max: 1,
-      tooltip: "1 = external (outer) layer, 0 = internal layer",
+      tooltip: "Internal layers carry less current than external ones for the same width and temperature rise",
       presets: [
         { label: "External layer", values: { isExternal: 1 } },
         { label: "Internal layer", values: { isExternal: 0 } }
+      ],
+      options: [
+        { value: 1, label: "External (outer) layer" },
+        { value: 0, label: "Internal layer" }
       ]
     },
     {
@@ -3352,7 +3704,7 @@ var traceWidthCurrent = {
       defaultValue: 0.5,
       min: 0.01,
       max: 100,
-      tooltip: "The width as drawn: the DC resistance, voltage drop and power are computed for it; the minimum widths do not use it"
+      tooltip: "The width as drawn: the standards check judges it, and the DC resistance, voltage drop and power are computed for it; the minimum widths do not use it"
     },
     {
       key: "boardThickness",
@@ -3386,6 +3738,19 @@ var traceWidthCurrent = {
       max: 2,
       step: 0.5,
       tooltip: "The copper weight of that plane (35 µm per ounce). Only the board-specific width reads it, and only when there is a plane"
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "IPC-2221A Fig. 6-4" },
+        { value: 1, label: "IPC-2152 Fig. 5-1" }
+      ],
+      tooltip: "The chart the current is checked against: IPC-2221A’s external or internal curve, or IPC-2152’s conservative chart for every conductor"
     }
   ],
   outputs: [
@@ -3399,6 +3764,7 @@ var traceWidthCurrent = {
     },
     {
       key: "width2152mm",
+      primary: true,
       label: "Min Width (IPC-2152 Fig. 5-1)",
       unit: "mm",
       precision: 3,
@@ -3449,9 +3815,59 @@ var traceWidthCurrent = {
       precision: 0,
       tooltip: `1 when the board-specific width lies inside the range the thermal model was validated over: ${TRACE_THERMAL_RANGE.description}, the rise before the margin`,
       thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
+    },
+    {
+      key: "limitCurrent",
+      label: "Current Limit",
+      symbol: "I_max",
+      unit: "A",
+      precision: 3,
+      tooltip: "The most current the drawn trace may carry at the allowed temperature rise, read on the chosen chart"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The current as a percentage of the chart limit; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "minTraceWidth",
+      label: "Compliant Width",
+      symbol: "W_min",
+      unit: "mm",
+      precision: 3,
+      tooltip: "The width at which the current equals the chart limit; at or above it the trace complies"
     }
   ],
+  examples: [
+    { id: "motor-3a-1-mm-outer", label: "3 A motor feed, 1 mm outer trace, 1 oz", values: { current: 3, copperWeight: 1, tempRise: 10, isExternal: 1, traceWidth: 1 } },
+    { id: "usb-c-5a-3-mm-outer", label: "5 A USB-C VBUS, 3 mm outer trace, 1 oz", values: { current: 5, copperWeight: 1, tempRise: 10, isExternal: 1, traceWidth: 3 } },
+    { id: "inner-5a-2-mm-2-oz", label: "5 A on a 2 mm inner trace, 2 oz, 20 °C rise", values: { current: 5, copperWeight: 2, tempRise: 20, isExternal: 0, traceWidth: 2 } },
+    { id: "bus-10a-5-mm-2-oz", label: "10 A power bus, 5 mm outer trace, 2 oz, 20 °C rise", values: { current: 10, copperWeight: 2, tempRise: 20, isExternal: 1, traceWidth: 5 } }
+  ],
   calculate: calculateTraceWidth,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "IPC-2221A, Generic Standard on Printed Board Design (May 2003), §6.2 and Figure 6-4, the chart of IPC-2221 (February 1998), read through its published fit I = k·ΔT^0.44·A^0.725 (I in A, ΔT in °C, A in mil²)",
+        1: "IPC-2152, Standard for Determining Current Carrying Capacity in Printed Board Design (August 2009), §5, Figure 5-1, the conservative chart, which keeps IPC-2221’s internal-conductor curve"
+      }
+    },
+    class: { input: "isExternal" },
+    value: "current",
+    limit: "limitCurrent",
+    percent: "limitPercent",
+    limitKind: "maximum",
+    clause: (standard, cls) => traceCurrentChart(standard, (cls ?? 1) > 0.5).clause,
+    rule: (standard, cls) => traceCurrentChart(standard, (cls ?? 1) > 0.5).rule,
+    remedies: [
+      { input: "traceWidth", output: "minTraceWidth", direction: "up" },
+      { input: "current", output: "limitCurrent", direction: "down" }
+    ]
+  },
   formula: {
     primary: "A = (I / (k·ΔT^0.44))^(1/0.725),  W_min = A / t,  R = ρ(T)·L / (W·t);  board-specific: (ΔT/(1+m))·G′(W_board) = I²·ρ_v(T) / (W_board·t)",
     latex: "A = \\left(\\frac{I}{k \\cdot \\Delta T^{0.44}}\\right)^{1/0.725},\\qquad W_{min} = \\frac{A}{t},\\qquad R = \\frac{\\rho(T)\\,L}{W\\,t},\\qquad \\frac{\\Delta T}{1+m}\\,G'(W_{board}) = \\frac{I^2\\,\\rho_v(T)}{W_{board}\\,t}",
@@ -3499,6 +3915,10 @@ var traceWidthCurrent = {
     {
       code: "copper-weight",
       text: "Copper is 35 µm (1.378 mil) thick per ounce, and the trace cross-section is a rectangle of that thickness."
+    },
+    {
+      code: "standards-check-chart",
+      text: "The standards check reads the drawn width on IPC-2221A Figure 6-4’s curve for the layer, or on IPC-2152’s conservative Figure 5-1, which is IPC-2221’s internal curve, for either layer. It applies neither the further 15 % derating Figure 6-4 suggests for boards 0.8 mm thick or less and copper 108 µm thick or more, nor IPC-2152’s detailed charts and modifiers."
     },
     {
       code: "resistance-at-temperature",
@@ -3623,6 +4043,7 @@ var traceResistance = {
   outputs: [
     {
       key: "resistance",
+      primary: true,
       label: "Resistance",
       unit: "Ω",
       precision: 6,
@@ -3652,7 +4073,18 @@ var traceResistance = {
     ],
     reference: "IPC-2221B; copper ρ₂₀ = 1/58 Ω·mm²/m = 1.7241×10⁻⁸ Ω·m (IEC 60028), α = 3.93×10⁻³ /°C"
   },
+  examples: [
+    { id: "1-oz-0p5mm-100mm", label: "0.5 mm trace, 1 oz, 100 mm", values: { traceWidth: 0.5, traceLength: 100, copperThickness: 35, temperature: 25 } },
+    { id: "supply-10-mohm-60c", label: "50 mm supply trace held to 10 mΩ at 60 °C", values: { traceWidth: 2.8502463054187293, traceLength: 50, copperThickness: 35, temperature: 60 } },
+    { id: "half-oz-0p15mm-signal", label: "0.15 mm signal trace, ½ oz, 50 mm", values: { traceWidth: 0.15, traceLength: 50, copperThickness: 17.5, temperature: 25 } },
+    { id: "2-oz-5mm-power-85c", label: "5 mm power trace, 2 oz, 200 mm at 85 °C", values: { traceWidth: 5, traceLength: 200, copperThickness: 70, temperature: 85 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "trace", roles: { len: "traceLength", w: "traceWidth", t: "copperThickness" } },
+    synthesis: [{ output: "resistance", solveFor: ["traceWidth", "traceLength"] }],
+    curve: { x: "traceWidth", y: "resistance", range: [0.1, 10], scale: "log" }
+  },
   relatedCalculators: ["trace-width-current", "microstrip-impedance"],
   relatedBlogPosts: ["pcb-trace-width-current-capacity"],
   verificationData: [
@@ -3682,6 +4114,8 @@ function calculateDifferentialPair(inputs) {
     return { values: {}, errors: ["Copper thickness must be less than substrate height"] };
   }
   const result = diffMicrostrip(w, s, h, er, t);
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 299.792458 / (frequency * Math.sqrt(result.erEffOdd));
   const warnings = [];
   if (!result.inRange) {
     warnings.push(
@@ -3697,7 +4131,9 @@ function calculateDifferentialPair(inputs) {
       zeven: result.Zeven,
       erEffOdd: result.erEffOdd,
       erEffEven: result.erEffEven,
-      inValidatedRange: result.inRange ? 1 : 0
+      inValidatedRange: result.inRange ? 1 : 0,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -3760,12 +4196,8 @@ var differentialPair = {
       min: 1,
       max: 20,
       step: 0.01,
-      tooltip: "Relative permittivity of the substrate material",
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConstant: 4.2 } },
-        { label: "Rogers 4003C (3.38)", values: { dielectricConstant: 3.38 } },
-        { label: "PTFE (2.2)", values: { dielectricConstant: 2.2 } }
-      ]
+      tooltip: "Relative permittivity of the substrate material"
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -3782,11 +4214,22 @@ var differentialPair = {
         { label: "1 oz (35 μm)", values: { copperThickness: 35 } },
         { label: "2 oz (70 μm)", values: { copperThickness: 70 } }
       ]
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength of the differential (odd) mode; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
     {
       key: "zdiff",
+      primary: true,
       label: "Differential Impedance",
       symbol: "Z_diff",
       unit: "Ω",
@@ -3857,7 +4300,29 @@ var differentialPair = {
       precision: 0,
       tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
       thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
+    },
+    {
+      key: "guidedWavelength",
+      label: "Guided Wavelength (odd mode)",
+      symbol: "λg",
+      unit: "mm",
+      precision: 3,
+      format: "standard",
+      tooltip: "Wavelength of the differential (odd) mode on the pair at the frequency, c/(f·√εeff,odd)"
+    },
+    {
+      key: "quarterWavelength",
+      label: "Quarter Wavelength (odd mode)",
+      symbol: "λg/4",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
     }
+  ],
+  examples: [
+    { id: "usb-2-90-ohm-fr4-0-1-mm", label: "USB 2.0, 90 Ω on 0.1 mm FR-4", values: { traceWidth: 0.177, traceSpacing: 0.15, substrateHeight: 0.1, dielectricConstant: 4.4, copperThickness: 17.5 } },
+    { id: "ethernet-100-ohm-fr4-0-2-mm", label: "Ethernet or LVDS, 100 Ω on 0.2 mm FR-4", values: { traceWidth: 0.256, traceSpacing: 0.2, substrateHeight: 0.2, dielectricConstant: 4.4, copperThickness: 35 } },
+    { id: "pcie-85-ohm-fr4-0-1-mm", label: "PCIe, 85 Ω on 0.1 mm FR-4", values: { traceWidth: 0.197, traceSpacing: 0.15, substrateHeight: 0.1, dielectricConstant: 4.4, copperThickness: 17.5 } }
   ],
   calculate: calculateDifferentialPair,
   // What `diffMicrostrip` computes, written out. The single line is closed-form
@@ -3925,6 +4390,12 @@ var differentialPair = {
   visualization: {
     type: "cross-section",
     layers: ["trace1", "gap", "trace2", "substrate", "ground"]
+  },
+  geometry: {
+    drawing: { family: "coupled", roles: { w: "traceWidth", s: "traceSpacing", h: "substrateHeight", t: "copperThickness", er: "dielectricConstant" } },
+    synthesis: [{ output: "zdiff", solveFor: ["traceWidth", "traceSpacing", "substrateHeight"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "traceWidth", y: "zdiff", range: [0.05, 1], scale: "log" }
   },
   relatedCalculators: [
     "edge-coupled-internal-symmetric",
@@ -4123,11 +4594,8 @@ var viaCalculator = {
       min: 1,
       max: 20,
       step: 0.01,
-      tooltip: "Relative permittivity of the board material",
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConstant: 4.2 } },
-        { label: "Rogers 4003C (3.38)", values: { dielectricConstant: 3.38 } }
-      ]
+      tooltip: "Relative permittivity of the board material"
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -4147,6 +4615,7 @@ var viaCalculator = {
   outputs: [
     {
       key: "impedance",
+      primary: true,
       label: "Via Impedance",
       symbol: "Z_via",
       unit: "Ω",
@@ -4245,7 +4714,22 @@ var viaCalculator = {
       text: "The signal-layer input does not change any output."
     }
   ],
+  examples: [
+    { id: "fr4-0p3-drill-1p6-board", label: "0.3 mm drill, 1.6 mm FR-4 board", values: { viaDiameter: 0.3, padDiameter: 0.6, antipadDiameter: 1, boardThickness: 1.6, dielectricConstant: 4.4, copperThickness: 25 } },
+    { id: "rf-50-ohm-ro4350b", label: "50 Ω RF via, 1.6 mm RO4350B", values: { viaDiameter: 0.3, padDiameter: 0.6, antipadDiameter: 1.4790373212975967, boardThickness: 1.6, dielectricConstant: 3.66, copperThickness: 25 } },
+    { id: "fr4-0p2-drill-1mm-board", label: "0.2 mm drill, 1.0 mm FR-4 board", values: { viaDiameter: 0.2, padDiameter: 0.45, antipadDiameter: 0.8, boardThickness: 1, dielectricConstant: 4.4, copperThickness: 20 } },
+    { id: "backplane-0p4-drill-3p2", label: "0.4 mm drill, 3.2 mm backplane", values: { viaDiameter: 0.4, padDiameter: 0.8, antipadDiameter: 1.3, boardThickness: 3.2, dielectricConstant: 4.4, copperThickness: 25 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "via", roles: { d: "viaDiameter", pad: "padDiameter", antipad: "antipadDiameter", len: "boardThickness", plating: "copperThickness", er: "dielectricConstant" } },
+    synthesis: [
+      { output: "impedance", solveFor: ["antipadDiameter", "viaDiameter"] },
+      { output: "capacitancePF", solveFor: ["antipadDiameter", "padDiameter"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "antipadDiameter", y: "impedance", range: [0.7, 3], scale: "linear" }
+  },
   relatedCalculators: ["trace-width-current", "microstrip-impedance"],
   relatedBlogPosts: ["decoupling-capacitor", "fdtd-via-transition-signal-integrity", "pdn-impedance-plane-resonances-decoupling"],
   verificationData: [
@@ -4406,11 +4890,9 @@ var stackupBuilder = {
       max: 12,
       step: 0.01,
       tooltip: "Relative permittivity of the board material at design frequency",
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published); FR4-HF is not in the library yet.
       presets: [
-        { label: "FR4 (4.2)", values: { dielectricConstant: 4.2 } },
-        { label: "FR4-HF (3.8)", values: { dielectricConstant: 3.8 } },
-        { label: "Rogers 4003C (3.38)", values: { dielectricConstant: 3.38 } },
-        { label: "Rogers 4350B (3.48)", values: { dielectricConstant: 3.48 } }
+        { label: "FR4-HF (3.8)", values: { dielectricConstant: 3.8 } }
       ]
     }
   ],
@@ -4421,6 +4903,7 @@ var stackupBuilder = {
   outputs: [
     {
       key: "traceWidthL1mm",
+      primary: true,
       label: "Trace Width L1 (surface)",
       symbol: "W_L1",
       unit: "mm",
@@ -4494,7 +4977,25 @@ var stackupBuilder = {
     ],
     reference: "Hammerstad & Jensen (1980); Cohn (1954), offset stripline; IPC-2141A"
   },
+  examples: [
+    { id: "fr4-4-layer-1p6mm", label: "4-layer FR-4, 1.6 mm, 0.2 mm prepregs", values: { targetImpedance: 50, dielectricH1: 0.2, dielectricH2: 1.2, dielectricH3: 0.2, copperWeight: 1, dielectricConstant: 4.4 } },
+    { id: "fr4-0402-pad-width", label: "50 Ω as wide as an 0402 pad, FR-4", values: { targetImpedance: 50, dielectricH1: 0.2832870017443163, dielectricH2: 1.2, dielectricH3: 0.2, copperWeight: 1, dielectricConstant: 4.4 } },
+    { id: "ro4350b-0p254-top", label: "RO4350B 0.254 mm (10 mil) under L1, 50 Ω", values: { targetImpedance: 50, dielectricH1: 0.254, dielectricH2: 1, dielectricH3: 0.254, copperWeight: 1, dielectricConstant: 3.66 } },
+    { id: "fr4-75-ohm-video", label: "75 Ω video trace on 0.2 mm FR-4", values: { targetImpedance: 75, dielectricH1: 0.2, dielectricH2: 1.2, dielectricH3: 0.2, copperWeight: 1, dielectricConstant: 4.4 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "stackup",
+      roles: { h1: "dielectricH1", h2: "dielectricH2", h3: "dielectricH3", t: "copperWeight", er: "dielectricConstant", w: "traceWidthL1mm", w2: "traceWidthL3mm" }
+    },
+    synthesis: [
+      { output: "traceWidthL1mm", solveFor: ["dielectricH1"] },
+      { output: "totalThicknessMm", solveFor: ["dielectricH2", "dielectricH1", "dielectricH3"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "dielectricH1", y: "traceWidthL1mm", range: [0.075, 0.5], scale: "linear" }
+  },
   relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-width-current"],
   relatedTools: ["pdn-impedance", "fdtd-sparam"],
   relatedBlogPosts: ["pcb-stackup-controlled-impedance"],
@@ -4589,6 +5090,7 @@ var voltageDivider = {
   outputs: [
     {
       key: "vout",
+      primary: true,
       label: "Output Voltage",
       symbol: "Vₒᵤₜ",
       unit: "V",
@@ -4763,7 +5265,7 @@ var ledResistor = {
     }
   ],
   outputs: [
-    { key: "rExact", label: "Exact Resistance", unit: "Ω", precision: 2 },
+    { key: "rExact", label: "Exact Resistance", unit: "Ω", precision: 2, primary: true },
     { key: "rNearest", label: "Nearest E24", unit: "Ω", precision: 0 },
     { key: "iActual", label: "Actual Current", unit: "mA", precision: 2 },
     { key: "power", label: "Power (exact R)", unit: "W", precision: 4, format: "engineering" },
@@ -4916,6 +5418,7 @@ var buckConverter = {
     },
     {
       key: "inductorUH",
+      primary: true,
       label: "Minimum Inductance",
       symbol: "Lₘᵢₙ",
       unit: "μH",
@@ -5071,7 +5574,8 @@ var ldoThermal = {
         { label: "150°C", values: { tjMax: 150 } },
         { label: "175°C", values: { tjMax: 175 } }
       ]
-    }
+    },
+    { key: "targetTj", label: "Target Junction Temperature", symbol: "T_J,t", unit: "°C", defaultValue: 100, min: 25, max: 175, tooltip: "The junction temperature the design should stay at or below, usually derated from the maximum. The status fails above 125 °C." }
   ],
   outputs: [
     {
@@ -5088,6 +5592,7 @@ var ldoThermal = {
     },
     {
       key: "tj",
+      primary: true,
       label: "Junction Temperature",
       symbol: "TJ",
       unit: "°C",
@@ -5100,6 +5605,7 @@ var ldoThermal = {
     },
     {
       key: "margin",
+      signed: "explicit",
       label: "Thermal Headroom",
       symbol: "ΔT",
       unit: "°C",
@@ -5142,8 +5648,28 @@ var ldoThermal = {
       { symbol: "Tₐₘb", description: "Ambient temperature", unit: "°C" },
       { symbol: "θJA", description: "Thermal resistance junction-to-ambient", unit: "°C/W" }
     ],
-    reference: "Texas Instruments Application Note SLVA061; IEC 60747-6"
+    reference: "Texas Instruments Application Note SLVA061; IEC 60747-6",
+    substitution: [
+      { symbol: "P_D", expression: "({vin} − {vout}) × {iload}", output: "pdiss" },
+      { symbol: "T_J", expression: "{tamb} + {thetaJA} × P_D", output: "tj" },
+      { symbol: "ΔT", expression: "{tjMax} − T_J", output: "margin" }
+    ]
   },
+  sweep: {
+    input: "iload",
+    range: [1, 1200],
+    scale: "linear",
+    lines: [
+      { id: "tj-max", kind: "limit", label: "Max junction temperature", value: (i) => i.tjMax, fails: "above" },
+      { id: "tj-target", kind: "target", label: "Target", value: (i) => i.targetTj }
+    ]
+  },
+  target: { output: "tj", input: "targetTj", sense: "max", failAt: "tjMax" },
+  examples: [
+    { id: "sot223-5v-3v3", label: "5 V to 3.3 V at 500 mA, SOT-223", values: { vin: 5, vout: 3.3, iload: 500, thetaJA: 61, tamb: 40, tjMax: 125 } },
+    { id: "to220-12v-5v", label: "12 V to 5 V at 200 mA, TO-220 without heatsink", values: { vin: 12, vout: 5, iload: 200, thetaJA: 50, tamb: 50, tjMax: 150 } },
+    { id: "sot23-liion-3v3", label: "Li-ion cell to 3.3 V at 300 mA, SOT-23-5", values: { vin: 3.7, vout: 3.3, iload: 300, thetaJA: 180, tamb: 25, tjMax: 125 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["buck-converter", "voltage-divider"],
   relatedBlogPosts: ["buck-converter-design-guide", "smps-control-loop-stability-buck-converter"],
@@ -5265,6 +5791,7 @@ var batteryLife = {
   outputs: [
     {
       key: "runtimeHours",
+      primary: true,
       label: "Runtime",
       symbol: "t",
       unit: "h",
@@ -5405,7 +5932,7 @@ var L_KEYS = ["L1_uH", "L4_uH", "L6_uH", "L8_uH", "L10_uH"];
 var BP_L_KEYS = ["bpL1_uH", "bpL3_uH", "bpL5_uH", "bpL7_uH", "bpL9_uH"];
 var BP_C_KEYS = ["bpC2_nF", "bpC4_nF", "bpC6_nF", "bpC8_nF", "bpC10_nF"];
 function ladderValues(g, filterType, omega, z0, q) {
-  const C9 = [0, 0, 0, 0, 0];
+  const C10 = [0, 0, 0, 0, 0];
   const L = [0, 0, 0, 0, 0];
   const bpL = [0, 0, 0, 0, 0];
   const bpC = [0, 0, 0, 0, 0];
@@ -5414,23 +5941,23 @@ function ladderValues(g, filterType, omega, z0, q) {
     const m = Math.floor(k / 2);
     const odd = k % 2 === 0;
     if (filterType === 1) {
-      if (odd) C9[m] = 1 / (omega * gk * z0) * 1e9;
+      if (odd) C10[m] = 1 / (omega * gk * z0) * 1e9;
       else L[m] = z0 / (omega * gk) * 1e6;
     } else if (filterType === 2) {
       if (odd) {
-        C9[m] = gk / (omega * delta * z0) * 1e9;
+        C10[m] = gk / (omega * delta * z0) * 1e9;
         bpL[m] = delta * z0 / (omega * gk) * 1e6;
       } else {
         L[m] = gk * z0 / (omega * delta) * 1e6;
         bpC[m] = delta / (omega * gk * z0) * 1e9;
       }
     } else if (odd) {
-      C9[m] = gk / (omega * z0) * 1e9;
+      C10[m] = gk / (omega * z0) * 1e9;
     } else {
       L[m] = gk * z0 / omega * 1e6;
     }
   });
-  return { C: C9, L, bpL, bpC };
+  return { C: C10, L, bpL, bpC };
 }
 function calculateFilterDesigner(inputs) {
   const { responseType = 0, filterType, fc, order, impedance, qFactor: qFactor2, eSeries = 0 } = inputs;
@@ -5446,7 +5973,7 @@ function calculateFilterDesigner(inputs) {
   const type = Math.round(filterType);
   const g = (isChebyshev ? CHEBYSHEV_05_G : BUTTERWORTH_G)[clampedOrder];
   const tau_ns = clampedOrder === 1 && !isChebyshev ? 1 / omega_c * 1e9 : 0;
-  const { C: C9, L, bpL, bpC } = ladderValues(g, type, omega_c, impedance, qFactor2 > 0 ? qFactor2 : 1);
+  const { C: C10, L, bpL, bpC } = ladderValues(g, type, omega_c, impedance, qFactor2 > 0 ? qFactor2 : 1);
   let attenuation_at_2fc;
   if (isChebyshev) {
     const epsilon = Math.sqrt(Math.pow(10, CHEBYSHEV_RIPPLE_DB / 10) - 1);
@@ -5474,14 +6001,14 @@ function calculateFilterDesigner(inputs) {
       maxComponentError = Math.max(maxComponentError, Math.abs(result.error));
       return result.snapped;
     };
-    for (const arr of [C9, L, bpL, bpC]) {
+    for (const arr of [C10, L, bpL, bpC]) {
       for (let i = 0; i < arr.length; i++) arr[i] = snapValue(arr[i]);
     }
     fcShiftPercent = maxComponentError * 0.5;
   }
   const values = {};
   C_KEYS.forEach((k, i) => {
-    values[k] = C9[i];
+    values[k] = C10[i];
   });
   L_KEYS.forEach((k, i) => {
     values[k] = L[i];
@@ -5545,7 +6072,11 @@ var filterDesigner = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = Butterworth (maximally flat), 1 = Chebyshev Type I (0.5 dB ripple, steeper rolloff)"
+      tooltip: "Butterworth is maximally flat; Chebyshev Type I trades 0.5 dB of passband ripple for a steeper rolloff",
+      options: [
+        { value: 0, label: "Butterworth" },
+        { value: 1, label: "Chebyshev (0.5 dB ripple)" }
+      ]
     },
     {
       key: "filterType",
@@ -5556,7 +6087,11 @@ var filterDesigner = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0 = Low-pass, 1 = High-pass, 2 = Band-pass"
+      options: [
+        { value: 0, label: "Low-pass" },
+        { value: 1, label: "High-pass" },
+        { value: 2, label: "Band-pass" }
+      ]
     },
     {
       key: "fc",
@@ -5603,7 +6138,7 @@ var filterDesigner = {
       defaultValue: 1,
       min: 0.1,
       max: 100,
-      tooltip: "Higher Q = narrower bandwidth. Relevant for band-pass filter type (type=2)."
+      tooltip: "Higher Q = narrower bandwidth. Used only by the band-pass filter type."
     },
     {
       key: "eSeries",
@@ -5614,7 +6149,14 @@ var filterDesigner = {
       min: 0,
       max: 96,
       step: 1,
-      tooltip: "0 = Ideal values, 12 = E12 (10%), 24 = E24 (5%), 48 = E48 (2%), 96 = E96 (1%). Snaps component values to nearest standard value.",
+      tooltip: "Snaps component values to the nearest standard value.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
       presets: [
         { label: "Ideal", values: { eSeries: 0 } },
         { label: "E12 (10%)", values: { eSeries: 12 } },
@@ -5627,6 +6169,7 @@ var filterDesigner = {
   outputs: [
     {
       key: "C1_nF",
+      primary: true,
       label: "Element 1 (C₁)",
       symbol: "C₁",
       unit: "nF",
@@ -6095,6 +6638,7 @@ var samplingNyquist = {
   outputs: [
     {
       key: "nyquistRate_Hz",
+      primary: true,
       label: "Nyquist Rate",
       symbol: "f_N",
       unit: "Hz",
@@ -6280,6 +6824,7 @@ var dipoleAntenna = {
   outputs: [
     {
       key: "halfWaveLength_mm",
+      primary: true,
       label: "Half-Wave Length",
       symbol: "L_{λ/2}",
       unit: "mm",
@@ -6296,6 +6841,7 @@ var dipoleAntenna = {
     },
     {
       key: "gainDbi",
+      signed: "explicit",
       label: "Antenna Gain",
       symbol: "G",
       unit: "dBi",
@@ -6331,6 +6877,12 @@ var dipoleAntenna = {
       precision: 4
     }
   ],
+  examples: [
+    { id: "two-metre-145", label: "2 m band, 145 MHz, bare wire", values: { frequency: 145, velocityFactor: 0.97 } },
+    { id: "twenty-metre-14m2", label: "20 m band, 14.2 MHz, insulated wire", values: { frequency: 14.2, velocityFactor: 0.95 } },
+    { id: "lora-868", label: "868 MHz LoRa node", values: { frequency: 868, velocityFactor: 0.97 } },
+    { id: "fm-broadcast-98", label: "FM broadcast, 98 MHz", values: { frequency: 98, velocityFactor: 0.97 } }
+  ],
   calculate: calculateDipoleAntenna,
   formula: {
     primary: "L_{\\lambda/2} = \\frac{v_f \\cdot c}{2f}, \\quad Z_{in} \\approx 73.1\\,\\Omega, \\quad G = 2.15\\,\\text{dBi}",
@@ -6352,6 +6904,12 @@ var dipoleAntenna = {
     reference: 'Balanis, "Antenna Theory: Analysis and Design", 4th ed., Chapter 4'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "dipole", roles: { len: "halfWaveLength_mm", arm: "quarterWaveLength_mm", f: "frequency", vf: "velocityFactor" } },
+    // A wire of a given length: the frequency it resonates at, or the velocity factor that tunes it there.
+    synthesis: [{ output: "halfWaveLength_mm", solveFor: ["frequency", "velocityFactor"] }],
+    curve: { x: "frequency", y: "halfWaveLength_mm", range: [100, 3e3], scale: "log" }
+  },
   relatedCalculators: [
     "monopole-antenna",
     "helical-antenna",
@@ -6529,9 +7087,8 @@ var patchAntenna = {
       max: 30,
       step: 0.01,
       tooltip: "FR4 ≈ 4.4; Rogers RO4003C ≈ 3.55; Air = 1",
+      // The material picker sets laminates (lib/geometry/materials.ts); air is not a laminate.
       presets: [
-        { label: "FR4 (εr=4.4)", values: { dielectricConstant: 4.4 } },
-        { label: "Rogers RO4003C (εr=3.55)", values: { dielectricConstant: 3.55 } },
         { label: "Air (εr=1)", values: { dielectricConstant: 1 } }
       ]
     },
@@ -6569,6 +7126,7 @@ var patchAntenna = {
     },
     {
       key: "patchLength_mm",
+      primary: true,
       label: "Patch Length",
       symbol: "L",
       unit: "mm",
@@ -6597,6 +7155,7 @@ var patchAntenna = {
     },
     {
       key: "gainDbi",
+      signed: "explicit",
       label: "Nominal Gain",
       symbol: "G",
       unit: "dBi",
@@ -6619,6 +7178,12 @@ var patchAntenna = {
       precision: 2,
       tooltip: "Inset from the radiating edge at which the feed resistance is 50 Ω"
     }
+  ],
+  examples: [
+    { id: "wifi-2g45-fr4", label: "2.45 GHz on 1.6 mm FR-4", values: { frequency: 2.45, dielectricConstant: 4.4, substrateHeight: 1.6 } },
+    { id: "gps-l1-ro4003c", label: "GPS L1, 1575.42 MHz, on 1.524 mm RO4003C", values: { frequency: 1.57542, dielectricConstant: 3.55, substrateHeight: 1.524 } },
+    { id: "wifi-5g8-ro4350b", label: "5.8 GHz on 0.762 mm RO4350B", values: { frequency: 5.8, dielectricConstant: 3.66, substrateHeight: 0.762 } },
+    { id: "mmwave-28g-rt5880", label: "28 GHz 5G on 0.254 mm RT/duroid 5880", values: { frequency: 28, dielectricConstant: 2.2, substrateHeight: 0.254 } }
   ],
   calculate: calculatePatchAntenna,
   formula: {
@@ -6650,6 +7215,13 @@ var patchAntenna = {
     reference: 'Balanis, "Antenna Theory: Analysis and Design", 4th ed., Chapter 14: slot conductances §14.2, Eqs. (14-12), (14-17) and (14-18a), Examples 14.1–14.3; inset feed §14.2.1, Eq. (14-20a)'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "patch", roles: { L: "patchLength_mm", W: "patchWidth_mm", h: "substrateHeight", er: "dielectricConstant", feed: "feedOffset", f: "frequency" } },
+    // A patch of a given length: the frequency it resonates at, or the substrate height that brings it there.
+    synthesis: [{ output: "patchLength_mm", solveFor: ["frequency", "substrateHeight"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConstant" } },
+    curve: { x: "frequency", y: "patchLength_mm", range: [1, 10], scale: "log" }
+  },
   relatedCalculators: [
     "dipole-antenna",
     "eirp-calculator",
@@ -6776,6 +7348,7 @@ var eirpCalculator = {
   outputs: [
     {
       key: "eirp_dbm",
+      primary: true,
       label: "EIRP",
       symbol: "EIRP",
       unit: "dBm",
@@ -6800,6 +7373,7 @@ var eirpCalculator = {
     },
     {
       key: "margin_db",
+      signed: "explicit",
       label: "Regulatory Margin",
       symbol: "M",
       unit: "dB",
@@ -6813,6 +7387,7 @@ var eirpCalculator = {
     },
     {
       key: "maxPermittedGain_dbi",
+      signed: "explicit",
       label: "Max Permitted Antenna Gain",
       symbol: "G_{max}",
       unit: "dBi",
@@ -6838,8 +7413,26 @@ var eirpCalculator = {
       "Margin [dB] = EIRP_limit − EIRP",
       "G_max [dBi] = EIRP_limit − P_TX + L_cable"
     ],
-    reference: "FCC Part 15 §15.247; ETSI EN 300 328; IEEE Std 149-1979"
+    reference: "FCC Part 15 §15.247; ETSI EN 300 328; IEEE Std 149-1979",
+    substitution: [
+      { symbol: "EIRP", expression: "{txPower_dbm} − {cableLoss_db} + {antennaGain_dbi}", output: "eirp_dbm" },
+      { symbol: "M", expression: "{regulatoryLimit_dbm} − EIRP", output: "margin_db" },
+      { symbol: "G_max", expression: "{regulatoryLimit_dbm} − {txPower_dbm} + {cableLoss_db}", output: "maxPermittedGain_dbi" }
+    ]
   },
+  sweep: {
+    input: "antennaGain_dbi",
+    range: [-5, 30],
+    scale: "linear",
+    lines: [
+      { id: "regulatory-limit", kind: "limit", label: "Regulatory limit", value: (i) => i.regulatoryLimit_dbm, fails: "above" }
+    ]
+  },
+  examples: [
+    { id: "wifi-ap-fcc", label: "2.4 GHz Wi-Fi access point, FCC Part 15.247", values: { txPower_dbm: 27, cableLoss_db: 1, antennaGain_dbi: 6, regulatoryLimit_dbm: 36 } },
+    { id: "srd-868-etsi", label: "868 MHz SRD at the ETSI 25 mW ERP limit", values: { txPower_dbm: 14, cableLoss_db: 0.5, antennaGain_dbi: 2.15, regulatoryLimit_dbm: 16.15 } },
+    { id: "wifi-etsi-100mw", label: "2.4 GHz radio against the ETSI 100 mW EIRP limit", values: { txPower_dbm: 17, cableLoss_db: 1, antennaGain_dbi: 5, regulatoryLimit_dbm: 20 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "rf-link-budget",
@@ -6910,6 +7503,20 @@ function calculateOhmsLaw(inputs) {
     }
   };
 }
+var OHM = ["voltage", "current", "resistance", "power"];
+function ohmsHeld(inputs) {
+  const given = ["current", "resistance", "power"].filter((k) => inputs[k] >= 0);
+  if (given.length >= 2) return given.slice(0, 2);
+  return inputs.voltage >= 0 ? ["voltage", ...given] : given;
+}
+function ohmsInputs(a, va, b, vb) {
+  const known = { [a]: va, [b]: vb };
+  const { current: I, resistance: R, power: P } = known;
+  const V = known.voltage ?? (I !== void 0 && R !== void 0 ? I * R : I !== void 0 ? P / I : Math.sqrt(P * R));
+  const next = { voltage: V, current: I ?? -1, resistance: R ?? -1, power: P ?? -1 };
+  const fits = ohmsLaw.inputs.every((i) => Number.isFinite(next[i.key]) && next[i.key] <= (i.max ?? Infinity));
+  return fits ? next : null;
+}
 var ohmsLaw = {
   slug: "ohms-law",
   title: "Ohm's Law Calculator",
@@ -6926,11 +7533,45 @@ var ohmsLaw = {
   ],
   outputs: [
     { key: "voltage", label: "Voltage", symbol: "V", unit: "V", precision: 4 },
-    { key: "current", label: "Current", symbol: "I", unit: "A", precision: 4, format: "engineering" },
+    { key: "current", label: "Current", symbol: "I", unit: "A", precision: 4, format: "engineering", primary: true },
     { key: "resistance", label: "Resistance", symbol: "R", unit: "Ω", precision: 4, format: "engineering" },
     { key: "power", label: "Power", symbol: "P", unit: "W", precision: 4, format: "engineering" }
   ],
+  // Each gives the voltage and one other quantity; the rest are −1 (not given).
+  examples: [
+    { id: "usb-port-5v-500ma", label: "USB 2.0 port: 5 V at 500 mA", values: { voltage: 5, current: 0.5, resistance: -1, power: -1 } },
+    { id: "gpio-3v3-330-ohm", label: "3.3 V GPIO pin into 330 Ω", values: { voltage: 3.3, current: -1, resistance: 330, power: -1 } },
+    { id: "heater-12v-24w", label: "12 V, 24 W heater element", values: { voltage: 12, current: -1, resistance: -1, power: 24 } },
+    { id: "mains-lamp-230v-60w", label: "60 W lamp on 230 V mains (hot filament)", values: { voltage: 230, current: -1, resistance: -1, power: 60 } }
+  ],
   calculate: calculateOhmsLaw,
+  // C2: any two of V, I, R and P fix the state, so an edit holds the edited
+  // field and the one edited before it (or, on a first edit, the other of the
+  // two the address gives).
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: ["voltage", "current", "resistance", "power"],
+      free: ["voltage", "current", "resistance", "power"],
+      edit: (field, value, { inputs, values, previous }) => {
+        const f = field;
+        if (!OHM.includes(f) || !(value >= 0)) return null;
+        const keep = previous && previous !== field && OHM.includes(previous) ? previous : ohmsHeld(inputs).find((k) => k !== f) ?? OHM.find((k) => k !== f && values[k] >= 0);
+        return keep ? ohmsInputs(f, value, keep, values[keep]) : null;
+      },
+      picks: { field: "voltage", values: [1.8, 3.3, 5, 12, 24] },
+      reference: { field: "resistance", values: [10, 100, 220, 470, 1e3, 4700, 1e4] },
+      scales: {
+        fields: [
+          { key: "voltage", range: [1e-3, 1e3], scale: "log" },
+          { key: "current", range: [1e-6, 10], scale: "log" },
+          { key: "resistance", range: [1, 1e7], scale: "log" },
+          { key: "power", range: [1e-6, 1e3], scale: "log" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "V = IR, \\quad P = VI = I^2 R = \\frac{V^2}{R}",
     latex: "V = IR, \\quad P = IV = I^2R = \\frac{V^2}{R}",
@@ -6982,6 +7623,9 @@ var TOLERANCES = {
   11: 10
 };
 var COLOR_NAMES = ["black", "brown", "red", "orange", "yellow", "green", "blue", "violet", "grey", "white", "gold", "silver"];
+var COLOURS = ["Black", "Brown", "Red", "Orange", "Yellow", "Green", "Blue", "Violet", "Grey", "White", "Gold", "Silver"];
+var MULTIPLIER_LABELS = ["×1", "×10", "×100", "×1k", "×10k", "×100k", "×1M", "×10M", "×100M", "×1G", "×0.1", "×0.01"];
+var DIGIT_OPTIONS = COLOURS.slice(0, 10).map((name, value) => ({ value, label: `${name} (${value})` }));
 function calculateColorCode(inputs) {
   const { band1, band2, band3, multiplier, tolerance, numBands } = inputs;
   const is5band = numBands >= 5;
@@ -7043,7 +7687,7 @@ var resistorColorCode = {
       // Brown
       min: 0,
       max: 9,
-      tooltip: "Color: 0=Blk 1=Brn 2=Red 3=Org 4=Yel 5=Grn 6=Blu 7=Vio 8=Gry 9=Wht"
+      options: DIGIT_OPTIONS
     },
     {
       key: "band2",
@@ -7052,17 +7696,19 @@ var resistorColorCode = {
       defaultValue: 0,
       // Black
       min: 0,
-      max: 9
+      max: 9,
+      options: DIGIT_OPTIONS
     },
     {
       key: "band3",
-      label: "Band 3 (3rd digit / multiplier for 4-band)",
+      label: "Band 3 (3rd digit, 5- and 6-band)",
       unit: "",
       defaultValue: 4,
-      // Yellow → ×10000 for 4-band use multiplier field
+      // Yellow; ignored for 4-band, whose multiplier is the multiplier field
       min: 0,
       max: 11,
-      tooltip: "For 4-band resistors this is actually the multiplier; for 5-band it is the 3rd digit"
+      tooltip: "The third digit of a 5- or 6-band resistor. Ignored for 4-band resistors, whose third band is the multiplier band.",
+      options: DIGIT_OPTIONS
     },
     {
       key: "multiplier",
@@ -7072,7 +7718,7 @@ var resistorColorCode = {
       // ×100
       min: 0,
       max: 11,
-      tooltip: "10=Gold(×0.1) 11=Silver(×0.01)"
+      options: COLOURS.map((name, value) => ({ value, label: `${name} (${MULTIPLIER_LABELS[value]})` }))
     },
     {
       key: "tolerance",
@@ -7087,11 +7733,12 @@ var resistorColorCode = {
         { label: "Silver (10%)", values: { tolerance: 11 } },
         { label: "Brown (1%)", values: { tolerance: 1 } },
         { label: "Red (2%)", values: { tolerance: 2 } }
-      ]
+      ],
+      options: Object.entries(TOLERANCES).map(([code, pct]) => ({ value: Number(code), label: `${COLOURS[Number(code)]} (±${pct}%)` }))
     }
   ],
   outputs: [
-    { key: "resistance", label: "Resistance", unit: "Ω", precision: 3, format: "engineering" },
+    { key: "resistance", label: "Resistance", unit: "Ω", precision: 3, format: "engineering", primary: true },
     { key: "tolerance", label: "Tolerance", unit: "%", precision: 2 },
     { key: "minResistance", label: "Min Value", unit: "Ω", precision: 3, format: "engineering" },
     { key: "maxResistance", label: "Max Value", unit: "Ω", precision: 3, format: "engineering" }
@@ -7175,7 +7822,7 @@ var rcTimeConstant = {
     }
   ],
   outputs: [
-    { key: "tauUs", label: "Time Constant τ", symbol: "τ", unit: "μs", precision: 3 },
+    { key: "tauUs", label: "Time Constant τ", symbol: "τ", unit: "μs", precision: 3, primary: true },
     { key: "t63us", label: "Time to 63.2%", unit: "μs", precision: 3 },
     { key: "t99us", label: "Time to 99%", unit: "μs", precision: 2 },
     { key: "f3db", label: "−3dB Frequency", unit: "Hz", precision: 2, format: "engineering" }
@@ -7293,12 +7940,17 @@ var seriesParallelResistor = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0=Resistor (Ω), 1=Capacitor (nF), 2=Inductor (μH)"
+      options: [
+        { value: 0, label: "Resistor (Ω)" },
+        { value: 1, label: "Capacitor (nF)" },
+        { value: 2, label: "Inductor (μH)" }
+      ]
     }
   ],
   outputs: [
     {
       key: "seriesTotal",
+      primary: true,
       label: "Series Total",
       unit: "Ω / nF / μH",
       precision: 4,
@@ -7457,12 +8109,16 @@ var lcResonance = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0=Series LC, 1=Parallel LC (tank)"
+      options: [
+        { value: 0, label: "Series LC" },
+        { value: 1, label: "Parallel LC (tank)" }
+      ]
     }
   ],
   outputs: [
     {
       key: "f0_MHz",
+      primary: true,
       label: "Resonant Frequency",
       symbol: "f₀",
       unit: "MHz",
@@ -7560,8 +8216,19 @@ var lcResonance = {
       "Impedance at resonance: R in series (the minimum); the dynamic resistance L/(C·R) = Z₀²/R in parallel (the maximum)",
       "Bandwidth: BW = f₀/Q"
     ],
-    reference: "Terman, Radio Engineers' Handbook, McGraw-Hill, 1943"
+    reference: "Terman, Radio Engineers' Handbook, McGraw-Hill, 1943",
+    substitution: [
+      { symbol: "f₀", expression: "1 / (2π √({inductance} × {capacitance}))", output: "f0_MHz" },
+      { symbol: "Z₀", expression: "√({inductance} / {capacitance})", output: "characteristicImpedance_ohm" },
+      { symbol: "λ", expression: "c / f₀", output: "wavelength_m" }
+    ]
   },
+  sweep: { input: "capacitance", range: [1, 1e4], scale: "log" },
+  examples: [
+    { id: "am-tank-1mhz", label: "AM broadcast tank, 1 MHz", values: { inductance: 250, capacitance: 100, resistance: 10, circuitType: 1 } },
+    { id: "nfc-13m56", label: "13.56 MHz NFC antenna", values: { inductance: 1, capacitance: 138, resistance: 1, circuitType: 0 } },
+    { id: "uhf-433-trap", label: "433 MHz series resonator", values: { inductance: 0.033, capacitance: 4, resistance: 0.5, circuitType: 0 } }
+  ],
   visualization: { type: "bode-plot", freqRange: [1e3, 1e9] },
   relatedCalculators: ["rc-time-constant", "filter-designer", "series-parallel-resistor", "coax-impedance"],
   relatedBlogPosts: ["capacitor-code", "equalizer-q-factor", "filter-design-butterworth-chebyshev"],
@@ -7643,7 +8310,11 @@ var opampGain = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0=Inverting, 1=Non-inverting, 2=Differential"
+      options: [
+        { value: 0, label: "Inverting" },
+        { value: 1, label: "Non-inverting" },
+        { value: 2, label: "Differential" }
+      ]
     },
     {
       key: "r1",
@@ -7687,6 +8358,8 @@ var opampGain = {
   outputs: [
     {
       key: "gain",
+      primary: true,
+      signed: "explicit",
       label: "Voltage Gain (V/V)",
       symbol: "Av",
       unit: "V/V",
@@ -7695,6 +8368,7 @@ var opampGain = {
     },
     {
       key: "gainDb",
+      signed: "explicit",
       label: "Voltage Gain",
       symbol: "Av",
       unit: "dB",
@@ -7878,10 +8552,13 @@ var uartBaudRate = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0 = None, 1 = Even or Odd parity (1 bit), 2 = Mark/Space (rare)",
       presets: [
         { label: "None (0 bits)", values: { parity: 0 } },
         { label: "Even/Odd (1 bit)", values: { parity: 1 } }
+      ],
+      options: [
+        { value: 0, label: "None" },
+        { value: 1, label: "Even or odd (1 bit)" }
       ]
     },
     {
@@ -7906,6 +8583,7 @@ var uartBaudRate = {
   outputs: [
     {
       key: "frameBits",
+      display: { integer: true },
       label: "Bits per Frame",
       symbol: "N_{frame}",
       unit: "bits",
@@ -7959,6 +8637,8 @@ var uartBaudRate = {
     },
     {
       key: "baudRateError_pct",
+      primary: true,
+      display: { decimals: 2 },
       label: "Baud Rate Error",
       symbol: "ε_B",
       unit: "%",
@@ -8008,6 +8688,20 @@ var uartBaudRate = {
 };
 
 // src/lib/calculators/protocol/i2c-pullup.ts
+function i2cModeLimits(speedMode) {
+  const at = (mode, riseMaxNs, riseMinNs, sinkA, busCapMaxPf) => ({
+    mode,
+    riseMaxNs,
+    riseMinNs,
+    sinkA,
+    busCapMaxPf,
+    clause: `UM10204 Rev. 7.0, Table 11, t_r (rise time of SDA and SCL), ${mode}: ${riseMaxNs} ns maximum; t_r = 0.8473·R_p·C_b, §7.1`
+  });
+  if (speedMode === 0) return at("Standard-mode", 1e3, 0, 3e-3, 400);
+  if (speedMode === 1) return at("Fast-mode", 300, 20, 3e-3, 400);
+  return at("Fast-mode Plus", 120, 0, 0.02, 550);
+}
+var DEFAULT_PULLUP = 4700;
 function calculateI2cPullup(inputs) {
   const { vdd, speedMode, busCap } = inputs;
   if (vdd <= 0) {
@@ -8016,17 +8710,12 @@ function calculateI2cPullup(inputs) {
   if (busCap <= 0) {
     return { values: {}, errors: ["Bus capacitance must be greater than 0"] };
   }
-  let riseTimeTarget_ns;
-  let iol;
-  if (speedMode === 0) {
-    riseTimeTarget_ns = 1e3;
-    iol = 3e-3;
-  } else if (speedMode === 1) {
-    riseTimeTarget_ns = 300;
-    iol = 3e-3;
-  } else {
-    riseTimeTarget_ns = 120;
-    iol = 0.02;
+  const limits = i2cModeLimits(speedMode);
+  const riseTimeTarget_ns = limits.riseMaxNs;
+  let iol = limits.sinkA;
+  const pullup = inputs.pullup ?? DEFAULT_PULLUP;
+  if (!(pullup > 0)) {
+    return { values: {}, errors: ["Pull-up resistance must be greater than 0"] };
   }
   const lowVoltage = vdd <= 2;
   const vol_max = lowVoltage ? 0.2 * vdd : 0.4;
@@ -8048,6 +8737,19 @@ function calculateI2cPullup(inputs) {
   if (R_recommended > 1e4) {
     warnings.push("Recommended pull-up exceeds 10 kΩ — marginal rise time; reduce bus capacitance");
   }
+  const riseTime = 0.8473 * pullup * busCap * 1e-3;
+  const riseTimePercent = riseTime / riseTimeTarget_ns * 100;
+  const maxBusCap = Math.min(riseTimeTarget_ns / (0.8473 * pullup * 1e-3), limits.busCapMaxPf);
+  if (pullup < R_min) {
+    const sink = lowVoltage ? "UM10204 specifies at 2 V and below" : `a ${limits.mode} device must sink`;
+    warnings.push(`The pull-up is below R_min: pulling a line LOW to V_OL = ${+vol_max.toFixed(3)} V takes more than the ${Math.round(iol * 1e3)} mA ${sink} (UM10204 Rev. 7.0, Table 10)`);
+  }
+  if (riseTime < limits.riseMinNs) {
+    warnings.push(`The rise time is below the ${limits.riseMinNs} ns ${limits.mode} minimum (UM10204 Rev. 7.0, Table 11)`);
+  }
+  if (busCap > limits.busCapMaxPf) {
+    warnings.push(`The bus capacitance exceeds the ${limits.busCapMaxPf} pF a ${limits.mode} bus line may carry (UM10204 Rev. 7.0, Table 11)`);
+  }
   return {
     values: {
       R_max_ohm: R_max,
@@ -8055,7 +8757,10 @@ function calculateI2cPullup(inputs) {
       R_recommended_ohm: R_recommended,
       current_ma,
       powerPerLine_mw,
-      riseTimeTarget_ns
+      riseTimeTarget_ns,
+      riseTime,
+      riseTimePercent,
+      maxBusCap
     },
     warnings: warnings.length > 0 ? warnings : void 0,
     intermediateValues: {
@@ -8106,11 +8811,15 @@ var i2cPullup = {
       min: 0,
       max: 2,
       step: 1,
-      tooltip: "0 = Standard 100 kHz, 1 = Fast 400 kHz, 2 = Fast-Plus 1 MHz",
       presets: [
         { label: "Standard (100 kHz)", values: { speedMode: 0 } },
         { label: "Fast (400 kHz)", values: { speedMode: 1 } },
         { label: "Fast-Plus (1 MHz)", values: { speedMode: 2 } }
+      ],
+      options: [
+        { value: 0, label: "Standard (100 kHz)" },
+        { value: 1, label: "Fast (400 kHz)" },
+        { value: 2, label: "Fast-Plus (1 MHz)" }
       ]
     },
     {
@@ -8120,9 +8829,26 @@ var i2cPullup = {
       unit: "pF",
       defaultValue: 100,
       min: 10,
-      max: 400,
+      // UM10204 Table 11: 400 pF in Standard- and Fast-mode, 550 pF in Fast-mode Plus (a warning names the mode's own limit).
+      max: 550,
       step: 5,
       tooltip: "Total bus capacitance including PCB traces and device pins"
+    },
+    {
+      key: "pullup",
+      label: "Pull-Up Resistor",
+      symbol: "R_p",
+      unit: "Ω",
+      defaultValue: DEFAULT_PULLUP,
+      min: 100,
+      max: 1e5,
+      tooltip: "The pull-up fitted on SDA and SCL; its rise time with the bus capacitance is checked against UM10204",
+      presets: [
+        { label: "1 kΩ", values: { pullup: 1e3 } },
+        { label: "2.2 kΩ", values: { pullup: 2200 } },
+        { label: "4.7 kΩ", values: { pullup: 4700 } },
+        { label: "10 kΩ", values: { pullup: 1e4 } }
+      ]
     }
   ],
   // `busCap` is the total bus capacitance, device pins included, so a device
@@ -8148,6 +8874,7 @@ var i2cPullup = {
     },
     {
       key: "R_recommended_ohm",
+      primary: true,
       label: "Recommended R_pull",
       symbol: "R_{rec}",
       unit: "Ω",
@@ -8183,9 +8910,61 @@ var i2cPullup = {
       unit: "ns",
       precision: 0,
       tooltip: "Maximum permitted rise time for the selected speed mode (NXP UM10204)"
+    },
+    {
+      key: "riseTime",
+      label: "Rise Time",
+      symbol: "t_{r,p}",
+      unit: "ns",
+      precision: 1,
+      tooltip: "Rise time of SDA and SCL with the fitted pull-up, 0.3·V_DD to 0.7·V_DD: t_r = 0.8473 × R_p × C_bus (UM10204 §7.1)"
+    },
+    {
+      key: "riseTimePercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The rise time as a percentage of the speed mode’s UM10204 maximum; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "maxBusCap",
+      label: "Compliant Bus Capacitance",
+      symbol: "C_{b,max}",
+      unit: "pF",
+      precision: 1,
+      tooltip: "The largest bus capacitance at which the fitted pull-up meets the rise-time limit, and no more than UM10204 Table 11 allows (400 pF; 550 pF in Fast-mode Plus)"
     }
   ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "fast-mode-4k7-150-pf", label: "Fast-mode, 4.7 kΩ on 150 pF (four sensors)", values: { vdd: 3.3, speedMode: 1, busCap: 150, pullup: 4700 } },
+    { id: "fast-mode-2k2-100-pf", label: "Fast-mode, 2.2 kΩ on 100 pF", values: { vdd: 3.3, speedMode: 1, busCap: 100, pullup: 2200 } },
+    { id: "standard-mode-5-v-4k7-200-pf", label: "Standard-mode at 5 V, 4.7 kΩ on 200 pF", values: { vdd: 5, speedMode: 0, busCap: 200, pullup: 4700 } },
+    { id: "fast-mode-plus-680-200-pf", label: "Fast-mode Plus, 680 Ω on 200 pF", values: { vdd: 3.3, speedMode: 2, busCap: 200, pullup: 680 } }
+  ],
   calculate: calculateI2cPullup,
+  // One specification, so the speed mode is the selector: each mode is a
+  // column of UM10204's tables, and an option input needs two options.
+  standards: {
+    standard: {
+      input: "speedMode",
+      sources: {
+        0: "NXP UM10204, I²C-bus specification and user manual, Rev. 7.0 (1 October 2021), Standard-mode: Table 11 (t_r, C_b), Table 10 (I_OL at V_OL = 0.4 V), §7.1 (t_r = 0.8473·R_p·C_b)",
+        1: "NXP UM10204 Rev. 7.0 (2021), Fast-mode: the same tables",
+        2: "NXP UM10204 Rev. 7.0 (2021), Fast-mode Plus: the same tables"
+      }
+    },
+    value: "riseTime",
+    limit: "riseTimeTarget_ns",
+    percent: "riseTimePercent",
+    clause: (standard) => i2cModeLimits(standard).clause,
+    remedies: [
+      { input: "pullup", output: "R_max_ohm", direction: "down" },
+      { input: "busCap", output: "maxBusCap", direction: "down" }
+    ],
+    chart: { x: "pullup", range: [100, 1e5], scale: "log", yScale: "log" }
+  },
   formula: {
     primary: "R_{max} = \\frac{t_r}{0.8473 \\cdot C_{bus}}, \\quad R_{min} = \\frac{V_{DD} - V_{OL}}{I_{OL}}, \\quad R_{rec} = \\sqrt{R_{min} \\cdot R_{max}}",
     variables: [
@@ -8284,6 +9063,7 @@ var clockJitter = {
       unit: "ps",
       precision: 1,
       primary: true,
+      signed: "explicit",
       thresholds: { good: { min: 100 }, warning: { min: 0, max: 100 }, danger: { min: 0 } }
     },
     { key: "totalJitter_ps", label: "Total Jitter", unit: "ps", precision: 1 },
@@ -8398,6 +9178,7 @@ var heatsinkCalculator = {
   outputs: [
     {
       key: "thetaSA_required",
+      primary: true,
       label: "Required θ_SA",
       symbol: "θ_SA",
       unit: "°C/W",
@@ -8481,6 +9262,16 @@ var TRACE_TEMP_VALIDITY = [
     source: "IPC-2221 (1998) Figure 6-4 chart B: ½, 1, 2 and 3 oz"
   }
 ];
+function laminateLimit(laminate) {
+  const at = (mot, row) => ({ mot, rule: `${mot} °C − T_A`, clause: `limit IPC-2222 (1998) Table 4-1, ${row}: ${mot} °C, less the ambient (IPC-2221A §6.2)` });
+  if (laminate === 1) return at(120, "FR-4 (IPC-4101/21/24/25/27), dielectric 0.1 mm min");
+  if (laminate === 2) return at(170, "GPY polyimide (IPC-4101/40/41/42), dielectric 1.6 mm min");
+  if (laminate === 3) return at(140, "GPY polyimide (IPC-4101/40/41/42), dielectric 0.1 mm min");
+  return at(130, "FR-4 (IPC-4101/21/24/25/27), dielectric 0.4 mm min");
+}
+function riseChart(standard) {
+  return standard === 1 ? { k: 0.024, clause: "Rise on IPC-2152 (2009) §5, Figure 5-1" } : { k: 0.048, clause: "Rise on IPC-2221A (2003) §6.2, Figure 6-4, chart A, external conductors" };
+}
 function calculatePcbTraceTemp(inputs) {
   const { current, traceWidth, copperWeight, ambientTemp, traceLength } = inputs;
   const boardThickness = inputs.boardThickness ?? 1.6;
@@ -8530,6 +9321,15 @@ function calculatePcbTraceTemp(inputs) {
   const inModelRange = traceThermalInRange(board, traceWidth, rise);
   warnings.push(...checkValidity(TRACE_THERMAL_VALIDITY, traceThermalValidityValues(board, traceWidth, rise)));
   if (modelRise === null) warnings.push(TRACE_THERMAL_RUNAWAY);
+  const k = riseChart(inputs.standard ?? 0).k;
+  const chartRise = Math.pow(current / (k * Math.pow(crossSection_mils2, 0.725)), 1 / 0.44);
+  const permissible = laminateLimit(inputs.laminate ?? 0).mot - ambientTemp;
+  if (!(permissible > 0)) warnings.push("The ambient is at or above the laminate’s maximum operating temperature, so no temperature rise is permissible");
+  const limitRise = permissible > 0 ? permissible : NaN;
+  const limitPercent = chartRise / limitRise * 100;
+  const kRise = k * Math.pow(limitRise, 0.44);
+  const maxCurrent = kRise * Math.pow(crossSection_mils2, 0.725);
+  const minTraceWidth = Math.pow(current / kRise, 1 / 0.725) / (thickness * 1550);
   return {
     values: {
       tempRise,
@@ -8537,6 +9337,11 @@ function calculatePcbTraceTemp(inputs) {
       traceResistance: traceResistance2,
       powerDissipated,
       currentCapacity,
+      chartRise,
+      limitRise,
+      limitPercent,
+      minTraceWidth,
+      maxCurrent,
       tempRise2152,
       maxTemp2152,
       inChartRange,
@@ -8644,16 +9449,49 @@ var pcbTraceTemp = {
       defaultValue: 1,
       min: 0,
       max: 1,
-      tooltip: "1 = external (outer) layer, 0 = internal layer. It changes only the board-specific rise; the IPC-2221 rise is always chart A, external, and Figure 5-1 is the same on either layer",
+      tooltip: "It changes only the board-specific rise; the IPC-2221 rise is always chart A, external, and Figure 5-1 is the same on either layer",
       presets: [
         { label: "External layer", values: { isExternal: 1 } },
         { label: "Internal layer", values: { isExternal: 0 } }
+      ],
+      options: [
+        { value: 1, label: "External (outer) layer" },
+        { value: 0, label: "Internal layer" }
       ]
+    },
+    {
+      key: "laminate",
+      label: "Laminate",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 3,
+      options: [
+        { value: 0, label: "FR-4, ≥ 0.4 mm" },
+        { value: 1, label: "FR-4, 0.1–0.4 mm" },
+        { value: 2, label: "Polyimide, ≥ 1.6 mm" },
+        { value: 3, label: "Polyimide, 0.1–1.6 mm" }
+      ],
+      tooltip: "The laminate and the board’s total dielectric thickness, which set its maximum operating temperature"
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "IPC-2221A Fig. 6-4" },
+        { value: 1, label: "IPC-2152 Fig. 5-1" }
+      ],
+      tooltip: "The chart the rise is read on: IPC-2221A’s external curve, as Temperature Rise, or IPC-2152’s conservative chart. Either way the limit is the laminate’s maximum operating temperature less the ambient."
     }
   ],
   outputs: [
     {
       key: "tempRise",
+      primary: true,
       label: "Temperature Rise (IPC-2221)",
       symbol: "ΔT",
       unit: "°C",
@@ -8762,9 +9600,76 @@ var pcbTraceTemp = {
       precision: 0,
       tooltip: `1 when the board-specific rise lies inside the range the thermal model was validated over: ${TRACE_THERMAL_RANGE.description}, the rise before the margin`,
       thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
+    },
+    {
+      key: "chartRise",
+      label: "Temperature Rise on the Chart",
+      symbol: "ΔT",
+      unit: "°C",
+      precision: 1,
+      tooltip: "The rise read on the chosen chart: on IPC-2221A’s external curve it is Temperature Rise; on IPC-2152’s conservative chart it is higher"
+    },
+    {
+      key: "limitRise",
+      label: "Permissible Rise",
+      symbol: "ΔT_max",
+      unit: "°C",
+      precision: 1,
+      tooltip: "The laminate’s maximum operating temperature less the ambient: the most the trace may rise"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The temperature rise as a percentage of the permissible rise; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "minTraceWidth",
+      label: "Compliant Width",
+      symbol: "W_min",
+      unit: "mm",
+      precision: 3,
+      tooltip: "The width at which the rise equals the permissible rise; at or above it the trace complies"
+    },
+    {
+      key: "maxCurrent",
+      label: "Compliant Current",
+      symbol: "I_lim",
+      unit: "A",
+      precision: 2,
+      tooltip: "The current at which the rise equals the permissible rise; at or below it the trace complies"
     }
   ],
+  examples: [
+    { id: "heater-7a-105-c", label: "7 A heater feed, 2 mm, 1 oz, 105 °C ambient", values: { current: 7, traceWidth: 2, copperWeight: 1, ambientTemp: 105, laminate: 0 } },
+    { id: "heater-7a-105-c-2-oz", label: "7 A heater feed in 2 oz copper, 105 °C ambient", values: { current: 7, traceWidth: 2, copperWeight: 2, ambientTemp: 105, laminate: 0 } },
+    { id: "polyimide-1a-0p3-mm", label: "1 A on a 0.3 mm, ½ oz trace, thin polyimide board, 60 °C", values: { current: 1, traceWidth: 0.3, copperWeight: 0.5, ambientTemp: 60, laminate: 3 } },
+    { id: "ipc-2152-2a-0p5-mm", label: "2 A on a 0.5 mm trace at 70 °C, IPC-2152 chart", values: { current: 2, traceWidth: 0.5, copperWeight: 1, ambientTemp: 70, standard: 1 } }
+  ],
   calculate: calculatePcbTraceTemp,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "The rise: IPC-2221A, Generic Standard on Printed Board Design (May 2003), §6.2 and Figure 6-4, chart A, the chart of IPC-2221 (February 1998), read through its published fit I = 0.048·ΔT^0.44·A^0.725 (A in mil²). The limit: IPC-2221A §6.2’s permissible rise, with IPC-2222, Sectional Design Standard for Rigid Organic Printed Boards (February 1998), §4.3 and Table 4-1, Clad Laminate Maximum Operating Temperatures",
+        1: "The rise: IPC-2152, Standard for Determining Current Carrying Capacity in Printed Board Design (August 2009), §5, Figure 5-1, the conservative chart, which keeps IPC-2221’s internal curve, I = 0.024·ΔT^0.44·A^0.725. The limit as for IPC-2221A: §6.2 with IPC-2222 (February 1998) Table 4-1"
+      }
+    },
+    class: { input: "laminate" },
+    value: "chartRise",
+    limit: "limitRise",
+    percent: "limitPercent",
+    limitKind: "maximum",
+    clause: (standard, cls) => `${riseChart(standard).clause}; ${laminateLimit(cls ?? 0).clause}`,
+    rule: (_standard, cls) => laminateLimit(cls ?? 0).rule,
+    remedies: [
+      { input: "traceWidth", output: "minTraceWidth", direction: "up" },
+      { input: "current", output: "maxCurrent", direction: "down" }
+    ],
+    chart: { x: "current", range: [0.1, 100], scale: "log", yScale: "log" }
+  },
   formula: {
     primary: "ΔT = (I / (k × A^c))^(1/b) = (I / (0.048 × A^0.725))^(1/0.44) — IPC-2221 external-layer fit; ΔT₂₁₅₂ = (I / (0.024 × A^0.725))^(1/0.44) — IPC-2152 Figure 5-1; ΔT_board = (1 + m)·ΔT*, ΔT*·G′(ΔT*) = I²·ρ_v(T_A + ΔT*) / (W·t) — rftools thermal model (board-specific)",
     latex: "\\Delta T = \\left(\\frac{I}{k \\cdot A^{0.725}}\\right)^{1/0.44},\\quad k = 0.048 \\text{ (IPC-2221, external)},\\ 0.024 \\text{ (IPC-2152 Fig. 5-1)},\\ A \\text{ in mil}^2;\\qquad \\Delta T_{board} = (1+m)\\,\\Delta T^{*},\\quad \\Delta T^{*}\\,G'(\\Delta T^{*}) = \\frac{I^2\\,\\rho_v(T_A + \\Delta T^{*})}{W\\,t}",
@@ -8938,6 +9843,7 @@ var dcMotorSpeed = {
     },
     {
       key: "loadSpeed",
+      primary: true,
       label: "Speed Under Load",
       symbol: "ω_L",
       unit: "RPM",
@@ -8994,8 +9900,19 @@ var dcMotorSpeed = {
       { symbol: "K_e", description: "Back-EMF constant", unit: "V/RPM" },
       { symbol: "K_t", description: "Torque constant", unit: "N·m/A" }
     ],
-    reference: "Chapman, Electric Machinery Fundamentals"
+    reference: "Chapman, Electric Machinery Fundamentals",
+    substitution: [
+      { symbol: "I_a", expression: "{loadTorque} / {torqueConst}", output: "current" },
+      { symbol: "ω", expression: "({voltage} − I_a × {resistance}) / {backEmfConst}", output: "loadSpeed" },
+      { symbol: "ω₀", expression: "{voltage} / {backEmfConst}", output: "noLoadSpeed" }
+    ]
   },
+  sweep: { input: "loadTorque", range: [0, 2], scale: "linear" },
+  examples: [
+    { id: "hobby-gearmotor-12v", label: "12 V hobby gearmotor", values: { voltage: 12, resistance: 2, backEmfConst: 55e-4, torqueConst: 0.05, loadTorque: 0.02, efficiency: 70 } },
+    { id: "pmdc-24v", label: "24 V industrial PMDC motor", values: { voltage: 24, resistance: 0.4, backEmfConst: 8e-3, torqueConst: 0.076, loadTorque: 0.5, efficiency: 85 } },
+    { id: "drill-18v", label: "18 V cordless drill motor", values: { voltage: 18, resistance: 0.1, backEmfConst: 86e-5, torqueConst: 82e-4, loadTorque: 0.1, efficiency: 75 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["stepper-motor", "power-factor", "buck-converter"],
   relatedBlogPosts: ["battery-runtime-motor", "dc-motor-control-pwm-drivers", "motor-driver-power"]
@@ -9070,6 +9987,7 @@ var stepperMotor = {
   outputs: [
     {
       key: "stepFrequency",
+      primary: true,
       label: "Step Frequency",
       symbol: "f_step",
       unit: "Hz",
@@ -9077,6 +9995,7 @@ var stepperMotor = {
     },
     {
       key: "effectiveSteps",
+      display: { integer: true },
       label: "Effective Steps/Rev",
       symbol: "steps/rev",
       unit: "steps",
@@ -9106,8 +10025,19 @@ var stepperMotor = {
       { symbol: "steps/rev", description: "Full steps per revolution", unit: "steps" },
       { symbol: "microstepping", description: "Microstepping divisor", unit: "" }
     ],
-    reference: "Microchip AN2164 — Stepper Motor Control"
+    reference: "Microchip AN2164 — Stepper Motor Control",
+    substitution: [
+      { symbol: "f_step", expression: "{targetRPM} × {stepsPerRev} × {microstepping} / 60", output: "stepFrequency" },
+      { symbol: "v", expression: "{targetRPM} × {leadScrewPitch} / 60", output: "linearSpeed" },
+      { symbol: "θ", expression: "360° / ({stepsPerRev} × {microstepping})", output: "stepAngle" }
+    ]
   },
+  sweep: { input: "targetRPM", range: [1, 1e3], scale: "linear" },
+  examples: [
+    { id: "printer-gt2-axis", label: "3D printer axis, NEMA 17 on a GT2 belt", values: { stepsPerRev: 200, microstepping: 16, targetRPM: 300, leadScrewPitch: 40 } },
+    { id: "cnc-t8-screw", label: "CNC router, T8 lead screw", values: { stepsPerRev: 200, microstepping: 8, targetRPM: 375, leadScrewPitch: 8 } },
+    { id: "telescope-0p9deg", label: "Telescope drive, 0.9° motor", values: { stepsPerRev: 400, microstepping: 32, targetRPM: 1, leadScrewPitch: 0 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "uart-baud-rate"],
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "torque-unit-converter"]
@@ -9211,7 +10141,8 @@ var shieldingEffectiveness = {
       unit: "",
       defaultValue: 1,
       min: 1
-    }
+    },
+    { key: "targetSE", label: "Target Shielding Effectiveness", symbol: "SE_t", unit: "dB", defaultValue: 40, min: 0, max: 200, tooltip: "The shielding effectiveness the enclosure must reach. The status fails below 20 dB." }
   ],
   outputs: [
     {
@@ -9235,6 +10166,7 @@ var shieldingEffectiveness = {
     },
     {
       key: "totalSE",
+      primary: true,
       label: "Total Shielding Effectiveness",
       symbol: "SE_total",
       unit: "dB",
@@ -9268,6 +10200,12 @@ var shieldingEffectiveness = {
       tooltip: "B = 20·log₁₀|1 − Γ²·e^(−2γt)|: negative for a shield only a few skin depths thick, negligible once A exceeds about 10 dB"
     }
   ],
+  examples: [
+    { id: "copper", label: "Copper", values: { conductivity: 59.6, permeability: 1 } },
+    { id: "aluminum", label: "Aluminum", values: { conductivity: 35, permeability: 1 } },
+    { id: "steel", label: "Steel", values: { conductivity: 10, permeability: 1e3 } },
+    { id: "mu-metal", label: "Mu-metal", values: { conductivity: 1.6, permeability: 2e4 } }
+  ],
   calculate: calculateShieldingEffectiveness,
   formula: {
     primary: "SE = A + R + B,  A = 8.686·(t/δ),  R = 20·log₁₀(η₀/(4|η_s|)),  B = 20·log₁₀|1 − Γ²·e^(−2γt)|",
@@ -9293,8 +10231,25 @@ var shieldingEffectiveness = {
       "B = 20·log₁₀|1 − Γ²·e^(−2γt)|, the waves re-reflected inside the sheet; it is negative when t is a few skin depths or less and vanishes once A > 10 dB",
       "Thin-film limit: when t ≪ δ, A + R + B → 20·log₁₀(1 + η₀·σ·t/2), independent of frequency"
     ],
-    reference: "Ott, Electromagnetic Compatibility Engineering (2009) §6.5; Hubing, LearnEMC, Introduction to Plane-Wave Shielding Theory"
+    reference: "Ott, Electromagnetic Compatibility Engineering (2009) §6.5; Hubing, LearnEMC, Introduction to Plane-Wave Shielding Theory",
+    substitution: [
+      { symbol: "δ", expression: "1 / √(π × {frequency} × μ₀ × {permeability} × {conductivity})", output: "skinDepth" },
+      { symbol: "A", expression: "20·log₁₀(e) × {thickness} / δ", output: "absorptionLoss" },
+      { symbol: "R", expression: "20·log₁₀(η₀ / (4 × √(2π × {frequency} × μ₀ × {permeability} / {conductivity})))", output: "reflectionLoss" },
+      { symbol: "B", expression: "20·log₁₀|1 − Γ² × e^(−2(1 + j) × {thickness} / δ)|", output: "multipleReflectionLoss" },
+      { symbol: "SE", expression: "A + R + B", output: "totalSE" }
+    ]
   },
+  sweep: {
+    input: "frequency",
+    range: [1e-3, 100],
+    scale: "log",
+    lines: [
+      { id: "se-floor", kind: "limit", label: "Minimum", value: () => 20, fails: "below" },
+      { id: "se-target", kind: "target", label: "Target", value: (i) => i.targetSE }
+    ]
+  },
+  target: { output: "totalSE", input: "targetSE", sense: "min", failAt: 20 },
   visualization: { type: "none" },
   relatedCalculators: ["skin-depth", "vswr-return-loss", "db-converter"],
   relatedBlogPosts: ["chassis-resonance", "emc-fcc-ce-testing-guide", "emi-radiated-emissions-pcb-fcc-compliance"]
@@ -9380,6 +10335,7 @@ var wireGauge = {
     },
     {
       key: "crossSection",
+      primary: true,
       label: "Cross-Section Area",
       symbol: "A",
       unit: "mm²",
@@ -9477,6 +10433,7 @@ var capacitorEnergy = {
   outputs: [
     {
       key: "energy",
+      primary: true,
       label: "Stored Energy",
       symbol: "E",
       unit: "mJ",
@@ -9515,8 +10472,19 @@ var capacitorEnergy = {
       { symbol: "I_avg", description: "Average charge current", unit: "A" },
       { symbol: "t", description: "Charge time", unit: "s" }
     ],
-    reference: "Horowitz & Hill, The Art of Electronics"
+    reference: "Horowitz & Hill, The Art of Electronics",
+    substitution: [
+      { symbol: "E", expression: "½ × {capacitance} × {voltage}²", output: "energy" },
+      { symbol: "Q", expression: "{capacitance} × {voltage}", output: "charge" },
+      { symbol: "I_avg", expression: "Q / {chargeTime}", output: "avgChargeCurrent" }
+    ]
   },
+  sweep: { input: "voltage", range: [0, 50], scale: "linear" },
+  examples: [
+    { id: "camera-flash", label: "Camera flash, 330 µF at 300 V", values: { capacitance: 330, voltage: 300, chargeTime: 2e3 } },
+    { id: "supercap-holdup", label: "Supercapacitor hold-up, 1 F at 5 V", values: { capacitance: 1e6, voltage: 5, chargeTime: 1e4 } },
+    { id: "bulk-12v", label: "Bulk capacitor, 1000 µF at 12 V", values: { capacitance: 1e3, voltage: 12, chargeTime: 50 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["rc-time-constant", "lc-resonance", "power-factor"],
   relatedBlogPosts: ["capacitive-proximity", "inrush-current-limiter"]
@@ -9630,6 +10598,7 @@ var powerFactor = {
     },
     {
       key: "correctionCapacitor",
+      primary: true,
       label: "Correction Capacitor",
       symbol: "C",
       unit: "μF",
@@ -9649,8 +10618,19 @@ var powerFactor = {
       { symbol: "f", description: "Supply frequency", unit: "Hz" },
       { symbol: "V", description: "Supply voltage", unit: "V" }
     ],
-    reference: "IEC 60038 standard voltages"
+    reference: "IEC 60038 standard voltages",
+    substitution: [
+      { symbol: "P", expression: "{apparentPower} × {powerFactor}", output: "realPower" },
+      { symbol: "Q", expression: "{apparentPower} × sin(acos({powerFactor}))", output: "reactivePower" },
+      { symbol: "C", expression: "(Q − P × tan(acos({targetPF}))) / (2π × {frequency} × {voltage}²)", output: "correctionCapacitor" }
+    ]
   },
+  sweep: { input: "powerFactor", range: [0.5, 1], scale: "linear" },
+  examples: [
+    { id: "workshop-motor-230v", label: "Workshop motor, 230 V 50 Hz", values: { apparentPower: 5e3, powerFactor: 0.75, voltage: 230, frequency: 50, targetPF: 0.95 } },
+    { id: "plant-load-480v", label: "Plant load, 480 V 60 Hz", values: { apparentPower: 1e5, powerFactor: 0.7, voltage: 480, frequency: 60, targetPF: 0.95 } },
+    { id: "lighting-120v", label: "Fluorescent lighting bank, 120 V 60 Hz", values: { apparentPower: 2e3, powerFactor: 0.6, voltage: 120, frequency: 60, targetPF: 0.9 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["capacitor-energy", "ldo-thermal", "buck-converter"]
 };
@@ -9665,8 +10645,8 @@ function calculateQFactor(inputs) {
     const L = value * 1e-6;
     reactance = omega * L;
   } else {
-    const C9 = value * 1e-9;
-    reactance = 1 / (omega * C9);
+    const C10 = value * 1e-9;
+    reactance = 1 / (omega * C10);
   }
   const qFactor2 = reactance / esr;
   const bandwidth = frequency * 1e3 / qFactor2;
@@ -9712,6 +10692,10 @@ var qFactor = {
       presets: [
         { label: "Inductor", values: { componentType: 0 } },
         { label: "Capacitor", values: { componentType: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Inductor" },
+        { value: 1, label: "Capacitor" }
       ]
     },
     {
@@ -9738,11 +10722,13 @@ var qFactor = {
       unit: "MHz",
       defaultValue: 10,
       min: 1e-3
-    }
+    },
+    { key: "targetQ", label: "Target Q", symbol: "Q_t", unit: "", defaultValue: 50, min: 1, max: 1e4, tooltip: "The quality factor the component must reach, for example from a filter design. The status fails below 10." }
   ],
   outputs: [
     {
       key: "qFactor",
+      primary: true,
       label: "Q Factor",
       symbol: "Q",
       unit: "",
@@ -9791,8 +10777,28 @@ var qFactor = {
       { symbol: "ESR", description: "Equivalent Series Resistance", unit: "Ω" },
       { symbol: "ω", description: "Angular frequency (2πf)", unit: "rad/s" },
       { symbol: "BW", description: "Bandwidth", unit: "Hz" }
+    ],
+    substitution: [
+      { symbol: "X", expression: "2π × {frequency} × L (inductor) or 1 / (2π × {frequency} × C) (capacitor), L or C = {value}", output: "reactance" },
+      { symbol: "Q", expression: "X / {esr}", output: "qFactor" },
+      { symbol: "BW", expression: "{frequency} / Q", output: "bandwidth" }
     ]
   },
+  sweep: {
+    input: "frequency",
+    range: [0.01, 1e3],
+    scale: "log",
+    lines: [
+      { id: "q-floor", kind: "limit", label: "Minimum", value: () => 10, fails: "below" },
+      { id: "q-target", kind: "target", label: "Target", value: (i) => i.targetQ }
+    ]
+  },
+  target: { output: "qFactor", input: "targetQ", sense: "min", failAt: 10 },
+  examples: [
+    { id: "air-core-1uh-30m", label: "Air-core inductor, 1 µH at 30 MHz", values: { componentType: 0, value: 1, esr: 0.5, frequency: 30 } },
+    { id: "c0g-100pf-100m", label: "C0G capacitor, 100 pF at 100 MHz", values: { componentType: 1, value: 0.1, esr: 0.1, frequency: 100 } },
+    { id: "power-inductor-1m", label: "Power inductor, 10 µH at 1 MHz", values: { componentType: 0, value: 10, esr: 0.5, frequency: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["lc-resonance", "vswr-return-loss", "filter-designer"],
   relatedBlogPosts: ["equalizer-q-factor", "impedance-matching-wideband-lna", "lc-resonance"],
@@ -9871,6 +10877,7 @@ var waveguideCutoff = {
       unit: "mm",
       defaultValue: 22.86,
       min: 0.1,
+      max: 1e3,
       presets: [
         { label: "WR-90 (X-band)", values: { width: 22.86, height: 10.16 } },
         { label: "WR-62 (Ku-band)", values: { width: 15.8, height: 7.9 } },
@@ -9892,7 +10899,8 @@ var waveguideCutoff = {
       symbol: "f",
       unit: "GHz",
       defaultValue: 10,
-      min: 0.1
+      min: 0.1,
+      max: 1e3
     },
     {
       key: "modeM",
@@ -9918,6 +10926,7 @@ var waveguideCutoff = {
   outputs: [
     {
       key: "cutoffFreq",
+      primary: true,
       label: "Cutoff Frequency",
       symbol: "f_c",
       unit: "GHz",
@@ -9952,6 +10961,15 @@ var waveguideCutoff = {
       precision: 0
     }
   ],
+  // Each guide at a frequency inside its band: at the 10 GHz default WR-42 and
+  // WR-28 are below cutoff.
+  examples: [
+    { id: "wr-90", label: "WR-90 (X-band)", values: { width: 22.86, height: 10.16, frequency: 10 } },
+    { id: "wr-62", label: "WR-62 (Ku-band)", values: { width: 15.8, height: 7.9, frequency: 15 } },
+    { id: "wr-42", label: "WR-42 (K-band)", values: { width: 10.668, height: 4.318, frequency: 22 } },
+    { id: "wr-28", label: "WR-28 (Ka-band)", values: { width: 7.112, height: 3.556, frequency: 33 } },
+    { id: "wr-284", label: "WR-284 (S-band radar), 3 GHz", values: { width: 72.136, height: 34.036, frequency: 3 } }
+  ],
   calculate: calculateWaveguideCutoff,
   formula: {
     primary: "f_c(m,n) = (c/2)×√((m/a)²+(n/b)²)",
@@ -9969,6 +10987,14 @@ var waveguideCutoff = {
     reference: "Pozar, Microwave Engineering 4th Ed., Chapter 3"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "waveguide", roles: { a: "width", b: "height", f: "frequency", m: "modeM", n: "modeN" } },
+    synthesis: [
+      { output: "cutoffFreq", solveFor: ["width"] },
+      { output: "guideWavelength", solveFor: ["frequency", "width"] }
+    ],
+    curve: { x: "width", y: "cutoffFreq", range: [5, 200], scale: "log" }
+  },
   relatedCalculators: ["microstrip-impedance", "coax-impedance", "wavelength-frequency", "circular-waveguide"],
   methodology: {
     references: [
@@ -10090,6 +11116,7 @@ var zenerDiode = {
   outputs: [
     {
       key: "seriesResistor",
+      primary: true,
       label: "Series Resistor",
       symbol: "R_S",
       unit: "Ω",
@@ -10220,6 +11247,7 @@ var inductorEnergy = {
   outputs: [
     {
       key: "energy",
+      primary: true,
       label: "Stored Energy",
       symbol: "E",
       unit: "μJ",
@@ -10393,6 +11421,7 @@ var boostConverter = {
     },
     {
       key: "inductorValue",
+      primary: true,
       label: "Inductor Value",
       symbol: "L",
       unit: "μH",
@@ -10481,6 +11510,10 @@ var threePhasePower = {
       presets: [
         { label: "Wye (Star)", values: { connectionType: 0 } },
         { label: "Delta", values: { connectionType: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Wye (star)" },
+        { value: 1, label: "Delta" }
       ]
     },
     {
@@ -10520,6 +11553,7 @@ var threePhasePower = {
     },
     {
       key: "realPower",
+      primary: true,
       label: "Real Power",
       symbol: "P",
       unit: "kW",
@@ -10557,8 +11591,19 @@ var threePhasePower = {
       { symbol: "V_L", description: "Line voltage", unit: "V" },
       { symbol: "I", description: "Line current", unit: "A" },
       { symbol: "PF", description: "Power factor", unit: "" }
+    ],
+    substitution: [
+      { symbol: "S", expression: "√3 × {lineVoltage} × {current}", output: "apparentPower" },
+      { symbol: "P", expression: "S × {powerFactor}", output: "realPower" },
+      { symbol: "Q", expression: "S × sin(acos({powerFactor}))", output: "reactivePower" }
     ]
   },
+  sweep: { input: "current", range: [0, 100], scale: "linear" },
+  examples: [
+    { id: "eu-motor-400v", label: "400 V motor at 28 A", values: { connectionType: 0, lineVoltage: 400, current: 28, powerFactor: 0.86 } },
+    { id: "us-feeder-480v", label: "480 V plant feeder at 100 A", values: { connectionType: 1, lineVoltage: 480, current: 100, powerFactor: 0.9 } },
+    { id: "dc-pdu-208v", label: "208 V data centre PDU at 24 A", values: { connectionType: 0, lineVoltage: 208, current: 24, powerFactor: 0.95 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["power-factor", "voltage-divider", "dc-motor-speed"]
 };
@@ -10642,6 +11687,7 @@ var antennaBeamwidth = {
   outputs: [
     {
       key: "beamwidthHPBW",
+      primary: true,
       label: "3 dB Beamwidth",
       symbol: "θ_3dB",
       unit: "°",
@@ -10670,6 +11716,7 @@ var antennaBeamwidth = {
     },
     {
       key: "gainFromAperture",
+      signed: "explicit",
       label: "Gain from Aperture",
       symbol: "G_aperture",
       unit: "dBi",
@@ -10685,8 +11732,19 @@ var antennaBeamwidth = {
       { symbol: "D", description: "Aperture diameter", unit: "m" },
       { symbol: "η_a", description: "Aperture efficiency", unit: "" },
       { symbol: "G", description: "Gain", unit: "dBi" }
+    ],
+    substitution: [
+      { symbol: "λ", expression: "c / {frequency}", output: "wavelength" },
+      { symbol: "θ₃dB", expression: "70° × λ / {apertureDiameter}", output: "beamwidthHPBW" },
+      { symbol: "G", expression: "10·log₁₀({apertureEfficiency} × (π × {apertureDiameter} / λ)²)", output: "gainFromAperture" }
     ]
   },
+  sweep: { input: "apertureDiameter", range: [0.1, 10], scale: "log" },
+  examples: [
+    { id: "ku-60cm-dish", label: "Ku-band 60 cm TV dish", values: { gain: 36, frequency: 12, apertureDiameter: 0.6, apertureEfficiency: 65 } },
+    { id: "c-band-2m4", label: "C-band 2.4 m earth station", values: { gain: 38, frequency: 4, apertureDiameter: 2.4, apertureEfficiency: 65 } },
+    { id: "x-band-30cm", label: "X-band 30 cm radar dish", values: { gain: 28, frequency: 10, apertureDiameter: 0.3, apertureEfficiency: 55 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["eirp-calculator", "dipole-antenna", "patch-antenna", "antenna-downtilt"],
   relatedBlogPosts: ["power-density"],
@@ -10775,11 +11833,13 @@ var snrCalculator = {
       unit: "K",
       defaultValue: 290,
       min: 1
-    }
+    },
+    { key: "targetSnr", label: "Target SNR", symbol: "SNR_t", unit: "dB", defaultValue: 20, min: -20, max: 100, tooltip: "The signal-to-noise ratio the demodulator needs. The status fails below 10 dB." }
   ],
   outputs: [
     {
       key: "snr",
+      primary: true,
       label: "Signal-to-Noise Ratio",
       symbol: "SNR",
       unit: "dB",
@@ -10829,8 +11889,28 @@ var snrCalculator = {
       { symbol: "NF", description: "Noise figure", unit: "dB" },
       { symbol: "SNR", description: "Signal-to-noise ratio", unit: "dB" }
     ],
-    reference: "Friis, 'Noise Figures of Radio Receivers', Proc. IRE, 1944"
+    reference: "Friis, 'Noise Figures of Radio Receivers', Proc. IRE, 1944",
+    substitution: [
+      { symbol: "kTB", expression: "10·log₁₀(k × {temperature} × {bandwidth}) + 30", output: "thermalNoise" },
+      { symbol: "N", expression: "kTB + {noiseFigure}", output: "noiseFloor" },
+      { symbol: "SNR", expression: "{signalPower} − N", output: "snr" }
+    ]
   },
+  sweep: {
+    input: "signalPower",
+    range: [-140, -20],
+    scale: "linear",
+    lines: [
+      { id: "snr-floor", kind: "limit", label: "Minimum", value: () => 10, fails: "below" },
+      { id: "snr-target", kind: "target", label: "Target", value: (i) => i.targetSnr }
+    ]
+  },
+  target: { output: "snr", input: "targetSnr", sense: "min", failAt: 10 },
+  examples: [
+    { id: "wifi-20mhz", label: "Wi-Fi 20 MHz channel at −70 dBm", values: { bandwidth: 20, noiseFigure: 6, signalPower: -70, temperature: 290 } },
+    { id: "lora-125k", label: "LoRa 125 kHz channel at −120 dBm", values: { bandwidth: 0.125, noiseFigure: 6, signalPower: -120, temperature: 290 } },
+    { id: "gnss-l1", label: "GNSS L1 front end, 2 MHz", values: { bandwidth: 2, noiseFigure: 2, signalPower: -125, temperature: 290 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["noise-figure-cascade", "rf-link-budget", "filter-designer"],
   relatedBlogPosts: ["am-modulation-index", "ber-snr", "ber-vs-snr-digital-communications"]
@@ -10862,6 +11942,8 @@ function calculateControlledImpedance(inputs) {
   }
   const { Z0: impedance, erEff: effectiveDielectric } = computeZ0(traceWidth);
   const propagationDelay = Math.sqrt(effectiveDielectric) / C_MM_PER_PS;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = C_MM_PER_PS * 1e3 / (frequency * Math.sqrt(effectiveDielectric));
   let lo = 0.01, hi = 20;
   for (let i = 0; i < 50; i++) {
     const mid = (lo + hi) / 2;
@@ -10878,7 +11960,9 @@ function calculateControlledImpedance(inputs) {
       impedance,
       effectiveDielectric,
       propagationDelay,
-      traceWidthFor50
+      traceWidthFor50,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -10912,6 +11996,11 @@ var controlledImpedance = {
         { label: "Surface Microstrip", values: { traceType: 0 } },
         { label: "Embedded Microstrip", values: { traceType: 1 } },
         { label: "Stripline", values: { traceType: 2 } }
+      ],
+      options: [
+        { value: 0, label: "Surface microstrip" },
+        { value: 1, label: "Embedded microstrip" },
+        { value: 2, label: "Stripline" }
       ]
     },
     {
@@ -10921,6 +12010,8 @@ var controlledImpedance = {
       unit: "mm",
       defaultValue: 1.8,
       min: 0.05,
+      // The range the 50 Ω width is searched over; synthesis searches it too.
+      max: 20,
       step: 0.05
     },
     {
@@ -10930,6 +12021,7 @@ var controlledImpedance = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 10,
       step: 0.01
     },
     {
@@ -10938,13 +12030,8 @@ var controlledImpedance = {
       symbol: "εr",
       unit: "",
       defaultValue: 4.4,
-      min: 1,
-      presets: [
-        { label: "FR4 (4.4)", values: { dielectricConst: 4.4 } },
-        { label: "Rogers RO4003 (3.55)", values: { dielectricConst: 3.55 } },
-        { label: "Rogers RO4350 (3.66)", values: { dielectricConst: 3.66 } },
-        { label: "PTFE (2.1)", values: { dielectricConst: 2.1 } }
-      ]
+      min: 1
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -10976,11 +12063,22 @@ var controlledImpedance = {
         { label: "Prepreg FR4 (4.2)", values: { coverDielectric: 4.2 } },
         { label: "Conformal coating (3.0)", values: { coverDielectric: 3 } }
       ]
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
     {
       key: "impedance",
+      primary: true,
       label: "Characteristic Impedance",
       symbol: "Z₀",
       unit: "Ω",
@@ -11011,7 +12109,29 @@ var controlledImpedance = {
       symbol: "W_50Ω",
       unit: "mm",
       precision: 3
+    },
+    {
+      key: "guidedWavelength",
+      label: "Guided Wavelength",
+      symbol: "λg",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
+    },
+    {
+      key: "quarterWavelength",
+      label: "Quarter Wavelength",
+      symbol: "λg/4",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
     }
+  ],
+  examples: [
+    { id: "surface-fr4-0-2-mm-50-ohm", label: "50 Ω surface microstrip on 0.2 mm FR-4", values: { traceType: 0, traceWidth: 0.345, substrateHeight: 0.2, dielectricConst: 4.4, copperThickness: 35 } },
+    { id: "soldermask-fr4-0-2-mm-50-ohm", label: "50 Ω under 25 µm soldermask on 0.2 mm FR-4", values: { traceType: 1, traceWidth: 0.328, substrateHeight: 0.2, dielectricConst: 4.4, copperThickness: 35, coverHeight: 0.025, coverDielectric: 3.5 } },
+    { id: "stripline-fr4-0-4-mm-50-ohm", label: "50 Ω stripline, planes 0.4 mm apart, FR-4", values: { traceType: 2, traceWidth: 0.138, substrateHeight: 0.2, dielectricConst: 4.4, copperThickness: 17.5 } },
+    { id: "surface-ro4350b-0-508-mm-50-ohm", label: "50 Ω on 0.508 mm RO4350B", values: { traceType: 0, traceWidth: 1.064, substrateHeight: 0.508, dielectricConst: 3.66, copperThickness: 35 } }
   ],
   calculate: calculateControlledImpedance,
   formula: {
@@ -11038,6 +12158,17 @@ var controlledImpedance = {
     reference: "Hammerstad & Jensen, IEEE MTT-S 1980; stripline core verified against the field solver committed in src/lib/pcb/__tests__/solver. The covered-microstrip filling factors are fitted to a layered solve."
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "microstrip",
+      roles: { w: "traceWidth", h: "substrateHeight", t: "copperThickness", er: "dielectricConst", cover: "coverHeight", coverEr: "coverDielectric" },
+      // Stripline is centred: a plane h above and h below the trace.
+      variant: { input: "traceType", byValue: { 1: "embedded", 2: "stripline" } }
+    },
+    synthesis: [{ output: "impedance", solveFor: ["traceWidth", "substrateHeight"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "impedance", range: [0.05, 5], scale: "log" }
+  },
   relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-resistance", "edge-coupled-internal-symmetric", "edge-coupled-embedded"],
   relatedTools: ["pdn-impedance"],
   relatedBlogPosts: ["decoupling-capacitor", "ethernet-cable", "eye-diagram-signal-integrity-10gbps"]
@@ -11187,6 +12318,7 @@ var ferriteBead = {
     },
     {
       key: "insertionLoss",
+      primary: true,
       label: "Insertion Loss",
       symbol: "IL",
       unit: "dB",
@@ -11228,8 +12360,18 @@ var ferriteBead = {
       "A series impedance between R_S and R_L: IL = 20·log₁₀|(R_S + R_L + Z_bead)/(R_S + R_L)| and V_L/V_S = |R_L/(R_S + R_L + Z_bead)|",
       "The default L = 1.208 µH and C = 1.678 pF are AN-1368's fit of a Tyco BMB2A1000LN2"
     ],
+    substitution: [
+      { symbol: "Z", expression: "|{dcResistance} + (1/R_AC + 1/(j2π × {frequency} × {beadInductance}) + j2π × {frequency} × {parasiticCapacitance})⁻¹|", output: "beadImpedance" },
+      { symbol: "IL", expression: "20·log₁₀(|{sourceImpedance} + {loadImpedance} + Z| / ({sourceImpedance} + {loadImpedance}))", output: "insertionLoss" }
+    ],
     reference: "Eco & Limjoco, Ferrite Bead Demystified, Analog Devices AN-1368 (Rev. 0, 2015), Figure 3 and eqs. 1-2; Paul, Introduction to Electromagnetic Compatibility, 2nd ed. (2006), insertion loss of a series element"
   },
+  sweep: { input: "frequency", range: [1, 1e3], scale: "log" },
+  examples: [
+    { id: "bead-600-50ohm", label: "600 Ω bead on a 50 Ω line", values: { impedance100MHz: 600, dcResistance: 0.3, loadImpedance: 50, frequency: 100 } },
+    { id: "bead-220-rail", label: "220 Ω bead feeding a 10 Ω supply load", values: { impedance100MHz: 220, dcResistance: 0.05, loadImpedance: 10, frequency: 100 } },
+    { id: "bead-usb-480m", label: "90 Ω bead on a USB 2.0 line at 480 MHz", values: { impedance100MHz: 90, dcResistance: 0.2, loadImpedance: 90, frequency: 480 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["shielding-effectiveness", "filter-designer", "microstrip-impedance"],
   relatedBlogPosts: ["emc-fcc-ce-testing-guide"],
@@ -11311,6 +12453,7 @@ var freeSpacePathLoss = {
   outputs: [
     {
       key: "fspl_dB",
+      primary: true,
       label: "Free-Space Path Loss",
       symbol: "FSPL",
       unit: "dB",
@@ -11339,8 +12482,18 @@ var freeSpacePathLoss = {
       { symbol: "f", description: "Signal frequency", unit: "Hz" },
       { symbol: "c", description: "Speed of light (299792458)", unit: "m/s" },
       { symbol: "λ", description: "Wavelength (c/f)", unit: "m" }
+    ],
+    substitution: [
+      { symbol: "FSPL", expression: "20·log₁₀(4π × {distance} × {frequency} / c)", output: "fspl_dB" }
     ]
   },
+  sweep: { input: "distance", range: [1e-3, 1e3], scale: "log" },
+  examples: [
+    { id: "wifi-100m", label: "2.4 GHz Wi-Fi, 100 m", values: { frequency: 2400, distance: 0.1 } },
+    { id: "lora-868-15km", label: "868 MHz LoRa, 15 km", values: { frequency: 868, distance: 15 } },
+    { id: "mmwave-28g-200m", label: "28 GHz 5G small cell, 200 m", values: { frequency: 28e3, distance: 0.2 } },
+    { id: "geo-ku-downlink", label: "Geostationary Ku-band downlink", values: { frequency: 12e3, distance: 35786 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "eirp-calculator", "wavelength-frequency", "lora-link-budget", "ble-link-budget", "5g-nr-link-budget"],
   relatedTools: ["sat-link-budget"],
@@ -11382,9 +12535,9 @@ function calculateRadarRangeEquation(inputs) {
   const B_Hz = bandwidth * 1e6;
   const k = 1380649e-29;
   const T = 290;
-  const A = Math.log(0.62 / pfa);
+  const A2 = Math.log(0.62 / pfa);
   const Bd = Math.log(pd / (1 - pd));
-  const argument = A + 0.12 * A * Bd + 1.7 * Bd;
+  const argument = A2 + 0.12 * A2 * Bd + 1.7 * Bd;
   if (!(argument > 0)) {
     return { values: {}, errors: ["Albersheim's equation has no solution for this P_d and P_fa: P_d must be well above P_fa"] };
   }
@@ -11518,6 +12671,7 @@ var radarRangeEquation = {
   outputs: [
     {
       key: "maxRange",
+      primary: true,
       label: "Maximum Detection Range",
       symbol: "R_max",
       unit: "km",
@@ -11560,8 +12714,19 @@ var radarRangeEquation = {
       "So R_max = R(SNR = 1)·10^(−SNR_req/40)",
       "P_d 0.9 and P_fa 10⁻⁶ need 13.11 dB for one pulse (Skolnik, Fig. 2.7: 13.2 dB; the exact single-pulse value is 13.18 dB)"
     ],
-    reference: "Albersheim, A closed-form approximation to Robertson's detection characteristics, Proc. IEEE 69(7), 1981, p. 839; Skolnik, Introduction to Radar Systems, 3rd ed. (2001), Fig. 2.7"
+    reference: "Albersheim, A closed-form approximation to Robertson's detection characteristics, Proc. IEEE 69(7), 1981, p. 839; Skolnik, Introduction to Radar Systems, 3rd ed. (2001), Fig. 2.7",
+    substitution: [
+      { symbol: "SNR_req", expression: "Albersheim at P_d = {pd}, P_fa = {pfa}, N = {pulses}", output: "snrAtMaxRange" },
+      { symbol: "R_max", expression: "({peakPower} × G² × λ² × {rcs} / ((4π)³ × k × 290 K × {bandwidth} × F))^¼ × 10^(−SNR_req/40), G = {gain}, F = {noiseFigure}, λ = c / {frequency}", output: "maxRange" },
+      { symbol: "P_r", expression: "10·log₁₀({peakPower} × G² × λ² × {rcs} / ((4π)³ × (1 km)⁴))", output: "receivedPower" }
+    ]
   },
+  sweep: { input: "rcs", range: [0.01, 100], scale: "log" },
+  examples: [
+    { id: "s-band-surveillance", label: "S-band air surveillance, 2 m² aircraft", values: { peakPower: 1e3, gain: 33, frequency: 3, rcs: 2, noiseFigure: 4, bandwidth: 1 } },
+    { id: "x-band-marine", label: "X-band marine radar, small boat", values: { peakPower: 25, gain: 30, frequency: 9.4, rcs: 10, noiseFigure: 6, bandwidth: 20 } },
+    { id: "automotive-77g", label: "77 GHz automotive radar, car ahead", values: { peakPower: 1e-3, gain: 25, frequency: 77, rcs: 10, noiseFigure: 12, bandwidth: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "noise-figure-cascade", "eirp-calculator"],
   relatedBlogPosts: ["radar-detection-monte-carlo-pulsed-radar", "radar-detection-monte-carlo"],
@@ -11666,11 +12831,13 @@ var powerAmplifierEfficiency = {
       defaultValue: 500,
       min: 0.1,
       tooltip: "DC current draw from supply in mA"
-    }
+    },
+    { key: "targetPae", label: "Target PAE", symbol: "PAE_t", unit: "%", defaultValue: 40, min: 0, max: 100, tooltip: "The power-added efficiency the amplifier must reach. The status fails below 20 %." }
   ],
   outputs: [
     {
       key: "gain",
+      signed: "explicit",
       label: "Gain",
       symbol: "G",
       unit: "dB",
@@ -11685,6 +12852,7 @@ var powerAmplifierEfficiency = {
     },
     {
       key: "pae",
+      primary: true,
       label: "Power-Added Efficiency",
       symbol: "PAE",
       unit: "%",
@@ -11724,8 +12892,28 @@ var powerAmplifierEfficiency = {
       { symbol: "Pin", description: "RF input power", unit: "mW" },
       { symbol: "Pdc", description: "DC supply power (Vdc × Idc)", unit: "mW" },
       { symbol: "η_D", description: "Drain efficiency (Pout/Pdc)", unit: "%" }
+    ],
+    substitution: [
+      { symbol: "P_DC", expression: "{dcVoltage} × {dcCurrent}", output: "dcPower" },
+      { symbol: "PAE", expression: "(10^({outputPower}/10) − 10^({inputPower}/10)) mW / P_DC", output: "pae" },
+      { symbol: "η_D", expression: "10^({outputPower}/10) mW / P_DC", output: "drainEfficiency" }
     ]
   },
+  sweep: {
+    input: "dcCurrent",
+    range: [250, 2500],
+    scale: "log",
+    lines: [
+      { id: "pae-floor", kind: "limit", label: "Minimum", value: () => 20, fails: "below" },
+      { id: "pae-target", kind: "target", label: "Target", value: (i) => i.targetPae }
+    ]
+  },
+  target: { output: "pae", input: "targetPae", sense: "min", failAt: 20 },
+  examples: [
+    { id: "class-ab-1w-900m", label: "Class-AB 1 W PA at 900 MHz", values: { outputPower: 30, inputPower: 10, dcVoltage: 5, dcCurrent: 450 } },
+    { id: "gan-10w-28v", label: "GaN 10 W PA on 28 V", values: { outputPower: 40, inputPower: 27, dcVoltage: 28, dcCurrent: 600 } },
+    { id: "lte-handset-pa", label: "LTE handset PA on 3.4 V", values: { outputPower: 27, inputPower: 0, dcVoltage: 3.4, dcCurrent: 300 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["rf-link-budget", "db-converter", "noise-figure-cascade"],
   relatedBlogPosts: ["class-d-efficiency", "current-mirror", "heatsink-selection"],
@@ -11867,6 +13055,7 @@ var intermodulationDistortion = {
     },
     {
       key: "im3Ratio",
+      primary: true,
       label: "IM3 to Carrier Ratio",
       symbol: "IM3",
       unit: "dBc",
@@ -12109,7 +13298,11 @@ var phaseNoiseToJitter = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = Single flat phase noise, 1 = Multi-point profile for accurate integration"
+      tooltip: "Multi-point integrates a four-point L(f) profile instead of one flat level",
+      options: [
+        { value: 0, label: "Single flat level" },
+        { value: 1, label: "Multi-point profile" }
+      ]
     },
     {
       key: "offset2",
@@ -12169,6 +13362,7 @@ var phaseNoiseToJitter = {
   outputs: [
     {
       key: "rmsJitter",
+      primary: true,
       label: "RMS Jitter",
       symbol: "J_rms",
       unit: "ps",
@@ -12345,6 +13539,7 @@ var vibrationPhaseNoise = {
   outputs: [
     {
       key: "lvib",
+      primary: true,
       label: "Sinusoidal Vibration Sideband at ±f_vib",
       symbol: "L_vib",
       unit: "dBc",
@@ -12373,6 +13568,7 @@ var vibrationPhaseNoise = {
     },
     {
       key: "degradation",
+      signed: "explicit",
       label: "Degradation vs Quiescent",
       symbol: "ΔL",
       unit: "dB",
@@ -12505,7 +13701,8 @@ var returnLossError = {
       max: 60,
       step: 0.5,
       tooltip: "Return loss of the measurement source port (how well the source is matched)"
-    }
+    },
+    { key: "targetUncertainty", label: "Target Uncertainty", symbol: "ΔRL_t", unit: "dB", defaultValue: 3, min: 0.01, max: 30, tooltip: "The largest return loss uncertainty the measurement may have. The status fails above 6 dB." }
   ],
   outputs: [
     {
@@ -12526,6 +13723,7 @@ var returnLossError = {
     },
     {
       key: "uncertaintyDb",
+      primary: true,
       label: "Measurement Uncertainty",
       symbol: "\\Delta RL",
       unit: "dB",
@@ -12575,8 +13773,28 @@ var returnLossError = {
       "Additionally, some of the reflected signal re-reflects off the imperfect source match, traverses the DUT twice (hence rho_DUT squared), and adds to the measurement.",
       "Since the phases of these error terms are generally unknown, we compute the worst-case bounds assuming all vectors align (maximum error) or oppose (minimum error)."
     ],
-    reference: "Agilent AN 1287-3: Applying Error Correction to VNA Measurements"
+    reference: "Agilent AN 1287-3: Applying Error Correction to VNA Measurements",
+    substitution: [
+      { symbol: "RL_worst", expression: "−20·log₁₀(10^(−{dutReturnLoss}/20) + 10^(−{directivity}/20) + ρ_DUT² × 10^(−{sourceMatch}/20))", output: "rlMin" },
+      { symbol: "RL_best", expression: "−20·log₁₀(|10^(−{dutReturnLoss}/20) − 10^(−{directivity}/20) − ρ_DUT² × 10^(−{sourceMatch}/20)|)", output: "rlMax" },
+      { symbol: "ΔRL", expression: "RL_best − RL_worst", output: "uncertaintyDb" }
+    ]
   },
+  sweep: {
+    input: "directivity",
+    range: [20, 50],
+    scale: "linear",
+    lines: [
+      { id: "uncertainty-ceiling", kind: "limit", label: "Maximum", value: () => 6, fails: "above" },
+      { id: "uncertainty-target", kind: "target", label: "Target", value: (i) => i.targetUncertainty }
+    ]
+  },
+  target: { output: "uncertaintyDb", input: "targetUncertainty", sense: "max", failAt: 6 },
+  examples: [
+    { id: "bridge-40db", label: "Return-loss bridge, 40 dB directivity", values: { dutReturnLoss: 20, directivity: 40, sourceMatch: 30 } },
+    { id: "coupler-25db", label: "Low-cost coupler, 25 dB directivity", values: { dutReturnLoss: 15, directivity: 25, sourceMatch: 20 } },
+    { id: "calibrated-vna", label: "Calibrated VNA, 46 dB effective directivity", values: { dutReturnLoss: 30, directivity: 46, sourceMatch: 40 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["vswr-return-loss", "noise-figure-cascade", "rf-link-budget", "directional-coupler"],
   liveWidgets: [
@@ -12693,7 +13911,8 @@ var adcSnr = {
       defaultValue: 1,
       min: 1e-3,
       tooltip: "RMS aperture jitter of the ADC sampling clock in picoseconds"
-    }
+    },
+    { key: "targetSnr", label: "Target SNR", symbol: "SNR_t", unit: "dB", defaultValue: 60, min: 0, max: 200, tooltip: "The signal-to-noise ratio the converter must reach. The status fails below 40 dB." }
   ],
   outputs: [
     {
@@ -12705,6 +13924,7 @@ var adcSnr = {
     },
     {
       key: "snrWithJitter",
+      primary: true,
       label: "Effective SNR (with Jitter)",
       symbol: "SNR_eff",
       unit: "dB",
@@ -12766,8 +13986,28 @@ var adcSnr = {
       { symbol: "NZ", description: "Nyquist zone of the input", unit: "" },
       { symbol: "f_alias", description: "Alias frequency (the image nearest DC)", unit: "Hz" }
     ],
+    substitution: [
+      { symbol: "SNR_q", expression: "20·log₁₀(2) × {bits} + 10·log₁₀(1.5)", output: "theoreticalSnr" },
+      { symbol: "SNR", expression: "−10·log₁₀(10^(−SNR_q/10) + (2π × {inputFreq} × {jitter})²)", output: "snrWithJitter" },
+      { symbol: "ENOB", expression: "(SNR − 10·log₁₀(1.5)) / (20·log₁₀ 2)", output: "enob" }
+    ],
     reference: "Nyquist zones and alias: Kester, Analog Devices MT-002, Rev. A (10/08), Figure 5"
   },
+  sweep: {
+    input: "inputFreq",
+    range: [0.01, 1e3],
+    scale: "log",
+    lines: [
+      { id: "snr-floor", kind: "limit", label: "Minimum", value: () => 40, fails: "below" },
+      { id: "snr-target", kind: "target", label: "Target", value: (i) => i.targetSnr }
+    ]
+  },
+  target: { output: "snrWithJitter", input: "targetSnr", sense: "min", failAt: 40 },
+  examples: [
+    { id: "if-sampling-12b", label: "12-bit, 100 MSPS IF sampling at 70 MHz", values: { bits: 12, inputFreq: 70, samplingFreq: 100, jitter: 0.2 } },
+    { id: "precision-16b-audio", label: "16-bit audio-band converter", values: { bits: 16, inputFreq: 0.02, samplingFreq: 0.192, jitter: 10 } },
+    { id: "rf-sampling-14b", label: "14-bit, 250 MSPS undersampling a 1.1 GHz input", values: { bits: 14, inputFreq: 1100, samplingFreq: 250, jitter: 0.1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["sampling-nyquist", "snr-calculator", "johnson-noise"],
   relatedBlogPosts: ["accelerometer-sensitivity", "ber-snr", "pressure-bridge-output"],
@@ -12864,12 +14104,18 @@ var fftBinResolution = {
         { label: "Rectangular", values: { windowType: 0 } },
         { label: "Hann", values: { windowType: 1 } },
         { label: "Blackman", values: { windowType: 2 } }
+      ],
+      options: [
+        { value: 0, label: "Rectangular" },
+        { value: 1, label: "Hann" },
+        { value: 2, label: "Blackman" }
       ]
     }
   ],
   outputs: [
     {
       key: "binResolution",
+      primary: true,
       label: "Frequency Bin Resolution",
       symbol: "Δf",
       unit: "Hz",
@@ -12891,6 +14137,7 @@ var fftBinResolution = {
     },
     {
       key: "noiseFloor",
+      signed: "explicit",
       label: "FFT Processing Gain",
       symbol: "G_proc",
       unit: "dB",
@@ -13001,6 +14248,7 @@ var johnsonNoise = {
   outputs: [
     {
       key: "noiseVoltage",
+      primary: true,
       label: "RMS Noise Voltage",
       symbol: "V_n",
       unit: "nV",
@@ -13038,8 +14286,18 @@ var johnsonNoise = {
       { symbol: "T", description: "Absolute temperature", unit: "K" },
       { symbol: "R", description: "Resistance", unit: "Ω" },
       { symbol: "B", description: "Noise bandwidth", unit: "Hz" }
+    ],
+    substitution: [
+      { symbol: "Vₙ", expression: "√(4 × k × ({temperature} + 273.15) × {resistance} × {bandwidth})", output: "noiseVoltage" },
+      { symbol: "Pₙ", expression: "10·log₁₀(k × T × {bandwidth}) + 30", output: "noisePower" }
     ]
   },
+  sweep: { input: "resistance", range: [1, 1e6], scale: "log" },
+  examples: [
+    { id: "rf-50ohm-1m", label: "50 Ω RF input, 1 MHz", values: { resistance: 50, temperature: 25, bandwidth: 1 } },
+    { id: "scope-1meg-20m", label: "1 MΩ oscilloscope input, 20 MHz", values: { resistance: 1e6, temperature: 25, bandwidth: 20 } },
+    { id: "audio-10k-20k", label: "10 kΩ audio source, 20 kHz", values: { resistance: 1e4, temperature: 25, bandwidth: 0.02 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["noise-figure-cascade", "snr-calculator", "adc-snr"],
   relatedBlogPosts: ["quantization-noise"]
@@ -13126,6 +14384,7 @@ var amModulationIndex = {
   outputs: [
     {
       key: "modulationIndex",
+      primary: true,
       label: "Modulation Index",
       symbol: "m",
       unit: "%",
@@ -13253,6 +14512,7 @@ var fmModulationIndex = {
   outputs: [
     {
       key: "modulationIndex",
+      primary: true,
       label: "Modulation Index (β)",
       symbol: "β",
       unit: "",
@@ -13274,6 +14534,7 @@ var fmModulationIndex = {
     },
     {
       key: "snrImprovement",
+      signed: "explicit",
       label: "SNR Improvement",
       symbol: "ΔSNR",
       unit: "dB",
@@ -13374,7 +14635,7 @@ var oversamplingSnr = {
       min: 0,
       max: 5,
       step: 1,
-      tooltip: "0 = no shaping (simple oversampling), 1 = 1st order, 2 = 2nd order, etc.",
+      tooltip: "Order of the noise-shaping loop; 0 is plain oversampling with no shaping",
       presets: [
         { label: "None (0)", values: { noiseShapingOrder: 0 } },
         { label: "1st order", values: { noiseShapingOrder: 1 } },
@@ -13393,6 +14654,7 @@ var oversamplingSnr = {
     },
     {
       key: "oversampledSnr",
+      primary: true,
       label: "Oversampled SNR",
       symbol: "SNR_os",
       unit: "dB",
@@ -13407,6 +14669,7 @@ var oversamplingSnr = {
     },
     {
       key: "snrImprovement",
+      signed: "explicit",
       label: "SNR Improvement",
       symbol: "ΔSNR",
       unit: "dB",
@@ -13515,6 +14778,8 @@ var digitalFilterOrder = {
   outputs: [
     {
       key: "butterworthOrder",
+      primary: true,
+      display: { integer: true },
       label: "Butterworth Order",
       symbol: "n_BW",
       unit: "",
@@ -13522,6 +14787,7 @@ var digitalFilterOrder = {
     },
     {
       key: "chebyshevOrder",
+      display: { integer: true },
       label: "Chebyshev Order",
       symbol: "n_CH",
       unit: "",
@@ -13529,6 +14795,7 @@ var digitalFilterOrder = {
     },
     {
       key: "ellipticOrder",
+      display: { integer: true },
       label: "Elliptic Order (approx)",
       symbol: "n_EL",
       unit: "",
@@ -13609,6 +14876,7 @@ var yagiAntenna = {
       unit: "MHz",
       defaultValue: 144,
       min: 1,
+      max: 1e4,
       tooltip: "Operating frequency in MHz",
       presets: [
         { label: "144 MHz (2m)", values: { frequency: 144 } },
@@ -13635,6 +14903,8 @@ var yagiAntenna = {
   outputs: [
     {
       key: "gain",
+      primary: true,
+      signed: "explicit",
       label: "Estimated Gain",
       symbol: "G",
       unit: "dBi",
@@ -13684,6 +14954,13 @@ var yagiAntenna = {
       tooltip: "The boom the model assumes: N − 1 gaps of 0.2λ between N elements"
     }
   ],
+  // Each boom is the length the 0.2λ spacing gives, (N − 1) × 0.2λ.
+  examples: [
+    { id: "six-metre-3el", label: "6 m band, 3 elements, 50.1 MHz", values: { frequency: 50.1, numElements: 3 } },
+    { id: "two-metre-5el", label: "2 m band, 5 elements, 144 MHz", values: { frequency: 144, numElements: 5 } },
+    { id: "seventy-cm-7el", label: "70 cm band, 7 elements, 432 MHz", values: { frequency: 432, numElements: 7 } },
+    { id: "twenty-three-cm-15el", label: "23 cm band, 15 elements, 1296 MHz", values: { frequency: 1296, numElements: 15 } }
+  ],
   calculate: calculateYagiAntenna,
   formula: {
     primary: "λ = c/f;  G ≈ 10·log₁₀(0.8·N) + 2.15 dBi;  L_boom = (N − 1)·0.2λ  (c = 299 792 458 m/s)",
@@ -13696,6 +14973,16 @@ var yagiAntenna = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "yagi",
+      // The boom is the (N − 1)·0.2λ the model assumes; the input was retired (calculator-input-audit).
+      roles: { n: "numElements", boom: "assumedBoomLength", f: "frequency", driver: "driverLength", refl: "reflectorLength", dir: "directorLength", spacing: "spacing" }
+    },
+    // Elements already cut: the frequency the driven element is a resonant length for.
+    synthesis: [{ output: "driverLength", solveFor: ["frequency"] }],
+    curve: { x: "numElements", y: "gain", range: [2, 20], scale: "linear" }
+  },
   relatedCalculators: ["dipole-antenna", "horn-antenna", "eirp-calculator", "patch-antenna", "rf-link-budget", "antenna-downtilt"],
   relatedTools: ["antenna-sim"],
   relatedBlogPosts: ["cubesat-uhf-link-budget-walkthrough"],
@@ -13778,6 +15065,7 @@ var hornAntenna = {
       unit: "mm",
       defaultValue: 50,
       min: 1,
+      max: 2e3,
       tooltip: "Aperture dimension in the H-plane (horizontal)"
     },
     {
@@ -13787,12 +15075,15 @@ var hornAntenna = {
       unit: "mm",
       defaultValue: 40,
       min: 1,
+      max: 2e3,
       tooltip: "Aperture dimension in the E-plane (vertical)"
     }
   ],
   outputs: [
     {
       key: "gain",
+      primary: true,
+      signed: "explicit",
       label: "Gain",
       symbol: "G",
       unit: "dBi",
@@ -13827,6 +15118,12 @@ var hornAntenna = {
       precision: 3
     }
   ],
+  examples: [
+    { id: "x-band-130x110", label: "X-band horn, 10 GHz, 130 × 110 mm", values: { frequency: 10, apertureWidth: 130, apertureHeight: 110 } },
+    { id: "ku-band-60x45", label: "Ku-band horn, 12 GHz, 60 × 45 mm", values: { frequency: 12, apertureWidth: 60, apertureHeight: 45 } },
+    { id: "ka-band-40x30", label: "Ka-band horn, 30 GHz, 40 × 30 mm", values: { frequency: 30, apertureWidth: 40, apertureHeight: 30 } },
+    { id: "s-band-300x230", label: "S-band horn, 2.45 GHz, 300 × 230 mm", values: { frequency: 2.45, apertureWidth: 300, apertureHeight: 230 } }
+  ],
   calculate: calculateHornAntenna,
   formula: {
     primary: "G = 10·log₁₀(4π·η·A/λ²)",
@@ -13839,6 +15136,11 @@ var hornAntenna = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "horn", roles: { a: "apertureWidth", b: "apertureHeight", f: "frequency" } },
+    synthesis: [{ output: "gain", solveFor: ["apertureWidth", "apertureHeight"] }],
+    curve: { x: "apertureWidth", y: "gain", range: [10, 500], scale: "log" }
+  },
   relatedCalculators: ["parabolic-dish-antenna", "eirp-calculator", "antenna-beamwidth", "yagi-antenna", "dipole-antenna"],
   relatedBlogPosts: ["yagi-antenna-simulation-2m-band"],
   liveWidgets: [
@@ -13911,6 +15213,7 @@ var parabolicDishAntenna = {
       unit: "m",
       defaultValue: 1.2,
       min: 0.01,
+      max: 500,
       tooltip: "Reflector diameter in meters"
     },
     {
@@ -13927,6 +15230,8 @@ var parabolicDishAntenna = {
   outputs: [
     {
       key: "gain",
+      primary: true,
+      signed: "explicit",
       label: "Antenna Gain",
       symbol: "G",
       unit: "dBi",
@@ -13947,6 +15252,12 @@ var parabolicDishAntenna = {
       precision: 4
     }
   ],
+  examples: [
+    { id: "ku-tv-60cm", label: "Ku-band TV dish, 60 cm, 11.7 GHz", values: { frequency: 11.7, diameter: 0.6, efficiency: 65 } },
+    { id: "vsat-1m2-uplink", label: "VSAT 1.2 m, 14.25 GHz uplink", values: { frequency: 14.25, diameter: 1.2, efficiency: 60 } },
+    { id: "c-band-3m", label: "C-band earth station, 3 m, 4 GHz", values: { frequency: 4, diameter: 3, efficiency: 60 } },
+    { id: "deep-space-70m", label: "70 m deep-space antenna, X-band 8.42 GHz", values: { frequency: 8.42, diameter: 70, efficiency: 70 } }
+  ],
   calculate: calculateParabolicDishAntenna,
   formula: {
     primary: "G = 10·log₁₀(4π·η·A/λ²);  HPBW ≈ 70λ/D",
@@ -13965,6 +15276,14 @@ var parabolicDishAntenna = {
     }
   ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "dish", roles: { D: "diameter", f: "frequency", eff: "efficiency", hpbw: "hpbw" } },
+    synthesis: [
+      { output: "gain", solveFor: ["diameter", "efficiency"] },
+      { output: "hpbw", solveFor: ["diameter"] }
+    ],
+    curve: { x: "diameter", y: "gain", range: [0.1, 10], scale: "log" }
+  },
   relatedCalculators: ["horn-antenna", "eirp-calculator", "rf-link-budget"],
   relatedBlogPosts: ["antenna-beamwidth"],
   liveWidgets: [
@@ -14051,6 +15370,7 @@ var loopAntenna = {
       unit: "m",
       defaultValue: 1,
       min: 0.01,
+      max: 20,
       tooltip: "Diameter of the loop structure in meters"
     },
     {
@@ -14073,6 +15393,7 @@ var loopAntenna = {
     },
     {
       key: "radiation_resistance",
+      primary: true,
       label: "Radiation Resistance",
       symbol: "R_rad",
       unit: "Ω",
@@ -14088,6 +15409,7 @@ var loopAntenna = {
     },
     {
       key: "gain",
+      signed: "explicit",
       label: "Gain (small loop)",
       symbol: "G",
       unit: "dBi",
@@ -14110,6 +15432,12 @@ var loopAntenna = {
       tooltip: "Share of the input power radiated: e = R_rad/(R_rad + R_loss)"
     }
   ],
+  examples: [
+    { id: "forty-metre-1m", label: "40 m band, 1 m loop of 22 mm pipe", values: { frequency: 7.1, diameter: 1, conductorDiam: 22 } },
+    { id: "twenty-metre-0m8", label: "20 m band, 0.8 m loop of 22 mm pipe", values: { frequency: 14.2, diameter: 0.8, conductorDiam: 22 } },
+    { id: "ten-metre-0m5", label: "10 m band, 0.5 m loop of 15 mm pipe", values: { frequency: 28.5, diameter: 0.5, conductorDiam: 15 } },
+    { id: "mw-receive-0m6", label: "Medium-wave receive loop, 1 MHz, 0.6 m of 2 mm wire", values: { frequency: 1, diameter: 0.6, conductorDiam: 2 } }
+  ],
   calculate: calculateLoopAntenna,
   formula: {
     primary: "R_rad = 320π⁴·(A/λ²)²,  e = R_rad/(R_rad + R_loss),  G = 10·log₁₀(1.5·e)",
@@ -14126,6 +15454,11 @@ var loopAntenna = {
     reference: "Balanis, Antenna Theory, 4th ed.: Chapter 2 (gain = radiation efficiency × directivity); §5.2 (small circular loop, directivity 3/2, R_rad = 320π⁴(A/λ²)²)"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "loop", roles: { D: "diameter", d: "conductorDiam", f: "frequency" } },
+    synthesis: [{ output: "radiation_resistance", solveFor: ["diameter"] }],
+    curve: { x: "diameter", y: "radiation_resistance", range: [0.2, 2], scale: "log" }
+  },
   relatedCalculators: ["dipole-antenna", "q-factor", "antenna-beamwidth"],
   relatedBlogPosts: ["radiated-emission-estimate"],
   relatedTools: ["antenna-sim"],
@@ -14258,6 +15591,7 @@ var helicalAntenna = {
       unit: "mm",
       defaultValue: 40,
       min: 0.1,
+      max: 1e4,
       step: 0.1,
       tooltip: "Diameter of the helix measured to the wire centre; circumference C = πD"
     },
@@ -14268,6 +15602,7 @@ var helicalAntenna = {
       unit: "mm",
       defaultValue: 30,
       min: 0.1,
+      max: 1e4,
       step: 0.1,
       tooltip: "Axial distance between successive turns (the pitch)"
     },
@@ -14303,6 +15638,12 @@ var helicalAntenna = {
     { key: "axialLength", label: "Axial Length", symbol: "L", unit: "mm", precision: 1 },
     { key: "wavelength", label: "Free-Space Wavelength", symbol: "λ", unit: "mm", precision: 2 }
   ],
+  examples: [
+    { id: "satellite-435-12-turn", label: "435 MHz amateur-satellite helix, 12 turns of 6 mm tube", values: { frequency: 435, turns: 12, diameter: 220, spacing: 160, conductorDiameter: 6 } },
+    { id: "weather-1700-8-turn", label: "1.7 GHz L-band weather-satellite (HRPT) helix, 8 turns", values: { frequency: 1700, turns: 8, diameter: 57, spacing: 41, conductorDiameter: 3 } },
+    { id: "qo100-2400-5-turn", label: "2.4 GHz QO-100 uplink dish feed, 5 turns", values: { frequency: 2400, turns: 5, diameter: 42, spacing: 30, conductorDiameter: 2 } },
+    { id: "fpv-5800-5-turn", label: "5.8 GHz FPV video receive helix, 5 turns of 1 mm wire", values: { frequency: 5800, turns: 5, diameter: 16.5, spacing: 12.5, conductorDiameter: 1 } }
+  ],
   calculate: calculateHelicalAntenna,
   formula: {
     primary: "D = 15 N C_λ² S_λ, HPBW = 52°/(C_λ √(N S_λ)), FNBW = 115°/(C_λ √(N S_λ)), AR = (2N+1)/(2N), R ≈ 140 C_λ Ω",
@@ -14326,6 +15667,19 @@ var helicalAntenna = {
     reference: "Kraus & Marhefka, Antennas for All Applications, 3rd ed. (2002), ch. 8; Balanis, Antenna Theory, 4th ed. (2016), §10.3.1"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "helix",
+      roles: { n: "turns", D: "diameter", s: "spacing", d: "conductorDiameter", len: "axialLength", f: "frequency", alpha: "pitchAngle" }
+    },
+    // A target directivity by the pitch or the diameter; a one-wavelength circumference; the 12–14° pitch.
+    synthesis: [
+      { output: "directivityDbi", solveFor: ["spacing", "diameter"] },
+      { output: "circumferenceWavelengths", solveFor: ["diameter", "frequency"] },
+      { output: "pitchAngle", solveFor: ["spacing"] }
+    ],
+    curve: { x: "turns", y: "directivityDbi", range: [3, 40], scale: "linear" }
+  },
   relatedCalculators: ["monopole-antenna", "dipole-antenna", "antenna-beamwidth", "eirp-calculator", "rf-link-budget"],
   relatedTools: ["antenna-sim"],
   validity: HELICAL_VALIDITY,
@@ -14583,6 +15937,7 @@ var monopoleAntenna = {
       unit: "mm",
       defaultValue: 500,
       min: 0.1,
+      max: 1e6,
       step: 1,
       tooltip: "Height of the vertical element above the ground plane"
     },
@@ -14617,6 +15972,12 @@ var monopoleAntenna = {
     { key: "quarterWaveLength", label: "Quarter-Wave Length", symbol: "L_{λ/4}", unit: "mm", precision: 1 },
     { key: "electricalHeight", label: "Electrical Height", symbol: "h/λ", unit: "", precision: 4 }
   ],
+  examples: [
+    { id: "cb-27-roof-whip", label: "27 MHz CB, 1.2 m roof whip of 10 mm tube", values: { frequency: 27, height: 1200, conductorDiameter: 10, velocityFactor: 0.95 } },
+    { id: "two-metre-quarter-wave", label: "2 m band quarter-wave ground plane, 146 MHz, 3 mm rod", values: { frequency: 146, height: 490, conductorDiameter: 3, velocityFactor: 0.95 } },
+    { id: "two-metre-five-eighths", label: "2 m band 5/8-wave whip, 146 MHz, 3 mm rod", values: { frequency: 146, height: 1280, conductorDiameter: 3, velocityFactor: 0.95 } },
+    { id: "ism-868-quarter-wave", label: "868 MHz ISM quarter-wave whip, 1 mm wire", values: { frequency: 868, height: 82, conductorDiameter: 1, velocityFactor: 0.95 } }
+  ],
   calculate: calculateMonopoleAntenna,
   formula: {
     primary: "Z_in(monopole, h) = ½ Z_in(dipole, 2h) = (R_r + jX_m) / (2 sin²kh); D(monopole) = 2 D(dipole); L = −X_in / (2πf)",
@@ -14640,6 +16001,18 @@ var monopoleAntenna = {
     reference: "Balanis, Antenna Theory, 4th ed. (2016), §4.5, §4.7 and §8.5; Stutzman & Thiele, Antenna Theory and Design, 3rd ed. (2012)"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "monopole",
+      roles: { h: "height", d: "conductorDiameter", f: "frequency", vf: "velocityFactor", quarter: "quarterWaveLength", eh: "electricalHeight" }
+    },
+    // Resonance (X_in = 0) by the height or the frequency; the frequency a cut length is a quarter wave at.
+    synthesis: [
+      { output: "inputReactance", solveFor: ["height", "frequency"] },
+      { output: "quarterWaveLength", solveFor: ["frequency", "velocityFactor"] }
+    ],
+    curve: { x: "height", y: "inputReactance", range: [100, 800], scale: "linear" }
+  },
   relatedCalculators: ["dipole-antenna", "helical-antenna", "wavelength-frequency", "vswr-return-loss", "eirp-calculator"],
   relatedTools: ["antenna-sim"],
   validity: MONOPOLE_VALIDITY,
@@ -14875,8 +16248,31 @@ var antennaDowntilt = {
       "A_V = −min(12((θ − tilt)/θ3dB)², 30) dB (3GPP TR 38.901 Table 7.3-1)",
       "d_los = √(2kR)(√h_BS + √h_UT) (ITU-R P.526-15 Eq. 21)"
     ],
-    reference: "3GPP TR 38.901 V17.0.0, Table 7.3-1; ITU-R P.526-15, Eqs. (21) and (44); ITU-R P.834-9, §2"
+    reference: "3GPP TR 38.901 V17.0.0, Table 7.3-1; ITU-R P.526-15, Eqs. (21) and (44); ITU-R P.834-9, §2",
+    substitution: [
+      { symbol: "θ_e", expression: "atan(({antennaHeight} − {ueHeight}) / {cellEdge} + {cellEdge} / (2 × {kFactor} × 6371 km))", output: "depressionAngle" },
+      { symbol: "θ_tilt", expression: "θ_e + {verticalBeamwidth} / 2", output: "recommendedTilt" },
+      { symbol: "d_in", expression: "2Δh / (tan φ + √(tan²φ − 2Δh/kR)), φ = θ_tilt + {verticalBeamwidth} / 2", output: "innerEdge" },
+      { symbol: "A_V", expression: "−min(12 × ((θ_e − {appliedTilt}) / {verticalBeamwidth})², 30) dB", output: "edgeGain" },
+      { symbol: "d_los", expression: "√(2 × {kFactor} × 6371 km) × (√{antennaHeight} + √{ueHeight})", output: "losDistance" }
+    ]
   },
+  // The tilt a cell of each size needs; where the applied tilt crosses it is
+  // the cell edge that tilt serves (its outer half-power edge).
+  sweep: {
+    input: "cellEdge",
+    range: [50, 2e4],
+    scale: "log",
+    lines: [
+      { id: "applied-tilt", kind: "target", label: "Applied tilt", value: (i) => i.appliedTilt }
+    ]
+  },
+  examples: [
+    { id: "rural-macro-45m-5km", label: "Rural macro, 45 m tower, 5 km cell, 6.5° beam", values: { antennaHeight: 45, ueHeight: 1.5, cellEdge: 5e3, verticalBeamwidth: 6.5, appliedTilt: 4 } },
+    { id: "urban-rooftop-25m-500m", label: "Urban rooftop sector, 25 m, 500 m cell, 10° beam", values: { antennaHeight: 25, ueHeight: 1.5, cellEdge: 500, verticalBeamwidth: 10, appliedTilt: 8 } },
+    { id: "small-cell-10m-150m", label: "Small cell on a 10 m street pole, 150 m radius, 18° beam", values: { antennaHeight: 10, ueHeight: 1.5, cellEdge: 150, verticalBeamwidth: 18, appliedTilt: 12 } },
+    { id: "fixed-wireless-35m-3km", label: "Fixed wireless access, 35 m mast, 3 km, rooftop terminal at 6 m", values: { antennaHeight: 35, ueHeight: 6, cellEdge: 3e3, verticalBeamwidth: 7, appliedTilt: 4 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["antenna-beamwidth", "line-of-sight", "rf-link-budget", "free-space-path-loss", "eirp-calculator"],
   validity: DOWNTILT_VALIDITY,
@@ -15021,6 +16417,7 @@ var lineOfSight = {
       unit: "m",
       defaultValue: 40,
       min: 0,
+      max: 1e4,
       step: 1,
       tooltip: "Height of antenna 1 above the datum (ground or sea level)"
     },
@@ -15031,6 +16428,7 @@ var lineOfSight = {
       unit: "m",
       defaultValue: 30,
       min: 0,
+      max: 1e4,
       step: 1,
       tooltip: "Height of antenna 2 above the same datum"
     },
@@ -15106,6 +16504,12 @@ var lineOfSight = {
     { key: "rayHeight", label: "Ray Height Above Smooth Earth", symbol: "h", unit: "m", precision: 2 },
     { key: "maxObstacleHeight", label: "Highest Obstacle Allowed at the Point", symbol: "h_{obs}", unit: "m", precision: 2 }
   ],
+  examples: [
+    { id: "microwave-hop-6ghz-30km", label: "6 GHz microwave hop, 30 km, 40 m and 30 m masts", values: { antennaHeight1: 40, antennaHeight2: 30, kFactor: 4 / 3, pathLength: 30, pointDistance: 15, frequency: 6, fresnelFraction: 0.6 } },
+    { id: "low-k-hop-6ghz-30km", label: "The same hop at k = 2/3, 0.3 F1 clearance", values: { antennaHeight1: 40, antennaHeight2: 30, kFactor: 2 / 3, pathLength: 30, pointDistance: 15, frequency: 6, fresnelFraction: 0.3 } },
+    { id: "lora-gateway-10km", label: "868 MHz LoRa gateway, 30 m mast to a 2 m node, 10 km", values: { antennaHeight1: 30, antennaHeight2: 2, kFactor: 4 / 3, pathLength: 10, pointDistance: 5, frequency: 0.868, fresnelFraction: 0.6 } },
+    { id: "marine-vhf-coast-station", label: "Marine VHF channel 16, 50 m coast station to a 3 m boat antenna, 25 km", values: { antennaHeight1: 50, antennaHeight2: 3, kFactor: 4 / 3, pathLength: 25, pointDistance: 12.5, frequency: 0.1568, fresnelFraction: 0.6 } }
+  ],
   calculate: calculateLineOfSight,
   formula: {
     primary: "d_los = √(2kR)(√h₁ + √h₂), b = d₁d₂/(2kR), r₁ = √(λd₁d₂/d), h_req = b + p·r₁",
@@ -15129,6 +16533,32 @@ var lineOfSight = {
     reference: "ITU-R P.526-15, Eqs. (2), (21) and (22); ITU-R P.530-17, §2.2.2; ITU-R P.834-9, §2"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "line-of-sight",
+      roles: {
+        h1: "antennaHeight1",
+        h2: "antennaHeight2",
+        k: "kFactor",
+        d: "pathLength",
+        d1: "pointDistance",
+        f: "frequency",
+        p: "fresnelFraction",
+        dlos: "maxLosDistance",
+        dh1: "horizon1",
+        dh2: "horizon2",
+        b: "bulge",
+        r: "fresnelRadius",
+        obs: "maxObstacleHeight"
+      }
+    },
+    // A mast height for a line-of-sight distance, or for the obstacle the path must clear at the point.
+    synthesis: [
+      { output: "maxLosDistance", solveFor: ["antennaHeight1", "antennaHeight2"] },
+      { output: "maxObstacleHeight", solveFor: ["antennaHeight1", "antennaHeight2"] }
+    ],
+    curve: { x: "antennaHeight1", y: "maxLosDistance", range: [1, 1e3], scale: "log" }
+  },
   relatedCalculators: ["fresnel-zone", "free-space-path-loss", "rf-link-budget", "antenna-downtilt", "link-margin"],
   validity: LINE_OF_SIGHT_VALIDITY,
   assumptions: [
@@ -15445,7 +16875,7 @@ var wilkinsonPowerDivider = {
 };
 
 // src/lib/calculators/rf/directional-coupler.ts
-var C0 = 299792458;
+var C02 = 299792458;
 function directionalCouplerValidity(couplingLimit) {
   return [
     {
@@ -15471,7 +16901,7 @@ function calculateDirectionalCoupler(inputs) {
   const oddModeImpedance = z0 * Math.sqrt((1 - c2) / (1 + c2));
   const throughLoss = -10 * Math.log10(1 - c2 * c2);
   const isolation = coupling + directivity;
-  const coupledLength = C0 / (4 * frequency * 1e9 * Math.sqrt(effPermittivity)) * 1e3;
+  const coupledLength = C02 / (4 * frequency * 1e9 * Math.sqrt(effPermittivity)) * 1e3;
   const warnings = checkValidity(directionalCouplerValidity(couplingLimit), { coupling });
   return {
     values: {
@@ -15793,6 +17223,7 @@ var circularWaveguide = {
       unit: "mm",
       defaultValue: 5,
       min: 0.01,
+      max: 1e3,
       step: 0.1,
       tooltip: "Inside radius of the guide (half the inside diameter)"
     },
@@ -15819,19 +17250,24 @@ var circularWaveguide = {
       unit: "GHz",
       defaultValue: 14,
       min: 1e-3,
+      max: 1e3,
       step: 0.1
     },
     {
       key: "modeType",
-      label: "Mode Type (0 = TE, 1 = TM)",
+      label: "Mode Type",
       symbol: "TE/TM",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 for a transverse-electric mode, 1 for a transverse-magnetic mode",
-      presets: MODE_PRESETS
+      tooltip: "A transverse-electric (TE) or transverse-magnetic (TM) mode",
+      presets: MODE_PRESETS,
+      options: [
+        { value: 0, label: "TE" },
+        { value: 1, label: "TM" }
+      ]
     },
     {
       key: "modeN",
@@ -15908,6 +17344,11 @@ var circularWaveguide = {
     { key: "totalLoss", label: "Total Loss over the Guide Length", symbol: "A", unit: "dB", precision: 3 },
     { key: "evanescentAttenuation", label: "Evanescent Attenuation (Below Cutoff)", symbol: "α", unit: "dB/m", precision: 2 }
   ],
+  examples: [
+    { id: "pozar-example-3-2", label: "Pozar Example 3.2: PTFE-filled, a = 5 mm, 14 GHz", values: { radius: 5, permittivity: 2.08, lossTangent: 4e-4, frequency: 14, modeType: 0, modeN: 1, modeM: 1, conductivity: 41, length: 0.3 } },
+    { id: "tm01-rotary-joint", label: "TM₀₁ rotary joint, air-filled, 9.4 GHz", values: { radius: 13.5, permittivity: 1, lossTangent: 0, frequency: 9.4, modeType: 1, modeN: 0, modeM: 1, conductivity: 58.13, length: 0.1 } },
+    { id: "te01-low-loss-line", label: "TE₀₁ low-loss line, copper, 60 GHz", values: { radius: 25, permittivity: 1, lossTangent: 0, frequency: 60, modeType: 0, modeN: 0, modeM: 1, conductivity: 58.13, length: 100 } }
+  ],
   calculate: calculateCircularWaveguide,
   formula: {
     primary: "f_c = c·χ/(2πa√εr), χ = p′ₙₘ (TE) or pₙₘ (TM); β = √(k² − (χ/a)²); Z_TE = kη/β, Z_TM = βη/k",
@@ -15932,6 +17373,17 @@ var circularWaveguide = {
     reference: "Pozar, Microwave Engineering, 4th ed. (2012), §3.4, Tables 3.3–3.5, Eqs. (3.127)–(3.140); NIST DLMF §10.21"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "circular-waveguide", roles: { a: "radius", er: "permittivity", f: "frequency", fc: "cutoffFreq", type: "modeType", n: "modeN", m: "modeM" } },
+    // The selected mode's cutoff, the top of the single-mode band, or the guide wavelength at f.
+    synthesis: [
+      { output: "cutoffFreq", solveFor: ["radius"] },
+      { output: "tm01Cutoff", solveFor: ["radius"] },
+      { output: "guideWavelength", solveFor: ["frequency", "radius"] }
+    ],
+    material: { library: "coax-dielectric", sets: { er: "permittivity" } },
+    curve: { x: "radius", y: "cutoffFreq", range: [1, 100], scale: "log" }
+  },
   relatedCalculators: ["waveguide-cutoff", "wavelength-frequency", "skin-depth", "coax-impedance", "horn-antenna"],
   validity: CIRCULAR_WAVEGUIDE_VALIDITY,
   assumptions: [
@@ -16228,16 +17680,16 @@ function describeRanges(b, ul, dl, unit) {
   return `band n${b.band}'s range, ${range2(only)}${u}`;
 }
 function calculateNrBandLookup(inputs) {
-  const band = Math.round(inputs.band);
+  const band2 = Math.round(inputs.band);
   const { channelBandwidth, scs, frequency } = inputs;
   const arfcn = Math.round(inputs.arfcn);
-  if (!(band >= 1)) return { values: {}, errors: ["Enter an NR band number, such as 78 for n78"] };
+  if (!(band2 >= 1)) return { values: {}, errors: ["Enter an NR band number, such as 78 for n78"] };
   if (!(channelBandwidth > 0)) return { values: {}, errors: ["Channel bandwidth must be greater than 0"] };
   if (!(scs > 0)) return { values: {}, errors: ["Subcarrier spacing must be greater than 0"] };
   if (!(arfcn >= 0)) return { values: {}, errors: ["NR-ARFCN cannot be negative"] };
   if (!(frequency >= 0)) return { values: {}, errors: ["Frequency cannot be negative"] };
-  const b = nrBand(band);
-  if (!b) return { values: {}, errors: [`Band n${band} is not an NR operating band in ${NR_BAND_SOURCES}`] };
+  const b = nrBand(band2);
+  if (!b) return { values: {}, errors: [`Band n${band2} is not an NR operating band in ${NR_BAND_SOURCES}`] };
   const warnings = [];
   const ul = b.ulMHz;
   const dl = b.dlMHz;
@@ -16522,7 +17974,7 @@ var nrBandLookup = {
 };
 
 // src/lib/calculators/rf/5g-nr-link-budget.ts
-var C02 = 299792458;
+var C03 = 299792458;
 var KT0_DBM_PER_HZ = 10 * Math.log10(1380649e-29 * 290 * 1e3);
 var H_E = 1;
 var RMA_BUILDING_HEIGHT = 5;
@@ -16559,7 +18011,7 @@ function tr38901PathLoss(scenario, los, fGHz, d2d, hBs, hUt) {
   if (scenario === 0) {
     const h = RMA_BUILDING_HEIGHT;
     const w = RMA_STREET_WIDTH;
-    const dBp = 2 * Math.PI * hBs * hUt * fHz / C02;
+    const dBp = 2 * Math.PI * hBs * hUt * fHz / C03;
     const pl1 = (d) => 20 * Math.log10(40 * Math.PI * d * fGHz / 3) + Math.min(0.03 * h ** 1.72, 10) * Math.log10(d) - Math.min(0.044 * h ** 1.72, 14.77) + 2e-3 * Math.log10(h) * d;
     const beyond = d2d > dBp;
     const plLos2 = beyond ? pl1(dBp) + 40 * Math.log10(d3d / dBp) : pl1(d3d);
@@ -16569,7 +18021,7 @@ function tr38901PathLoss(scenario, los, fGHz, d2d, hBs, hUt) {
   }
   if (scenario === 1 || scenario === 2) {
     const uma = scenario === 1;
-    const dBp = 4 * (hBs - H_E) * (hUt - H_E) * fHz / C02;
+    const dBp = 4 * (hBs - H_E) * (hUt - H_E) * fHz / C03;
     const plLos2 = d2d <= dBp ? uma ? 28 + 22 * Math.log10(d3d) + lf : 32.4 + 21 * Math.log10(d3d) + lf : uma ? 28 + 40 * Math.log10(d3d) + lf - 9 * Math.log10(dBp * dBp + dh * dh) : 32.4 + 40 * Math.log10(d3d) + lf - 9.5 * Math.log10(dBp * dBp + dh * dh);
     if (los) return { pl: plLos2, sigma: 4, breakpoint: dBp };
     const plNlos2 = uma ? 13.54 + 39.08 * Math.log10(d3d) + lf - 0.6 * (hUt - 1.5) : 35.3 * Math.log10(d3d) + 22.4 + 21.3 * Math.log10(fGHz) - 0.3 * (hUt - 1.5);
@@ -17039,7 +18491,7 @@ var nrLinkBudget = {
 };
 
 // src/lib/calculators/iot/lora-link-budget.ts
-var C03 = 299792458;
+var C04 = 299792458;
 var KT0_DBM_PER_HZ2 = 10 * Math.log10(1380649e-29 * 290 * 1e3);
 var SNR_LIMIT = { 6: -5, 7: -7.5, 8: -10, 9: -12.5, 10: -15, 11: -17.5, 12: -20 };
 var DATASHEET = "Semtech SX1276/77/78/79 datasheet, Rev. 4 (2015), Table 1";
@@ -17140,8 +18592,8 @@ function calculateLora(inputs) {
   const eirpAndGains = txPower + txGain + rxGain - losses;
   const maxPathLoss = eirpAndGains - sensitivity;
   if (model === 0) {
-    pathLoss = 20 * Math.log10(4 * Math.PI * distance * 1e3 * fHz / C03);
-    maxRange = C03 / (4 * Math.PI * fHz) * 10 ** (maxPathLoss / 20) / 1e3;
+    pathLoss = 20 * Math.log10(4 * Math.PI * distance * 1e3 * fHz / C04);
+    maxRange = C04 / (4 * Math.PI * fHz) * 10 ** (maxPathLoss / 20) / 1e3;
   } else {
     pathLoss = hataPathLoss(model, frequency, distance, baseHeight, mobileHeight);
     const at1km = hataPathLoss(model, frequency, 1, baseHeight, mobileHeight);
@@ -17230,26 +18682,32 @@ var loraLinkBudget = {
     },
     {
       key: "codingRate",
-      label: "Coding Rate (1 = 4/5 … 4 = 4/8)",
+      label: "Coding Rate",
       symbol: "CR",
       unit: "",
       defaultValue: 1,
       min: 1,
       max: 4,
       step: 1,
-      tooltip: "Forward error correction: 1 is 4/5, 2 is 4/6, 3 is 4/7, 4 is 4/8",
+      tooltip: "Forward error correction: four data bits in five to eight coded bits",
       presets: [
         { label: "4/5", values: { codingRate: 1 } },
         { label: "4/6", values: { codingRate: 2 } },
         { label: "4/7", values: { codingRate: 3 } },
         { label: "4/8", values: { codingRate: 4 } }
+      ],
+      options: [
+        { value: 1, label: "4/5" },
+        { value: 2, label: "4/6" },
+        { value: 3, label: "4/7" },
+        { value: 4, label: "4/8" }
       ]
     },
     { key: "payloadLength", label: "Payload Length", symbol: "PL", unit: "bytes", defaultValue: 20, min: 1, max: 255, step: 1, tooltip: "Bytes in the LoRa payload, 1 to 255 (a LoRaWAN frame adds 13 bytes of overhead to the application data)" },
     { key: "preambleLength", label: "Preamble Length", symbol: "n_{preamble}", unit: "symbols", defaultValue: 8, min: 0, step: 1, tooltip: "Programmed preamble symbols; 8 in LoRaWAN" },
     {
       key: "implicitHeader",
-      label: "Header Mode (0 = Explicit, 1 = Implicit)",
+      label: "Header Mode",
       symbol: "IH",
       unit: "",
       defaultValue: 0,
@@ -17259,11 +18717,15 @@ var loraLinkBudget = {
       presets: [
         { label: "Explicit header", values: { implicitHeader: 0 } },
         { label: "Implicit header", values: { implicitHeader: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Explicit header" },
+        { value: 1, label: "Implicit header" }
       ]
     },
     {
       key: "crc",
-      label: "Payload CRC (1 = On, 0 = Off)",
+      label: "Payload CRC",
       symbol: "CRC",
       unit: "",
       defaultValue: 1,
@@ -17273,6 +18735,10 @@ var loraLinkBudget = {
       presets: [
         { label: "CRC on", values: { crc: 1 } },
         { label: "CRC off", values: { crc: 0 } }
+      ],
+      options: [
+        { value: 1, label: "CRC on" },
+        { value: 0, label: "CRC off" }
       ]
     },
     { key: "noiseFigure", label: "Receiver Noise Figure", symbol: "NF", unit: "dB", defaultValue: 6, min: 0, step: 0.5, tooltip: "About 6 dB for an SX127x with highest LNA gain" },
@@ -17296,14 +18762,22 @@ var loraLinkBudget = {
     },
     {
       key: "pathLossModel",
-      label: "Path-Loss Model (0 = Free Space, 1–5 = Hata)",
+      label: "Path-Loss Model",
       unit: "",
       defaultValue: 1,
       min: 0,
       max: 5,
       step: 1,
-      tooltip: "0 free space; Okumura–Hata 1 urban small/medium city, 2 urban large city, 3 suburban, 4 rural quasi-open, 5 rural open",
-      presets: MODEL_NAMES.map((name, i) => ({ label: name, values: { pathLossModel: i } }))
+      tooltip: "Free space, or Okumura–Hata for an urban, suburban or rural path",
+      presets: MODEL_NAMES.map((name, i) => ({ label: name, values: { pathLossModel: i } })),
+      options: [
+        { value: 0, label: "Free space" },
+        { value: 1, label: "Okumura–Hata, urban (small/medium city)" },
+        { value: 2, label: "Okumura–Hata, urban (large city)" },
+        { value: 3, label: "Okumura–Hata, suburban" },
+        { value: 4, label: "Okumura–Hata, rural quasi-open" },
+        { value: 5, label: "Okumura–Hata, rural open" }
+      ]
     },
     { key: "distance", label: "Distance", symbol: "d", unit: "km", defaultValue: 2, min: 1e-3, step: 0.5 },
     { key: "baseHeight", label: "Gateway (Base) Antenna Height", symbol: "h_b", unit: "m", defaultValue: 30, min: 1, step: 1, tooltip: "Used by Okumura–Hata, which covers 30 to 200 m" },
@@ -17557,7 +19031,7 @@ var loraLinkBudget = {
 };
 
 // src/lib/calculators/iot/ble-link-budget.ts
-var C04 = 299792458;
+var C05 = 299792458;
 var CORE = "Bluetooth Core Specification v5.4 (2023), Vol 6, Part A";
 var P1238 = "Recommendation ITU-R P.1238-13 (09/2025), §3.1, Table 2";
 var PHYS = [
@@ -17612,8 +19086,8 @@ function calculateBle(inputs) {
   let maxRange;
   let shadowFadingStd = NaN;
   if (model === 0) {
-    pathLoss = 20 * Math.log10(4 * Math.PI * distance * frequency * 1e6 / C04);
-    maxRange = C04 / (4 * Math.PI * frequency * 1e6) * 10 ** (maxPathLoss / 20);
+    pathLoss = 20 * Math.log10(4 * Math.PI * distance * frequency * 1e6 / C05);
+    maxRange = C05 / (4 * Math.PI * frequency * 1e6) * 10 ** (maxPathLoss / 20);
   } else {
     const [, , , , , alpha, beta, gamma, sigma] = P1238_ROWS[model - 1];
     pathLoss = 10 * alpha * Math.log10(distance) + beta + 10 * gamma * Math.log10(fGHz);
@@ -17691,14 +19165,25 @@ var bleLinkBudget = {
     },
     {
       key: "pathLossModel",
-      label: "Path-Loss Model (0 = Free Space, 1–8 = P.1238)",
+      label: "Path-Loss Model",
       unit: "",
       defaultValue: 2,
       min: 0,
       max: 8,
       step: 1,
-      tooltip: "0 free space; ITU-R P.1238 site-general: 1/2 office LoS/NLoS, 3/4 corridor, 5/6 industrial, 7/8 conference room",
-      presets: MODEL_PRESETS
+      tooltip: "Free space, or ITU-R P.1238 site-general for an office, corridor, industrial site or conference room, in line of sight (LoS) or not (NLoS)",
+      presets: MODEL_PRESETS,
+      options: [
+        { value: 0, label: "Free space" },
+        { value: 1, label: "P.1238 office LoS" },
+        { value: 2, label: "P.1238 office NLoS" },
+        { value: 3, label: "P.1238 corridor LoS" },
+        { value: 4, label: "P.1238 corridor NLoS" },
+        { value: 5, label: "P.1238 industrial LoS" },
+        { value: 6, label: "P.1238 industrial NLoS" },
+        { value: 7, label: "P.1238 conference room LoS" },
+        { value: 8, label: "P.1238 conference room NLoS" }
+      ]
     },
     { key: "distance", label: "Distance", symbol: "d", unit: "m", defaultValue: 10, min: 0.01, step: 1, tooltip: "Direct (3-D) distance between the antennas" },
     {
@@ -17861,6 +19346,7 @@ var microstripMiteredBend = {
       unit: "mm",
       defaultValue: 3,
       min: 1e-3,
+      max: 50,
       step: 0.05,
       tooltip: "Width of the microstrip line going through the bend"
     },
@@ -17871,6 +19357,7 @@ var microstripMiteredBend = {
       unit: "mm",
       defaultValue: 1.6,
       min: 1e-3,
+      max: 10,
       step: 0.01,
       tooltip: "Dielectric thickness between the strip and its ground plane",
       presets: [
@@ -17899,6 +19386,12 @@ var microstripMiteredBend = {
     { key: "chamferLength", label: "Chamfer Length along Each Outer Edge (x√2)", symbol: "a", unit: "mm", precision: 3 },
     { key: "remainingDiagonal", label: "Remaining Diagonal to the Inner Corner (d − x)", symbol: "d - x", unit: "mm", precision: 3 }
   ],
+  examples: [
+    { id: "50-ohm-fr4-1-6mm", label: "50 Ω line on 1.6 mm FR-4", values: { width: 3, height: 1.6, permittivity: 4.4 } },
+    { id: "50-ohm-ro4350b-20mil", label: "50 Ω line on 0.508 mm RO4350B", values: { width: 1.064, height: 0.508, permittivity: 3.66 } },
+    { id: "50-ohm-ro4003c-8mil", label: "50 Ω line on 0.203 mm RO4003C", values: { width: 0.416, height: 0.203, permittivity: 3.55 } },
+    { id: "50-ohm-alumina-25mil", label: "50 Ω line on 0.635 mm alumina", values: { width: 0.56, height: 0.635, permittivity: 9.9 } }
+  ],
   calculate: calculateMiteredBend,
   formula: {
     primary: "M = 52 + 65·exp(−1.35·W/h) %; d = W√2; x = M·d; chamfer = x√2",
@@ -17920,6 +19413,17 @@ var microstripMiteredBend = {
     reference: "Douville & James, IEEE Trans. Microwave Theory Tech., MTT-26(3), pp. 175–181 (1978)"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "bend", roles: { w: "width", h: "height", er: "permittivity", m: "mitrePercent", d: "diagonal", x: "mitreDepth", a: "chamferLength", rest: "remainingDiagonal" } },
+    // The mitre a width calls for, the copper left across the corner, or the chamfer leg.
+    synthesis: [
+      { output: "mitrePercent", solveFor: ["width", "height"] },
+      { output: "remainingDiagonal", solveFor: ["width", "height"] },
+      { output: "chamferLength", solveFor: ["width"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "permittivity" } },
+    curve: { x: "width", y: "mitrePercent", range: [0.4, 10], scale: "log" }
+  },
   relatedCalculators: ["microstrip-impedance", "coplanar-waveguide", "controlled-impedance", "wavelength-frequency"],
   validity: MITERED_BEND_VALIDITY,
   assumptions: [
@@ -18648,6 +20152,7 @@ var spiTiming = {
     },
     {
       key: "maxFreqCapacitive",
+      primary: true,
       label: "Max Freq (RC-limited)",
       symbol: "f_max",
       unit: "MHz",
@@ -18786,6 +20291,7 @@ var canBusTiming = {
     },
     {
       key: "nominalBitTime",
+      display: { integer: true },
       label: "Nominal Bit Time",
       symbol: "NBT",
       unit: "tq",
@@ -18793,6 +20299,7 @@ var canBusTiming = {
     },
     {
       key: "syncSeg",
+      display: { integer: true },
       label: "Sync Segment",
       symbol: "SS",
       unit: "tq",
@@ -18800,6 +20307,7 @@ var canBusTiming = {
     },
     {
       key: "propSeg",
+      display: { integer: true },
       label: "Propagation Segment",
       symbol: "PROP",
       unit: "tq",
@@ -18807,6 +20315,7 @@ var canBusTiming = {
     },
     {
       key: "phase1",
+      display: { integer: true },
       label: "Phase Buffer 1 (BS1)",
       symbol: "BS1",
       unit: "tq",
@@ -18814,6 +20323,7 @@ var canBusTiming = {
     },
     {
       key: "phase2",
+      display: { integer: true },
       label: "Phase Buffer 2 (BS2)",
       symbol: "BS2",
       unit: "tq",
@@ -18821,6 +20331,8 @@ var canBusTiming = {
     },
     {
       key: "prescaler",
+      primary: true,
+      display: { integer: true },
       label: "Prescaler",
       symbol: "BRP",
       unit: "",
@@ -18845,6 +20357,14 @@ var canBusTiming = {
 };
 
 // src/lib/calculators/protocol/usb-termination.ts
+var USB_NOMINAL_IMPEDANCE = 90;
+function usbImpedanceLimit(usbVersion) {
+  if (usbVersion === 0) {
+    return { tolerance: 13.5, rule: "90 Ω ±15 %", clause: "USB 2.0, Table 7-12, Z_O (differential cable impedance, full-/high-speed); §7.1.6.1 for the board trace" };
+  }
+  return { tolerance: 7, rule: "90 Ω ±7 Ω", clause: "USB 3.0 Rev. 1.0, §5.6.1.1.1, SDP differential characteristic impedance (raw cable, informative)" };
+}
+var USB2_CABLE_DELAY_MAX = 26;
 function calculateUsbTermination(inputs) {
   const { usbVersion, lineImpedance, cableLength } = inputs;
   const isUsb2 = Math.round(usbVersion) === 0;
@@ -18858,14 +20378,26 @@ function calculateUsbTermination(inputs) {
       "USB 3.0 specifies no transmitter rise time (USB 3.0 Rev. 1.0, Tables 6-10 and 6-11), so none is reported"
     );
   }
+  const limit = usbImpedanceLimit(isUsb2 ? 0 : 1);
+  const impedanceError = Math.abs(lineImpedance - USB_NOMINAL_IMPEDANCE);
+  const impedanceTolerance = limit.tolerance;
+  const impedancePercent = impedanceError / impedanceTolerance * 100;
+  const compliantImpedance = lineImpedance >= USB_NOMINAL_IMPEDANCE ? USB_NOMINAL_IMPEDANCE + impedanceTolerance : USB_NOMINAL_IMPEDANCE - impedanceTolerance;
+  if (isUsb2 && propagationDelay > USB2_CABLE_DELAY_MAX) {
+    warnings.push("The cable delay exceeds the 26 ns one-way delay USB 2.0 allows (Table 7-12, T_FSCBL)");
+  }
   return {
     values: {
       terminationResistor,
       differentialImpedance,
       propagationDelay,
-      signalRiseTime
+      signalRiseTime,
+      impedanceError,
+      impedanceTolerance,
+      impedancePercent,
+      compliantImpedance
     },
-    warnings: warnings.length > 0 ? warnings : void 0
+    ...warnings.length ? { warnings } : {}
   };
 }
 var usbTermination = {
@@ -18896,7 +20428,11 @@ var usbTermination = {
       step: 1,
       presets: [
         { label: "USB 2.0 (HS 480 Mbps)", values: { usbVersion: 0 } },
-        { label: "USB 3.0 (SS 2.5 Gbps)", values: { usbVersion: 1 } }
+        { label: "USB 3.0 (SS 5 Gbps)", values: { usbVersion: 1 } }
+      ],
+      options: [
+        { value: 0, label: "USB 2.0 (High Speed, 480 Mbps)" },
+        { value: 1, label: "USB 3.0 (SuperSpeed, 5 Gbps)" }
       ]
     },
     {
@@ -18907,7 +20443,7 @@ var usbTermination = {
       defaultValue: 90,
       min: 50,
       max: 150,
-      tooltip: "Single-ended trace/cable impedance (USB spec: 90Ω differential = ~45Ω per line)"
+      tooltip: "Differential impedance of the data pair, trace or cable: USB 2.0 and USB 3.0 both specify 90 Ω (45 Ω odd-mode per line)"
     },
     {
       key: "cableLength",
@@ -18927,6 +20463,7 @@ var usbTermination = {
   outputs: [
     {
       key: "terminationResistor",
+      primary: true,
       label: "Termination Resistor",
       symbol: "R_term",
       unit: "Ω",
@@ -18953,16 +20490,75 @@ var usbTermination = {
       unit: "ps",
       precision: 0,
       tooltip: "USB 2.0 Table 7-8: the high-speed driver rise time is at least 500 ps (T_HSR), a minimum, not a typical value. USB 3.0 specifies no transmitter rise time, so none is reported for it."
+    },
+    {
+      key: "impedanceError",
+      label: "Impedance Deviation",
+      symbol: "ΔZ",
+      unit: "Ω",
+      precision: 2,
+      tooltip: "How far the line impedance is from the 90 Ω nominal: |Z₀ − 90 Ω|"
+    },
+    {
+      key: "impedanceTolerance",
+      label: "Impedance Tolerance",
+      symbol: "ΔZ_max",
+      unit: "Ω",
+      precision: 2,
+      tooltip: "The deviation from 90 Ω the chosen USB version allows: ±13.5 Ω (USB 2.0, ±15 %) or ±7 Ω (USB 3.0)"
+    },
+    {
+      key: "impedancePercent",
+      label: "Percent of Tolerance",
+      unit: "%",
+      precision: 1,
+      tooltip: "The deviation as a percentage of the tolerance; above 100 % the line is outside the window",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "compliantImpedance",
+      label: "Compliant Line Impedance",
+      symbol: "Z₀,lim",
+      unit: "Ω",
+      precision: 2,
+      // One decimal, so the window's edge reads 103.5 Ω, not a rounded 104 outside it.
+      display: { decimals: 1 },
+      tooltip: "The nearest edge of the tolerance window: 90 Ω plus the tolerance at or above 90 Ω, minus it below"
     }
   ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "usb2-cable-90-ohm-5-m", label: "USB 2.0 cable, 90 Ω, 5 m", values: { usbVersion: 0, lineImpedance: 90, cableLength: 5 } },
+    { id: "usb2-board-pair-85-ohm", label: "USB 2.0 on an 85 Ω board pair, 15 cm", values: { usbVersion: 0, lineImpedance: 85, cableLength: 0.15 } },
+    { id: "usb3-cable-100-ohm-twinax", label: "USB 3.0 cable from 100 Ω twinax, 1 m", values: { usbVersion: 1, lineImpedance: 100, cableLength: 1 } },
+    { id: "usb3-cable-85-ohm", label: "USB 3.0 cable at 85 Ω, 1 m", values: { usbVersion: 1, lineImpedance: 85, cableLength: 1 } }
+  ],
   calculate: calculateUsbTermination,
+  standards: {
+    standard: {
+      input: "usbVersion",
+      sources: {
+        0: "Universal Serial Bus Specification, Revision 2.0 (27 April 2000), Table 7-12 (Z_O) and §7.1.6.1; no erratum or ECN changes Z_O",
+        1: "Universal Serial Bus 3.0 Specification, Revision 1.0 (12 November 2008), §5.6.1.1.1 (informative)"
+      }
+    },
+    value: "impedanceError",
+    limit: "impedanceTolerance",
+    percent: "impedancePercent",
+    clause: (standard) => usbImpedanceLimit(standard).clause,
+    rule: (standard) => usbImpedanceLimit(standard).rule,
+    remedies: [
+      { input: "lineImpedance", output: "compliantImpedance", direction: "nearest" }
+    ],
+    chart: { x: "lineImpedance", range: [50, 150] }
+  },
   formula: {
     primary: "R_term = Z₀;  t_pd = L/v_prop",
     variables: [
       { symbol: "R_term", description: "Termination resistor", unit: "Ω" },
       { symbol: "Z₀", description: "Characteristic impedance", unit: "Ω" },
       { symbol: "t_pd", description: "Propagation delay", unit: "ns" },
-      { symbol: "v_prop", description: "Signal propagation velocity (~0.2c)", unit: "m/s" }
+      { symbol: "v_prop", description: "Signal propagation velocity (2×10⁸ m/s, about 0.67c)", unit: "m/s" }
     ]
   },
   visualization: { type: "none" },
@@ -19056,6 +20652,7 @@ var rs485Termination = {
   outputs: [
     {
       key: "terminationResistor",
+      primary: true,
       label: "Termination Resistor",
       symbol: "R_term",
       unit: "Ω",
@@ -19080,6 +20677,7 @@ var rs485Termination = {
       // sound bus, so below 100 kbps reads WARN, never OUT. Whether the entered
       // rate fits the cable is `baudRateUtilisation`'s verdict.
       thresholds: {
+        // A long bus at a low rate (9.6 kbps over 1200 m) is sound: below 100 kbps is CHECK, not FAIL.
         good: { min: 1e3 },
         warning: { min: 100, max: 1e3 }
       }
@@ -19205,6 +20803,7 @@ var pwmDutyCycle = {
   outputs: [
     {
       key: "dutyCycle",
+      primary: true,
       label: "Duty Cycle",
       symbol: "D",
       unit: "%",
@@ -19399,6 +20998,7 @@ var mosfetPowerDissipation = {
     },
     {
       key: "totalLoss",
+      primary: true,
       label: "Total Power Loss",
       symbol: "P_total",
       unit: "mW",
@@ -19558,6 +21158,7 @@ var solarPanelSizing = {
     },
     {
       key: "panelWattage",
+      primary: true,
       label: "Required Panel Wattage",
       symbol: "P_panel",
       unit: "W",
@@ -19717,6 +21318,7 @@ var batteryChargeTime = {
   outputs: [
     {
       key: "chargeTime",
+      primary: true,
       label: "Total Charge Time",
       symbol: "t_total",
       unit: "hr",
@@ -19851,6 +21453,7 @@ var inrushCurrentLimiter = {
   outputs: [
     {
       key: "ntcResistanceCold",
+      primary: true,
       label: "Required NTC Cold Resistance",
       symbol: "R_cold",
       unit: "Ω",
@@ -20024,6 +21627,7 @@ var chargePumpVoltage = {
     },
     {
       key: "loadedVoltage",
+      primary: true,
       label: "Loaded Output Voltage",
       symbol: "V_out",
       unit: "V",
@@ -20193,6 +21797,7 @@ var switchingRegulatorRipple = {
     },
     {
       key: "peakToPeakRipple",
+      primary: true,
       label: "Total Peak-to-Peak Ripple",
       symbol: "ΔV_out",
       unit: "mV",
@@ -20298,7 +21903,8 @@ var linearRegulatorDropout = {
       defaultValue: 50,
       min: 1,
       tooltip: "Junction-to-ambient thermal resistance (from datasheet)"
-    }
+    },
+    { key: "targetHeadroom", label: "Target Headroom", symbol: "V_H,t", unit: "mV", defaultValue: 500, min: 0, max: 1e4, tooltip: "The headroom above dropout the design should keep for ripple and transients. The status fails below 0 mV, where the regulator is in dropout." }
   ],
   outputs: [
     {
@@ -20346,6 +21952,8 @@ var linearRegulatorDropout = {
     },
     {
       key: "headroom",
+      primary: true,
+      signed: "explicit",
       label: "Input Headroom",
       symbol: "V_head",
       unit: "mV",
@@ -20366,8 +21974,28 @@ var linearRegulatorDropout = {
       { symbol: "I_load", description: "Load current", unit: "A" },
       { symbol: "V_DO", description: "Dropout voltage", unit: "V" },
       { symbol: "θ_JA", description: "Thermal resistance", unit: "°C/W" }
+    ],
+    substitution: [
+      { symbol: "V_H", expression: "({inputVoltage} − {outputVoltage}) − {dropoutVoltage}", output: "headroom" },
+      { symbol: "P_D", expression: "({inputVoltage} − {outputVoltage}) × {loadCurrent}", output: "powerDissipation" },
+      { symbol: "η", expression: "{outputVoltage} / {inputVoltage}", output: "efficiency" }
     ]
   },
+  sweep: {
+    input: "inputVoltage",
+    range: [3, 6],
+    scale: "linear",
+    lines: [
+      { id: "dropout", kind: "limit", label: "Dropout", value: () => 0, fails: "below" },
+      { id: "headroom-target", kind: "target", label: "Target", value: (i) => i.targetHeadroom }
+    ]
+  },
+  target: { output: "headroom", input: "targetHeadroom", sense: "min", failAt: 0 },
+  examples: [
+    { id: "liion-to-3v3", label: "Li-ion cell to 3.3 V, low-dropout part", values: { inputVoltage: 3.7, outputVoltage: 3.3, loadCurrent: 200, dropoutVoltage: 150, thetaJA: 180 } },
+    { id: "lm1117-5v-3v3", label: "5 V to 3.3 V at 1 A, LM1117-class", values: { inputVoltage: 5, outputVoltage: 3.3, loadCurrent: 1e3, dropoutVoltage: 1200, thetaJA: 61 } },
+    { id: "7805-from-12v", label: "7805 from 12 V at 500 mA", values: { inputVoltage: 12, outputVoltage: 5, loadCurrent: 500, dropoutVoltage: 2e3, thetaJA: 65 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["mosfet-power-dissipation", "thermal-resistance-network", "switching-regulator-ripple"]
 };
@@ -20449,6 +22077,7 @@ var pcbCrosstalk = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 10,
       tooltip: "Edge-to-edge spacing between traces"
     },
     {
@@ -20507,6 +22136,7 @@ var pcbCrosstalk = {
     },
     {
       key: "next_dB",
+      primary: true,
       label: "NEXT",
       symbol: "NEXT",
       unit: "dB",
@@ -20534,6 +22164,11 @@ var pcbCrosstalk = {
       precision: 1,
       tooltip: "Quarter-wavelength at the signal frequency in PCB medium"
     }
+  ],
+  examples: [
+    { id: "clock-125-mhz-40-mm", label: "125 MHz clock beside a data line, 40 mm run", values: { traceWidth: 0.2, traceSpacing: 0.2, dielectricHeight: 0.1, frequency: 125, traceLength: 40 } },
+    { id: "ddr-800-mhz-25-mm", label: "DDR data lines at 800 MHz, 0.1 mm gap, 25 mm", values: { traceWidth: 0.1, traceSpacing: 0.1, dielectricHeight: 0.075, frequency: 800, traceLength: 25 } },
+    { id: "three-w-spacing-100-mm", label: "3W rule, 0.2 mm traces 0.4 mm apart, 100 mm", values: { traceWidth: 0.2, traceSpacing: 0.4, dielectricHeight: 0.1, frequency: 100, traceLength: 100 } }
   ],
   calculate: calculatePcbCrosstalk,
   formula: {
@@ -20568,6 +22203,11 @@ var pcbCrosstalk = {
     }
   ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "coupled", roles: { w: "traceWidth", s: "traceSpacing", h: "dielectricHeight", len: "traceLength" } },
+    synthesis: [{ output: "next_dB", solveFor: ["traceSpacing", "traceLength"] }],
+    curve: { x: "traceSpacing", y: "next_dB", range: [0.05, 0.6], scale: "linear" }
+  },
   relatedCalculators: ["differential-pair", "controlled-impedance", "pcb-trace-inductance"],
   relatedTools: ["fdtd-sparam"],
   relatedBlogPosts: ["stackup-builder"]
@@ -20702,6 +22342,8 @@ var decouplingCapacitor = {
     },
     {
       key: "numCapacitors",
+      primary: true,
+      display: { integer: true },
       label: "Capacitors Needed",
       symbol: "N_cap",
       unit: "",
@@ -20728,8 +22370,19 @@ var decouplingCapacitor = {
       { symbol: "ESL", description: "Equivalent series inductance", unit: "H" },
       { symbol: "f_SRF", description: "Self-resonant frequency", unit: "Hz" },
       { symbol: "Z", description: "Impedance", unit: "Ω" }
+    ],
+    substitution: [
+      { symbol: "f_SRF", expression: "1 / (2π √({esl} × {capacitance}))", output: "selfResonantFreq" },
+      { symbol: "|Z|", expression: "√({esr}² + (1/(2π × {targetFreq} × {capacitance}) − 2π × {targetFreq} × {esl})²)", output: "impedanceAtTarget" },
+      { symbol: "N", expression: "⌈|Z| / {supplyImpedance}⌉", output: "numCapacitors" }
     ]
   },
+  sweep: { input: "targetFreq", range: [0.1, 1e3], scale: "log" },
+  examples: [
+    { id: "fpga-0402-100n", label: "100 nF 0402 on an FPGA core rail", values: { capacitance: 100, esr: 30, esl: 0.5, targetFreq: 100, supplyImpedance: 10 } },
+    { id: "bulk-10u-0805", label: "10 µF 0805 bulk capacitor at 1 MHz", values: { capacitance: 1e4, esr: 5, esl: 1, targetFreq: 1, supplyImpedance: 10 } },
+    { id: "serdes-0201-1n", label: "1 nF 0201 for a GHz SerDes rail", values: { capacitance: 1, esr: 100, esl: 0.3, targetFreq: 1e3, supplyImpedance: 20 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["switching-regulator-ripple", "pcb-trace-inductance", "lc-resonance"],
   relatedTools: ["pdn-impedance"],
@@ -20781,7 +22434,8 @@ var pcbTraceInductance = {
       symbol: "l",
       unit: "mm",
       defaultValue: 10,
-      min: 0.1
+      min: 0.1,
+      max: 1e3
     },
     {
       key: "traceWidth",
@@ -20789,7 +22443,8 @@ var pcbTraceInductance = {
       symbol: "w",
       unit: "mm",
       defaultValue: 0.2,
-      min: 0.01
+      min: 0.01,
+      max: 20
     },
     {
       key: "thickness",
@@ -20808,6 +22463,7 @@ var pcbTraceInductance = {
   outputs: [
     {
       key: "inductance",
+      primary: true,
       label: "Total Inductance",
       symbol: "L",
       unit: "nH",
@@ -20846,7 +22502,17 @@ var pcbTraceInductance = {
       { symbol: "t", description: "Copper thickness", unit: "m" }
     ]
   },
+  examples: [
+    { id: "decoupling-0p3mm-1nh", label: "0.3 mm decoupling trace, 1 nH long", values: { traceLength: 1.7258180852406677, traceWidth: 0.3, thickness: 35 } },
+    { id: "signal-0p15mm-25mm", label: "0.15 mm signal trace, 25 mm", values: { traceLength: 25, traceWidth: 0.15, thickness: 35 } },
+    { id: "power-3mm-20mm-2-oz", label: "3 mm power trace, 20 mm, 2 oz", values: { traceLength: 20, traceWidth: 3, thickness: 70 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "trace", roles: { len: "traceLength", w: "traceWidth", t: "thickness" } },
+    synthesis: [{ output: "inductance", solveFor: ["traceLength", "traceWidth"] }],
+    curve: { x: "traceLength", y: "inductance", range: [1, 100], scale: "log" }
+  },
   relatedCalculators: ["decoupling-capacitor", "pcb-crosstalk", "via-calculator"],
   relatedBlogPosts: ["magnetics-optimizer-transformer-design"]
 };
@@ -20908,7 +22574,8 @@ var viaThermalResistance = {
       symbol: "d",
       unit: "mm",
       defaultValue: 0.3,
-      min: 0.05
+      min: 0.05,
+      max: 6
     },
     {
       key: "platingThickness",
@@ -20917,6 +22584,7 @@ var viaThermalResistance = {
       unit: "μm",
       defaultValue: 25,
       min: 1,
+      max: 100,
       tooltip: "Copper plating thickness on via barrel walls"
     },
     {
@@ -20954,6 +22622,10 @@ var viaThermalResistance = {
       presets: [
         { label: "Unfilled (plated)", values: { viaFill: 0 } },
         { label: "Copper filled", values: { viaFill: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Unfilled (plated)" },
+        { value: 1, label: "Copper filled" }
       ]
     },
     {
@@ -20978,6 +22650,7 @@ var viaThermalResistance = {
     },
     {
       key: "arrayResistance",
+      primary: true,
       label: "Array Thermal Resistance",
       symbol: "θ_array",
       unit: "°C/W",
@@ -21023,7 +22696,22 @@ var viaThermalResistance = {
     ],
     reference: "IPC-2221A Figure 6-4 (conductor current capacity, and its fit); Fourier conduction for θ"
   },
+  examples: [
+    { id: "qfn-3x3-plated-0p3", label: "QFN pad, 3 × 3 plated 0.3 mm vias, 1.6 mm board", values: { viaDiameter: 0.3, platingThickness: 25, boardThickness: 1.6, numVias: 9, viaFill: 0 } },
+    { id: "qfn-3x3-15-cw", label: "QFN pad, 3 × 3 plated vias sized for 15 °C/W", values: { viaDiameter: 0.41695445346007104, platingThickness: 25, boardThickness: 1.6, numVias: 9, viaFill: 0 } },
+    { id: "via-in-pad-4x4-filled", label: "Via-in-pad, 4 × 4 copper-filled 0.25 mm vias", values: { viaDiameter: 0.25, platingThickness: 25, boardThickness: 1.6, numVias: 16, viaFill: 1 } },
+    { id: "dpak-5x5-plated-0p4", label: "DPAK tab, 5 × 5 plated 0.4 mm vias", values: { viaDiameter: 0.4, platingThickness: 25, boardThickness: 1.6, numVias: 25, viaFill: 0 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "via-array",
+      roles: { n: "numVias", d: "viaDiameter", plating: "platingThickness", len: "boardThickness" },
+      variant: { input: "viaFill", byValue: { 0: "plated", 1: "filled" } }
+    },
+    synthesis: [{ output: "arrayResistance", solveFor: ["viaDiameter", "platingThickness"] }],
+    curve: { x: "viaDiameter", y: "arrayResistance", range: [0.15, 1], scale: "linear" }
+  },
   relatedCalculators: ["thermal-resistance-network", "via-calculator", "pcb-trace-temp"],
   relatedBlogPosts: ["pcb-trace-width-current-capacity", "thermal-resistance-network"]
 };
@@ -21162,6 +22850,7 @@ var bjtBiasPoint = {
     },
     {
       key: "ic",
+      primary: true,
       label: "Collector Current",
       symbol: "I_C",
       unit: "mA",
@@ -21210,8 +22899,19 @@ var bjtBiasPoint = {
       { symbol: "I_C", description: "Collector current", unit: "A" },
       { symbol: "V_CE", description: "Collector-emitter voltage", unit: "V" },
       { symbol: "β", description: "Current gain", unit: "" }
+    ],
+    substitution: [
+      { symbol: "I_C", expression: "({vcc} × {r2}/({r1} + {r2}) − {vbe}) / ({re} + ({r1} ∥ {r2}) / {beta})", output: "ic" },
+      { symbol: "V_C", expression: "{vcc} − I_C × {rc}", output: "vc" },
+      { symbol: "V_CE", expression: "V_C − I_C × {re}", output: "vce" }
     ]
   },
+  sweep: { input: "re", range: [100, 1e4], scale: "log" },
+  examples: [
+    { id: "small-signal-1ma", label: "Small-signal stage at 1 mA, 12 V", values: { vcc: 12, r1: 82, r2: 15, rc: 4.7, re: 1e3, beta: 100, vbe: 0.65 } },
+    { id: "audio-preamp-9v", label: "Audio preamp on a 9 V battery", values: { vcc: 9, r1: 47, r2: 10, rc: 3.3, re: 680, beta: 200, vbe: 0.65 } },
+    { id: "driver-10ma", label: "Driver stage at 10 mA", values: { vcc: 12, r1: 10, r2: 3.3, rc: 0.47, re: 220, beta: 100, vbe: 0.7 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["transistor-switch", "mosfet-operating-point", "opamp-gain"],
   relatedBlogPosts: ["current-mirror"]
@@ -21358,16 +23058,21 @@ var mosfetOperatingPoint = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = solve the load line V_DS = V_DD − I_D·R_D; 1 = use the entered V_DS",
+      tooltip: "Load line solves V_DS = V_DD − I_D·R_D; the other mode uses the V_DS entered",
       presets: [
         { label: "Load line", values: { biasMode: 0 } },
         { label: "V_DS as entered", values: { biasMode: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Load line" },
+        { value: 1, label: "V_DS as entered" }
       ]
     }
   ],
   outputs: [
     {
       key: "id",
+      primary: true,
       label: "Drain Current",
       symbol: "I_D",
       unit: "mA",
@@ -21429,8 +23134,20 @@ var mosfetOperatingPoint = {
       "Cut-off when V_ov ≤ 0: I_D = 0 and V_DS = V_DD",
       "Bias Mode 1 evaluates the square law at the entered V_DS instead, and warns when V_DS + I_D·R_D is not V_DD"
     ],
+    substitution: [
+      { symbol: "I_D", expression: "{kn}/2 × ({vgs} − {vth})² in saturation; in triode, where {kn} × (({vgs} − {vth}) × V_DS − V_DS²/2) meets ({vdd} − V_DS) / {rdLoad}", output: "id" },
+      { symbol: "V_DS", expression: "{vdd} − I_D × {rdLoad}", output: "vdsOperating" },
+      { symbol: "g_m", expression: "{kn} × ({vgs} − {vth}) in saturation, else {kn} × V_DS", output: "gm" },
+      { symbol: "P_D", expression: "I_D × V_DS", output: "powerDissipation" }
+    ],
     reference: "Sedra & Smith, Microelectronic Circuits, 7th ed. (Oxford, 2015), §5.3, Example 5.5 and Exercise 5.11"
   },
+  sweep: { input: "vgs", range: [0, 10], scale: "linear" },
+  examples: [
+    { id: "small-signal-switch", label: "Small-signal switch, 5 V gate", values: { vgs: 5, vth: 2.1, kn: 200, vds: 0.5, vdd: 5, rdLoad: 0.1 } },
+    { id: "logic-level-power", label: "Logic-level power MOSFET, 4.5 V gate", values: { vgs: 4.5, vth: 1.5, kn: 2e4, vds: 0.2, vdd: 12, rdLoad: 0.01 } },
+    { id: "common-source-bias", label: "Common-source amplifier bias", values: { vgs: 2.25, vth: 2, kn: 50, vds: 6.84375, vdd: 12, rdLoad: 3.3 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["bjt-bias-point", "mosfet-power-dissipation", "transistor-switch"]
 };
@@ -21536,6 +23253,7 @@ var comparatorHysteresis = {
     },
     {
       key: "hysteresis",
+      primary: true,
       label: "Hysteresis Band",
       symbol: "ΔV_hyst",
       unit: "mV",
@@ -21640,6 +23358,10 @@ var timer555 = {
       presets: [
         { label: "Astable (oscillator)", values: { mode: 0 } },
         { label: "Monostable (one-shot)", values: { mode: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Astable (oscillator)" },
+        { value: 1, label: "Monostable (one-shot)" }
       ]
     },
     {
@@ -21676,6 +23398,7 @@ var timer555 = {
   outputs: [
     {
       key: "frequency",
+      primary: true,
       label: "Frequency",
       symbol: "f",
       unit: "Hz",
@@ -21855,6 +23578,7 @@ var transistorSwitch = {
     },
     {
       key: "rb",
+      primary: true,
       label: "Base Resistor",
       symbol: "R_B",
       unit: "kΩ",
@@ -22001,6 +23725,7 @@ var currentMirror = {
   outputs: [
     {
       key: "outputCurrent",
+      primary: true,
       label: "Output Current (with β error)",
       symbol: "I_out",
       unit: "mA",
@@ -22022,6 +23747,7 @@ var currentMirror = {
     },
     {
       key: "error",
+      signed: "explicit",
       label: "β Error",
       symbol: "ε_β",
       unit: "%",
@@ -22149,6 +23875,7 @@ var thermalResistanceNetwork = {
   outputs: [
     {
       key: "junctionTemp",
+      primary: true,
       label: "Junction Temperature",
       symbol: "T_J",
       unit: "°C",
@@ -22182,6 +23909,7 @@ var thermalResistanceNetwork = {
     },
     {
       key: "thermalMargin",
+      signed: "explicit",
       label: "Thermal Margin (to 150°C)",
       symbol: "ΔT_margin",
       unit: "°C",
@@ -22327,6 +24055,7 @@ var bldcMotor = {
   outputs: [
     {
       key: "noLoadRpm",
+      primary: true,
       label: "No-Load RPM",
       symbol: "N_0",
       unit: "RPM",
@@ -22417,6 +24146,13 @@ var bldcMotor = {
       { symbol: "C_P", description: "Static power coefficient", unit: "" },
       { symbol: "F_thrust", description: "Static thrust", unit: "g" }
     ],
+    substitution: [
+      { symbol: "N₀", expression: "{kvRating} × {voltage}", output: "noLoadRpm" },
+      { symbol: "I_stall", expression: "{voltage} / {motorResistance}", output: "stallCurrent" },
+      { symbol: "η_max", expression: "(1 − √({noLoadCurrent} / I_stall))²", output: "maxEfficiency" },
+      { symbol: "n", expression: "the speed where (I − {noLoadCurrent}) / K_v = C_P·ρ·n²·{propDiameter}⁵ / 2π, with I = ({voltage} − 2πn / K_v) / {motorResistance}", output: "loadedRpm" },
+      { symbol: "F", expression: "0.11 × 1.225 kg/m³ × n² × {propDiameter}⁴", output: "thrust" }
+    ],
     derivation: [
       "Motor (Drela 2007, eqs. 1-6): I = (V − Ω/K_v)/R and Q_m = (I − I₀)/K_v, with Ω = 2πn and K_v in rad/s/V",
       "Propeller: P = C_P·ρ·n³·D⁵, so Q_p = C_P·ρ·n²·D⁵/(2π)",
@@ -22426,6 +24162,12 @@ var bldcMotor = {
     ],
     reference: "Drela, First-Order DC Electric Motor Model (MIT, 2007); UIUC Propeller Data Site, Vol. 2, GWS Direct Drive 5×3 static data (gwsdd_5x3_static_0323rd.txt); Brandt & Selig, Propeller Performance Data at Low Reynolds Numbers, AIAA 2011-1255"
   },
+  sweep: { input: "voltage", range: [3, 50], scale: "linear" },
+  examples: [
+    { id: "fpv-2400kv-4s", label: "5-inch FPV quad, 2400 Kv on 4S", values: { kvRating: 2400, voltage: 14.8, motorResistance: 60, noLoadCurrent: 1.2, propDiameter: 5 } },
+    { id: "camera-drone-920kv", label: "Camera drone, 920 Kv on 4S", values: { kvRating: 920, voltage: 14.8, motorResistance: 120, noLoadCurrent: 0.4, propDiameter: 10 } },
+    { id: "fixed-wing-1000kv-3s", label: "Fixed-wing, 1000 Kv on 3S", values: { kvRating: 1e3, voltage: 11.1, motorResistance: 50, noLoadCurrent: 0.5, propDiameter: 9 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["bldc-winding", "bldc-efficiency", "bldc-thermal", "dc-motor-speed", "stepper-motor"],
   relatedBlogPosts: ["bldc-efficiency", "bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"],
@@ -22492,7 +24234,7 @@ function calculateBldcWinding(inputs) {
   const fluxPerPole = bGap * poleAreaM2;
   const connectionFactor = isWye ? Math.sqrt(3) : 1;
   const polePairs = safePoles / 2;
-  const coilSpan = Math.round(safeSlots / safePoles);
+  const coilSpan = Math.max(1, Math.round(safeSlots / safePoles));
   const polePitchSlots = safeSlots / safePoles;
   const pitchFactor = Math.abs(Math.sin(coilSpan / polePitchSlots * (Math.PI / 2)));
   const qNumerator = safeSlots / gcd(safeSlots, phases * safePoles);
@@ -22670,16 +24412,19 @@ var bldcWinding = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = Wye (Y), 1 = Delta (Δ)",
       presets: [
         { label: "Wye (Y)", values: { windingType: 0 } },
         { label: "Delta (Δ)", values: { windingType: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Wye (Y)" },
+        { value: 1, label: "Delta (Δ)" }
       ]
     }
   ],
   outputs: [
-    { key: "turnsPerCoil", label: "Turns per Coil", symbol: "N", unit: "turns", precision: 0, tooltip: "Number of wire turns per stator coil" },
-    { key: "wireAwg", label: "Recommended Wire AWG", symbol: "AWG", unit: "", precision: 0, tooltip: "American Wire Gauge for target current density of 6.5 A/mm²" },
+    { key: "turnsPerCoil", label: "Turns per Coil", symbol: "N", unit: "turns", precision: 0, tooltip: "Number of wire turns per stator coil", primary: true, display: { integer: true } },
+    { key: "wireAwg", label: "Recommended Wire AWG", symbol: "AWG", unit: "", precision: 0, tooltip: "American Wire Gauge for target current density of 6.5 A/mm²", display: { integer: true } },
     { key: "wireDiameter", label: "Wire Diameter", symbol: "d_w", unit: "mm", precision: 3 },
     {
       key: "fillFactor",
@@ -22691,7 +24436,7 @@ var bldcWinding = {
       tooltip: "Bare copper of both coil sides in a slot over the slot area, 2·N·A_wire/A_slot — above 75% is very difficult to wind"
     },
     { key: "phaseResistance", label: "Phase Resistance", symbol: "R_ph", unit: "mΩ", precision: 1 },
-    { key: "coilSpan", label: "Coil Span", symbol: "", unit: "slots", precision: 0 },
+    { key: "coilSpan", label: "Coil Span", symbol: "", unit: "slots", precision: 0, display: { integer: true } },
     { key: "windingFactor", label: "Winding Factor (Kw1)", symbol: "K_{w1}", unit: "", precision: 4, tooltip: "Fundamental winding factor = pitch factor × distribution factor" },
     { key: "actualKv", label: "Achieved Kv", symbol: "K_v", unit: "RPM/V", precision: 1, tooltip: "Actual Kv with integer turns (may differ from target)" },
     {
@@ -22709,6 +24454,23 @@ var bldcWinding = {
       unit: "RPM",
       precision: 1,
       tooltip: "Achieved Kv × supply voltage: the unloaded speed on this supply, where the back-EMF equals it"
+    }
+  ],
+  examples: [
+    { id: "12n14p-drone", label: "12N14P (drone)", values: { slotCount: 12, poleCount: 14 } },
+    { id: "9n6p-small", label: "9N6P (small)", values: { slotCount: 9, poleCount: 6 } },
+    { id: "12n16p-hub", label: "12N16P (hub)", values: { slotCount: 12, poleCount: 16 } },
+    { id: "24n22p-gimbal", label: "24N22P (gimbal)", values: { slotCount: 24, poleCount: 22 } },
+    { id: "36n42p-direct-drive", label: "36N42P (DD)", values: { slotCount: 36, poleCount: 42 } },
+    {
+      id: "12n14p-50mm-360kv",
+      label: "12N14P, 50 × 10 mm stator, 360 Kv, 15 A",
+      values: { targetKv: 360, slotCount: 12, poleCount: 14, statorInnerDia: 50, statorStackLength: 10, maxCurrent: 15, supplyVoltage: 22.2, windingType: 0 }
+    },
+    {
+      id: "9n6p-28mm-700kv",
+      label: "9N6P inrunner, 28 mm bore, 700 Kv, 8 A",
+      values: { targetKv: 700, slotCount: 9, poleCount: 6, statorInnerDia: 28, statorStackLength: 12, maxCurrent: 8, supplyVoltage: 11.1, windingType: 0 }
     }
   ],
   calculate: calculateBldcWinding,
@@ -22737,6 +24499,16 @@ var bldcWinding = {
     reference: "Hanselman, D. — Brushless Permanent Magnet Motor Design, 2nd ed.; Bianchi, N. & Dai Pré, M., IEE Proc. Electric Power Applications, 2006 (winding factor); Pyrhönen, Jokinen & Hrabovcová, Design of Rotating Electrical Machines, Wiley 2008, section 2.9 (slot fill)"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "stator",
+      roles: { slots: "slotCount", poles: "poleCount", dia: "statorInnerDia", len: "statorStackLength", turns: "turnsPerCoil" },
+      variant: { input: "windingType", byValue: { 0: "wye", 1: "delta" } }
+    },
+    // Whole turns rarely give the target Kv exactly: the stack (or bore) that makes them do so.
+    synthesis: [{ output: "actualKv", solveFor: ["statorStackLength", "statorInnerDia"] }],
+    curve: { x: "statorInnerDia", y: "turnsPerCoil", range: [10, 60], scale: "linear" }
+  },
   relatedCalculators: ["bldc-motor", "bldc-efficiency", "bldc-thermal", "motor-winding-resistance"],
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"],
   liveWidgets: [
@@ -22831,7 +24603,8 @@ var bldcEfficiency = {
         { label: "6S LiPo (22.2V)", values: { supplyVoltage: 22.2 } }
       ]
     },
-    { key: "operatingCurrent", label: "Operating Current", symbol: "I", unit: "A", defaultValue: 10, min: 0.01, tooltip: "Actual load current to analyze" }
+    { key: "operatingCurrent", label: "Operating Current", symbol: "I", unit: "A", defaultValue: 10, min: 0.01, tooltip: "Actual load current to analyze" },
+    { key: "targetEfficiency", label: "Target Efficiency", symbol: "η_t", unit: "%", defaultValue: 85, min: 0, max: 100, tooltip: "The efficiency the motor must reach at the operating current. The status fails below 50 %." }
   ],
   // The iron loss scales by a speed ratio in which p cancels, so the pole-pair
   // count changed no output (openspec calculator-input-audit, I19).
@@ -22848,6 +24621,7 @@ var bldcEfficiency = {
       symbol: "η",
       unit: "%",
       precision: 1,
+      primary: true,
       thresholds: { good: { min: 85 }, warning: { min: 70 }, danger: { min: 50 } }
     },
     { key: "optimalCurrent", label: "Optimal Current", symbol: "I_opt", unit: "A", precision: 2, tooltip: "Current that maximizes efficiency: √(I₀ × I_stall)" },
@@ -22875,8 +24649,28 @@ var bldcEfficiency = {
       "Loaded speed N = K_v·(V − I·R_tt)",
       "Drela's efficiency (1 − I₀/I)(1 − I·R_tt/V) peaks where I²·R_tt = I₀·V, at I_opt = √(I₀·V/R_tt) = √(I₀·I_stall)"
     ],
-    reference: "Drela, First-Order DC Electric Motor Model (MIT, 2007), eqs. 3, 7 and 9; maxon, Formulae Handbook (J. Braun, maxon academy, 2012), p. 37; Hanselman, D. — Brushless Permanent Magnet Motor Design"
+    reference: "Drela, First-Order DC Electric Motor Model (MIT, 2007), eqs. 3, 7 and 9; maxon, Formulae Handbook (J. Braun, maxon academy, 2012), p. 37; Hanselman, D. — Brushless Permanent Magnet Motor Design",
+    substitution: [
+      { symbol: "P_Cu", expression: "{operatingCurrent}² × {phaseResistance}", output: "copperLoss" },
+      { symbol: "P_out", expression: "{supplyVoltage} × {operatingCurrent} − P_Cu − P_Fe − P_mech", output: "outputPower" },
+      { symbol: "η", expression: "P_out / ({supplyVoltage} × {operatingCurrent})", output: "efficiency" }
+    ]
   },
+  sweep: {
+    input: "operatingCurrent",
+    range: [1, 60],
+    scale: "linear",
+    lines: [
+      { id: "efficiency-floor", kind: "limit", label: "Minimum", value: () => 50, fails: "below" },
+      { id: "efficiency-target", kind: "target", label: "Target", value: (i) => i.targetEfficiency }
+    ]
+  },
+  target: { output: "efficiency", input: "targetEfficiency", sense: "min", failAt: 50 },
+  examples: [
+    { id: "drone-920kv-6s", label: "Drone motor, 920 Kv on 6S", values: { kvRating: 920, phaseResistance: 45, noLoadCurrent: 1.5, supplyVoltage: 22.2, operatingCurrent: 10 } },
+    { id: "gimbal-100kv", label: "Gimbal motor, 100 Kv on 12 V", values: { kvRating: 100, phaseResistance: 5e3, noLoadCurrent: 0.05, supplyVoltage: 12, operatingCurrent: 0.5 } },
+    { id: "ebike-hub-48v", label: "E-bike hub motor on 48 V", values: { kvRating: 10, phaseResistance: 150, noLoadCurrent: 1, supplyVoltage: 48, operatingCurrent: 15 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["bldc-motor", "bldc-winding", "bldc-thermal", "motor-efficiency"],
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-motor", "bldc-winding-turns-wire-gauge-patterns"],
@@ -22999,13 +24793,14 @@ var bldcThermal = {
   ],
   outputs: [
     { key: "tempRise", label: "Temperature Rise", symbol: "ΔT", unit: "°C", precision: 1, tooltip: "Rθ·I²·R(T) at the steady state, with the resistance at that temperature; absent where the winding runs away" },
-    { key: "steadyStateTemp", label: "Steady-State Winding Temp", symbol: "T_w", unit: "°C", precision: 1, tooltip: "Absent where α·Rθ·R₂₅·I² ≥ 1: no steady state exists (thermal runaway)" },
+    { key: "steadyStateTemp", label: "Steady-State Winding Temp", symbol: "T_w", unit: "°C", precision: 1, tooltip: "Absent where α·Rθ·R₂₅·I² ≥ 1: no steady state exists (thermal runaway)", primary: true },
     {
       key: "thermalMargin",
       label: "Thermal Margin",
       symbol: "ΔT_m",
       unit: "°C",
       precision: 1,
+      signed: "explicit",
       thresholds: { good: { min: 30 }, warning: { min: 10 }, danger: { min: 0 } },
       tooltip: "Remaining temperature headroom before insulation limit"
     },
@@ -23046,8 +24841,28 @@ var bldcThermal = {
       "Time to the limit at peak current: C_th·dT/dt = I²·R(T) − (T − T_amb)/Rθ from T_amb, linear in T, so t = −(C_th/k)·ln(1 − k·(T_max − T_amb)/P_a) with P_a = I²·R(T_amb) and k = 1/Rθ − α·I²·R_25",
       "Rating share: I_op/I_cont × 100 %, against the datasheet rating; above 100 % the motor runs past it"
     ],
-    reference: "maxon, Formulae Handbook (J. Braun, maxon academy, 2012), §9.2, p. 49; maxon, Key information (2009), p. 40; Drela, First-Order DC Electric Motor Model (MIT, 2007); IEC 60034-1 — Rotating electrical machines; NEMA MG-1"
+    reference: "maxon, Formulae Handbook (J. Braun, maxon academy, 2012), §9.2, p. 49; maxon, Key information (2009), p. 40; Drela, First-Order DC Electric Motor Model (MIT, 2007); IEC 60034-1 — Rotating electrical machines; NEMA MG-1",
+    substitution: [
+      { symbol: "ΔT", expression: "Rθ × {phaseResistance} × {operatingCurrent}² × (1 + α({ambientTemp} − 25 °C)) / (1 − α × Rθ × {phaseResistance} × {operatingCurrent}²), Rθ = {thermalResWC} + {thermalResCA}", output: "tempRise" },
+      { symbol: "T", expression: "{ambientTemp} + ΔT", output: "steadyStateTemp" },
+      { symbol: "I_cont", expression: "√(({maxWindingTemp} − {ambientTemp}) / (Rθ × {phaseResistance} × (1 + α({maxWindingTemp} − 25 °C))))", output: "deratedCurrent" }
+    ]
   },
+  sweep: {
+    input: "operatingCurrent",
+    // At the defaults the winding runs away above 23.21 A; the chart shows the
+    // approach and a short stretch past it.
+    range: [1, 25],
+    scale: "linear",
+    lines: [
+      { id: "max-winding", kind: "limit", label: "Max winding temperature", value: (i) => i.maxWindingTemp, fails: "above" }
+    ]
+  },
+  examples: [
+    { id: "drone-class-f", label: "Drone motor, class F, 10 A", values: { phaseResistance: 45, continuousCurrent: 20, peakCurrent: 40, thermalResWC: 2.5, thermalResCA: 8, ambientTemp: 25, maxWindingTemp: 155, operatingCurrent: 10 } },
+    { id: "servo-enclosure-60c", label: "Servo motor in a 60 °C enclosure", values: { phaseResistance: 300, continuousCurrent: 5, peakCurrent: 15, thermalResWC: 1.5, thermalResCA: 4, ambientTemp: 60, maxWindingTemp: 155, operatingCurrent: 4 } },
+    { id: "robot-joint-class-h", label: "Robot joint motor, class H", values: { phaseResistance: 80, continuousCurrent: 12, peakCurrent: 36, thermalResWC: 1, thermalResCA: 3, ambientTemp: 40, maxWindingTemp: 180, operatingCurrent: 10 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["bldc-winding", "bldc-efficiency", "motor-heat-dissipation", "bldc-motor"],
   relatedBlogPosts: ["bldc-motor-sizing-kv-torque-efficiency", "bldc-winding-turns-wire-gauge-patterns"],
@@ -23169,7 +24984,7 @@ var servoMotor = {
     { key: "armRes", label: "Winding Resistance", symbol: "R_a", unit: "Ω", defaultValue: 2, min: 0.1 }
   ],
   outputs: [
-    { key: "torque", label: "Operating Torque", symbol: "T", unit: "N·m", precision: 4 },
+    { key: "torque", label: "Operating Torque", symbol: "T", unit: "N·m", precision: 4, primary: true },
     { key: "operatingSpeed", label: "Operating Speed", symbol: "n", unit: "RPM", precision: 1 },
     { key: "backEmf", label: "Back-EMF", symbol: "V_emf", unit: "V", precision: 2 },
     { key: "inputPower", label: "Input Power", symbol: "P_in", unit: "W", precision: 2 },
@@ -23195,8 +25010,19 @@ var servoMotor = {
       { symbol: "ω", description: "Angular speed at the operating point", unit: "rad/s" },
       { symbol: "T_stall", description: "Stall torque at this supply voltage", unit: "N·m" }
     ],
-    reference: "Hughes & Drury, Electric Motors and Drives, ch. 3 (d.c. motors); maxon, Key information on maxon DC motors"
+    reference: "Hughes & Drury, Electric Motors and Drives, ch. 3 (d.c. motors); maxon, Key information on maxon DC motors",
+    substitution: [
+      { symbol: "K_t", expression: "{voltage} / ({speed} × 2π/60)", output: "torqueConstant" },
+      { symbol: "T", expression: "K_t × {current}", output: "torque" },
+      { symbol: "n", expression: "{speed} × ({voltage} − {current} × {armRes}) / {voltage}", output: "operatingSpeed" }
+    ]
   },
+  sweep: { input: "current", range: [0, 2.4], scale: "linear" },
+  examples: [
+    { id: "hobby-servo-5v", label: "Hobby servo on 5 V", values: { voltage: 5, current: 0.5, speed: 500, loadTorque: 0.05, armRes: 2 } },
+    { id: "brushed-servo-24v", label: "24 V brushed servo motor", values: { voltage: 24, current: 2, speed: 3e3, loadTorque: 0.1, armRes: 1.2 } },
+    { id: "gearmotor-servo-12v", label: "12 V gearmotor servo", values: { voltage: 12, current: 0.8, speed: 300, loadTorque: 0.2, armRes: 4 } }
+  ],
   assumptions: [
     {
       code: "linear-dc-motor",
@@ -23242,7 +25068,7 @@ var gearRatio = {
     { key: "efficiency", label: "Gear Efficiency", symbol: "η", unit: "%", defaultValue: 95, min: 10, max: 100 }
   ],
   outputs: [
-    { key: "gearRatio", label: "Gear Ratio", symbol: "GR", unit: ":1", precision: 2 },
+    { key: "gearRatio", label: "Gear Ratio", symbol: "GR", unit: ":1", precision: 2, primary: true },
     { key: "outputSpeed", label: "Output Speed", symbol: "n₂", unit: "RPM", precision: 1 },
     { key: "outputTorque", label: "Output Torque", symbol: "T₂", unit: "N·m", precision: 3 },
     { key: "inputPower", label: "Input Power", symbol: "P_in", unit: "W", precision: 2 },
@@ -23287,7 +25113,7 @@ var pwmDutyCycleMotor = {
     { key: "motorResistance", label: "Winding Resistance", symbol: "R", unit: "Ω", defaultValue: 1.5, min: 0.01 }
   ],
   outputs: [
-    { key: "effectiveVoltage", label: "Effective Voltage", symbol: "V_eff", unit: "V", precision: 2 },
+    { key: "effectiveVoltage", label: "Effective Voltage", symbol: "V_eff", unit: "V", precision: 2, primary: true },
     { key: "noLoadSpeed", label: "No-Load Speed", symbol: "n₀", unit: "RPM", precision: 0 },
     { key: "stallCurrent", label: "Stall Current", symbol: "I_s", unit: "A", precision: 2, thresholds: { good: { max: 10 }, warning: { max: 20 } } },
     { key: "peakPower", label: "Peak Power (stall)", symbol: "P_s", unit: "W", precision: 1 },
@@ -23299,8 +25125,19 @@ var pwmDutyCycleMotor = {
     variables: [
       { symbol: "D", description: "Duty cycle (0–1)", unit: "" },
       { symbol: "Kv", description: "Motor speed constant", unit: "RPM/V" }
+    ],
+    substitution: [
+      { symbol: "V_eff", expression: "{supplyVoltage} × {dutyCycle}", output: "effectiveVoltage" },
+      { symbol: "n₀", expression: "V_eff × {motorKv}", output: "noLoadSpeed" },
+      { symbol: "I_stall", expression: "V_eff / {motorResistance}", output: "stallCurrent" }
     ]
   },
+  sweep: { input: "dutyCycle", range: [0, 100], scale: "linear" },
+  examples: [
+    { id: "fan-12v-60pct", label: "12 V DC fan at 60 % duty", values: { supplyVoltage: 12, dutyCycle: 60, motorKv: 400, motorResistance: 20 } },
+    { id: "conveyor-24v", label: "24 V conveyor motor at 80 % duty", values: { supplyVoltage: 24, dutyCycle: 80, motorKv: 125, motorResistance: 2 } },
+    { id: "rc-car-2s", label: "RC car motor on 2S at half throttle", values: { supplyVoltage: 7.4, dutyCycle: 50, motorKv: 3e3, motorResistance: 0.1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "h-bridge-selection", "motor-driver-power"],
   relatedBlogPosts: ["dc-motor-control-pwm-drivers", "motor-driver-power", "pid-tuning"]
@@ -23344,7 +25181,7 @@ var torqueUnitConverter = {
     }
   ],
   outputs: [
-    { key: "lbFt", label: "Pound-feet", symbol: "lb·ft", unit: "lb·ft", precision: 4 },
+    { key: "lbFt", label: "Pound-feet", symbol: "lb·ft", unit: "lb·ft", precision: 4, primary: true },
     { key: "lbIn", label: "Pound-inches", symbol: "lb·in", unit: "lb·in", precision: 3 },
     { key: "ozIn", label: "Oz-inches", symbol: "oz·in", unit: "oz·in", precision: 2 },
     { key: "kgCm", label: "Kilogram-cm", symbol: "kg·cm", unit: "kg·cm", precision: 3 },
@@ -23352,6 +25189,26 @@ var torqueUnitConverter = {
     { key: "dyneCm", label: "Dyne-centimetres", symbol: "dyn·cm", unit: "dyn·cm", precision: 0 }
   ],
   calculate: calculateTorqueUnitConverter,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["nm", "lbFt", "lbIn", "ozIn", "kgCm", "kgM", "dyneCm"],
+      free: ["nm"],
+      affine: true,
+      picks: { field: "nm", values: [0.01, 0.1, 1, 10, 100] },
+      // One of each unit, in N·m by calculate()'s exact factors (NIST SP 811): each row reads 1 in its own column.
+      reference: { field: "nm", values: [0.45359237 * 9.80665 * 0.3048 / 192, 9.80665 / 100, 0.45359237 * 9.80665 * 0.3048 / 12, 1, 0.45359237 * 9.80665 * 0.3048, 9.80665] },
+      scales: {
+        axis: { field: "nm", range: [1e-3, 1e3], scale: "log" },
+        fields: [
+          { key: "nm", ticks: [1e-3, 0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "lbFt", ticks: [1e-3, 0.01, 0.1, 1, 10, 100] },
+          { key: "ozIn", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "kgCm", ticks: [0.1, 1, 10, 100, 1e3, 1e4] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 N·m = 0.7376 lb·ft = 8.851 lb·in = 141.6 oz·in",
     variables: []
@@ -23383,11 +25240,12 @@ var motorEfficiency = {
   inputs: [
     { key: "inputVoltage", label: "Supply Voltage", symbol: "V", unit: "V", defaultValue: 12, min: 0.1 },
     { key: "inputCurrent", label: "Supply Current", symbol: "I", unit: "A", defaultValue: 2, min: 0 },
-    { key: "outputPowerW", label: "Mechanical Output Power", symbol: "P_out", unit: "W", defaultValue: 18, min: 0, tooltip: "Measure with a torque + speed sensor, or use P = T × ω" }
+    { key: "outputPowerW", label: "Mechanical Output Power", symbol: "P_out", unit: "W", defaultValue: 18, min: 0, tooltip: "Measure with a torque + speed sensor, or use P = T × ω" },
+    { key: "targetEfficiency", label: "Target Efficiency", symbol: "η_t", unit: "%", defaultValue: 75, min: 0, max: 100, tooltip: "The efficiency the motor must reach. The status fails below 50 %." }
   ],
   outputs: [
     { key: "inputPower", label: "Input Power", symbol: "P_in", unit: "W", precision: 2 },
-    { key: "efficiency", label: "Efficiency", symbol: "η", unit: "%", precision: 1, thresholds: { good: { min: 75 }, warning: { min: 50 } } },
+    { key: "efficiency", label: "Efficiency", symbol: "η", unit: "%", precision: 1, thresholds: { good: { min: 75 }, warning: { min: 50 } }, primary: true },
     { key: "losses", label: "Total Losses", symbol: "P_loss", unit: "W", precision: 2 },
     { key: "heatDissipation", label: "Heat Dissipated", symbol: "Q", unit: "W", precision: 2 }
   ],
@@ -23398,8 +25256,28 @@ var motorEfficiency = {
       { symbol: "η", description: "Efficiency", unit: "%" },
       { symbol: "P_in", description: "Electrical input power", unit: "W" },
       { symbol: "P_out", description: "Mechanical output power", unit: "W" }
+    ],
+    substitution: [
+      { symbol: "P_in", expression: "{inputVoltage} × {inputCurrent}", output: "inputPower" },
+      { symbol: "η", expression: "{outputPowerW} / P_in", output: "efficiency" },
+      { symbol: "P_loss", expression: "P_in − {outputPowerW}", output: "losses" }
     ]
   },
+  sweep: {
+    input: "outputPowerW",
+    range: [0, 24],
+    scale: "linear",
+    lines: [
+      { id: "efficiency-floor", kind: "limit", label: "Minimum", value: () => 50, fails: "below" },
+      { id: "efficiency-target", kind: "target", label: "Target", value: (i) => i.targetEfficiency }
+    ]
+  },
+  target: { output: "efficiency", input: "targetEfficiency", sense: "min", failAt: 50 },
+  examples: [
+    { id: "gearmotor-12v", label: "12 V brushed gearmotor", values: { inputVoltage: 12, inputCurrent: 2, outputPowerW: 18 } },
+    { id: "bldc-fan-24v", label: "24 V BLDC fan", values: { inputVoltage: 24, inputCurrent: 1.5, outputPowerW: 28 } },
+    { id: "ebike-48v", label: "48 V e-bike motor", values: { inputVoltage: 48, inputCurrent: 10, outputPowerW: 400 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "motor-heat-dissipation", "bldc-motor"],
   relatedBlogPosts: ["motor-heat-dissipation"]
@@ -23446,7 +25324,7 @@ var inductionMotorSlip = {
   ],
   outputs: [
     { key: "effectiveSyncSpeed", label: "Synchronous Speed", symbol: "n_s", unit: "RPM", precision: 0 },
-    { key: "slipPercent", label: "Slip", symbol: "s", unit: "%", precision: 2, thresholds: { good: { max: 5 }, warning: { max: 10 } } },
+    { key: "slipPercent", label: "Slip", symbol: "s", unit: "%", precision: 2, thresholds: { good: { max: 5 }, warning: { max: 10 } }, primary: true },
     { key: "slipRPM", label: "Speed Difference", symbol: "Δn", unit: "RPM", precision: 0 },
     { key: "slipFrequency", label: "Rotor Frequency", symbol: "f_r", unit: "Hz", precision: 2 },
     { key: "slip", label: "Slip (per-unit)", symbol: "s", unit: "", precision: 4 }
@@ -23459,8 +25337,19 @@ var inductionMotorSlip = {
       { symbol: "n_r", description: "Rotor speed", unit: "RPM" },
       { symbol: "f", description: "Supply frequency", unit: "Hz" },
       { symbol: "p", description: "Number of poles", unit: "" }
+    ],
+    substitution: [
+      { symbol: "n_s", expression: "120 × {frequency} / {poles}", output: "effectiveSyncSpeed" },
+      { symbol: "s", expression: "(n_s − {rotorSpeed}) / n_s", output: "slipPercent" },
+      { symbol: "f_r", expression: "s × {frequency}", output: "slipFrequency" }
     ]
   },
+  sweep: { input: "rotorSpeed", range: [1500, 1800], scale: "linear" },
+  examples: [
+    { id: "four-pole-60hz", label: "4-pole 60 Hz motor at full load", values: { frequency: 60, poles: 4, rotorSpeed: 1750, syncSpeed: 0 } },
+    { id: "two-pole-50hz-pump", label: "2-pole 50 Hz pump motor", values: { frequency: 50, poles: 2, rotorSpeed: 2900, syncSpeed: 0 } },
+    { id: "six-pole-50hz-fan", label: "6-pole 50 Hz fan motor", values: { frequency: 50, poles: 6, rotorSpeed: 960, syncSpeed: 0 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "motor-efficiency", "three-phase-power"]
 };
@@ -23491,7 +25380,7 @@ var motorInrushCurrent = {
     { key: "lineResistance", label: "Line Resistance", symbol: "R_line", unit: "Ω", defaultValue: 0.5, min: 0, step: 0.01 }
   ],
   outputs: [
-    { key: "inrushCurrent", label: "Inrush Current", symbol: "I_inrush", unit: "A", precision: 1 },
+    { key: "inrushCurrent", label: "Inrush Current", symbol: "I_inrush", unit: "A", precision: 1, primary: true },
     { key: "voltageDropAtInrush", label: "Voltage Drop", symbol: "ΔV", unit: "V", precision: 2 },
     { key: "voltageDropPercent", label: "Voltage Drop", symbol: "ΔV%", unit: "%", precision: 1, thresholds: { good: { max: 3 }, warning: { max: 10 } } },
     { key: "fuseISquaredT", label: "I²t (fuse energy)", symbol: "I²t", unit: "A²s", precision: 0 },
@@ -23533,7 +25422,7 @@ var motorHeatDissipation = {
     { key: "thermalResistance", label: "Thermal Resistance (motor)", symbol: "Rθ", unit: "°C/W", defaultValue: 2.5, min: 0.01, tooltip: "Motor winding to ambient thermal resistance from datasheet" }
   ],
   outputs: [
-    { key: "losses", label: "Power Losses", symbol: "P_loss", unit: "W", precision: 2 },
+    { key: "losses", label: "Power Losses", symbol: "P_loss", unit: "W", precision: 2, primary: true },
     { key: "tempRise", label: "Temperature Rise", symbol: "ΔT", unit: "°C", precision: 1 },
     { key: "motorTemp", label: "Motor Operating Temp", symbol: "T_m", unit: "°C", precision: 1, thresholds: { good: { max: 80 }, warning: { max: 100 }, danger: { max: 130 } } },
     { key: "outputPower", label: "Output Power", symbol: "P_out", unit: "W", precision: 2 }
@@ -23544,8 +25433,19 @@ var motorHeatDissipation = {
     variables: [
       { symbol: "Rθ", description: "Winding-to-ambient thermal resistance", unit: "°C/W" },
       { symbol: "ΔT", description: "Temperature rise above ambient", unit: "°C" }
+    ],
+    substitution: [
+      { symbol: "P_loss", expression: "{inputPower} × (1 − {efficiency})", output: "losses" },
+      { symbol: "ΔT", expression: "P_loss × {thermalResistance}", output: "tempRise" },
+      { symbol: "T", expression: "{ambientTemp} + ΔT", output: "motorTemp" }
     ]
   },
+  sweep: { input: "efficiency", range: [50, 98], scale: "linear" },
+  examples: [
+    { id: "gearmotor-50w", label: "50 W gearmotor", values: { inputPower: 50, efficiency: 80, ambientTemp: 25, thermalResistance: 2.5 } },
+    { id: "servo-750w", label: "750 W servo motor in a 40 °C cabinet", values: { inputPower: 750, efficiency: 88, ambientTemp: 40, thermalResistance: 0.15 } },
+    { id: "small-fan-10w", label: "10 W shaded-pole fan motor", values: { inputPower: 10, efficiency: 60, ambientTemp: 25, thermalResistance: 8 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["motor-efficiency", "junction-temperature", "heatsink-calculator"]
 };
@@ -23582,13 +25482,22 @@ var encoderResolution = {
         { label: "4096 PPR", values: { ppr: 4096 } }
       ]
     },
-    { key: "quadrature", label: "Quadrature (×4)", symbol: "×4", unit: "", defaultValue: 1, min: 0, max: 1, tooltip: "Set 1 for quadrature (4× edge count), 0 for single channel" },
+    {
+      key: "quadrature",
+      label: "Quadrature (×4)",
+      symbol: "×4",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 1,
+      options: [{ value: 0, label: "Single channel (×1)" }, { value: 1, label: "Quadrature (×4)" }]
+    },
     { key: "gearRatio", label: "Gear Ratio", symbol: "GR", unit: ":1", defaultValue: 1, min: 0.01 },
     { key: "motorMaxRpm", label: "Max Motor Speed", symbol: "n_max", unit: "RPM", defaultValue: 3e3, min: 1 }
   ],
   outputs: [
-    { key: "countsMechanicalRev", label: "Counts/Motor Rev", symbol: "CPR", unit: "counts", precision: 0 },
-    { key: "countsPerOutputRev", label: "Counts/Output Rev", symbol: "CPR_out", unit: "counts", precision: 0 },
+    { key: "countsMechanicalRev", label: "Counts/Motor Rev", symbol: "CPR", unit: "counts", precision: 0, display: { integer: true } },
+    { key: "countsPerOutputRev", label: "Counts/Output Rev", symbol: "CPR_out", unit: "counts", precision: 0, primary: true },
     { key: "degreePerCount", label: "Angular Resolution", symbol: "θ/count", unit: "°/count", precision: 4 },
     { key: "maxFrequency", label: "Max Pulse Frequency", symbol: "f_max", unit: "Hz", precision: 0 }
   ],
@@ -23598,8 +25507,19 @@ var encoderResolution = {
     variables: [
       { symbol: "PPR", description: "Pulses per revolution", unit: "pulses" },
       { symbol: "CPR", description: "Counts per revolution (×4 for quadrature)", unit: "counts" }
+    ],
+    substitution: [
+      { symbol: "CPR", expression: "{ppr} × 4 (quadrature; × 1 single channel) × {gearRatio}", output: "countsPerOutputRev" },
+      { symbol: "θ", expression: "360° / CPR", output: "degreePerCount" },
+      { symbol: "f_max", expression: "{motorMaxRpm} / 60 × {ppr}", output: "maxFrequency" }
     ]
   },
+  sweep: { input: "ppr", range: [10, 1e4], scale: "log" },
+  examples: [
+    { id: "servo-2500-line", label: "Servo motor with a 2500-line encoder", values: { ppr: 2500, quadrature: 1, gearRatio: 1, motorMaxRpm: 3e3 } },
+    { id: "gearmotor-hall-30to1", label: "Gearmotor, 12 PPR Hall encoder, 30:1", values: { ppr: 12, quadrature: 1, gearRatio: 30, motorMaxRpm: 6e3 } },
+    { id: "optical-1024-single", label: "1024 PPR optical encoder, single channel", values: { ppr: 1024, quadrature: 0, gearRatio: 1, motorMaxRpm: 1500 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "servo-motor", "gear-ratio"],
   relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
@@ -23629,7 +25549,7 @@ var motorStartingTorque = {
     { key: "backEmfConst", label: "Back-EMF Constant", symbol: "Ke", unit: "V/RPM", defaultValue: 0.01, min: 1e-4, step: 1e-3 }
   ],
   outputs: [
-    { key: "startingTorque", label: "Starting (Stall) Torque", symbol: "T_s", unit: "N·m", precision: 3 },
+    { key: "startingTorque", label: "Starting (Stall) Torque", symbol: "T_s", unit: "N·m", precision: 3, primary: true },
     { key: "stallCurrent", label: "Stall Current", symbol: "I_s", unit: "A", precision: 2 },
     { key: "noLoadSpeed", label: "No-Load Speed", symbol: "n₀", unit: "RPM", precision: 0 },
     { key: "powerAtStall", label: "Power at Stall", symbol: "P_s", unit: "W", precision: 1 }
@@ -23640,8 +25560,19 @@ var motorStartingTorque = {
     variables: [
       { symbol: "Kt", description: "Torque constant", unit: "N·m/A" },
       { symbol: "R", description: "Winding resistance", unit: "Ω" }
+    ],
+    substitution: [
+      { symbol: "I_s", expression: "{voltage} / {resistance}", output: "stallCurrent" },
+      { symbol: "T_s", expression: "{torqueConst} × I_s", output: "startingTorque" },
+      { symbol: "ω₀", expression: "{voltage} / {backEmfConst}", output: "noLoadSpeed" }
     ]
   },
+  sweep: { input: "voltage", range: [1, 48], scale: "linear" },
+  examples: [
+    { id: "wiper-12v", label: "12 V wiper motor", values: { voltage: 12, resistance: 0.3, torqueConst: 0.03, backEmfConst: 3e-3 } },
+    { id: "pmdc-24v-200w", label: "24 V 200 W PMDC motor", values: { voltage: 24, resistance: 0.25, torqueConst: 0.07, backEmfConst: 73e-4 } },
+    { id: "toy-6v", label: "6 V toy motor", values: { voltage: 6, resistance: 3, torqueConst: 5e-3, backEmfConst: 5e-4 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["dc-motor-speed", "motor-inrush-current", "gear-ratio"],
   relatedBlogPosts: ["torque-units"]
@@ -23678,7 +25609,7 @@ var batteryRuntimeMotor = {
     { key: "depthOfDischarge", label: "Depth of Discharge", symbol: "DoD", unit: "%", defaultValue: 80, min: 1, max: 100 }
   ],
   outputs: [
-    { key: "runtimeHours", label: "Runtime", symbol: "t", unit: "h", precision: 2 },
+    { key: "runtimeHours", label: "Runtime", symbol: "t", unit: "h", precision: 2, primary: true },
     { key: "runtimeMinutes", label: "Runtime", symbol: "t", unit: "min", precision: 0 },
     { key: "usableCapacityMah", label: "Usable Capacity", symbol: "C_use", unit: "mAh", precision: 0 },
     { key: "energyWh", label: "Battery Energy (est.)", symbol: "E", unit: "Wh", precision: 2 }
@@ -23719,9 +25650,9 @@ var motorWindingResistance = {
     { key: "tempCoeff", label: "Temperature Coefficient", symbol: "α", unit: "/°C", defaultValue: 393e-5, min: 0, step: 1e-4, tooltip: "Copper: 0.00393/°C, Aluminium: 0.00429/°C" }
   ],
   outputs: [
-    { key: "resistanceAtTemp", label: "Resistance at Temp", symbol: "R(T)", unit: "Ω", precision: 4 },
-    { key: "resistanceChange", label: "Resistance Change", symbol: "ΔR", unit: "Ω", precision: 4 },
-    { key: "resistanceChangePercent", label: "Change", symbol: "ΔR%", unit: "%", precision: 1 }
+    { key: "resistanceAtTemp", label: "Resistance at Temp", symbol: "R(T)", unit: "Ω", precision: 4, primary: true },
+    { key: "resistanceChange", label: "Resistance Change", symbol: "ΔR", unit: "Ω", precision: 4, signed: "explicit" },
+    { key: "resistanceChangePercent", label: "Change", symbol: "ΔR%", unit: "%", precision: 1, signed: "explicit" }
   ],
   calculate: calculateMotorWindingResistance,
   formula: {
@@ -23729,8 +25660,18 @@ var motorWindingResistance = {
     variables: [
       { symbol: "α", description: "Temperature coefficient (Cu: 0.00393)", unit: "/°C" },
       { symbol: "T", description: "Operating temperature", unit: "°C" }
+    ],
+    substitution: [
+      { symbol: "R(T)", expression: "{resistance25} × (1 + {tempCoeff} × ({temperature} − 25 °C))", output: "resistanceAtTemp" },
+      { symbol: "ΔR", expression: "R(T) − {resistance25}", output: "resistanceChange" }
     ]
   },
+  sweep: { input: "temperature", range: [-40, 200], scale: "linear" },
+  examples: [
+    { id: "copper-80c", label: "Copper winding at 80 °C", values: { resistance25: 1, temperature: 80, tempCoeff: 393e-5 } },
+    { id: "class-f-hot-spot", label: "Copper winding at the 155 °C class F limit", values: { resistance25: 0.5, temperature: 155, tempCoeff: 393e-5 } },
+    { id: "aluminium-100c", label: "Aluminium winding at 100 °C", values: { resistance25: 2, temperature: 100, tempCoeff: 403e-5 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["motor-heat-dissipation", "motor-efficiency", "dc-motor-speed"],
   relatedBlogPosts: ["bldc-motor"]
@@ -23774,7 +25715,7 @@ var hBridgeSelection = {
   ],
   outputs: [
     { key: "peakCurrent", label: "Peak Current", symbol: "I_peak", unit: "A", precision: 1 },
-    { key: "mosfetCurrentRating", label: "Min. MOSFET Current Rating", symbol: "I_DS_min", unit: "A", precision: 1 },
+    { key: "mosfetCurrentRating", label: "Min. MOSFET Current Rating", symbol: "I_DS_min", unit: "A", precision: 1, primary: true },
     { key: "conductionLoss", label: "Conduction Loss (per FET)", symbol: "P_cond", unit: "W", precision: 3 },
     { key: "switchingLoss", label: "Switching Loss (per FET)", symbol: "P_sw", unit: "W", precision: 3 },
     { key: "totalLoss", label: "Total Bridge Loss (est.)", symbol: "P_total", unit: "W", precision: 2 }
@@ -23831,7 +25772,7 @@ var motorDriverPower = {
     { key: "conductionLoss", label: "Conduction Loss / Conducting FET", symbol: "P_cond", unit: "W", precision: 3, tooltip: "I²·R_DS(on); two FETs conduct at any instant" },
     { key: "switchingLoss", label: "Switching Loss (hard-switched FET)", symbol: "P_sw", unit: "W", precision: 3, tooltip: "V·I·t_sw·f, in the one FET hard-switched each period" },
     { key: "totalLossPerFet", label: "Hottest FET", symbol: "P_FET", unit: "W", precision: 3, tooltip: "The larger of I²·R (the high side that conducts all period) and I²·R·D + P_sw (the low side, which also switches)" },
-    { key: "totalLossBridge", label: "Total Bridge Loss", symbol: "P_bridge", unit: "W", precision: 2, tooltip: "2·I²·R + P_sw (TI SLVA504A); the gate drive is reported apart" },
+    { key: "totalLossBridge", label: "Total Bridge Loss", symbol: "P_bridge", unit: "W", precision: 2, tooltip: "2·I²·R + P_sw (TI SLVA504A); the gate drive is reported apart", primary: true },
     { key: "efficiency", label: "Driver Efficiency (est.)", symbol: "η", unit: "%", precision: 1, tooltip: "1 − (bridge loss + gate drive)/(V·I·D), against the power the supply delivers" },
     { key: "gateDriveLoss", label: "Gate-Drive Loss", symbol: "P_gate", unit: "W", precision: 4, tooltip: "2·Q_g·V·f for the two FETs that switch each period, dissipated in the gate driver (IR AN-1070)" }
   ],
@@ -23900,7 +25841,7 @@ var pidTuning = {
     { key: "timeConstant", label: "Time Constant (τ)", symbol: "τ", unit: "s", defaultValue: 1, min: 1e-3, step: 0.1, tooltip: "Time for 63.2% of final step response" }
   ],
   outputs: [
-    { key: "kpPID", label: "Kp (PID)", symbol: "Kp", unit: "", precision: 3 },
+    { key: "kpPID", label: "Kp (PID)", symbol: "Kp", unit: "", precision: 3, primary: true },
     { key: "kiPID", label: "Ki (PID)", symbol: "Ki", unit: "1/s", precision: 3 },
     { key: "kdPID", label: "Kd (PID)", symbol: "Kd", unit: "s", precision: 4 },
     { key: "kpPI", label: "Kp (PI only)", symbol: "Kp_PI", unit: "", precision: 3 },
@@ -23926,18 +25867,38 @@ var pidTuning = {
 // src/lib/calculators/sensor/ntc-thermistor.ts
 function calculateNtcThermistor(inputs) {
   const { resistance, beta, T0, R0 } = inputs;
+  const fixedResistor = inputs.fixedResistor ?? 1e4;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  const ntcPosition = inputs.ntcPosition ?? 0;
   if (resistance <= 0 || R0 <= 0 || beta <= 0) {
     return { values: { temperature: 0, temperatureK: 0 }, errors: ["Resistance, R0, and beta must be positive"] };
+  }
+  if (fixedResistor <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { temperature: 0, temperatureK: 0 }, errors: ["The fixed resistor, ADC reference and ADC bits must be positive"] };
   }
   const T0_K = T0 + 273.15;
   const temperatureK = 1 / (1 / T0_K + 1 / beta * Math.log(resistance / R0));
   const temperature = temperatureK - 273.15;
+  const dividerVoltage = adcRef * (ntcPosition === 1 ? fixedResistor : resistance) / (resistance + fixedResistor);
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(dividerVoltage / adcRef * steps)));
+  const resolution = temperatureK ** 2 * (resistance + fixedResistor) ** 2 / (beta * resistance * fixedResistor * steps);
   return {
     values: {
       temperature,
-      temperatureK
+      temperatureK,
+      dividerVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function resistanceFromVoltage(v, inputs) {
+  const rf = inputs.fixedResistor ?? 1e4;
+  const vref = inputs.adcRef ?? 3.3;
+  if (!(v > 0 && v < vref)) return NaN;
+  return (inputs.ntcPosition ?? 0) === 1 ? rf * (vref / v - 1) : rf * v / (vref - v);
 }
 var ntcThermistor = {
   slug: "ntc-thermistor",
@@ -24002,11 +25963,56 @@ var ntcThermistor = {
         { label: "10kΩ (NTC 10K)", values: { R0: 1e4 } },
         { label: "100kΩ (NTC 100K)", values: { R0: 1e5 } }
       ]
+    },
+    {
+      key: "fixedResistor",
+      label: "Fixed Resistor",
+      symbol: "R_fixed",
+      unit: "Ω",
+      defaultValue: 1e4,
+      min: 1,
+      group: "Circuit",
+      tooltip: "The divider's fixed resistor: from the reference to the ADC node when the NTC is on the low side, from the ADC node to ground when it is on the high side"
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The voltage across the divider, which is also the ADC full scale (ratiometric)"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
+    },
+    {
+      key: "ntcPosition",
+      label: "NTC Position",
+      unit: "",
+      defaultValue: 0,
+      group: "Circuit",
+      options: [
+        { value: 0, label: "Low side" },
+        { value: 1, label: "High side" }
+      ],
+      tooltip: "Low side: the NTC from the ADC node to ground. High side: from the reference to the node."
     }
   ],
   outputs: [
     {
       key: "temperature",
+      primary: true,
       label: "Temperature",
       symbol: "T",
       unit: "°C",
@@ -24020,9 +26026,73 @@ var ntcThermistor = {
       unit: "K",
       precision: 2,
       tooltip: "Calculated temperature in Kelvin"
+    },
+    {
+      key: "dividerVoltage",
+      label: "Divider Output",
+      symbol: "V_out",
+      unit: "V",
+      precision: 3,
+      tooltip: "The voltage at the ADC node"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_out / V_ref × 2^N)"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "°C/LSB",
+      precision: 3,
+      tooltip: "The temperature one ADC step spans at this point"
+    }
+  ],
+  examples: [
+    {
+      id: "battery-ntc-10k-3380",
+      label: "10 kΩ β 3380 NTC on a 3.3 V, 12-bit MCU (battery at 45 °C)",
+      values: { resistance: 4903.4, beta: 3380, T0: 25, R0: 1e4, fixedResistor: 1e4, adcRef: 3.3, adcBits: 12, ntcPosition: 0 }
+    },
+    {
+      id: "hotend-100k-3950",
+      label: "100 kΩ β 3950 hotend thermistor, 4.7 kΩ pull-up, 5 V 10-bit ADC (200 °C)",
+      values: { resistance: 744.61, beta: 3950, T0: 25, R0: 1e5, fixedResistor: 4700, adcRef: 5, adcBits: 10, ntcPosition: 0 }
+    },
+    {
+      id: "high-side-ntc-10k",
+      label: "10 kΩ β 3950 NTC on the high side, 3.3 V 12-bit (fridge at 5 °C)",
+      values: { resistance: 25924.6, beta: 3950, T0: 25, R0: 1e4, fixedResistor: 1e4, adcRef: 3.3, adcBits: 12, ntcPosition: 1 }
     }
   ],
   calculate: calculateNtcThermistor,
+  transfer: {
+    physical: "temperature",
+    readings: ["resistance", "dividerVoltage", "adcCode"],
+    free: "resistance",
+    sensor: ["R0", "beta", "T0"],
+    circuit: ["fixedResistor", "adcRef", "adcBits", "ntcPosition"],
+    inverse: {
+      temperature: (t, i) => i.R0 * Math.exp(i.beta * (1 / (t + 273.15) - 1 / (i.T0 + 273.15))),
+      dividerVoltage: (v, i) => resistanceFromVoltage(v, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return resistanceFromVoltage((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3), i);
+      }
+    },
+    search: [1, 1e8],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "divider",
+    label: "NTC",
+    curve: { range: [-40, 125], readings: [{ key: "resistance", scale: "log" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 5 }
+  },
   formula: {
     primary: "1/T = 1/T₀ + (1/β)·ln(R/R₀)",
     latex: "\\frac{1}{T} = \\frac{1}{T_0} + \\frac{1}{\\beta} \\ln\\left(\\frac{R}{R_0}\\right)",
@@ -24042,17 +26112,37 @@ var ntcThermistor = {
 // src/lib/calculators/sensor/rtd-temperature.ts
 function calculateRtdTemperature(inputs) {
   const { resistance, r0, alpha } = inputs;
+  const fixedResistor = inputs.fixedResistor ?? 150;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  const sensorPosition = inputs.sensorPosition ?? 0;
   if (r0 <= 0 || alpha <= 0) {
     return { values: { temperature: 0, resistanceAt100C: 0 }, errors: ["R0 and alpha must be positive"] };
   }
+  if (fixedResistor <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { temperature: 0, resistanceAt100C: 0 }, errors: ["The fixed resistor, ADC reference and ADC bits must be positive"] };
+  }
   const temperature = (resistance - r0) / (r0 * alpha);
   const resistanceAt100C = r0 * (1 + alpha * 100);
+  const dividerVoltage = adcRef * (sensorPosition === 1 ? fixedResistor : resistance) / (resistance + fixedResistor);
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(dividerVoltage / adcRef * steps)));
+  const resolution = (resistance + fixedResistor) ** 2 / (r0 * alpha * fixedResistor * steps);
   return {
     values: {
       temperature,
-      resistanceAt100C
+      resistanceAt100C,
+      dividerVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function resistanceFromVoltage2(v, inputs) {
+  const rf = inputs.fixedResistor ?? 150;
+  const vref = inputs.adcRef ?? 3.3;
+  if (!(v > 0 && v < vref)) return NaN;
+  return (inputs.sensorPosition ?? 0) === 1 ? rf * (vref / v - 1) : rf * v / (vref - v);
 }
 var rtdTemperature = {
   slug: "rtd-temperature",
@@ -24113,11 +26203,56 @@ var rtdTemperature = {
         { label: "IEC 60751 (0.003851)", values: { alpha: 3851e-6 } },
         { label: "American (0.003911)", values: { alpha: 3911e-6 } }
       ]
+    },
+    {
+      key: "fixedResistor",
+      label: "Fixed Resistor",
+      symbol: "R_fixed",
+      unit: "Ω",
+      defaultValue: 150,
+      min: 1,
+      group: "Circuit",
+      tooltip: "The divider's fixed resistor: from the reference to the ADC node when the RTD is on the low side, from the ADC node to ground when it is on the high side. A value near the RTD's mid-range resistance gives the most even resolution."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The voltage across the divider, which is also the ADC full scale (ratiometric)"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
+    },
+    {
+      key: "sensorPosition",
+      label: "RTD Position",
+      unit: "",
+      defaultValue: 0,
+      group: "Circuit",
+      options: [
+        { value: 0, label: "Low side" },
+        { value: 1, label: "High side" }
+      ],
+      tooltip: "Low side: the RTD from the ADC node to ground. High side: from the reference to the node."
     }
   ],
   outputs: [
     {
       key: "temperature",
+      primary: true,
       label: "Temperature",
       symbol: "T",
       unit: "°C",
@@ -24131,9 +26266,75 @@ var rtdTemperature = {
       unit: "Ω",
       precision: 3,
       tooltip: "Calculated resistance at 100°C for this RTD type"
+    },
+    {
+      key: "dividerVoltage",
+      label: "Divider Output",
+      symbol: "V_out",
+      unit: "V",
+      precision: 3,
+      tooltip: "The voltage at the ADC node"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_out / V_ref × 2^N)"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "°C/LSB",
+      precision: 3,
+      tooltip: "The temperature one ADC step spans at this point"
+    }
+  ],
+  // The PT100s use the default 150 Ω divider; the PT1000 takes ten times that,
+  // which puts it at the same 44 % of the ADC's range.
+  examples: [
+    {
+      id: "pt100-50c",
+      label: "PT100 at 50°C (119.4Ω)",
+      values: { resistance: 119.4, r0: 100, alpha: 3851e-6, fixedResistor: 150, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
+    },
+    {
+      id: "pt1000-50c",
+      label: "PT1000 at 50°C (1194Ω)",
+      values: { resistance: 1194, r0: 1e3, alpha: 3851e-6, fixedResistor: 1500, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
+    },
+    {
+      id: "pt100-100c",
+      label: "PT100 at 100°C (138.5Ω)",
+      values: { resistance: 138.5, r0: 100, alpha: 3851e-6, fixedResistor: 150, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
     }
   ],
   calculate: calculateRtdTemperature,
+  transfer: {
+    physical: "temperature",
+    readings: ["resistance", "dividerVoltage", "adcCode"],
+    free: "resistance",
+    sensor: ["r0", "alpha"],
+    circuit: ["fixedResistor", "adcRef", "adcBits", "sensorPosition"],
+    inverse: {
+      temperature: (t, i) => i.r0 * (1 + i.alpha * t),
+      dividerVoltage: (v, i) => resistanceFromVoltage2(v, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return resistanceFromVoltage2((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3), i);
+      }
+    },
+    search: [1, 1e5],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "divider",
+    label: "RTD",
+    curve: { range: [-50, 250], readings: [{ key: "resistance", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 10 }
+  },
   formula: {
     primary: "T = (R − R₀) / (R₀ · α)",
     latex: "T = \\frac{R - R_0}{R_0 \\cdot \\alpha}",
@@ -24152,21 +26353,40 @@ var rtdTemperature = {
 // src/lib/calculators/sensor/wheatstone-bridge.ts
 function calculateWheatstoneBridge(inputs) {
   const { vin, r1, r2, r3, r4 } = inputs;
+  const frontGain = inputs.frontGain ?? 6;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
   if (r1 <= 0 || r2 <= 0 || r3 <= 0 || r4 <= 0) {
     return { values: { vout: 0, voutMv: 0, balance: 0, sensitivity: 0 }, errors: ["All resistances must be positive"] };
+  }
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { vout: 0, voutMv: 0, balance: 0, sensitivity: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
   }
   const vout = vin * (r3 / (r1 + r3) - r4 / (r2 + r4));
   const voutMv = vout * 1e3;
   const balance = r1 / r3 - r2 / r4;
   const sensitivity = vout / vin * 1e3;
+  const amplifiedVoltage = frontGain * vout;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef * (r1 + r3) ** 2 / (frontGain * steps * vin * r1);
   return {
     values: {
       vout,
       voutMv,
       balance,
-      sensitivity
+      sensitivity,
+      amplifiedVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function r3FromVout(vout, inputs) {
+  const { vin, r1, r2, r4 } = inputs;
+  const k = vout / vin + r4 / (r2 + r4);
+  if (!(k > 0 && k < 1)) return NaN;
+  return k * r1 / (1 - k);
 }
 var wheatstoneBridge = {
   slug: "wheatstone-bridge",
@@ -24230,11 +26450,46 @@ var wheatstoneBridge = {
       defaultValue: 1e3,
       min: 1,
       tooltip: "Bridge resistor R4 (bottom-right arm)"
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 6,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain between the bridge output and the ADC. A gain of 6 brings the bridge's 0.5 V output with R3 at 1.5 kΩ to 3 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale. The ADC is unipolar: a negative bridge output reads 0."
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
     {
       key: "vout",
+      primary: true,
+      signed: "explicit",
       label: "Output Voltage",
       symbol: "V_out",
       unit: "V",
@@ -24243,6 +26498,7 @@ var wheatstoneBridge = {
     },
     {
       key: "voutMv",
+      signed: "explicit",
       label: "Output Voltage",
       symbol: "V_out",
       unit: "mV",
@@ -24264,9 +26520,74 @@ var wheatstoneBridge = {
       unit: "mV/V",
       precision: 3,
       tooltip: "Bridge sensitivity: output mV per V of excitation"
+    },
+    {
+      key: "amplifiedVoltage",
+      signed: "explicit",
+      label: "Amplifier Output",
+      symbol: "V_amp",
+      unit: "V",
+      precision: 3,
+      tooltip: "The bridge output times the amplifier gain"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref × 2^N), 0 below zero"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "Ω/LSB",
+      precision: 3,
+      tooltip: "The change in R3 one ADC step spans at this point"
+    }
+  ],
+  examples: [
+    {
+      id: "pt1000-bridge-50c",
+      label: "Pt1000 as R3 in a 1 kΩ bridge at 5 V, gain 6 (about 50 °C)",
+      values: { vin: 5, r1: 1e3, r2: 1e3, r3: 1194, r4: 1e3, frontGain: 6, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "gauge-350-bridge",
+      label: "350 Ω strain gauge as R3 (+0.4 %) in a 350 Ω bridge at 5 V, gain 200",
+      values: { vin: 5, r1: 350, r2: 350, r3: 351.4, r4: 350, frontGain: 200, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "ntc-bridge-10k",
+      label: "10 kΩ β 3950 NTC as R3 in a 10 kΩ bridge at 3.3 V, gain 2 (about 16 °C)",
+      values: { vin: 3.3, r1: 1e4, r2: 1e4, r3: 15e3, r4: 1e4, frontGain: 2, adcRef: 3.3, adcBits: 12 }
     }
   ],
   calculate: calculateWheatstoneBridge,
+  transfer: {
+    physical: "r3",
+    readings: ["vout", "amplifiedVoltage", "adcCode"],
+    free: "r3",
+    sensor: ["r1", "r2", "r4"],
+    circuit: ["vin", "frontGain", "adcRef", "adcBits"],
+    inverse: {
+      vout: (v, i) => r3FromVout(v, i),
+      amplifiedVoltage: (v, i) => r3FromVout(v / (i.frontGain ?? 6), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return r3FromVout((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) / (i.frontGain ?? 6), i);
+      }
+    },
+    search: [1, 1e6],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "R₃",
+    curve: { range: [1e3, 1500], readings: [{ key: "vout", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 25 }
+  },
   formula: {
     primary: "V_out = V_in · (R3/(R1+R3) − R4/(R2+R4))",
     latex: "V_{out} = V_{in} \\left(\\frac{R_3}{R_1+R_3} - \\frac{R_4}{R_2+R_4}\\right)",
@@ -24282,12 +26603,19 @@ var wheatstoneBridge = {
 };
 
 // src/lib/calculators/sensor/hall-effect-sensor.ts
+var ELEMENTARY_CHARGE = 1602176634e-28;
 function calculateHallEffectSensor(inputs) {
   const { current, Bfield, thickness, carrierDensity } = inputs;
-  const e = 1602176634e-28;
+  const frontGain = inputs.frontGain ?? 4e3;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  const e = ELEMENTARY_CHARGE;
   const n = carrierDensity * 1e23;
   if (n <= 0 || thickness <= 0 || Bfield <= 0) {
     return { values: { hallVoltage: 0, hallCoefficient: 0, sensitivity: 0 }, errors: ["Carrier density, thickness, and magnetic field must be positive"] };
+  }
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { hallVoltage: 0, hallCoefficient: 0, sensitivity: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
   }
   const RH = 1 / (n * e);
   const I_A = current * 1e-3;
@@ -24296,13 +26624,24 @@ function calculateHallEffectSensor(inputs) {
   const VH_V = RH * I_A * B_T / t_m;
   const hallVoltage = VH_V * 1e3;
   const sensitivity = hallVoltage / Bfield;
+  const amplifiedVoltage = hallVoltage / 1e3 * frontGain;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef * t_m / (steps * frontGain * RH * I_A * 1e-3);
   return {
     values: {
       hallVoltage,
       hallCoefficient: RH,
-      sensitivity
+      sensitivity,
+      amplifiedVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function fieldFromHall(mv, inputs) {
+  const RH = 1 / (inputs.carrierDensity * 1e23 * ELEMENTARY_CHARGE);
+  return mv / 1e3 * (inputs.thickness * 1e-3) / (RH * (inputs.current * 1e-3)) * 1e3;
 }
 var hallEffectSensor = {
   slug: "hall-effect-sensor",
@@ -24337,7 +26676,8 @@ var hallEffectSensor = {
       symbol: "B",
       unit: "mT",
       defaultValue: 100,
-      min: 0,
+      min: 1e-3,
+      // calculate() refuses a field of zero or below
       tooltip: "Applied magnetic field perpendicular to current flow",
       presets: [
         { label: "Earth field (~0.05 mT)", values: { Bfield: 0.05 } },
@@ -24361,17 +26701,51 @@ var hallEffectSensor = {
       unit: "×10²³/m³",
       defaultValue: 8.5,
       min: 1e-3,
-      tooltip: "Charge carrier density (8.5×10²³ for copper, ~10²⁴ for silicon)",
+      tooltip: "Charge carrier density in units of 10²³ per m³: copper 8.5×10⁵ (8.5×10²⁸/m³), InSb about 0.2 (2×10²²/m³ at room temperature), intrinsic silicon 1.5×10⁻⁷ (1.5×10¹⁶/m³)",
       presets: [
         { label: "Copper (8.5×10²⁸/m³ → use 8.5e5)", values: { carrierDensity: 85e4 } },
-        { label: "InSb semiconductor (0.02)", values: { carrierDensity: 0.02 } },
+        { label: "InSb semiconductor (0.2)", values: { carrierDensity: 0.2 } },
         { label: "Si typical (1.5×10¹⁶/m³ → 1.5e-7)", values: { carrierDensity: 15e-8 } }
       ]
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 4e3,
+      min: 0.01,
+      max: 1e6,
+      group: "Circuit",
+      tooltip: "The gain between the Hall element and the ADC. A gain of 4000 brings the default element's 0.73 mV at 500 mT to about 2.9 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
     {
       key: "hallVoltage",
+      primary: true,
       label: "Hall Voltage",
       symbol: "V_H",
       unit: "mV",
@@ -24394,9 +26768,73 @@ var hallEffectSensor = {
       unit: "mV/mT",
       precision: 4,
       tooltip: "Hall sensor sensitivity: output mV per mT of applied field"
+    },
+    {
+      key: "amplifiedVoltage",
+      label: "Amplifier Output",
+      symbol: "V_amp",
+      unit: "V",
+      precision: 3,
+      tooltip: "The Hall voltage times the amplifier gain"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref × 2^N)"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "mT/LSB",
+      precision: 4,
+      tooltip: "The field one ADC step spans"
+    }
+  ],
+  examples: [
+    {
+      id: "insb-element-30mt",
+      label: "InSb thin-film Hall element (1 µm, 5 mA), gain 20",
+      values: { current: 5, Bfield: 30, thickness: 1e-3, carrierDensity: 0.2, frontGain: 20, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "gaas-element-100mt",
+      label: "GaAs Hall element (1 µm, 5 mA), gain 50",
+      values: { current: 5, Bfield: 100, thickness: 1e-3, carrierDensity: 1, frontGain: 50, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "silicon-plate-20mt",
+      label: "Silicon Hall plate (2 µm, 1 mA), gain 200",
+      values: { current: 1, Bfield: 20, thickness: 2e-3, carrierDensity: 0.1, frontGain: 200, adcRef: 3.3, adcBits: 12 }
     }
   ],
   calculate: calculateHallEffectSensor,
+  transfer: {
+    physical: "Bfield",
+    readings: ["hallVoltage", "amplifiedVoltage", "adcCode"],
+    free: "Bfield",
+    sensor: ["current", "thickness", "carrierDensity"],
+    circuit: ["frontGain", "adcRef", "adcBits"],
+    inverse: {
+      hallVoltage: (mv, i) => fieldFromHall(mv, i),
+      amplifiedVoltage: (v, i) => fieldFromHall(v * 1e3 / (i.frontGain ?? 4e3), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return fieldFromHall((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) * 1e3 / (i.frontGain ?? 4e3), i);
+      }
+    },
+    search: [0.01, 1e4],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "B",
+    curve: { range: [20, 500], readings: [{ key: "hallVoltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 20 }
+  },
   formula: {
     primary: "V_H = (R_H · I · B) / t,  R_H = 1/(n·e)",
     latex: "V_H = \\frac{R_H \\cdot I \\cdot B}{t}, \\quad R_H = \\frac{1}{n \\cdot e}",
@@ -24418,19 +26856,35 @@ var hallEffectSensor = {
 // src/lib/calculators/sensor/strain-gauge-bridge.ts
 function calculateStrainGaugeBridge(inputs) {
   const { vin, gaugeFactor, strain, bridgeConfig } = inputs;
+  const frontGain = inputs.frontGain ?? 400;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
   if (gaugeFactor <= 0 || vin <= 0) {
     return { values: { vout: 0, resistance_change: 0, strain_SI: 0 }, errors: ["Vin and gauge factor must be positive"] };
+  }
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { vout: 0, resistance_change: 0, strain_SI: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
   }
   const strain_SI = strain * 1e-6;
   const vout = vin * (gaugeFactor * strain_SI / 4) * bridgeConfig * 1e3;
   const resistance_change = gaugeFactor * strain_SI * 100;
+  const amplifiedVoltage = vout / 1e3 * frontGain;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef / (steps * frontGain * vin * (gaugeFactor * 1e-6 / 4) * bridgeConfig);
   return {
     values: {
       vout,
       resistance_change,
-      strain_SI
+      strain_SI,
+      amplifiedVoltage,
+      adcCode,
+      resolution
     }
   };
+}
+function strainFromVout(vout, inputs) {
+  return vout / (inputs.vin * (inputs.gaugeFactor * 1e-6 / 4) * inputs.bridgeConfig * 1e3);
 }
 var strainGaugeBridge = {
   slug: "strain-gauge-bridge",
@@ -24493,17 +26947,57 @@ var strainGaugeBridge = {
       min: 1,
       max: 4,
       step: 1,
-      tooltip: "Number of active gauge arms: 1=quarter bridge, 2=half bridge, 4=full bridge",
+      tooltip: "Number of active gauge arms",
       presets: [
         { label: "Quarter bridge (1 active)", values: { bridgeConfig: 1 } },
         { label: "Half bridge (2 active)", values: { bridgeConfig: 2 } },
         { label: "Full bridge (4 active)", values: { bridgeConfig: 4 } }
+      ],
+      options: [
+        { value: 1, label: "Quarter bridge (1 active arm)" },
+        { value: 2, label: "Half bridge (2 active arms)" },
+        { value: 4, label: "Full bridge (4 active arms)" }
       ]
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 400,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain between the bridge output and the ADC. A gain of 400 brings a quarter bridge at 3000 με (7.9 mV at 5 V, GF 2.1) to about 3.2 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
     {
       key: "vout",
+      primary: true,
+      signed: "explicit",
       label: "Bridge Output",
       symbol: "V_out",
       unit: "mV",
@@ -24512,6 +27006,7 @@ var strainGaugeBridge = {
     },
     {
       key: "resistance_change",
+      signed: "explicit",
       label: "Resistance Change",
       symbol: "ΔR/R",
       unit: "%",
@@ -24526,9 +27021,72 @@ var strainGaugeBridge = {
       precision: 6,
       format: "scientific",
       tooltip: "Strain in SI units (dimensionless, m/m)"
+    },
+    {
+      key: "amplifiedVoltage",
+      label: "Amplifier Output",
+      symbol: "V_amp",
+      unit: "V",
+      precision: 3,
+      tooltip: "The bridge output times the amplifier gain"
+    },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref × 2^N)"
+    },
+    {
+      key: "resolution",
+      label: "Resolution",
+      unit: "με/LSB",
+      precision: 3,
+      tooltip: "The strain one ADC step spans"
+    }
+  ],
+  examples: [
+    {
+      id: "quarter-bridge-foil",
+      label: "Foil gauge (GF 2.0) in a quarter bridge at 5 V, gain 500",
+      values: { vin: 5, gaugeFactor: 2, strain: 1200, bridgeConfig: 1, frontGain: 500, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "half-bridge-bending",
+      label: "Bending-beam half bridge (GF 2.1) at 5 V, gain 200",
+      values: { vin: 5, gaugeFactor: 2.1, strain: 1500, bridgeConfig: 2, frontGain: 200, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "full-bridge-24-bit",
+      label: "Full bridge of foil gauges (GF 2.0) at 3.3 V, gain 128, 24-bit ADC",
+      values: { vin: 3.3, gaugeFactor: 2, strain: 1e3, bridgeConfig: 4, frontGain: 128, adcRef: 3.3, adcBits: 24 }
     }
   ],
   calculate: calculateStrainGaugeBridge,
+  transfer: {
+    physical: "strain",
+    readings: ["vout", "amplifiedVoltage", "adcCode"],
+    free: "strain",
+    sensor: ["gaugeFactor", "bridgeConfig"],
+    circuit: ["vin", "frontGain", "adcRef", "adcBits"],
+    inverse: {
+      vout: (v, i) => strainFromVout(v, i),
+      amplifiedVoltage: (v, i) => strainFromVout(v * 1e3 / (i.frontGain ?? 400), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return strainFromVout((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) * 1e3 / (i.frontGain ?? 400), i);
+      }
+    },
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "ε",
+    curve: { range: [0, 3e3], readings: [{ key: "vout", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 100 }
+  },
   formula: {
     primary: "V_out = V_in · (GF · ε / 4) · N",
     latex: "V_{out} = V_{in} \\cdot \\frac{GF \\cdot \\varepsilon}{4} \\cdot N",
@@ -24546,19 +27104,53 @@ var strainGaugeBridge = {
 };
 
 // src/lib/calculators/sensor/pt100-resistance.ts
+var A = 39083e-7;
+var B2 = -5775e-10;
+var C8 = -4183e-15;
 function calculatePt100Resistance(inputs) {
   const { temperature, r0 } = inputs;
-  const A = 39083e-7;
-  const B2 = -5775e-10;
-  const C9 = -4183e-15;
+  const fixedResistor = inputs.fixedResistor ?? 220;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  const sensorPosition = inputs.sensorPosition ?? 0;
+  if (fixedResistor <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { resistance: 0, sensitivityOhmPerDeg: 0 }, errors: ["The fixed resistor, ADC reference and ADC bits must be positive"] };
+  }
   let resistance;
   if (temperature >= 0) {
     resistance = r0 * (1 + A * temperature + B2 * temperature ** 2);
   } else {
-    resistance = r0 * (1 + A * temperature + B2 * temperature ** 2 + C9 * (temperature - 100) * temperature ** 3);
+    resistance = r0 * (1 + A * temperature + B2 * temperature ** 2 + C8 * (temperature - 100) * temperature ** 3);
   }
-  const sensitivityOhmPerDeg = temperature >= 0 ? r0 * (A + 2 * B2 * temperature) : r0 * (A + 2 * B2 * temperature + C9 * (4 * temperature ** 3 - 300 * temperature ** 2));
-  return { values: { resistance, sensitivityOhmPerDeg } };
+  const sensitivityOhmPerDeg = temperature >= 0 ? r0 * (A + 2 * B2 * temperature) : r0 * (A + 2 * B2 * temperature + C8 * (4 * temperature ** 3 - 300 * temperature ** 2));
+  const dividerVoltage = adcRef * (sensorPosition === 1 ? fixedResistor : resistance) / (resistance + fixedResistor);
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(dividerVoltage / adcRef * steps)));
+  const slope = temperature >= 0 ? r0 * (A + 2 * B2 * temperature) : r0 * (A + 2 * B2 * temperature + C8 * (4 * temperature ** 3 - 300 * temperature ** 2));
+  const resolution = (resistance + fixedResistor) ** 2 / (fixedResistor * steps * slope);
+  return { values: { resistance, sensitivityOhmPerDeg, dividerVoltage, adcCode, resolution } };
+}
+function temperatureFromResistance(r, r0) {
+  if (!(r > 0 && r0 > 0)) return NaN;
+  const d = 1 - r / r0;
+  const disc = A * A - 4 * B2 * d;
+  if (!(disc >= 0)) return NaN;
+  let t = -2 * d / (A + Math.sqrt(disc));
+  if (t >= 0) return t;
+  for (let k = 0; k < 50; k++) {
+    const f = 1 + A * t + B2 * t ** 2 + C8 * (t - 100) * t ** 3 - r / r0;
+    const df = A + 2 * B2 * t + C8 * (4 * t ** 3 - 300 * t ** 2);
+    const step = f / df;
+    t -= step;
+    if (Math.abs(step) < 1e-13 * Math.max(1, Math.abs(t))) break;
+  }
+  return t;
+}
+function resistanceFromVoltage3(v, inputs) {
+  const rf = inputs.fixedResistor ?? 220;
+  const vref = inputs.adcRef ?? 3.3;
+  if (!(v > 0 && v < vref)) return NaN;
+  return (inputs.sensorPosition ?? 0) === 1 ? rf * (vref / v - 1) : rf * v / (vref - v);
 }
 var pt100Resistance = {
   slug: "pt100-resistance",
@@ -24595,13 +27187,103 @@ var pt100Resistance = {
         { label: "Room (25°C)", values: { temperature: 25 } },
         { label: "Steam (100°C)", values: { temperature: 100 } }
       ]
+    },
+    {
+      key: "fixedResistor",
+      label: "Fixed Resistor",
+      symbol: "R_fixed",
+      unit: "Ω",
+      defaultValue: 220,
+      min: 1,
+      group: "Circuit",
+      tooltip: "The divider's fixed resistor: from the reference to the ADC node when the RTD is on the low side, from the ADC node to ground when it is on the high side. A value near the RTD's mid-range resistance gives the most even resolution."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The voltage across the divider, which is also the ADC full scale (ratiometric)"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
+    },
+    {
+      key: "sensorPosition",
+      label: "RTD Position",
+      unit: "",
+      defaultValue: 0,
+      group: "Circuit",
+      options: [
+        { value: 0, label: "Low side" },
+        { value: 1, label: "High side" }
+      ],
+      tooltip: "Low side: the RTD from the ADC node to ground. High side: from the reference to the node."
     }
   ],
   outputs: [
-    { key: "resistance", label: "Resistance", symbol: "R(T)", unit: "Ω", precision: 3 },
-    { key: "sensitivityOhmPerDeg", label: "Sensitivity", symbol: "dR/dT", unit: "Ω/°C", precision: 4 }
+    { key: "resistance", label: "Resistance", symbol: "R(T)", unit: "Ω", precision: 3, primary: true },
+    { key: "sensitivityOhmPerDeg", label: "Sensitivity", symbol: "dR/dT", unit: "Ω/°C", precision: 4 },
+    { key: "dividerVoltage", label: "Divider Output", symbol: "V_out", unit: "V", precision: 3, tooltip: "The voltage at the ADC node" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_out / V_ref × 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "°C/LSB", precision: 3, tooltip: "The temperature one ADC step spans at this point" }
+  ],
+  examples: [
+    {
+      id: "pt1000-1k-freezer",
+      label: "Pt1000 with a 1 kΩ fixed resistor, freezer at −20 °C",
+      values: { r0: 1e3, temperature: -20, fixedResistor: 1e3, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
+    },
+    {
+      id: "pt100-1k-oven",
+      label: "Pt100 with a 1 kΩ fixed resistor, oven at 250 °C",
+      values: { r0: 100, temperature: 250, fixedResistor: 1e3, adcRef: 3.3, adcBits: 12, sensorPosition: 0 }
+    }
   ],
   calculate: calculatePt100Resistance,
+  transfer: {
+    physical: "temperature",
+    readings: ["resistance", "dividerVoltage", "adcCode"],
+    free: "temperature",
+    sensor: ["r0"],
+    circuit: ["fixedResistor", "adcRef", "adcBits", "sensorPosition"],
+    inverse: {
+      resistance: (r, i) => temperatureFromResistance(r, i.r0),
+      dividerVoltage: (v, i) => temperatureFromResistance(resistanceFromVoltage3(v, i), i.r0),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return temperatureFromResistance(resistanceFromVoltage3((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3), i), i.r0);
+      }
+    },
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "divider",
+    label: "Pt100",
+    // From −200 °C since the C coefficient is IEC 60751's (fix-calculator-formulas 2.14).
+    curve: { range: [-200, 600], readings: [{ key: "resistance", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 25 }
+  },
   formula: {
     primary: "R(T) = R₀(1 + AT + BT²) for T ≥ 0°C",
     variables: [
@@ -24622,23 +27304,37 @@ var pt100Resistance = {
 };
 
 // src/lib/calculators/sensor/thermocouple-voltage.ts
+var seebeckCoefficients = {
+  0: 41,
+  // K
+  1: 51,
+  // J
+  2: 43,
+  // T
+  3: 68
+  // E
+};
+var seebeckOf = (type) => seebeckCoefficients[Math.round(type)] ?? 41;
 function calculateThermocoupleVoltage(inputs) {
   const { temperature, coldJunctionTemp, type } = inputs;
-  const seebeckCoefficients = {
-    0: 41,
-    // K
-    1: 51,
-    // J
-    2: 43,
-    // T
-    3: 68
-    // E
-  };
-  const seebeck = seebeckCoefficients[Math.round(type)] ?? 41;
+  const frontGain = inputs.frontGain ?? 60;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { voltage: 0, coldJunctionCorrection: 0, seebeck: 0, deltaT: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
+  }
+  const seebeck = seebeckOf(type);
   const deltaT = temperature - coldJunctionTemp;
   const voltage = seebeck * deltaT;
   const coldJunctionCorrection = seebeck * coldJunctionTemp;
-  return { values: { voltage, coldJunctionCorrection, seebeck, deltaT } };
+  const amplifiedVoltage = frontGain * voltage * 1e-6;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef / (steps * frontGain * seebeck * 1e-6);
+  return { values: { voltage, coldJunctionCorrection, seebeck, deltaT, amplifiedVoltage, adcCode, resolution } };
+}
+function temperatureFromAmplified(v, inputs) {
+  return inputs.coldJunctionTemp + v / ((inputs.frontGain ?? 60) * seebeckOf(inputs.type) * 1e-6);
 }
 var thermocoupleVoltage = {
   slug: "thermocouple-voltage",
@@ -24658,7 +27354,13 @@ var thermocoupleVoltage = {
       min: 0,
       max: 3,
       step: 1,
-      tooltip: "0=K (41 μV/°C), 1=J (51 μV/°C), 2=T (43 μV/°C), 3=E (68 μV/°C)"
+      tooltip: "Each type is modelled by a constant Seebeck coefficient",
+      options: [
+        { value: 0, label: "Type K (41 μV/°C)" },
+        { value: 1, label: "Type J (51 μV/°C)" },
+        { value: 2, label: "Type T (43 μV/°C)" },
+        { value: 3, label: "Type E (68 μV/°C)" }
+      ]
     },
     {
       key: "temperature",
@@ -24677,15 +27379,98 @@ var thermocoupleVoltage = {
       defaultValue: 25,
       min: -50,
       max: 70
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 60,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain between the thermocouple and the ADC. A gain of 60 brings a type K's 50 mV at 1250 °C to about 3 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale. The ADC is unipolar: a hot junction colder than the cold junction reads 0."
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
-    { key: "voltage", label: "Output Voltage", symbol: "E", unit: "μV", precision: 0 },
-    { key: "coldJunctionCorrection", label: "Cold Junction Correction", symbol: "E_cjc", unit: "μV", precision: 0 },
+    { key: "voltage", label: "Output Voltage", symbol: "E", unit: "μV", precision: 0, primary: true },
+    { key: "coldJunctionCorrection", label: "Cold Junction Correction", symbol: "E_cjc", unit: "μV", precision: 0, signed: "explicit" },
     { key: "seebeck", label: "Seebeck Coefficient", symbol: "S", unit: "μV/°C", precision: 0 },
-    { key: "deltaT", label: "Temperature Difference", symbol: "ΔT", unit: "°C", precision: 0 }
+    { key: "deltaT", label: "Temperature Difference", symbol: "ΔT", unit: "°C", precision: 0, signed: "explicit" },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, signed: "explicit", tooltip: "The thermocouple voltage times the amplifier gain" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref × 2^N), 0 below zero"
+    },
+    { key: "resolution", label: "Resolution", unit: "°C/LSB", precision: 3, tooltip: "The temperature one ADC step spans" }
+  ],
+  examples: [
+    {
+      id: "type-k-exhaust-600c",
+      label: "Type K exhaust probe at 600 °C, gain 60, 3.3 V 12-bit ADC",
+      values: { type: 0, temperature: 600, coldJunctionTemp: 25, frontGain: 60, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "type-j-heater-300c",
+      label: "Type J on a 300 °C heater block, gain 100",
+      values: { type: 1, temperature: 300, coldJunctionTemp: 25, frontGain: 100, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "type-t-autoclave-121c",
+      label: "Type T in a 121 °C autoclave, gain 200",
+      values: { type: 2, temperature: 121, coldJunctionTemp: 25, frontGain: 200, adcRef: 3.3, adcBits: 12 }
+    }
   ],
   calculate: calculateThermocoupleVoltage,
+  transfer: {
+    physical: "temperature",
+    readings: ["voltage", "amplifiedVoltage", "adcCode"],
+    free: "temperature",
+    sensor: ["type", "coldJunctionTemp"],
+    circuit: ["frontGain", "adcRef", "adcBits"],
+    inverse: {
+      voltage: (e, i) => i.coldJunctionTemp + e / seebeckOf(i.type),
+      amplifiedVoltage: (v, i) => temperatureFromAmplified(v, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return temperatureFromAmplified((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3), i);
+      }
+    },
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "TC",
+    curve: { range: [0, 1250], readings: [{ key: "voltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 50 }
+  },
   formula: {
     primary: "E = S × (T_hot − T_cold)",
     variables: [
@@ -24702,14 +27487,30 @@ var thermocoupleVoltage = {
 // src/lib/calculators/sensor/load-cell-amplifier.ts
 function calculateLoadCellAmplifier(inputs) {
   const { excitationVoltage, sensitivity, fullScaleLoad, gain } = inputs;
+  const appliedLoad = inputs.appliedLoad ?? 5;
+  const adcRef = inputs.adcRef ?? 5;
+  const adcBits = inputs.adcBits ?? 12;
   if (fullScaleLoad <= 0) {
     return { values: { fullScaleOutputMv: 0, amplifiedOutput: 0, sensitivityPerUnit: 0, requiredGain: 0 }, errors: ["Full-scale load must be positive"] };
+  }
+  if (adcRef <= 0 || adcBits < 1) {
+    return { values: { fullScaleOutputMv: 0, amplifiedOutput: 0, sensitivityPerUnit: 0, requiredGain: 0 }, errors: ["The ADC reference and ADC bits must be positive"] };
   }
   const fullScaleOutputMv = sensitivity * excitationVoltage;
   const amplifiedOutput = fullScaleOutputMv / 1e3 * gain;
   const sensitivityPerUnit = fullScaleOutputMv / fullScaleLoad;
   const requiredGain = 5e3 / fullScaleOutputMv;
-  return { values: { fullScaleOutputMv, amplifiedOutput, sensitivityPerUnit, requiredGain } };
+  const bridgeOutputMv = fullScaleOutputMv * (appliedLoad / fullScaleLoad);
+  const amplifiedVoltage = bridgeOutputMv / 1e3 * gain;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef * fullScaleLoad / (steps * gain * fullScaleOutputMv * 1e-3);
+  return {
+    values: { fullScaleOutputMv, amplifiedOutput, sensitivityPerUnit, requiredGain, bridgeOutputMv, amplifiedVoltage, adcCode, resolution }
+  };
+}
+function loadFromMv(mv, inputs) {
+  return mv / (inputs.sensitivity * inputs.excitationVoltage) * inputs.fullScaleLoad;
 }
 var loadCellAmplifier = {
   slug: "load-cell-amplifier",
@@ -24752,15 +27553,98 @@ var loadCellAmplifier = {
       unit: "V/V",
       defaultValue: 500,
       min: 1
+    },
+    {
+      key: "appliedLoad",
+      label: "Applied Load",
+      symbol: "F",
+      unit: "kg",
+      defaultValue: 5,
+      min: 0,
+      tooltip: "The load on the cell, in the same unit as the full-scale load"
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 5,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale. 5 V matches the gain this calculator suggests."
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
     { key: "fullScaleOutputMv", label: "Full-Scale Output", symbol: "V_FS", unit: "mV", precision: 2 },
     { key: "amplifiedOutput", label: "Amplified Full-Scale", symbol: "V_amp", unit: "V", precision: 3 },
     { key: "sensitivityPerUnit", label: "Sensitivity", symbol: "S_per_unit", unit: "mV/kg", precision: 4 },
-    { key: "requiredGain", label: "Gain for 5V ADC", symbol: "G_5V", unit: "V/V", precision: 0 }
+    { key: "requiredGain", label: "Gain for 5V ADC", symbol: "G_5V", unit: "V/V", precision: 0, primary: true },
+    { key: "bridgeOutputMv", label: "Cell Output", symbol: "V_out", unit: "mV", precision: 3, tooltip: "The load cell output at the applied load" },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, tooltip: "The cell output at the applied load times the gain" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref × 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "kg/LSB", precision: 4, tooltip: "The load one ADC step spans" }
+  ],
+  examples: [
+    {
+      id: "bar-cell-5kg",
+      label: "5 kg bar load cell (1 mV/V) at 5 V, gain 800, 12-bit 5 V ADC",
+      values: { excitationVoltage: 5, sensitivity: 1, fullScaleLoad: 5, gain: 800, appliedLoad: 2, adcRef: 5, adcBits: 12 }
+    },
+    {
+      id: "platform-cell-50kg",
+      label: "50 kg platform cell (2 mV/V) at 5 V, gain 400, 16-bit ADC",
+      values: { excitationVoltage: 5, sensitivity: 2, fullScaleLoad: 50, gain: 400, appliedLoad: 30, adcRef: 5, adcBits: 16 }
+    },
+    {
+      id: "s-beam-500kg",
+      label: "500 kg S-beam (3 mV/V) at 10 V, gain 100, 3.3 V 16-bit ADC",
+      values: { excitationVoltage: 10, sensitivity: 3, fullScaleLoad: 500, gain: 100, appliedLoad: 200, adcRef: 3.3, adcBits: 16 }
+    }
   ],
   calculate: calculateLoadCellAmplifier,
+  transfer: {
+    physical: "appliedLoad",
+    readings: ["bridgeOutputMv", "amplifiedVoltage", "adcCode"],
+    free: "appliedLoad",
+    sensor: ["sensitivity", "fullScaleLoad"],
+    circuit: ["excitationVoltage", "gain", "adcRef", "adcBits"],
+    inverse: {
+      bridgeOutputMv: (mv, i) => loadFromMv(mv, i),
+      amplifiedVoltage: (v, i) => loadFromMv(v * 1e3 / i.gain, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return loadFromMv((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 5) * 1e3 / i.gain, i);
+      }
+    },
+    search: [0, 1e4],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "F",
+    curve: { range: [0, 10], readings: [{ key: "bridgeOutputMv", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 0.5 }
+  },
   formula: {
     primary: "V_FS = S × V_ex,  V_amp = V_FS × G",
     variables: [
@@ -24812,7 +27696,7 @@ var photodiodeTransimpedance = {
     }
   ],
   outputs: [
-    { key: "outputVoltageV", label: "Output Voltage", symbol: "V_out", unit: "mV", precision: 2 },
+    { key: "outputVoltageV", label: "Output Voltage", symbol: "V_out", unit: "mV", precision: 2, primary: true },
     { key: "bandwidth", label: "Bandwidth (−3 dB)", symbol: "BW", unit: "kHz", precision: 1 },
     { key: "noiseVoltage", label: "Johnson Noise", symbol: "e_n", unit: "nV/√Hz", precision: 1 }
   ],
@@ -24865,7 +27749,8 @@ var capacitiveProximity = {
       symbol: "A",
       unit: "cm²",
       defaultValue: 1,
-      min: 1e-3
+      min: 1e-3,
+      max: 1e3
     },
     {
       key: "gapDistance",
@@ -24873,7 +27758,8 @@ var capacitiveProximity = {
       symbol: "d",
       unit: "mm",
       defaultValue: 5,
-      min: 0.1
+      min: 0.1,
+      max: 100
     },
     {
       key: "permittivity",
@@ -24886,8 +27772,14 @@ var capacitiveProximity = {
     }
   ],
   outputs: [
-    { key: "capacitancePf", label: "Capacitance", symbol: "C", unit: "pF", precision: 3 },
+    { key: "capacitancePf", label: "Capacitance", symbol: "C", unit: "pF", precision: 3, primary: true },
     { key: "sensitivity", label: "Sensitivity", symbol: "dC/dd", unit: "pF/mm", precision: 4 }
+  ],
+  examples: [
+    { id: "touch-key-glass", label: "Touch key, 1 cm² under 2 mm glass", values: { plateArea: 1, gapDistance: 2, permittivity: 4.6 } },
+    { id: "pcb-pad-fr4", label: "PCB touch pad, 1 cm² through 1.6 mm FR-4", values: { plateArea: 1, gapDistance: 1.6, permittivity: 4.4 } },
+    { id: "proximity-plate-air", label: "Proximity plate, 25 cm² at 10 mm in air", values: { plateArea: 25, gapDistance: 10, permittivity: 1 } },
+    { id: "level-plates-water", label: "Level-sense plates, 5 cm² 1 mm apart, in water", values: { plateArea: 5, gapDistance: 1, permittivity: 80.1 } }
   ],
   calculate: calculateCapacitiveProximity,
   formula: {
@@ -24898,10 +27790,20 @@ var capacitiveProximity = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "plates", roles: { area: "plateArea", gap: "gapDistance", er: "permittivity" } },
+    // The capacitance the front end needs at the detection distance: the plate that gives it.
+    synthesis: [{ output: "capacitancePf", solveFor: ["plateArea", "gapDistance"] }],
+    material: { library: "sensor-dielectric", sets: { er: "permittivity" } },
+    curve: { x: "gapDistance", y: "capacitancePf", range: [1, 20], scale: "log" }
+  },
   relatedCalculators: ["hall-effect-sensor", "sensor-accuracy-budget", "photodiode-transimpedance"]
 };
 
 // src/lib/calculators/sensor/current-shunt.ts
+function currentFromMv(mv, inputs) {
+  return mv / (inputs.shuntResistance * 1e-3 * 1e3);
+}
 var currentShunt = {
   slug: "current-shunt",
   title: "Current Shunt Resistor",
@@ -24933,7 +27835,9 @@ var currentShunt = {
       label: "Amplifier Gain",
       symbol: "G",
       unit: "V/V",
-      defaultValue: 50,
+      // 20, not 50: at the default 10 A through 10 mΩ, gain 50 drove 5 V into
+      // the 3.3 V ADC and the page opened clipped at code 4095 (founder, 2026-10-06).
+      defaultValue: 20,
       min: 1,
       tooltip: "INA219: 1–128×, INA240: 20–200×"
     },
@@ -24944,22 +27848,90 @@ var currentShunt = {
       unit: "V",
       defaultValue: 3.3,
       min: 0.1
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits; the ADC code and the resolution output use this many bits"
     }
   ],
   outputs: [
-    { key: "shuntVoltage", label: "Shunt Voltage Drop", symbol: "V_sh", unit: "mV", precision: 2 },
+    { key: "shuntVoltage", label: "Shunt Voltage Drop", symbol: "V_sh", unit: "mV", precision: 2, primary: true },
     { key: "amplifiedVoltage", label: "Amplified Voltage", symbol: "V_amp", unit: "V", precision: 3 },
     { key: "powerDissipation", label: "Shunt Power Dissipation", symbol: "P_sh", unit: "mW", precision: 2 },
-    { key: "adcResolutionCurrent", label: "ADC Resolution (12-bit)", symbol: "ΔI", unit: "mA/LSB", precision: 3 }
+    { key: "adcResolutionCurrent", label: "ADC Resolution (12-bit)", symbol: "ΔI", unit: "mA/LSB", precision: 3 },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref × 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "A/LSB", precision: 6, tooltip: "The current one ADC step spans at the ADC resolution above" }
+  ],
+  examples: [
+    {
+      id: "shunt-10mohm-5a",
+      label: "10 mΩ shunt, gain-20 sense amplifier, 3.3 V 12-bit ADC (5 A)",
+      values: { current: 5, shuntResistance: 10, amplifierGain: 20, adcVoltage: 3.3, adcBits: 12 }
+    },
+    {
+      id: "motor-2mohm-20a",
+      label: "2 mΩ shunt on a 20 A motor supply, gain 50",
+      values: { current: 20, shuntResistance: 2, amplifierGain: 50, adcVoltage: 3.3, adcBits: 12 }
+    },
+    {
+      id: "charger-100mohm-1a",
+      label: "100 mΩ shunt on a 1 A battery charger, gain 20",
+      values: { current: 1, shuntResistance: 100, amplifierGain: 20, adcVoltage: 3.3, adcBits: 12 }
+    }
   ],
   calculate: (inputs) => {
     const { current, shuntResistance, amplifierGain, adcVoltage } = inputs;
+    const adcBits = inputs.adcBits ?? 12;
+    if (adcBits < 1) {
+      return { values: { shuntVoltage: 0, amplifiedVoltage: 0, powerDissipation: 0, adcResolutionCurrent: 0 }, errors: ["ADC bits must be at least 1"] };
+    }
     const rShOhm = shuntResistance * 1e-3;
     const shuntVoltage = current * rShOhm * 1e3;
     const amplifiedVoltage = shuntVoltage / 1e3 * amplifierGain;
     const powerDissipation = current ** 2 * rShOhm * 1e3;
     const adcResolutionCurrent = amplifierGain > 0 && rShOhm > 0 ? adcVoltage / 4096 / (amplifierGain * rShOhm) * 1e3 : 0;
-    return { values: { shuntVoltage, amplifiedVoltage, powerDissipation, adcResolutionCurrent } };
+    const steps = 2 ** Math.round(adcBits);
+    const adcCode = adcVoltage > 0 ? Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcVoltage * steps))) : 0;
+    const resolution = amplifierGain > 0 && rShOhm > 0 ? adcVoltage / steps / (amplifierGain * rShOhm) : 0;
+    return { values: { shuntVoltage, amplifiedVoltage, powerDissipation, adcResolutionCurrent, adcCode, resolution } };
+  },
+  transfer: {
+    physical: "current",
+    readings: ["shuntVoltage", "amplifiedVoltage", "adcCode"],
+    free: "current",
+    sensor: ["shuntResistance"],
+    circuit: ["amplifierGain", "adcVoltage", "adcBits"],
+    inverse: {
+      shuntVoltage: (mv, i) => currentFromMv(mv, i),
+      amplifiedVoltage: (v, i) => currentFromMv(v * 1e3 / i.amplifierGain, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return currentFromMv((Math.floor(code) + 0.5) / steps * i.adcVoltage * 1e3 / i.amplifierGain, i);
+      }
+    },
+    search: [0, 1e3],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "I",
+    curve: { range: [0, 10], readings: [{ key: "shuntVoltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 0.5 }
   },
   formula: {
     primary: "V_sh = I × R_sh,  P = I² × R_sh",
@@ -24976,12 +27948,26 @@ var currentShunt = {
 // src/lib/calculators/sensor/accelerometer-sensitivity.ts
 function calculateAccelerometerSensitivity(inputs) {
   const { sensitivity, fullScaleRange, supplyVoltage, adcBits } = inputs;
+  const acceleration = inputs.acceleration ?? 1;
+  const frontGain = inputs.frontGain ?? 1;
+  if (frontGain <= 0) {
+    return { values: { fullScaleVoltage: 0, voltagePerCount: 0, accelerationMgPerCount: 0 }, errors: ["The amplifier gain must be positive"] };
+  }
   const fullScaleVoltage = sensitivity * fullScaleRange * 2;
   const adcCounts = Math.pow(2, adcBits);
   const voltagePerCount = supplyVoltage * 1e3 / adcCounts;
   const accelerationPerCount = sensitivity > 0 ? voltagePerCount / sensitivity : 0;
   const accelerationMgPerCount = accelerationPerCount * 1e3;
-  return { values: { fullScaleVoltage, voltagePerCount, accelerationMgPerCount } };
+  const swing = sensitivity * acceleration / 1e3;
+  const outputVoltage = supplyVoltage / 2 + swing;
+  const amplifiedVoltage = supplyVoltage / 2 + frontGain * swing;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = supplyVoltage > 0 ? Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / supplyVoltage * steps))) : 0;
+  const resolution = sensitivity > 0 ? supplyVoltage * 1e3 / (steps * frontGain * sensitivity) : 0;
+  return { values: { fullScaleVoltage, voltagePerCount, accelerationMgPerCount, outputVoltage, amplifiedVoltage, adcCode, resolution } };
+}
+function accelerationFrom(v, gain, inputs) {
+  return (v - inputs.supplyVoltage / 2) * 1e3 / (gain * inputs.sensitivity);
 }
 var accelerometerSensitivity = {
   slug: "accelerometer-sensitivity",
@@ -25031,14 +28017,85 @@ var accelerometerSensitivity = {
       min: 8,
       max: 24,
       step: 1
+    },
+    {
+      key: "acceleration",
+      label: "Acceleration",
+      symbol: "a",
+      unit: "g",
+      defaultValue: 1,
+      tooltip: "The acceleration along the sensing axis: 1 g at rest with the axis vertical"
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 1,
+      min: 0.01,
+      max: 1e3,
+      group: "Circuit",
+      tooltip: "The gain between the sensor and the ADC, applied around the zero-g level, which sits at half the supply. 1 is a direct connection, which the per-LSB outputs assume."
     }
   ],
   outputs: [
     { key: "fullScaleVoltage", label: "Full-Scale Output Swing", symbol: "V_FS", unit: "mV", precision: 0 },
     { key: "voltagePerCount", label: "Voltage per LSB", symbol: "mV/LSB", unit: "mV", precision: 3 },
-    { key: "accelerationMgPerCount", label: "Acceleration per LSB", symbol: "mg/LSB", unit: "mg", precision: 2 }
+    { key: "accelerationMgPerCount", label: "Acceleration per LSB", symbol: "mg/LSB", unit: "mg", precision: 2, primary: true },
+    { key: "outputVoltage", label: "Sensor Output", symbol: "V_out", unit: "V", precision: 3, tooltip: "The sensor output at this acceleration: half the supply at 0 g" },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, tooltip: "Half the supply plus the gain times the sensor swing" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC referenced to the supply reads: floor(V_amp / V_cc × 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "g/LSB", precision: 5, tooltip: "The acceleration one ADC step spans, the amplifier gain included" }
+  ],
+  examples: [
+    {
+      id: "adxl335-at-rest",
+      label: "ADXL335-class ±3 g (330 mV/g) on a 3.3 V, 12-bit ADC, at rest (1 g)",
+      values: { sensitivity: 330, fullScaleRange: 3, supplyVoltage: 3.3, adcBits: 12, acceleration: 1, frontGain: 1 }
+    },
+    {
+      id: "adxl1002-vibration",
+      label: "ADXL1002-class ±50 g vibration sensor (40 mV/g) on a 5 V, 16-bit ADC",
+      values: { sensitivity: 40, fullScaleRange: 50, supplyVoltage: 5, adcBits: 16, acceleration: 20, frontGain: 1 }
+    },
+    {
+      id: "adxl335-tilt-gain-2",
+      label: "ADXL335-class with gain 2 for tilt sensing (−0.5 g)",
+      values: { sensitivity: 330, fullScaleRange: 3, supplyVoltage: 3.3, adcBits: 12, acceleration: -0.5, frontGain: 2 }
+    }
   ],
   calculate: calculateAccelerometerSensitivity,
+  transfer: {
+    physical: "acceleration",
+    readings: ["outputVoltage", "amplifiedVoltage", "adcCode"],
+    free: "acceleration",
+    sensor: ["sensitivity", "fullScaleRange"],
+    circuit: ["supplyVoltage", "frontGain", "adcBits"],
+    inverse: {
+      outputVoltage: (v, i) => accelerationFrom(v, 1, i),
+      amplifiedVoltage: (v, i) => accelerationFrom(v, i.frontGain ?? 1, i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return accelerationFrom((Math.floor(code) + 0.5) / steps * i.supplyVoltage, i.frontGain ?? 1, i);
+      }
+    },
+    search: [-100, 100],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "a",
+    curve: { range: [-3, 3], readings: [{ key: "outputVoltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 0.25 }
+  },
   formula: {
     primary: "V_out = V_ref/2 ± (S × a)",
     variables: [
@@ -25051,6 +28108,9 @@ var accelerometerSensitivity = {
 };
 
 // src/lib/calculators/sensor/pressure-bridge-output.ts
+function pressureFromMv(mv, inputs) {
+  return mv / (inputs.excitationVoltage * inputs.bridgeSensitivity) * inputs.fullScalePressure;
+}
 var pressureBridgeOutput = {
   slug: "pressure-bridge-output",
   title: "Pressure Sensor Bridge Output",
@@ -25092,22 +28152,116 @@ var pressureBridgeOutput = {
       unit: "kPa",
       defaultValue: 100,
       min: 1e-3
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 60,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain between the bridge output and the ADC. A gain of 60 brings a 50 mV full-scale output to 3 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
-    { key: "bridgeOutputMv", label: "Bridge Output", symbol: "V_out", unit: "mV", precision: 2 },
+    { key: "bridgeOutputMv", label: "Bridge Output", symbol: "V_out", unit: "mV", precision: 2, primary: true },
     { key: "fullScaleOutput", label: "Full-Scale Output", symbol: "V_FS", unit: "mV", precision: 2 },
-    { key: "fractionalDeflection", label: "Fractional Deflection", symbol: "P/P_FS", unit: "%", precision: 1 }
+    { key: "fractionalDeflection", label: "Fractional Deflection", symbol: "P/P_FS", unit: "%", precision: 1 },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, tooltip: "The bridge output times the amplifier gain" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref × 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "kPa/LSB", precision: 4, tooltip: "The pressure one ADC step spans" }
+  ],
+  examples: [
+    {
+      id: "mpx2100-class-50kpa",
+      label: "100 kPa sensor (4 mV/V, MPX2100 class) at 5 V, gain 150",
+      values: { excitationVoltage: 5, bridgeSensitivity: 4, appliedPressure: 50, fullScalePressure: 100, frontGain: 150, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "mpx2010-class-tank",
+      label: "10 kPa sensor (2.5 mV/V, MPX2010 class) at 5 V, gain 200, at a water depth of 0.75 m",
+      values: { excitationVoltage: 5, bridgeSensitivity: 2.5, appliedPressure: 7.355, fullScalePressure: 10, frontGain: 200, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "industrial-1mpa",
+      label: "1 MPa stainless transducer (2 mV/V) at 10 V, gain 100",
+      values: { excitationVoltage: 10, bridgeSensitivity: 2, appliedPressure: 600, fullScalePressure: 1e3, frontGain: 100, adcRef: 3.3, adcBits: 12 }
+    }
   ],
   calculate: (inputs) => {
     const { excitationVoltage, bridgeSensitivity, appliedPressure, fullScalePressure } = inputs;
+    const frontGain = inputs.frontGain ?? 60;
+    const adcRef = inputs.adcRef ?? 3.3;
+    const adcBits = inputs.adcBits ?? 12;
     if (fullScalePressure <= 0) {
       return { values: { bridgeOutputMv: 0, fullScaleOutput: 0, fractionalDeflection: 0 }, errors: ["Full-scale pressure must be positive"] };
+    }
+    if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+      return { values: { bridgeOutputMv: 0, fullScaleOutput: 0, fractionalDeflection: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
     }
     const fractionalDeflection = appliedPressure / fullScalePressure * 100;
     const bridgeOutputMv = excitationVoltage * bridgeSensitivity * (appliedPressure / fullScalePressure);
     const fullScaleOutput = excitationVoltage * bridgeSensitivity;
-    return { values: { bridgeOutputMv, fullScaleOutput, fractionalDeflection } };
+    const amplifiedVoltage = bridgeOutputMv / 1e3 * frontGain;
+    const steps = 2 ** Math.round(adcBits);
+    const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+    const resolution = adcRef * fullScalePressure / (steps * frontGain * excitationVoltage * bridgeSensitivity * 1e-3);
+    return { values: { bridgeOutputMv, fullScaleOutput, fractionalDeflection, amplifiedVoltage, adcCode, resolution } };
+  },
+  transfer: {
+    physical: "appliedPressure",
+    readings: ["bridgeOutputMv", "amplifiedVoltage", "adcCode"],
+    free: "appliedPressure",
+    sensor: ["bridgeSensitivity", "fullScalePressure"],
+    circuit: ["excitationVoltage", "frontGain", "adcRef", "adcBits"],
+    inverse: {
+      bridgeOutputMv: (mv, i) => pressureFromMv(mv, i),
+      amplifiedVoltage: (v, i) => pressureFromMv(v * 1e3 / (i.frontGain ?? 60), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return pressureFromMv((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) * 1e3 / (i.frontGain ?? 60), i);
+      }
+    },
+    search: [0, 1e5],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "P",
+    curve: { range: [0, 100], readings: [{ key: "bridgeOutputMv", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 5 }
   },
   formula: {
     primary: "V_out = V_ex × S × (P/P_FS)",
@@ -25190,7 +28344,7 @@ var sensorAccuracyBudget = {
   ],
   outputs: [
     { key: "tempError", label: "Temperature Error", symbol: "e_temp", unit: "% FS", precision: 3 },
-    { key: "totalRss", label: "Total Accuracy (RSS)", symbol: "e_RSS", unit: "% FS", precision: 3 },
+    { key: "totalRss", label: "Total Accuracy (RSS)", symbol: "e_RSS", unit: "% FS", precision: 3, primary: true },
     { key: "totalWorstCase", label: "Total Accuracy (Worst Case)", symbol: "e_WC", unit: "% FS", precision: 3 }
   ],
   calculate: calculateSensorAccuracyBudget,
@@ -25267,7 +28421,7 @@ var opticalSensorRange = {
     }
   ],
   outputs: [
-    { key: "maxRange", label: "Relative Detection Factor", symbol: "D_rel", unit: "", precision: 3 },
+    { key: "maxRange", label: "Relative Detection Factor", symbol: "D_rel", unit: "", precision: 3, primary: true },
     { key: "normalizedRange", label: "Nominal Detection Factor", symbol: "D_nom", unit: "", precision: 3 }
   ],
   calculate: calculateOpticalSensorRange,
@@ -25288,14 +28442,27 @@ var opticalSensorRange = {
 // src/lib/calculators/sensor/lvdt-sensitivity.ts
 function calculateLvdtSensitivity(inputs) {
   const { sensitivity, excitationVoltage, coreDisplacement, fullScaleRange } = inputs;
+  const frontGain = inputs.frontGain ?? 1.5;
+  const adcRef = inputs.adcRef ?? 3.3;
+  const adcBits = inputs.adcBits ?? 12;
   if (fullScaleRange <= 0) {
     return { values: { outputVoltage: 0, fullScaleOutput: 0, sensitivityMvMm: 0, linearRange: 0 }, errors: ["Full-scale range must be positive"] };
+  }
+  if (frontGain <= 0 || adcRef <= 0 || adcBits < 1) {
+    return { values: { outputVoltage: 0, fullScaleOutput: 0, sensitivityMvMm: 0, linearRange: 0 }, errors: ["The amplifier gain, ADC reference and ADC bits must be positive"] };
   }
   const outputVoltage = sensitivity * excitationVoltage * (coreDisplacement / fullScaleRange) * 100;
   const fullScaleOutput = sensitivity * excitationVoltage * 100;
   const sensitivityMvMm = sensitivity * excitationVoltage * 100 / fullScaleRange;
   const linearRange = fullScaleRange * 0.8;
-  return { values: { outputVoltage, fullScaleOutput, sensitivityMvMm, linearRange } };
+  const amplifiedVoltage = outputVoltage / 1e3 * frontGain;
+  const steps = 2 ** Math.round(adcBits);
+  const adcCode = Math.min(steps - 1, Math.max(0, Math.floor(amplifiedVoltage / adcRef * steps)));
+  const resolution = adcRef * fullScaleRange / (steps * frontGain * sensitivity * excitationVoltage * 100 * 1e-3);
+  return { values: { outputVoltage, fullScaleOutput, sensitivityMvMm, linearRange, amplifiedVoltage, adcCode, resolution } };
+}
+function displacementFromMv(mv, inputs) {
+  return mv / (inputs.sensitivity * inputs.excitationVoltage * 100) * inputs.fullScaleRange;
 }
 var lvdtSensitivity = {
   slug: "lvdt-sensitivity",
@@ -25338,15 +28505,99 @@ var lvdtSensitivity = {
       unit: "mm",
       defaultValue: 25,
       min: 1e-3
+    },
+    {
+      key: "frontGain",
+      label: "Amplifier Gain",
+      symbol: "G",
+      unit: "V/V",
+      defaultValue: 1.5,
+      min: 0.01,
+      max: 1e5,
+      group: "Circuit",
+      tooltip: "The gain of the demodulator and amplifier between the LVDT and the ADC (V DC out per V RMS in). A gain of 1.5 brings the 2 V RMS full-scale output to 3 V."
+    },
+    {
+      key: "adcRef",
+      label: "ADC Reference",
+      symbol: "V_ref",
+      unit: "V",
+      defaultValue: 3.3,
+      min: 0.1,
+      max: 50,
+      group: "Circuit",
+      tooltip: "The ADC full scale"
+    },
+    {
+      key: "adcBits",
+      label: "ADC Resolution",
+      unit: "bit",
+      defaultValue: 12,
+      min: 1,
+      max: 24,
+      step: 1,
+      group: "Circuit",
+      tooltip: "ADC resolution in bits"
     }
   ],
   outputs: [
-    { key: "outputVoltage", label: "Output Voltage (RMS)", symbol: "V_out", unit: "mV", precision: 2 },
+    { key: "outputVoltage", label: "Output Voltage (RMS)", symbol: "V_out", unit: "mV", precision: 2, primary: true },
     { key: "fullScaleOutput", label: "Full-Scale Output", symbol: "V_FS", unit: "mV", precision: 1 },
     { key: "sensitivityMvMm", label: "Sensitivity", symbol: "S", unit: "mV/mm", precision: 3 },
-    { key: "linearRange", label: "Linear Range (est.)", symbol: "x_lin", unit: "mm", precision: 0 }
+    { key: "linearRange", label: "Linear Range (est.)", symbol: "x_lin", unit: "mm", precision: 0 },
+    { key: "amplifiedVoltage", label: "Amplifier Output", symbol: "V_amp", unit: "V", precision: 3, tooltip: "The demodulated output times the amplifier gain" },
+    {
+      key: "adcCode",
+      label: "ADC Code",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The code an ideal ADC reads: floor(V_amp / V_ref × 2^N)"
+    },
+    { key: "resolution", label: "Resolution", unit: "mm/LSB", precision: 4, tooltip: "The displacement one ADC step spans" }
+  ],
+  examples: [
+    {
+      id: "gauging-lvdt-2-54mm",
+      label: "±2.54 mm gauging LVDT (2.6 mV/V/%FS) at 3 V RMS, gain 4",
+      values: { excitationVoltage: 3, sensitivity: 2.6, coreDisplacement: 2, fullScaleRange: 2.54, frontGain: 4, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "lvdt-25mm",
+      label: "±25 mm LVDT (4 mV/V/%FS) at 5 V RMS, gain 1.5",
+      values: { excitationVoltage: 5, sensitivity: 4, coreDisplacement: 15, fullScaleRange: 25, frontGain: 1.5, adcRef: 3.3, adcBits: 12 }
+    },
+    {
+      id: "long-stroke-lvdt-50mm",
+      label: "±50 mm long-stroke LVDT (1.5 mV/V/%FS) at 5 V RMS, gain 4, 16-bit ADC",
+      values: { excitationVoltage: 5, sensitivity: 1.5, coreDisplacement: 20, fullScaleRange: 50, frontGain: 4, adcRef: 3.3, adcBits: 16 }
+    }
   ],
   calculate: calculateLvdtSensitivity,
+  transfer: {
+    physical: "coreDisplacement",
+    readings: ["outputVoltage", "amplifiedVoltage", "adcCode"],
+    free: "coreDisplacement",
+    sensor: ["sensitivity", "fullScaleRange"],
+    circuit: ["excitationVoltage", "frontGain", "adcRef", "adcBits"],
+    inverse: {
+      outputVoltage: (mv, i) => displacementFromMv(mv, i),
+      amplifiedVoltage: (v, i) => displacementFromMv(v * 1e3 / (i.frontGain ?? 1.5), i),
+      // The middle of the code's step.
+      adcCode: (code, i) => {
+        const steps = 2 ** Math.round(i.adcBits ?? 12);
+        if (!(code >= 0 && code <= steps - 1)) return NaN;
+        return displacementFromMv((Math.floor(code) + 0.5) / steps * (i.adcRef ?? 3.3) * 1e3 / (i.frontGain ?? 1.5), i);
+      }
+    },
+    search: [0, 1e3],
+    resolution: "resolution",
+    code: "adcCode",
+    frontEnd: "amplifier",
+    label: "LVDT",
+    curve: { range: [0, 25], readings: [{ key: "outputVoltage", scale: "linear" }, { key: "adcCode", scale: "linear" }] },
+    table: { step: 1 }
+  },
   formula: {
     primary: "V_out = S × V_ex × (x/FS) × 100",
     variables: [
@@ -25424,7 +28675,7 @@ var loopTransmitter420ma = {
     }
   ],
   outputs: [
-    { key: "sensorValue", label: "Sensor Value", symbol: "X", unit: "eng units", precision: 2 },
+    { key: "sensorValue", label: "Sensor Value", symbol: "X", unit: "eng units", precision: 2, primary: true },
     { key: "voltageAtLoad", label: "Voltage at Load", symbol: "V_load", unit: "V", precision: 2 },
     { key: "availableVoltage", label: "Transmitter Voltage", symbol: "V_tx", unit: "V", precision: 2 },
     { key: "maxLoopResistance", label: "Max Loop Resistance", symbol: "R_max", unit: "Ω", precision: 0 }
@@ -25465,6 +28716,7 @@ function calculateFrequencyWavelength(inputs) {
     }
   };
 }
+var mhzOfWavelength = (lambdaM, velocityFactor) => 299792458 * velocityFactor / lambdaM / 1e6;
 var frequencyWavelength = {
   slug: "frequency-wavelength",
   title: "Frequency to Wavelength Converter",
@@ -25507,7 +28759,7 @@ var frequencyWavelength = {
       min: 0.01,
       max: 1,
       step: 0.01,
-      tooltip: "Velocity factor of medium: 1.0=free space, 0.66=coax, 0.97=FR4 PCB, 0.85=open-wire",
+      tooltip: "Velocity factor of the medium: 1.0 = free space, about 0.95 = open-wire line, 0.85 = foam coax, 0.66 = solid-PE coax, about 0.55 = FR4 microstrip",
       presets: [
         { label: "Free space (1.0)", values: { velocityFactor: 1 } },
         { label: "Coaxial cable (0.66)", values: { velocityFactor: 0.66 } },
@@ -25519,6 +28771,7 @@ var frequencyWavelength = {
   outputs: [
     {
       key: "wavelength",
+      primary: true,
       label: "Wavelength",
       symbol: "λ",
       unit: "m",
@@ -25558,13 +28811,46 @@ var frequencyWavelength = {
       tooltip: "Quarter wavelength — typical monopole antenna length"
     }
   ],
+  examples: [
+    { id: "rg58-2m-band", label: "145 MHz in RG-58 coax, VF 0.66", values: { frequency: 145, velocityFactor: 0.66 } },
+    { id: "lmr400-915-mhz", label: "915 MHz in LMR-400 coax, VF 0.85", values: { frequency: 915, velocityFactor: 0.85 } },
+    { id: "open-wire-40m-band", label: "7.1 MHz on open-wire line, VF 0.95", values: { frequency: 7.1, velocityFactor: 0.95 } }
+  ],
   calculate: calculateFrequencyWavelength,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["frequency", "wavelength", "wavelengthCm", "wavelengthMm", "halfWave", "quarterWave"],
+      free: ["frequency"],
+      params: ["velocityFactor"],
+      inverse: {
+        wavelength: (l, inputs) => mhzOfWavelength(l, inputs.velocityFactor),
+        wavelengthCm: (l, inputs) => mhzOfWavelength(l / 100, inputs.velocityFactor),
+        wavelengthMm: (l, inputs) => mhzOfWavelength(l / 1e3, inputs.velocityFactor),
+        halfWave: (l, inputs) => mhzOfWavelength(2 * l, inputs.velocityFactor),
+        quarterWave: (l, inputs) => mhzOfWavelength(4 * l, inputs.velocityFactor)
+      },
+      // The frequency input states no maximum: 1 kHz to 1 THz.
+      search: [1e-3, 1e6],
+      picks: { field: "frequency", values: [144, 433, 915, 2400, 5800] },
+      reference: { field: "frequency", values: [10, 30, 100, 300, 1e3, 3e3, 1e4, 3e4] },
+      scales: {
+        axis: { field: "frequency", range: [1, 1e5], scale: "log" },
+        fields: [
+          { key: "frequency" },
+          { key: "wavelength" },
+          { key: "halfWave" },
+          { key: "quarterWave" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "λ = (c · VF) / f",
     latex: "\\lambda = \\frac{c \\cdot VF}{f}",
     variables: [
       { symbol: "λ", description: "Wavelength", unit: "m" },
-      { symbol: "c", description: "Speed of light (299792458)", unit: "m/s" },
+      { symbol: "c", description: "Speed of light (299 792 458, exact)", unit: "m/s" },
       { symbol: "VF", description: "Velocity factor of medium", unit: "" },
       { symbol: "f", description: "Frequency", unit: "Hz" }
     ]
@@ -25595,6 +28881,7 @@ function calculateDbmWatts(inputs) {
     }
   };
 }
+var dbmOfWatts2 = (w) => 10 * Math.log10(w * 1e3);
 var dbmWatts = {
   slug: "dbm-watts",
   title: "dBm to Watts Power Converter",
@@ -25636,6 +28923,7 @@ var dbmWatts = {
   outputs: [
     {
       key: "watts",
+      primary: true,
       label: "Power",
       symbol: "P",
       unit: "W",
@@ -25679,6 +28967,32 @@ var dbmWatts = {
     }
   ],
   calculate: calculateDbmWatts,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["dbm", "watts", "milliwatts", "dBW", "dBuV", "volts"],
+      free: ["dbm"],
+      inverse: {
+        watts: (w) => dbmOfWatts2(w),
+        milliwatts: (mw) => dbmOfWatts2(mw / 1e3),
+        dBW: (v) => v + 30,
+        // V = √(P·50): the voltage fields are into the fixed 50 Ω load.
+        dBuV: (dbuv) => dbmOfWatts2((10 ** (dbuv / 20) * 1e-6) ** 2 / 50),
+        volts: (v) => dbmOfWatts2(v * v / 50)
+      },
+      picks: { field: "dbm", values: [-30, 0, 10, 20, 30, 40] },
+      reference: { field: "dbm", values: [-30, -20, -10, 0, 10, 20, 30, 40] },
+      scales: {
+        axis: { field: "dbm", range: [-60, 60], scale: "linear" },
+        fields: [
+          { key: "dbm", ticks: [-60, -50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60] },
+          { key: "watts", ticks: [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "volts" },
+          { key: "dBuV" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "P(W) = 10^(dBm/10) × 10⁻³,  V = √(P × 50)",
     latex: "P(W) = 10^{dBm/10} \\times 10^{-3}, \\quad V = \\sqrt{P \\times 50}",
@@ -25748,6 +29062,7 @@ var temperatureConverter = {
   outputs: [
     {
       key: "fahrenheit",
+      primary: true,
       label: "Fahrenheit",
       symbol: "°F",
       unit: "°F",
@@ -25780,6 +29095,26 @@ var temperatureConverter = {
     }
   ],
   calculate: calculateTemperatureConverter,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["celsius", "fahrenheit", "kelvin", "rankine", "reaumur"],
+      free: ["celsius"],
+      affine: true,
+      picks: { field: "celsius", values: [-40, 0, 25, 85, 100, 125] },
+      // Military and industrial low ends, freezing, room, commercial / industrial / automotive highs, boiling.
+      reference: { field: "celsius", values: [-55, -40, 0, 25, 70, 85, 100, 125] },
+      scales: {
+        axis: { field: "celsius", range: [-50, 150], scale: "linear" },
+        fields: [
+          { key: "celsius" },
+          { key: "fahrenheit" },
+          { key: "kelvin" }
+        ],
+        band: { id: "industrial", field: "celsius", from: -40, to: 85, label: "industrial grade −40 to +85 °C" }
+      }
+    }]
+  },
   formula: {
     primary: "F = C×9/5 + 32,  K = C + 273.15",
     latex: "F = \\frac{9}{5}C + 32, \\quad K = C + 273.15",
@@ -25859,6 +29194,7 @@ var awgWire = {
   outputs: [
     {
       key: "diameterMm",
+      primary: true,
       label: "Diameter",
       symbol: "d",
       unit: "mm",
@@ -25971,7 +29307,7 @@ var capacitorCode = {
       min: 100,
       max: 999,
       step: 1,
-      tooltip: "3-digit code: first 2 digits = significant figures, 3rd digit = multiplier power of 10 in pF, except 8 = ×0.01 and 9 = ×0.1 (EIA-198 / IEC 60062). E.g., 104 = 10 × 10⁴ pF = 100nF",
+      tooltip: "3-digit code: the first two digits are the significant figures and the third is the power of 10 in pF, except that 8 means ×0.01 and 9 means ×0.1 (EIA-198 / IEC 60062). For example, 104 is 10 × 10⁴ pF, 100 nF",
       presets: [
         { label: "100 = 10pF", values: { code: 100 } },
         { label: "101 = 100pF", values: { code: 101 } },
@@ -25987,6 +29323,7 @@ var capacitorCode = {
   outputs: [
     {
       key: "picofarads",
+      primary: true,
       label: "Capacitance",
       symbol: "C",
       unit: "pF",
@@ -26072,12 +29409,36 @@ var inductanceUnits = {
     }
   ],
   outputs: [
-    { key: "millihenry", label: "Millihenries", symbol: "mH", unit: "mH", precision: 6 },
-    { key: "microhenry", label: "Microhenries", symbol: "μH", unit: "μH", precision: 4 },
-    { key: "nanohenry", label: "Nanohenries", symbol: "nH", unit: "nH", precision: 2 },
-    { key: "picohenry", label: "Picohenries", symbol: "pH", unit: "pH", precision: 0 }
+    { key: "millihenry", label: "Millihenries", symbol: "mH", unit: "mH", precision: 6, display: { unit: "mH" } },
+    { key: "microhenry", label: "Microhenries", symbol: "μH", unit: "μH", precision: 4, primary: true, display: { unit: "μH" } },
+    { key: "nanohenry", label: "Nanohenries", symbol: "nH", unit: "nH", precision: 2, display: { unit: "nH" } },
+    { key: "picohenry", label: "Picohenries", symbol: "pH", unit: "pH", precision: 0, display: { unit: "pH" } }
   ],
   calculate: calculateInductanceUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["picohenry", "nanohenry", "microhenry", "millihenry", "henry"],
+      free: ["henry"],
+      // Exact inverses: the affine two-point inverse loses digits at nH and pH, where henries are ≪ 1.
+      inverse: {
+        picohenry: (v) => v / 1e12,
+        nanohenry: (v) => v / 1e9,
+        microhenry: (v) => v / 1e6,
+        millihenry: (v) => v / 1e3
+      },
+      picks: { field: "microhenry", values: [0.1, 1, 10, 100, 1e3] },
+      reference: { field: "henry", values: [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 0.01] },
+      scales: {
+        axis: { field: "henry", range: [1e-9, 1], scale: "log" },
+        fields: [
+          { key: "nanohenry", ticks: [1, 10, 100, 1e3] },
+          { key: "microhenry", ticks: [1, 10, 100, 1e3] },
+          { key: "millihenry", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 H = 10³ mH = 10⁶ mu H = 10⁹ nH = 10¹² pH",
     variables: []
@@ -26126,12 +29487,36 @@ var capacitanceUnits = {
     }
   ],
   outputs: [
-    { key: "millifarad", label: "Millifarads", symbol: "mF", unit: "mF", precision: 6 },
-    { key: "microfarad", label: "Microfarads", symbol: "μF", unit: "μF", precision: 4 },
-    { key: "nanofarad", label: "Nanofarads", symbol: "nF", unit: "nF", precision: 3 },
-    { key: "picofarad", label: "Picofarads", symbol: "pF", unit: "pF", precision: 1 }
+    { key: "millifarad", label: "Millifarads", symbol: "mF", unit: "mF", precision: 6, display: { unit: "mF" } },
+    { key: "microfarad", label: "Microfarads", symbol: "μF", unit: "μF", precision: 4, display: { unit: "μF" } },
+    { key: "nanofarad", label: "Nanofarads", symbol: "nF", unit: "nF", precision: 3, primary: true, display: { unit: "nF" } },
+    { key: "picofarad", label: "Picofarads", symbol: "pF", unit: "pF", precision: 1, display: { unit: "pF" } }
   ],
   calculate: calculateCapacitanceUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["picofarad", "nanofarad", "microfarad", "millifarad", "farad"],
+      free: ["farad"],
+      // Exact inverses: the affine two-point inverse loses digits at pF, where farads are ~1e-12.
+      inverse: {
+        picofarad: (v) => v / 1e12,
+        nanofarad: (v) => v / 1e9,
+        microfarad: (v) => v / 1e6,
+        millifarad: (v) => v / 1e3
+      },
+      picks: { field: "nanofarad", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      reference: { field: "farad", values: [1e-12, 1e-11, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5] },
+      scales: {
+        axis: { field: "farad", range: [1e-12, 1e-3], scale: "log" },
+        fields: [
+          { key: "picofarad", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "nanofarad", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "microfarad", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 F = 10³ mF = 10⁶ mu F = 10⁹ nF = 10¹² pF",
     variables: []
@@ -26180,12 +29565,32 @@ var resistanceUnits = {
     }
   ],
   outputs: [
-    { key: "milliohm", label: "Milliohms", symbol: "mΩ", unit: "mΩ", precision: 3 },
-    { key: "kilohm", label: "Kilohms", symbol: "kΩ", unit: "kΩ", precision: 4 },
-    { key: "megaohm", label: "Megaohms", symbol: "MΩ", unit: "MΩ", precision: 6 },
-    { key: "gigaohm", label: "Gigaohms", symbol: "GΩ", unit: "GΩ", precision: 9 }
+    { key: "milliohm", label: "Milliohms", symbol: "mΩ", unit: "mΩ", precision: 3, display: { unit: "mΩ" } },
+    { key: "kilohm", label: "Kilohms", symbol: "kΩ", unit: "kΩ", precision: 4, primary: true, display: { unit: "kΩ" } },
+    { key: "megaohm", label: "Megaohms", symbol: "MΩ", unit: "MΩ", precision: 6, display: { unit: "MΩ" } },
+    { key: "gigaohm", label: "Gigaohms", symbol: "GΩ", unit: "GΩ", precision: 9, display: { unit: "GΩ" } }
   ],
   calculate: calculateResistanceUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["milliohm", "ohm", "kilohm", "megaohm", "gigaohm"],
+      free: ["ohm"],
+      affine: true,
+      picks: { field: "kilohm", values: [0.1, 1, 10, 100, 1e3] },
+      // Shunt values in mΩ, then the kΩ/MΩ decades.
+      reference: { field: "ohm", values: [1e-3, 0.01, 0.1, 1, 1e3, 1e4, 1e5, 1e6] },
+      scales: {
+        axis: { field: "ohm", range: [1e-3, 1e9], scale: "log" },
+        fields: [
+          { key: "milliohm", ticks: [1, 10, 100, 1e3] },
+          { key: "ohm", ticks: [1, 10, 100, 1e3] },
+          { key: "kilohm", ticks: [1, 10, 100, 1e3] },
+          { key: "megaohm", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 kΩ = 1000 Ω,  1 MΩ = 10⁶ Ω",
     variables: []
@@ -26235,12 +29640,37 @@ var currentUnits = {
     }
   ],
   outputs: [
-    { key: "milliampere", label: "Milliamperes", symbol: "mA", unit: "mA", precision: 4 },
-    { key: "microampere", label: "Microamperes", symbol: "μA", unit: "μA", precision: 3 },
-    { key: "nanoampere", label: "Nanoamperes", symbol: "nA", unit: "nA", precision: 2 },
-    { key: "picoampere", label: "Picoamperes", symbol: "pA", unit: "pA", precision: 1 }
+    { key: "milliampere", label: "Milliamperes", symbol: "mA", unit: "mA", precision: 4, primary: true, display: { unit: "mA" } },
+    { key: "microampere", label: "Microamperes", symbol: "μA", unit: "μA", precision: 3, display: { unit: "μA" } },
+    { key: "nanoampere", label: "Nanoamperes", symbol: "nA", unit: "nA", precision: 2, display: { unit: "nA" } },
+    { key: "picoampere", label: "Picoamperes", symbol: "pA", unit: "pA", precision: 1, display: { unit: "pA" } }
   ],
   calculate: calculateCurrentUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["picoampere", "nanoampere", "microampere", "milliampere", "ampere"],
+      free: ["ampere"],
+      // Exact inverses: the affine two-point inverse loses digits at pA and nA, where amperes are ≪ 1.
+      inverse: {
+        picoampere: (v) => v / 1e12,
+        nanoampere: (v) => v / 1e9,
+        microampere: (v) => v / 1e6,
+        milliampere: (v) => v / 1e3
+      },
+      picks: { field: "milliampere", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      reference: { field: "ampere", values: [1e-9, 1e-6, 1e-5, 1e-4, 1e-3, 0.01, 0.1, 1] },
+      scales: {
+        axis: { field: "ampere", range: [1e-9, 10], scale: "log" },
+        fields: [
+          { key: "nanoampere", ticks: [1, 10, 100, 1e3] },
+          { key: "microampere", ticks: [1, 10, 100, 1e3] },
+          { key: "milliampere", ticks: [1, 10, 100, 1e3] },
+          { key: "ampere", ticks: [0.1, 1, 10] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 A = 10³ mA = 10⁶ mu A = 10⁹ nA = 10¹² pA",
     variables: []
@@ -26289,12 +29719,31 @@ var voltageUnits = {
     }
   ],
   outputs: [
-    { key: "microvolt", label: "Microvolts", symbol: "μV", unit: "μV", precision: 2 },
-    { key: "millivolt", label: "Millivolts", symbol: "mV", unit: "mV", precision: 4 },
-    { key: "kilovolt", label: "Kilovolts", symbol: "kV", unit: "kV", precision: 6 },
-    { key: "megavolt", label: "Megavolts", symbol: "MV", unit: "MV", precision: 9 }
+    { key: "microvolt", label: "Microvolts", symbol: "μV", unit: "μV", precision: 2, display: { unit: "μV" } },
+    { key: "millivolt", label: "Millivolts", symbol: "mV", unit: "mV", precision: 4, primary: true, display: { unit: "mV" } },
+    { key: "kilovolt", label: "Kilovolts", symbol: "kV", unit: "kV", precision: 6, display: { unit: "kV" } },
+    { key: "megavolt", label: "Megavolts", symbol: "MV", unit: "MV", precision: 9, display: { unit: "MV" } }
   ],
   calculate: calculateVoltageUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["microvolt", "millivolt", "volt", "kilovolt", "megavolt"],
+      free: ["volt"],
+      affine: true,
+      picks: { field: "volt", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      reference: { field: "volt", values: [1e-6, 1e-5, 1e-4, 1e-3, 0.01, 0.1, 1, 1e3] },
+      scales: {
+        axis: { field: "volt", range: [1e-6, 1e6], scale: "log" },
+        fields: [
+          { key: "microvolt", ticks: [1, 10, 100, 1e3] },
+          { key: "millivolt", ticks: [1, 10, 100, 1e3] },
+          { key: "volt", ticks: [1, 10, 100, 1e3] },
+          { key: "kilovolt", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 V = 10³ mV = 10⁶ mu V",
     variables: []
@@ -26344,13 +29793,39 @@ var timeUnits = {
     }
   ],
   outputs: [
-    { key: "millisecond", label: "Milliseconds", symbol: "ms", unit: "ms", precision: 6 },
-    { key: "microsecond", label: "Microseconds", symbol: "μs", unit: "μs", precision: 4 },
-    { key: "nanosecond", label: "Nanoseconds", symbol: "ns", unit: "ns", precision: 2 },
-    { key: "picosecond", label: "Picoseconds", symbol: "ps", unit: "ps", precision: 0 },
-    { key: "femtosecond", label: "Femtoseconds", symbol: "fs", unit: "fs", precision: 0 }
+    { key: "millisecond", label: "Milliseconds", symbol: "ms", unit: "ms", precision: 6, display: { unit: "ms" } },
+    { key: "microsecond", label: "Microseconds", symbol: "μs", unit: "μs", precision: 4, primary: true, display: { unit: "μs" } },
+    { key: "nanosecond", label: "Nanoseconds", symbol: "ns", unit: "ns", precision: 2, display: { unit: "ns" } },
+    { key: "picosecond", label: "Picoseconds", symbol: "ps", unit: "ps", precision: 0, display: { unit: "ps" } },
+    { key: "femtosecond", label: "Femtoseconds", symbol: "fs", unit: "fs", precision: 0, display: { unit: "fs" } }
   ],
   calculate: calculateTimeUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["femtosecond", "picosecond", "nanosecond", "microsecond", "millisecond", "second"],
+      free: ["second"],
+      // Exact inverses: the affine two-point inverse loses digits at ps and fs, where seconds are ≪ 1.
+      inverse: {
+        femtosecond: (v) => v / 1e15,
+        picosecond: (v) => v / 1e12,
+        nanosecond: (v) => v / 1e9,
+        microsecond: (v) => v / 1e6,
+        millisecond: (v) => v / 1e3
+      },
+      picks: { field: "microsecond", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      reference: { field: "second", values: [1e-15, 1e-12, 1e-9, 1e-8, 1e-7, 1e-6, 1e-3, 1] },
+      scales: {
+        axis: { field: "second", range: [1e-12, 1], scale: "log" },
+        fields: [
+          { key: "picosecond", ticks: [1, 10, 100, 1e3] },
+          { key: "nanosecond", ticks: [1, 10, 100, 1e3] },
+          { key: "microsecond", ticks: [1, 10, 100, 1e3] },
+          { key: "millisecond", ticks: [1, 10, 100, 1e3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 s = 10³ ms = 10⁶ mu s = 10⁹ ns = 10¹² ps = 10¹⁵ fs",
     variables: []
@@ -26397,12 +29872,37 @@ var magneticFluxUnits = {
     }
   ],
   outputs: [
-    { key: "millitesla", label: "Millitesla", symbol: "mT", unit: "mT", precision: 4 },
-    { key: "microtesla", label: "Microtesla", symbol: "μT", unit: "μT", precision: 2 },
-    { key: "nanotesla", label: "Nanotesla", symbol: "nT", unit: "nT", precision: 0 },
+    { key: "millitesla", label: "Millitesla", symbol: "mT", unit: "mT", precision: 4, primary: true, display: { unit: "mT" } },
+    { key: "microtesla", label: "Microtesla", symbol: "μT", unit: "μT", precision: 2, display: { unit: "μT" } },
+    { key: "nanotesla", label: "Nanotesla", symbol: "nT", unit: "nT", precision: 0, display: { unit: "nT" } },
     { key: "gauss", label: "Gauss", symbol: "G", unit: "G", precision: 2 }
   ],
   calculate: calculateMagneticFluxUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["nanotesla", "microtesla", "millitesla", "tesla", "gauss"],
+      free: ["tesla"],
+      // Exact inverses: the affine two-point inverse loses digits at nT, where teslas are ~1e-9.
+      inverse: {
+        nanotesla: (v) => v / 1e9,
+        microtesla: (v) => v / 1e6,
+        millitesla: (v) => v / 1e3,
+        gauss: (v) => v / 1e4
+      },
+      picks: { field: "millitesla", values: [0.05, 1, 10, 100, 1e3] },
+      reference: { field: "tesla", values: [1e-6, 5e-5, 1e-4, 1e-3, 0.01, 0.1, 1, 3] },
+      scales: {
+        axis: { field: "tesla", range: [1e-6, 10], scale: "log" },
+        fields: [
+          { key: "microtesla", ticks: [1, 10, 100, 1e3] },
+          { key: "millitesla", ticks: [1, 10, 100, 1e3] },
+          { key: "tesla", ticks: [0.1, 1, 10] },
+          { key: "gauss", ticks: [0.01, 0.1, 1, 10, 100, 1e3, 1e4] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 T = 10⁴ G = 10³ mT = 10⁶ mu T",
     variables: []
@@ -26451,14 +29951,34 @@ var dataRateUnits = {
     }
   ],
   outputs: [
-    { key: "kbps", label: "Kilobits/sec", symbol: "kbps", unit: "kbps", precision: 3 },
-    { key: "mbps", label: "Megabits/sec", symbol: "Mbps", unit: "Mbps", precision: 4 },
-    { key: "gbps", label: "Gigabits/sec", symbol: "Gbps", unit: "Gbps", precision: 5 },
+    { key: "kbps", label: "Kilobits/sec", symbol: "kbps", unit: "kbps", precision: 3, display: { unit: "kbps" } },
+    { key: "mbps", label: "Megabits/sec", symbol: "Mbps", unit: "Mbps", precision: 4, primary: true, display: { unit: "Mbps" } },
+    { key: "gbps", label: "Gigabits/sec", symbol: "Gbps", unit: "Gbps", precision: 5, display: { unit: "Gbps" } },
     { key: "bytesPerSecond", label: "Bytes/sec", symbol: "B/s", unit: "B/s", precision: 0 },
     { key: "kBps", label: "Kilobytes/sec", symbol: "kB/s", unit: "kB/s", precision: 2 },
     { key: "mBps", label: "Megabytes/sec", symbol: "MB/s", unit: "MB/s", precision: 3 }
   ],
   calculate: calculateDataRateUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["bps", "kbps", "mbps", "gbps", "bytesPerSecond", "kBps", "mBps"],
+      free: ["bps"],
+      affine: true,
+      picks: { field: "mbps", values: [1, 10, 100, 1e3, 1e4] },
+      // UART 9600 and 115200 baud, CAN, 10/100/1000 Ethernet, 10G.
+      reference: { field: "bps", values: [9600, 115200, 1e6, 1e7, 1e8, 1e9, 1e10] },
+      scales: {
+        axis: { field: "bps", range: [1e3, 1e11], scale: "log" },
+        fields: [
+          { key: "kbps", ticks: [1, 10, 100, 1e3] },
+          { key: "mbps", ticks: [1, 10, 100, 1e3] },
+          { key: "gbps", ticks: [1, 10, 100] },
+          { key: "mBps", ticks: [1e-3, 0.01, 0.1, 1, 10, 100, 1e3, 1e4] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 byte = 8 bits,  1 Mbps = 10⁶ bps",
     variables: []
@@ -26503,13 +30023,32 @@ var angleUnits = {
     }
   ],
   outputs: [
-    { key: "radian", label: "Radians", symbol: "rad", unit: "rad", precision: 6 },
+    { key: "radian", label: "Radians", symbol: "rad", unit: "rad", precision: 6, primary: true },
     { key: "gradian", label: "Gradians", symbol: "grad", unit: "grad", precision: 3 },
     { key: "arcminute", label: "Arcminutes", symbol: "'", unit: "'", precision: 1 },
     { key: "arcsecond", label: "Arcseconds", symbol: '"', unit: '"', precision: 0 },
     { key: "turn", label: "Turns", symbol: "rev", unit: "rev", precision: 4 }
   ],
   calculate: calculateAngleUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["degree", "radian", "turn", "gradian", "arcminute", "arcsecond"],
+      free: ["degree"],
+      affine: true,
+      picks: { field: "degree", values: [30, 45, 60, 90, 180, 360] },
+      reference: { field: "degree", values: [1, 15, 30, 45, 60, 90, 180, 360] },
+      scales: {
+        axis: { field: "degree", range: [0, 360], scale: "linear" },
+        fields: [
+          { key: "degree", ticks: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+          { key: "radian", ticks: [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2, 2 * Math.PI] },
+          { key: "turn", ticks: [0, 0.25, 0.5, 0.75, 1] },
+          { key: "gradian", ticks: [0, 100, 200, 300, 400] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1° = π/180 rad = 10/9 grad",
     variables: []
@@ -26559,14 +30098,42 @@ var energyUnits = {
     }
   ],
   outputs: [
-    { key: "millijoule", label: "Millijoules", symbol: "mJ", unit: "mJ", precision: 3 },
-    { key: "microjoule", label: "Microjoules", symbol: "μJ", unit: "μJ", precision: 2 },
+    { key: "millijoule", label: "Millijoules", symbol: "mJ", unit: "mJ", precision: 3, primary: true, display: { unit: "mJ" } },
+    { key: "microjoule", label: "Microjoules", symbol: "μJ", unit: "μJ", precision: 2, display: { unit: "μJ" } },
     { key: "electronvolt", label: "Electron-Volts", symbol: "eV", unit: "eV", precision: 3 },
     { key: "kwh", label: "Kilowatt-Hours", symbol: "kWh", unit: "kWh", precision: 8 },
     { key: "calorie", label: "Calories", symbol: "cal", unit: "cal", precision: 4 },
     { key: "btu", label: "BTU", symbol: "BTU", unit: "BTU", precision: 5 }
   ],
   calculate: calculateEnergyUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["joule", "millijoule", "microjoule", "electronvolt", "kwh", "calorie", "btu"],
+      free: ["joule"],
+      // Exact inverses of calculate()'s factors: the affine two-point inverse loses every digit at eV scale (~1e-19 J).
+      inverse: {
+        electronvolt: (v) => v * 1602176634e-28,
+        microjoule: (v) => v / 1e6,
+        millijoule: (v) => v / 1e3,
+        calorie: (v) => v * 4.184,
+        btu: (v) => v * 1055.05585262,
+        kwh: (v) => v * 36e5
+      },
+      picks: { field: "joule", values: [0.01, 0.1, 1, 10, 100, 1e3] },
+      // One of each unit: every row reads 1 in its own column.
+      reference: { field: "joule", values: [1602176634e-28, 1e-6, 1e-3, 1, 4.184, 1055.05585262, 36e5] },
+      scales: {
+        axis: { field: "joule", range: [1e-6, 1e7], scale: "log" },
+        fields: [
+          { key: "microjoule", ticks: [1, 10, 100, 1e3] },
+          { key: "millijoule", ticks: [1, 10, 100, 1e3] },
+          { key: "joule", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "kwh", ticks: [1e-3, 0.01, 0.1, 1] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 kWh = 3.6 MJ,  1 eV = 1.602 × 10⁻¹⁹ J",
     variables: [],
@@ -26619,7 +30186,7 @@ var torqueUnitsConv = {
     }
   ],
   outputs: [
-    { key: "lbFt", label: "Pound-feet", symbol: "lb·ft", unit: "lb·ft", precision: 4 },
+    { key: "lbFt", label: "Pound-feet", symbol: "lb·ft", unit: "lb·ft", precision: 4, primary: true },
     { key: "lbIn", label: "Pound-inches", symbol: "lb·in", unit: "lb·in", precision: 3 },
     { key: "ozIn", label: "Oz-inches", symbol: "oz·in", unit: "oz·in", precision: 2 },
     { key: "kgCm", label: "Kg-centimetres", symbol: "kg·cm", unit: "kg·cm", precision: 3 },
@@ -26627,6 +30194,27 @@ var torqueUnitsConv = {
     { key: "dyneCm", label: "Dyne·cm", symbol: "dyn·cm", unit: "dyn·cm", precision: 0 }
   ],
   calculate: calculateTorqueUnitsConv,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["nm", "lbFt", "lbIn", "ozIn", "kgCm", "kgM", "dyneCm"],
+      free: ["nm"],
+      affine: true,
+      picks: { field: "nm", values: [0.01, 0.1, 1, 10, 100] },
+      // One of each unit, in N·m by calculate()'s factors: each row reads 1 in its own column.
+      // One of each unit in N·m, from the exact factors: oz·in, kgf·cm, lbf·in, N·m, lbf·ft, kgf·m.
+      reference: { field: "nm", values: [LBF_FT_IN_NM / 192, KGF_M_IN_NM / 100, LBF_FT_IN_NM / 12, 1, LBF_FT_IN_NM, KGF_M_IN_NM] },
+      scales: {
+        axis: { field: "nm", range: [1e-3, 1e3], scale: "log" },
+        fields: [
+          { key: "nm", ticks: [1e-3, 0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "lbFt", ticks: [1e-3, 0.01, 0.1, 1, 10, 100] },
+          { key: "ozIn", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "kgCm", ticks: [0.1, 1, 10, 100, 1e3, 1e4] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 N·m = 0.7376 lb·ft = 141.6 oz·in",
     variables: [],
@@ -26674,12 +30262,30 @@ var illuminanceUnits = {
     }
   ],
   outputs: [
-    { key: "footcandle", label: "Foot-candles", symbol: "fc", unit: "fc", precision: 3 },
+    { key: "footcandle", label: "Foot-candles", symbol: "fc", unit: "fc", precision: 3, primary: true },
     { key: "millilux", label: "Millilux", symbol: "mlux", unit: "mlux", precision: 0 },
     { key: "kilolux", label: "Kilolux", symbol: "klux", unit: "klux", precision: 3 },
     { key: "phot", label: "Phot", symbol: "ph", unit: "ph", precision: 5 }
   ],
   calculate: calculateIlluminanceUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["lux", "footcandle", "millilux", "kilolux", "phot"],
+      free: ["lux"],
+      affine: true,
+      picks: { field: "lux", values: [1, 100, 500, 1e3, 1e4, 1e5] },
+      reference: { field: "lux", values: [0.1, 1, 10, 100, 500, 1e3, 1e4, 1e5] },
+      scales: {
+        axis: { field: "lux", range: [0.1, 1e5], scale: "log" },
+        fields: [
+          { key: "lux", ticks: [0.1, 1, 10, 100, 1e3, 1e4, 1e5] },
+          { key: "footcandle", ticks: [0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "kilolux", ticks: [1e-3, 0.01, 0.1, 1, 10, 100] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 lux = 0.0929 fc = 1 lm/m²",
     variables: []
@@ -26804,6 +30410,7 @@ var junctionTemperature = {
     },
     {
       key: "tj",
+      primary: true,
       label: "Junction Temperature",
       symbol: "T_J",
       unit: "°C",
@@ -26833,6 +30440,7 @@ var junctionTemperature = {
     },
     {
       key: "margin",
+      signed: "explicit",
       label: "Thermal Margin",
       symbol: "ΔT",
       unit: "°C",
@@ -26955,6 +30563,7 @@ var heatsinkSelection = {
   outputs: [
     {
       key: "thetaSARequired",
+      primary: true,
       label: "Required θ_SA",
       symbol: "θ_SA",
       unit: "°C/W",
@@ -26976,6 +30585,7 @@ var heatsinkSelection = {
     },
     {
       key: "deltaTJ",
+      signed: "explicit",
       label: "Thermal Margin",
       symbol: "ΔT_J",
       unit: "°C",
@@ -27130,7 +30740,7 @@ var thermalViaArray = {
       min: 0,
       max: 1,
       step: 0.1,
-      tooltip: "Fraction of the bore inside the plating that is filled: 0 = hollow plated via, 1 = fully filled with the material above (copper by default). Copper-filled vias offer the best thermal performance.",
+      tooltip: "Fraction of the bore inside the plating that is filled, from 0 (a hollow plated via) to 1 (fully filled with the material above, copper by default). Copper-filled vias offer the best thermal performance.",
       presets: [
         { label: "Hollow plated (0)", values: { drillFill: 0 } },
         { label: "Solid copper fill (1)", values: { drillFill: 1 } }
@@ -27148,6 +30758,7 @@ var thermalViaArray = {
     },
     {
       key: "thetaArray",
+      primary: true,
       label: "Array Thermal Resistance",
       symbol: "θ_array",
       unit: "°C/W",
@@ -27183,7 +30794,19 @@ var thermalViaArray = {
       "A hollow via (f = 0) is the copper barrel alone; a copper-filled via (k = 385, f = 1) is a solid copper cylinder of diameter d"
     ]
   },
+  examples: [
+    { id: "qfn-3x3-plated-0p3", label: "QFN pad, 3 × 3 plated 0.3 mm vias", values: { numVias: 9, viaDiameter: 0.3, platingThickness: 25, pcbThickness: 1.6, copperThermal: 385, drillFill: 0 } },
+    { id: "power-qfn-4x4-filled", label: "Power QFN, 4 × 4 copper-filled vias at 5 °C/W", values: { numVias: 16, viaDiameter: 0.257181480694894, platingThickness: 25, pcbThickness: 1.6, copperThermal: 385, drillFill: 1 } },
+    { id: "dpak-5x5-plated-0p4", label: "DPAK tab, 5 × 5 plated 0.4 mm vias", values: { numVias: 25, viaDiameter: 0.4, platingThickness: 25, pcbThickness: 1.6, copperThermal: 385, drillFill: 0 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "via-array", roles: { n: "numVias", d: "viaDiameter", plating: "platingThickness", len: "pcbThickness", fill: "drillFill" } },
+    // Not the via count: calculate() rounds N (fix-calculator-formulas-followup),
+    // so θ is a step in N and no count meets a target exactly.
+    synthesis: [{ output: "thetaArray", solveFor: ["viaDiameter", "platingThickness"] }],
+    curve: { x: "viaDiameter", y: "thetaArray", range: [0.15, 1], scale: "linear" }
+  },
   relatedCalculators: ["junction-temperature", "heatsink-selection", "via-thermal-resistance"],
   relatedBlogPosts: ["junction-temperature", "pcb-trace-temp"]
 };
@@ -27315,6 +30938,7 @@ var pllLoopFilter = {
   outputs: [
     {
       key: "c1",
+      primary: true,
       label: "C1 (primary capacitor)",
       symbol: "C₁",
       unit: "nF",
@@ -27339,6 +30963,7 @@ var pllLoopFilter = {
     },
     {
       key: "pmActual",
+      signed: "explicit",
       label: "Actual Phase Margin",
       symbol: "PM",
       unit: "°",
@@ -27507,18 +31132,25 @@ var berSnr = {
       min: 1,
       max: 4,
       step: 1,
-      tooltip: "Modulation type: 1=BPSK, 2=QPSK, 3=8PSK, 4=16QAM",
+      options: [
+        { value: 1, label: "BPSK" },
+        { value: 2, label: "QPSK" },
+        { value: 3, label: "8PSK" },
+        { value: 4, label: "16QAM" }
+      ],
       presets: [
         { label: "BPSK (1)", values: { modulation: 1 } },
         { label: "QPSK (2)", values: { modulation: 2 } },
         { label: "8PSK (3)", values: { modulation: 3 } },
         { label: "16QAM (4)", values: { modulation: 4 } }
       ]
-    }
+    },
+    { key: "targetBer", label: "Target BER", symbol: "BER_t", unit: "", defaultValue: 1e-6, min: 1e-12, max: 0.5, tooltip: "The bit error rate the link must reach at or below. The status fails above 0.001." }
   ],
   outputs: [
     {
       key: "ber",
+      primary: true,
       label: "Bit Error Rate",
       symbol: "BER",
       unit: "",
@@ -27541,6 +31173,7 @@ var berSnr = {
     },
     {
       key: "bitsPerSymbol",
+      display: { integer: true },
       label: "Bits per Symbol",
       symbol: "k",
       unit: "bits/symbol",
@@ -27556,8 +31189,28 @@ var berSnr = {
       { symbol: "BER", description: "Bit error rate", unit: "" },
       { symbol: "Eb/N0", description: "Energy per bit to noise density", unit: "dB" },
       { symbol: "erfc", description: "Complementary error function", unit: "" }
+    ],
+    substitution: [
+      { symbol: "BER", expression: "½·erfc(√(10^({ebN0dB}/10))) for BPSK and QPSK; ⅓·erfc(√(3 sin²(π/8) E_b/N_0)) for 8PSK; ⅜·erfc(√(0.4 E_b/N_0)) for 16QAM", output: "ber" },
+      { symbol: "log₁₀ BER", expression: "log₁₀(BER)", output: "berLog10" }
     ]
   },
+  sweep: {
+    input: "ebN0dB",
+    output: "berLog10",
+    range: [-5, 20],
+    scale: "linear",
+    lines: [
+      { id: "ber-ceiling", kind: "limit", label: "Maximum", value: () => -3, fails: "above" },
+      { id: "ber-target", kind: "target", label: "Target", value: (i) => Math.log10(i.targetBer) }
+    ]
+  },
+  target: { output: "ber", input: "targetBer", sense: "max", failAt: 1e-3 },
+  examples: [
+    { id: "bpsk-1e-5", label: "BPSK at 9.6 dB", values: { ebN0dB: 9.6, modulation: 1 } },
+    { id: "qpsk-satellite", label: "QPSK satellite link at 6 dB", values: { ebN0dB: 6, modulation: 2 } },
+    { id: "16qam-14db", label: "16QAM at 14 dB", values: { ebN0dB: 14, modulation: 4 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["snr-calculator", "quantization-noise", "adc-snr", "rf-link-budget"],
   relatedBlogPosts: ["am-modulation-index", "ber-vs-snr-digital-communications"]
@@ -27672,6 +31325,7 @@ var quantizationNoise = {
     },
     {
       key: "sqnr",
+      primary: true,
       label: "Theoretical SQNR",
       symbol: "SQNR",
       unit: "dB",
@@ -27680,6 +31334,7 @@ var quantizationNoise = {
     },
     {
       key: "enob",
+      display: { integer: true },
       label: "ENOB (theoretical)",
       symbol: "ENOB",
       unit: "bits",
@@ -27712,8 +31367,19 @@ var quantizationNoise = {
       { symbol: "SQNR", description: "Signal-to-quantization-noise ratio", unit: "dB" },
       { symbol: "LSB", description: "Least significant bit voltage", unit: "V" },
       { symbol: "V_ref", description: "ADC reference voltage", unit: "V" }
+    ],
+    substitution: [
+      { symbol: "SQNR", expression: "20·log₁₀(2) × {bits} + 10·log₁₀(1.5)", output: "sqnr" },
+      { symbol: "LSB", expression: "{vref} / 2^{bits}", output: "lsb" },
+      { symbol: "e_n", expression: "(LSB / √12) / √({sampleRate} / 2)", output: "noiseDensity" }
     ]
   },
+  sweep: { input: "bits", range: [4, 24], scale: "linear" },
+  examples: [
+    { id: "mcu-12b-3v3", label: "12-bit microcontroller ADC, 3.3 V", values: { bits: 12, vref: 3.3, sampleRate: 100 } },
+    { id: "audio-16b", label: "16-bit audio converter, 48 kHz", values: { bits: 16, vref: 2.5, sampleRate: 48 } },
+    { id: "sigma-delta-24b", label: "24-bit sigma-delta, 5 V reference", values: { bits: 24, vref: 5, sampleRate: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["adc-snr", "ber-snr", "snr-calculator"],
   relatedBlogPosts: ["ber-snr", "ber-vs-snr-digital-communications"]
@@ -27783,6 +31449,7 @@ var fresnelZone = {
       unit: "km",
       defaultValue: 1,
       min: 1e-3,
+      max: 1e3,
       tooltip: "Total distance between the two endpoints of the link"
     },
     {
@@ -27800,6 +31467,7 @@ var fresnelZone = {
   outputs: [
     {
       key: "radiusM",
+      primary: true,
       label: "Radius of Zone n at Mid-path",
       symbol: "r_n",
       unit: "m",
@@ -27823,6 +31491,12 @@ var fresnelZone = {
       tooltip: "Free-space wavelength at the operating frequency"
     }
   ],
+  examples: [
+    { id: "wifi-bridge-2g4-1km", label: "2.4 GHz Wi-Fi bridge, 1 km", values: { frequency: 2.4, distance: 1, n: 1 } },
+    { id: "ptp-5g8-5km", label: "5.8 GHz point-to-point, 5 km", values: { frequency: 5.8, distance: 5, n: 1 } },
+    { id: "lora-868-10km", label: "868 MHz LoRa, 10 km", values: { frequency: 0.868, distance: 10, n: 1 } },
+    { id: "backhaul-18g-15km", label: "18 GHz microwave backhaul, 15 km", values: { frequency: 18, distance: 15, n: 1 } }
+  ],
   calculate: calculateFresnelZone,
   formula: {
     primary: "r_n = √(n·λ·d₁·d₂/(d₁+d₂))  at midpoint d₁=d₂=d/2",
@@ -27835,6 +31509,15 @@ var fresnelZone = {
     ]
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "fresnel", roles: { d: "distance", r: "radiusM", n: "n", f: "frequency", clear: "clearanceM" } },
+    // The zone radius, or the clearance the path has: the longest link that keeps it.
+    synthesis: [
+      { output: "radiusM", solveFor: ["distance"] },
+      { output: "clearanceM", solveFor: ["distance"] }
+    ],
+    curve: { x: "distance", y: "radiusM", range: [0.1, 50], scale: "log" }
+  },
   relatedCalculators: ["free-space-path-loss", "rf-link-budget", "link-margin", "line-of-sight"],
   relatedBlogPosts: ["rf-link-budget-calculator-guide"],
   liveWidgets: [
@@ -27851,24 +31534,68 @@ var fresnelZone = {
 
 // src/lib/calculators/rf/power-density.ts
 var ETA_03 = 125663706212e-17 * 299792458;
+function exposureLimit(standard, exposureClass, fMHz) {
+  const occupational = exposureClass === 1;
+  if (standard === 1) {
+    const cls = occupational ? "occupational" : "general public";
+    const at2 = (band2, wm2, rule) => ({ wm2, rule, clause: `ICNIRP (2020) Table 5, ${cls}, ${band2}` });
+    if (!(fMHz >= 0.1) || fMHz > 3e5) return at2("outside 100 kHz–300 GHz", null, "—");
+    if (fMHz <= 30) return at2("0.1–30 MHz (E and H only)", null, "—");
+    if (fMHz <= 400) return occupational ? at2(">30–400 MHz", 10, "10 W/m²") : at2(">30–400 MHz", 2, "2 W/m²");
+    if (fMHz <= 2e3) return occupational ? at2(">400–2000 MHz", fMHz / 40, "f/40 W/m²") : at2(">400–2000 MHz", fMHz / 200, "f/200 W/m²");
+    return occupational ? at2(">2–300 GHz", 50, "50 W/m²") : at2(">2–300 GHz", 10, "10 W/m²");
+  }
+  const table2 = occupational ? "(A) occupational/controlled" : "(B) general population/uncontrolled";
+  const at = (band2, mwcm2, rule) => ({ wm2: mwcm2 === null ? null : mwcm2 * 10, rule, clause: `47 CFR §1.1310(e)(1), Table 1, ${table2}, ${band2}` });
+  if (!(fMHz >= 0.3) || fMHz > 1e5) return at("outside 0.3 MHz–100 GHz", null, "—");
+  if (occupational) {
+    if (fMHz < 3) return at("0.3–3.0 MHz", 100, "100 mW/cm²");
+    if (fMHz < 30) return at("3.0–30 MHz", 900 / (fMHz * fMHz), "900/f² mW/cm²");
+    if (fMHz < 300) return at("30–300 MHz", 1, "1.0 mW/cm²");
+    if (fMHz < 1500) return at("300–1,500 MHz", fMHz / 300, "f/300 mW/cm²");
+    return at("1,500–100,000 MHz", 5, "5 mW/cm²");
+  }
+  if (fMHz < 1.34) return at("0.3–1.34 MHz", 100, "100 mW/cm²");
+  if (fMHz < 30) return at("1.34–30 MHz", 180 / (fMHz * fMHz), "180/f² mW/cm²");
+  if (fMHz < 300) return at("30–300 MHz", 0.2, "0.2 mW/cm²");
+  if (fMHz < 1500) return at("300–1,500 MHz", fMHz / 1500, "f/1500 mW/cm²");
+  return at("1,500–100,000 MHz", 1, "1.0 mW/cm²");
+}
+var GROUND_REFLECTION = 2.56;
 function calculatePowerDensity(inputs) {
   const { eirp, distance } = inputs;
+  const standard = inputs.standard ?? 0;
+  const exposureClass = inputs.exposureClass ?? 0;
+  const reflection = (inputs.groundReflection ?? 0) === 1 ? GROUND_REFLECTION : 1;
+  const fMHz = (inputs.frequency ?? 2.4) * 1e3;
   if (distance <= 0) {
     return { values: {}, errors: ["Distance must be positive"] };
   }
   const eirp_W = Math.pow(10, (eirp - 30) / 10);
-  const S_Wm2 = eirp_W / (4 * Math.PI * distance * distance);
+  const S_Wm2 = reflection * eirp_W / (4 * Math.PI * distance * distance);
   const powerDensity2 = S_Wm2 * 1e3;
   const planeWaveImpedance = ETA_03;
   const efield = Math.sqrt(S_Wm2 * planeWaveImpedance);
   const hfield = efield / planeWaveImpedance * 1e3;
+  const limit = exposureLimit(standard, exposureClass, fMHz).wm2;
+  const warnings = [];
+  if (limit === null) warnings.push(standard === 1 && fMHz > 0.1 && fMHz <= 30 ? "ICNIRP 2020 gives no power-density reference level at or below 30 MHz; it limits E and H there" : "The chosen standard gives no power-density limit at this frequency");
+  const limitDensity = limit === null ? NaN : limit * 1e3;
+  const limitPercent = limit === null ? NaN : S_Wm2 / limit * 100;
+  const minDistance = limit === null ? NaN : Math.sqrt(reflection * eirp_W / (4 * Math.PI * limit));
+  const maxEirp = limit === null ? NaN : 10 * Math.log10(limit * 4 * Math.PI * distance * distance / reflection) + 30;
   return {
     values: {
       powerDensity: powerDensity2,
       efield,
       hfield,
-      planeWaveImpedance
-    }
+      planeWaveImpedance,
+      limitDensity,
+      limitPercent,
+      minDistance,
+      maxEirp
+    },
+    ...warnings.length ? { warnings } : {}
   };
 }
 var powerDensity = {
@@ -27921,22 +31648,57 @@ var powerDensity = {
       unit: "GHz",
       defaultValue: 2.4,
       min: 1e-3,
-      tooltip: "Operating frequency (used for reference, does not affect far-field power density)"
+      tooltip: "Sets the exposure limit; the far-field power density itself does not depend on it"
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "FCC 47 CFR §1.1310" },
+        { value: 1, label: "ICNIRP 2020" }
+      ],
+      tooltip: "The exposure limits the power density is checked against"
+    },
+    {
+      key: "exposureClass",
+      label: "Exposure",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "General public" },
+        { value: 1, label: "Occupational" }
+      ],
+      tooltip: "General public (uncontrolled) or occupational (controlled) exposure"
+    },
+    {
+      key: "groundReflection",
+      label: "Ground Reflection",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Free space" },
+        { value: 1, label: "Ground reflection ×2.56" }
+      ],
+      tooltip: "FCC OET Bulletin 65: a ground reflection adding in phase raises the power density by 1.6² = 2.56"
     }
   ],
   outputs: [
     {
       key: "powerDensity",
+      primary: true,
       label: "Power Density",
       symbol: "S",
       unit: "mW/m²",
       precision: 3,
-      tooltip: "RF power density at given distance: S = EIRP / (4π·d²)",
-      thresholds: {
-        good: { max: 1e3 },
-        warning: { min: 1e3, max: 1e4 },
-        danger: { max: 1e4 }
-      }
+      tooltip: "RF power density at given distance: S = EIRP / (4π·d²)"
     },
     {
       key: "efield",
@@ -27961,9 +31723,68 @@ var powerDensity = {
       unit: "Ω",
       precision: 1,
       tooltip: "Free-space plane-wave impedance η₀ = µ₀·c ≈ 376.73 Ω"
+    },
+    {
+      key: "limitDensity",
+      label: "Exposure Limit",
+      symbol: "S_lim",
+      unit: "mW/m²",
+      precision: 3,
+      tooltip: "The power-density limit of the chosen standard and exposure class at the frequency"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The power density as a percentage of the limit; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "minDistance",
+      label: "Compliant Distance",
+      symbol: "d_min",
+      unit: "m",
+      precision: 3,
+      tooltip: "The distance at which the power density equals the limit; at or beyond it the exposure complies"
+    },
+    {
+      key: "maxEirp",
+      label: "Compliant EIRP",
+      symbol: "EIRP_max",
+      unit: "dBm",
+      precision: 2,
+      tooltip: "The EIRP at which the power density at this distance equals the limit; at or below it the exposure complies"
     }
   ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "lora-gateway-915-mhz-20-cm", label: "LoRa gateway, 915 MHz, 36 dBm EIRP at 20 cm", values: { eirp: 36, distance: 0.2, frequency: 0.915, standard: 0, exposureClass: 0, groundReflection: 0 } },
+    { id: "wifi-ap-2-4-ghz-20-cm", label: "Wi-Fi access point, 2.4 GHz, 20 dBm EIRP at 20 cm", values: { eirp: 20, distance: 0.2, frequency: 2.4, standard: 0, exposureClass: 0, groundReflection: 0 } },
+    { id: "cell-sector-1900-mhz-3-m", label: "Cellular sector, 1900 MHz, 61 dBm EIRP at 3 m", values: { eirp: 61, distance: 3, frequency: 1.9, standard: 0, exposureClass: 0, groundReflection: 0 } },
+    { id: "fm-broadcast-98-mhz-50-m", label: "FM broadcast, 98 MHz, 10 kW EIRP at 50 m over ground", values: { eirp: 70, distance: 50, frequency: 0.098, standard: 0, exposureClass: 0, groundReflection: 1 } }
+  ],
   calculate: calculatePowerDensity,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "47 CFR §1.1310(e)(1), Table 1, as amended by FCC 19-126 (2019); far-field method of FCC OET Bulletin 65, Edition 97-01",
+        1: "ICNIRP (2020), Guidelines for limiting exposure to electromagnetic fields (100 kHz to 300 GHz), Health Physics 118(5):483–524, Table 5"
+      }
+    },
+    class: { input: "exposureClass" },
+    value: "powerDensity",
+    limit: "limitDensity",
+    percent: "limitPercent",
+    clause: (standard, cls, inputs) => exposureLimit(standard, cls ?? 0, (inputs.frequency ?? 2.4) * 1e3).clause,
+    rule: (standard, cls, inputs) => exposureLimit(standard, cls ?? 0, (inputs.frequency ?? 2.4) * 1e3).rule,
+    remedies: [
+      { input: "distance", output: "minDistance", direction: "up" },
+      { input: "eirp", output: "maxEirp", direction: "down" }
+    ],
+    chart: { x: "distance", range: [0.01, 100], scale: "log", yScale: "log" }
+  },
   formula: {
     primary: "S = EIRP / (4π·d²),  E = √(S·η₀),  H = E/η₀,  η₀ = µ₀·c ≈ 376.73 Ω",
     latex: "S = \\frac{EIRP}{4\\pi d^2}, \\quad E = \\sqrt{S \\cdot \\eta_0}, \\quad H = \\frac{E}{\\eta_0}, \\quad \\eta_0 = \\mu_0 c",
@@ -28073,6 +31894,7 @@ var balunTransformer = {
   outputs: [
     {
       key: "turnsRatio",
+      primary: true,
       label: "Turns Ratio (N)",
       symbol: "N",
       unit: ":1",
@@ -28096,8 +31918,19 @@ var balunTransformer = {
       { symbol: "N", description: "Turns ratio (secondary:primary)", unit: "" },
       { symbol: "Z_L", description: "Load impedance", unit: "Ω" },
       { symbol: "Z_S", description: "Source impedance", unit: "Ω" }
+    ],
+    substitution: [
+      { symbol: "N", expression: "√({zLoad} / {zSource})", output: "turnsRatio" },
+      { symbol: "Z_L/Z_S", expression: "{zLoad} / {zSource}", output: "impedanceRatio" }
     ]
   },
+  sweep: { input: "zLoad", range: [10, 1e3], scale: "log" },
+  examples: [
+    { id: "four-to-one", label: "4:1 balun, 50 Ω to 200 Ω", values: { zSource: 50, zLoad: 200, frequency: 100, bandwidth: 10 } },
+    { id: "dipole-current-balun", label: "Dipole feed, 50 Ω to 73 Ω", values: { zSource: 50, zLoad: 73, frequency: 14, bandwidth: 0.35 } },
+    { id: "end-fed-9to1", label: "9:1 unun for an end-fed wire", values: { zSource: 50, zLoad: 450, frequency: 7, bandwidth: 20 } },
+    { id: "twin-lead-300", label: "300 Ω twin-lead to 75 Ω coax", values: { zSource: 75, zLoad: 300, frequency: 100, bandwidth: 50 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["vswr-return-loss", "rf-link-budget", "microstrip-impedance", "wilkinson-power-divider"],
   relatedTools: ["impedance-matching"],
@@ -28121,16 +31954,23 @@ var balunTransformer = {
 };
 
 // src/lib/calculators/rf/link-margin.ts
+var C06 = 299792458;
+var MAX_EXTRA_LOSSES2 = 4;
+function extraLossSum2(inputs) {
+  const count = Math.max(0, Math.min(MAX_EXTRA_LOSSES2, Math.round(inputs.extraLossCount ?? 0)));
+  let sum = 0;
+  for (let n = 1; n <= count; n++) sum += inputs[`extraLoss${n}`] ?? 0;
+  return sum;
+}
 function calculateLinkMargin(inputs) {
   const { txPower, txGain, rxGain, distance, frequency, sensitivity, cableLoss } = inputs;
   if (distance <= 0 || frequency <= 0) {
     return { values: { fspl: 0, receivedPower: 0, linkMargin: 0, maxRange: 0 }, errors: ["Distance and frequency must be positive"] };
   }
-  const c2 = 299792458;
   const d_m = distance * 1e3;
   const f_Hz = frequency * 1e9;
-  const fspl = 20 * Math.log10(d_m) + 20 * Math.log10(f_Hz) + 20 * Math.log10(4 * Math.PI / c2);
-  const receivedPower = txPower + txGain + rxGain - fspl - cableLoss;
+  const fspl = 20 * Math.log10(d_m) + 20 * Math.log10(f_Hz) + 20 * Math.log10(4 * Math.PI / C06);
+  const receivedPower = txPower + txGain + rxGain - fspl - cableLoss - extraLossSum2(inputs);
   const linkMargin2 = receivedPower - sensitivity;
   const maxRange = distance * Math.pow(10, linkMargin2 / 20);
   return {
@@ -28238,7 +32078,13 @@ var linkMargin = {
       defaultValue: 1,
       min: 0,
       tooltip: "Total cable and connector losses on TX and RX sides combined"
-    }
+    },
+    { key: "extraLossCount", label: "Extra Loss Terms", unit: "", defaultValue: 0, min: 0, max: MAX_EXTRA_LOSSES2, step: 1, tooltip: "How many extra loss terms the budget includes, such as polarisation mismatch, body loss or foliage" },
+    { key: "extraLoss1", label: "Extra Loss 1", symbol: "L_1", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss2", label: "Extra Loss 2", symbol: "L_2", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss3", label: "Extra Loss 3", symbol: "L_3", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "extraLoss4", label: "Extra Loss 4", symbol: "L_4", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
+    { key: "targetMargin", label: "Target Link Margin", symbol: "M_t", unit: "dB", defaultValue: 10, min: 0, max: 60, tooltip: "The fade margin the link must keep above the receiver sensitivity. The status passes at or above it and fails below 0 dB." }
   ],
   outputs: [
     {
@@ -28259,6 +32105,8 @@ var linkMargin = {
     },
     {
       key: "linkMargin",
+      primary: true,
+      signed: "explicit",
       label: "Link Margin",
       symbol: "M",
       unit: "dB",
@@ -28281,16 +32129,37 @@ var linkMargin = {
   ],
   calculate: calculateLinkMargin,
   formula: {
-    primary: "M = P_TX + G_TX + G_RX − FSPL − L_cable − P_sens",
-    latex: "M = P_{TX} + G_{TX} + G_{RX} - FSPL - L_{cable} - P_{sens}",
+    primary: "M = P_TX + G_TX + G_RX − FSPL − L_cable − ΣLₙ − P_sens",
+    latex: "M = P_{TX} + G_{TX} + G_{RX} - FSPL - L_{cable} - \\sum L_n - P_{sens}",
     variables: [
       { symbol: "M", description: "Link margin", unit: "dB" },
       { symbol: "FSPL", description: "20·log₁₀(4πdf/c)", unit: "dB" },
       { symbol: "P_TX", description: "Transmit power", unit: "dBm" },
       { symbol: "G_TX, G_RX", description: "Antenna gains", unit: "dBi" },
       { symbol: "P_sens", description: "Receiver sensitivity", unit: "dBm" }
+    ],
+    substitution: [
+      { symbol: "FSPL", expression: "20·log₁₀(4π × {distance} × {frequency} / c)", output: "fspl" },
+      { symbol: "P_RX", expression: "{txPower} + {txGain} + {rxGain} − FSPL − {cableLoss} − ΣLₙ", output: "receivedPower" },
+      { symbol: "M", expression: "P_RX − ({sensitivity})", output: "linkMargin" }
     ]
   },
+  sweep: {
+    input: "distance",
+    range: [0.01, 100],
+    scale: "log",
+    lines: [
+      { id: "sensitivity", kind: "limit", label: "Sensitivity limit", value: () => 0, fails: "below" },
+      { id: "target-margin", kind: "target", label: "Target", value: (i) => i.targetMargin }
+    ]
+  },
+  target: { output: "linkMargin", input: "targetMargin", sense: "min", failAt: 0 },
+  terms: { count: "extraLossCount", keys: ["extraLoss{n}"], maxRows: MAX_EXTRA_LOSSES2, label: "loss term" },
+  examples: [
+    { id: "zigbee-indoor", label: "Zigbee 2.4 GHz indoor, 50 m", values: { txPower: 8, txGain: 2, rxGain: 2, distance: 0.05, frequency: 2.44, sensitivity: -100, cableLoss: 0, extraLossCount: 1, extraLoss1: 20 } },
+    { id: "lorawan-868-rural", label: "LoRaWAN 868 MHz rural, 8 km", values: { txPower: 14, txGain: 2.15, rxGain: 6, distance: 8, frequency: 0.868, sensitivity: -137, cableLoss: 1, extraLossCount: 1, extraLoss1: 15 } },
+    { id: "ptp-5g8-backhaul", label: "5.8 GHz point-to-point backhaul, 15 km", values: { txPower: 25, txGain: 30, rxGain: 30, distance: 15, frequency: 5.8, sensitivity: -78, cableLoss: 2 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["free-space-path-loss", "rf-link-budget", "fresnel-zone", "5g-nr-link-budget", "lora-link-budget"],
   relatedBlogPosts: ["rf-link-budget-calculator-guide", "cubesat-uhf-link-budget-walkthrough"],
@@ -28454,6 +32323,7 @@ var mixerSpurCalculator = {
     },
     {
       key: "totalSpurs",
+      display: { integer: true },
       label: "Total Spur Products",
       symbol: "Ntot",
       unit: "",
@@ -28461,6 +32331,8 @@ var mixerSpurCalculator = {
     },
     {
       key: "spursNearIf",
+      primary: true,
+      display: { integer: true },
       label: "Spurs Near IF (±10%)",
       symbol: "Nnear",
       unit: "",
@@ -28471,6 +32343,12 @@ var mixerSpurCalculator = {
         danger: { max: 4 }
       }
     }
+  ],
+  examples: [
+    { id: "ism-433-mhz", label: "433 MHz ISM", values: { rfFreq: 433, loFreq: 443.95 } },
+    { id: "ism-915-mhz", label: "915 MHz ISM", values: { rfFreq: 915, loFreq: 1e3 } },
+    { id: "ism-2-4-ghz", label: "2.4 GHz ISM", values: { rfFreq: 2400, loFreq: 2870 } },
+    { id: "ism-5-8-ghz", label: "5.8 GHz ISM", values: { rfFreq: 5800, loFreq: 6270 } }
   ],
   calculate: calculateMixerSpurs,
   formula: {
@@ -28593,6 +32471,7 @@ var schmittTrigger = {
     },
     {
       key: "hysteresis",
+      primary: true,
       label: "Hysteresis",
       symbol: "V_hyst",
       unit: "V",
@@ -28707,6 +32586,7 @@ var crystalLoadCapacitance = {
   outputs: [
     {
       key: "clActual",
+      primary: true,
       label: "Actual Load Capacitance",
       symbol: "CL_actual",
       unit: "pF",
@@ -28715,6 +32595,7 @@ var crystalLoadCapacitance = {
     },
     {
       key: "clError",
+      signed: "explicit",
       label: "Load Capacitance Error",
       symbol: "ΔCL",
       unit: "pF",
@@ -28723,6 +32604,7 @@ var crystalLoadCapacitance = {
     },
     {
       key: "freqError",
+      signed: "explicit",
       label: "Estimated Frequency Error",
       symbol: "Δf",
       unit: "ppm",
@@ -28814,6 +32696,7 @@ var opampBandwidth = {
   outputs: [
     {
       key: "bandwidth",
+      primary: true,
       label: "-3dB Bandwidth",
       symbol: "BW",
       unit: "kHz",
@@ -28830,6 +32713,7 @@ var opampBandwidth = {
     },
     {
       key: "gainDb",
+      signed: "explicit",
       label: "Gain",
       symbol: "A_CL",
       unit: "dB",
@@ -28846,8 +32730,19 @@ var opampBandwidth = {
       { symbol: "BW", description: "-3dB bandwidth", unit: "Hz" },
       { symbol: "t_r", description: "10-90% rise time", unit: "s" }
     ],
-    reference: 'Texas Instruments, "Op Amp Applications Handbook"'
+    reference: 'Texas Instruments, "Op Amp Applications Handbook"',
+    substitution: [
+      { symbol: "BW", expression: "{gbw} / {gain}", output: "bandwidth" },
+      { symbol: "t_r", expression: "0.35 / BW", output: "riseTime" },
+      { symbol: "A", expression: "20·log₁₀({gain})", output: "gainDb" }
+    ]
   },
+  sweep: { input: "gain", range: [1, 1e4], scale: "log" },
+  examples: [
+    { id: "general-purpose-x10", label: "General-purpose 1 MHz op-amp, gain of 10", values: { gbw: 1, gain: 10 } },
+    { id: "audio-preamp-x20", label: "Audio preamp, 8 MHz op-amp, gain of 20", values: { gbw: 8, gain: 20 } },
+    { id: "video-x10", label: "Video amplifier, 3.9 GHz op-amp, gain of 10", values: { gbw: 3900, gain: 10 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["opamp-gain", "comparator-hysteresis", "schmitt-trigger"],
   relatedBlogPosts: ["filter-design-butterworth-chebyshev"]
@@ -28922,6 +32817,7 @@ var lm317Resistors = {
   outputs: [
     {
       key: "r2",
+      primary: true,
       label: "Required R2",
       symbol: "R2",
       unit: "Ω",
@@ -29072,6 +32968,7 @@ var voltageRegulatorDropout = {
   outputs: [
     {
       key: "vinMin",
+      primary: true,
       label: "Minimum Input Voltage",
       symbol: "Vin_min",
       unit: "V",
@@ -29117,8 +33014,26 @@ var voltageRegulatorDropout = {
       { symbol: "Vdropout", description: "LDO dropout voltage", unit: "V" },
       { symbol: "Iload", description: "Load current", unit: "A" },
       { symbol: "Rds(on)", description: "Pass MOSFET on-resistance", unit: "Ω" }
+    ],
+    substitution: [
+      { symbol: "V_in,min", expression: "{vout} + {vdropout} + {iload} × {rds_on}", output: "vinMin" },
+      { symbol: "V_in,rec", expression: "1.1 × V_in,min", output: "vinRec" },
+      { symbol: "P_D", expression: "({vin} − {vout}) × {iload}", output: "powerDiss" }
     ]
   },
+  sweep: {
+    input: "vdropout",
+    range: [10, 2500],
+    scale: "linear",
+    lines: [
+      { id: "supply-voltage", kind: "limit", label: "Supply voltage", value: (i) => i.vin, fails: "above" }
+    ]
+  },
+  examples: [
+    { id: "usb-5v-to-3v3", label: "3.3 V LDO from 5 V USB", values: { vout: 3.3, iload: 500, vdropout: 300, rds_on: 0, vin: 5 } },
+    { id: "pmos-ldo-1v8", label: "1.8 V PMOS LDO from 2.5 V, 1 A", values: { vout: 1.8, iload: 1e3, vdropout: 50, rds_on: 200, vin: 2.5 } },
+    { id: "linear-5v-from-12v", label: "5 V linear regulator from 12 V", values: { vout: 5, iload: 1e3, vdropout: 2e3, rds_on: 0, vin: 12 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["ldo-thermal", "lm317-resistors", "linear-regulator-dropout"],
   relatedBlogPosts: ["linear-regulator-dropout", "solar-panel-sizing"]
@@ -29202,6 +33117,7 @@ var transformerTurnsRatio = {
   outputs: [
     {
       key: "turnsRatio",
+      primary: true,
       label: "Turns Ratio (Np/Ns)",
       symbol: "N",
       unit: "",
@@ -29250,8 +33166,19 @@ var transformerTurnsRatio = {
       { symbol: "Ip, Is", description: "Primary/secondary currents", unit: "A" },
       { symbol: "η", description: "Transformer efficiency", unit: "" }
     ],
-    reference: "Faraday's Law of Electromagnetic Induction"
+    reference: "Faraday's Law of Electromagnetic Induction",
+    substitution: [
+      { symbol: "N", expression: "{vPrimary} / {vSecondary}", output: "turnsRatio" },
+      { symbol: "I_s", expression: "{iPrimary} × N × {efficiency}", output: "iSecondary" },
+      { symbol: "P", expression: "{vPrimary} × {iPrimary} × {efficiency}", output: "realPower" }
+    ]
   },
+  sweep: { input: "vSecondary", range: [1, 100], scale: "log" },
+  examples: [
+    { id: "mains-230-to-12", label: "230 V to 12 V mains transformer", values: { vPrimary: 230, vSecondary: 12, iPrimary: 0.1, efficiency: 92 } },
+    { id: "control-120-to-24", label: "120 V to 24 V control transformer", values: { vPrimary: 120, vSecondary: 24, iPrimary: 0.5, efficiency: 95 } },
+    { id: "inverter-12-to-240", label: "Inverter step-up, 12 V to 240 V", values: { vPrimary: 12, vSecondary: 240, iPrimary: 10, efficiency: 90 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["flyback-converter", "buck-converter", "three-phase-power"],
   relatedTools: ["magnetics-optimizer"],
@@ -29363,6 +33290,7 @@ var flybackConverter = {
   outputs: [
     {
       key: "turnsRatio",
+      primary: true,
       label: "Turns Ratio (Np/Ns)",
       symbol: "N",
       unit: "",
@@ -29527,6 +33455,7 @@ var supercapacitorBackup = {
     },
     {
       key: "backupTime",
+      primary: true,
       label: "Backup Time",
       symbol: "t_backup",
       unit: "s",
@@ -29648,6 +33577,7 @@ var batteryInternalResistance = {
   outputs: [
     {
       key: "rinternal",
+      primary: true,
       label: "Internal Resistance",
       symbol: "Rint",
       unit: "mΩ",
@@ -29692,8 +33622,19 @@ var batteryInternalResistance = {
       { symbol: "Vload", description: "Loaded terminal voltage", unit: "V" },
       { symbol: "Iload", description: "Load current", unit: "A" },
       { symbol: "Rint", description: "Internal resistance", unit: "Ω" }
+    ],
+    substitution: [
+      { symbol: "R_int", expression: "({vocv} − {vLoad}) / {iLoad}", output: "rinternal" },
+      { symbol: "P_loss", expression: "R_int × {iLoad}²", output: "powerLoss" },
+      { symbol: "I_sc", expression: "{vocv} / R_int", output: "maxCurrentShort" }
     ]
   },
+  sweep: { input: "vLoad", range: [10, 12.5], scale: "linear" },
+  examples: [
+    { id: "lead-acid-12v", label: "12 V lead-acid battery under a 4 A load", values: { vocv: 12.6, vLoad: 11.8, iLoad: 4 } },
+    { id: "liion-18650", label: "18650 Li-ion cell under a 2 A load", values: { vocv: 4.15, vLoad: 4.05, iLoad: 2 } },
+    { id: "alkaline-aa", label: "AA alkaline cell under a 500 mA load", values: { vocv: 1.55, vLoad: 1.4, iLoad: 0.5 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["battery-life", "supercapacitor-backup", "battery-charge-time"],
   relatedBlogPosts: ["battery-runtime-motor"]
@@ -29772,12 +33713,13 @@ var i2sTiming = {
       defaultValue: 2,
       min: 1,
       max: 32,
-      tooltip: "Number of audio channels (1=mono, 2=stereo)"
+      tooltip: "Number of audio channels (1 for mono, 2 for stereo)"
     }
   ],
   outputs: [
     {
       key: "bclk",
+      primary: true,
       label: "Bit Clock (BCLK)",
       symbol: "BCLK",
       unit: "MHz",
@@ -29906,6 +33848,7 @@ var linBusTiming = {
     },
     {
       key: "frameTime",
+      primary: true,
       label: "Frame Time",
       symbol: "T_frame",
       unit: "μs",
@@ -30011,7 +33954,10 @@ var modbusFrameTiming = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "Parity bits: 0=None, 1=Even or Odd"
+      options: [
+        { value: 0, label: "None" },
+        { value: 1, label: "Even or odd (1 bit)" }
+      ]
     },
     {
       key: "stopBits",
@@ -30036,6 +33982,7 @@ var modbusFrameTiming = {
     },
     {
       key: "t35",
+      primary: true,
       label: "Inter-Frame Gap (3.5T)",
       symbol: "T_3.5",
       unit: "ms",
@@ -30152,7 +34099,12 @@ var ethernetCable = {
       min: 1,
       max: 4,
       step: 1,
-      tooltip: "1=Cat5e, 2=Cat6, 3=Cat6a, 4=Cat8",
+      options: [
+        { value: 1, label: "Cat5e" },
+        { value: 2, label: "Cat6" },
+        { value: 3, label: "Cat6a" },
+        { value: 4, label: "Cat8" }
+      ],
       presets: [
         { label: "Cat5e", values: { cableType: 1 } },
         { label: "Cat6", values: { cableType: 2 } },
@@ -30179,7 +34131,11 @@ var ethernetCable = {
       min: 1,
       max: 3,
       step: 1,
-      tooltip: "1=100Mbps (100BASE-TX), 2=1Gbps (1000BASE-T), 3=10Gbps (10GBASE-T)",
+      options: [
+        { value: 1, label: "100 Mbps (100BASE-TX)" },
+        { value: 2, label: "1 Gbps (1000BASE-T)" },
+        { value: 3, label: "10 Gbps (10GBASE-T)" }
+      ],
       presets: [
         { label: "100 Mbps", values: { speed: 1 } },
         { label: "1 Gbps", values: { speed: 2 } },
@@ -30190,6 +34146,7 @@ var ethernetCable = {
   outputs: [
     {
       key: "attenuation",
+      primary: true,
       label: "Cable Attenuation",
       symbol: "Att",
       unit: "dB",
@@ -30206,6 +34163,7 @@ var ethernetCable = {
     },
     {
       key: "headroom",
+      signed: "explicit",
       label: "Length Headroom",
       symbol: "Margin",
       unit: "m",
@@ -30264,9 +34222,9 @@ var ethernetCable = {
 // src/lib/calculators/pcb/power-plane-impedance.ts
 var EPS0 = 88541878128e-22;
 var MU03 = 125663706212e-17;
-var C05 = 299792458;
+var C07 = 299792458;
 function cavityModeHz(m, n, lengthM, widthM, er) {
-  return C05 / (2 * Math.sqrt(er)) * Math.sqrt((m / lengthM) ** 2 + (n / widthM) ** 2);
+  return C07 / (2 * Math.sqrt(er)) * Math.sqrt((m / lengthM) ** 2 + (n / widthM) ** 2);
 }
 function calculatePowerPlaneImpedance(inputs) {
   const { length, width, dielectric, er, frequency } = inputs;
@@ -30364,6 +34322,7 @@ var powerPlaneImpedance = {
   outputs: [
     {
       key: "capacitance",
+      primary: true,
       label: "Plane Capacitance",
       symbol: "C",
       unit: "nF",
@@ -30423,8 +34382,19 @@ var powerPlaneImpedance = {
       { symbol: "f_mn", description: "Cavity resonance of mode TMmn: m half-waves along the length l, n across the width w (TM₁₀: m = 1, n = 0)", unit: "Hz" },
       { symbol: "c", description: "Speed of light in vacuum, 299 792 458 m/s", unit: "m/s" }
     ],
-    reference: "Swaminathan & Engin, Power Integrity Modeling and Design for Semiconductors and Systems (cavity resonances of a rectangular plane pair); Novak & Miller, Frequency-Domain Characterization of Power Distribution Networks; Bogatin, Signal and Power Integrity — Simplified (sheet inductance of a plane pair, μ0·h per square)"
+    reference: "Swaminathan & Engin, Power Integrity Modeling and Design for Semiconductors and Systems (cavity resonances of a rectangular plane pair); Novak & Miller, Frequency-Domain Characterization of Power Distribution Networks; Bogatin, Signal and Power Integrity — Simplified (sheet inductance of a plane pair, μ0·h per square)",
+    substitution: [
+      { symbol: "C", expression: "{er} × ε₀ × {length} × {width} / {dielectric}", output: "capacitance" },
+      { symbol: "L", expression: "μ₀ × {dielectric} × {length} / {width}", output: "inductance" },
+      { symbol: "f₁₀", expression: "c / (2 × {length} × √{er})", output: "cavityResonanceTM10" }
+    ]
   },
+  sweep: { input: "dielectric", range: [0.025, 1.6], scale: "log" },
+  examples: [
+    { id: "fr4-100x80-0p1", label: "100 × 80 mm plane pair on 0.1 mm FR4", values: { length: 100, width: 80, dielectric: 0.1, er: 4.4, frequency: 100 } },
+    { id: "embedded-capacitance", label: "Embedded-capacitance laminate, 14 µm", values: { length: 100, width: 80, dielectric: 0.014, er: 16, frequency: 100 } },
+    { id: "phone-board-60x40", label: "60 × 40 mm phone board, 76 µm prepreg", values: { length: 60, width: 40, dielectric: 0.076, er: 3.9, frequency: 500 } }
+  ],
   assumptions: [
     {
       code: "parallel-plate",
@@ -30549,6 +34519,7 @@ var viaStubResonance = {
     },
     {
       key: "resonantFreq",
+      primary: true,
       label: "Stub Resonant Frequency",
       symbol: "f_res",
       unit: "GHz",
@@ -30600,8 +34571,27 @@ var viaStubResonance = {
 };
 
 // src/lib/calculators/pcb/solder-paste-volume.ts
+var RELEASE_RULES = [
+  { ratio: 0.66, name: "area ratio", rule: "A/(0.66·P)" },
+  { ratio: 1.5, name: "aspect ratio", rule: "W/1.5" }
+];
+function stencilLimit(criterion, apertureL, apertureW) {
+  if (criterion === 1) {
+    return {
+      mm: Math.min(apertureL, apertureW) / 1.5,
+      rule: "W/1.5",
+      clause: "IPC-7525B §3.2.1: aspect ratio W/T > 1.5 (W the narrower side of the aperture)"
+    };
+  }
+  return {
+    mm: apertureL * apertureW / (0.66 * 2 * (apertureL + apertureW)),
+    rule: "A/(0.66·P)",
+    clause: "IPC-7525B §3.2.1: area ratio A/(P·T) > 0.66"
+  };
+}
 function calculateSolderPasteVolume(inputs) {
   const { padLength, padWidth, stencilThickness, apertureReduction } = inputs;
+  const releaseCriterion = inputs.releaseCriterion ?? 0;
   if (padLength <= 0 || padWidth <= 0) {
     return { values: {}, errors: ["Pad dimensions must be positive"] };
   }
@@ -30619,15 +34609,30 @@ function calculateSolderPasteVolume(inputs) {
   const pasteVolumeMl = pasteVolume;
   const perimeter = 2 * (apertureL + apertureW);
   const areaRatio = apertureArea / (perimeter * stencilThickness);
+  const limit = stencilLimit(releaseCriterion, apertureL, apertureW);
+  const maxStencilThickness = limit.mm;
+  const stencilPercent = stencilThickness / maxStencilThickness * 100;
+  const needed = releaseCriterion === 1 ? 1.5 * stencilThickness / Math.min(padLength, padWidth) : 0.66 * 2 * (padLength + padWidth) * stencilThickness / (padLength * padWidth);
+  let maxApertureReduction = 100 * (1 - needed);
+  const warnings = [];
+  if (maxApertureReduction < 0) {
+    maxApertureReduction = NaN;
+    warnings.push(`No aperture reduction complies: even an aperture the full size of the pad fails the ${RELEASE_RULES[releaseCriterion === 1 ? 1 : 0].name} rule at this foil thickness`);
+  }
   return {
     values: {
       apertureArea,
       pasteVolume,
       pasteVolumeMl,
-      areaRatio
-    }
+      areaRatio,
+      maxStencilThickness,
+      stencilPercent,
+      maxApertureReduction
+    },
+    ...warnings.length ? { warnings } : {}
   };
 }
+var IPC_7525B = "IPC-7525B, Stencil Design Guidelines (October 2011), §3.2.1; the same as IPC-7525A (February 2007) §3.2.1.2";
 var solderPasteVolume = {
   slug: "solder-paste-volume",
   title: "Solder Paste Volume Calculator",
@@ -30682,6 +34687,19 @@ var solderPasteVolume = {
       min: 0,
       max: 50,
       tooltip: "Aperture reduction from pad size per IPC-7525A (typically 10-20%)"
+    },
+    {
+      key: "releaseCriterion",
+      label: "Release Criterion",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Area ratio > 0.66" },
+        { value: 1, label: "Aspect ratio > 1.5" }
+      ],
+      tooltip: "The IPC-7525B paste-release rule the stencil is checked against"
     }
   ],
   outputs: [
@@ -30695,6 +34713,7 @@ var solderPasteVolume = {
     },
     {
       key: "pasteVolume",
+      primary: true,
       label: "Paste Volume",
       symbol: "V_paste",
       unit: "mm³",
@@ -30721,9 +34740,64 @@ var solderPasteVolume = {
         warning: { min: 0.5, max: 0.66 },
         danger: { min: 0.5 }
       }
+    },
+    {
+      key: "maxStencilThickness",
+      label: "Maximum Stencil Thickness",
+      symbol: "t_max",
+      unit: "mm",
+      precision: 4,
+      tooltip: "The thickest foil that meets the chosen IPC-7525B rule for this aperture: A/(0.66·P) for the area ratio, W/1.5 for the aspect ratio"
+    },
+    {
+      key: "stencilPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The stencil thickness as a percentage of the thickest the rule allows; above 100 % the paste may not release",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "maxApertureReduction",
+      label: "Compliant Aperture Reduction",
+      unit: "%",
+      precision: 1,
+      tooltip: "The largest aperture reduction at which the aperture still meets the rule at this foil thickness"
     }
   ],
+  examples: [
+    { id: "qfn-0p5-lead-0p15-foil", label: "0.5 mm pitch QFN lead, 0.25 × 0.8 mm, 0.15 mm foil", values: { padLength: 0.8, padWidth: 0.25, stencilThickness: 0.15, apertureReduction: 10 } },
+    { id: "qfn-0p5-lead-0p12-foil", label: "0.5 mm pitch QFN lead, 0.25 × 0.8 mm, 0.12 mm foil", values: { padLength: 0.8, padWidth: 0.25, stencilThickness: 0.12, apertureReduction: 10 } },
+    { id: "chip-0201-0p12-foil", label: "0201 chip pad, 0.3 × 0.3 mm, 0.12 mm foil", values: { padLength: 0.3, padWidth: 0.3, stencilThickness: 0.12, apertureReduction: 0 } },
+    { id: "chip-0201-0p10-foil", label: "0201 chip pad, 0.3 × 0.3 mm, 0.10 mm foil", values: { padLength: 0.3, padWidth: 0.3, stencilThickness: 0.1, apertureReduction: 0 } }
+  ],
   calculate: calculateSolderPasteVolume,
+  // One standard, so its two release rules are the selector, and an option input needs two options.
+  standards: {
+    standard: {
+      input: "releaseCriterion",
+      sources: {
+        0: `${IPC_7525B}: area ratio > 0.66`,
+        1: `${IPC_7525B}: aspect ratio > 1.5`
+      }
+    },
+    value: "stencilThickness",
+    limit: "maxStencilThickness",
+    percent: "stencilPercent",
+    clause: (standard, _cls, inputs) => {
+      const k = 1 - (inputs.apertureReduction ?? 10) / 100;
+      return stencilLimit(standard, (inputs.padLength ?? 1.5) * k, (inputs.padWidth ?? 0.8) * k).clause;
+    },
+    rule: (standard, _cls, inputs) => {
+      const k = 1 - (inputs.apertureReduction ?? 10) / 100;
+      return stencilLimit(standard, (inputs.padLength ?? 1.5) * k, (inputs.padWidth ?? 0.8) * k).rule;
+    },
+    remedies: [
+      { input: "stencilThickness", output: "maxStencilThickness", direction: "down" },
+      { input: "apertureReduction", output: "maxApertureReduction", direction: "down" }
+    ]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
   formula: {
     primary: "V = L_{ap} \\times W_{ap} \\times t_{stencil}",
     latex: "AR = \\frac{L_{ap} \\times W_{ap}}{2 \\times t_{stencil} \\times (L_{ap} + W_{ap})}",
@@ -30819,6 +34893,7 @@ var emiFilterLc = {
   outputs: [
     {
       key: "inductance",
+      primary: true,
       label: "Inductance",
       symbol: "L",
       unit: "μH",
@@ -30835,6 +34910,7 @@ var emiFilterLc = {
     },
     {
       key: "filterOrder",
+      display: { integer: true },
       label: "Filter Order",
       symbol: "n",
       unit: "",
@@ -30873,13 +34949,13 @@ var emiFilterLc = {
     const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)}μF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)}nF` : `${+(uf * 1e6).toPrecision(3)}pF`;
     const fmtL = (uh) => uh >= 1 ? `${+uh.toPrecision(3)}μH` : `${+(uh * 1e3).toPrecision(3)}nH`;
     const L = fmtL(outputs.inductance);
-    const C9 = fmtC(outputs.capacitance);
+    const C10 = fmtC(outputs.capacitance);
     return [{
       label: "Pi LC EMI Filter",
       elements: [
-        { type: "C", placement: "shunt", label: `C1 ${C9}` },
+        { type: "C", placement: "shunt", label: `C1 ${C10}` },
         { type: "L", placement: "series", label: `L ${L}` },
-        { type: "C", placement: "shunt", label: `C2 ${C9}` }
+        { type: "C", placement: "shunt", label: `C2 ${C10}` }
       ]
     }];
   },
@@ -30900,13 +34976,48 @@ var emiFilterLc = {
 };
 
 // src/lib/calculators/emc/esd-tvs-diode.ts
+var ESD_TEST_LEVELS_KV = {
+  contact: [2, 4, 6, 8],
+  air: [2, 4, 8, 15]
+};
+function esdTestLevel(standard, testLevel) {
+  const method = standard === 1 ? "air" : "contact";
+  const level = Math.round(testLevel);
+  if (!(level >= 1 && level <= 4)) {
+    return { kv: null, rule: "—", clause: `IEC 61000-4-2:2025, clause 5, Table 1, ${method} discharge: levels 1–4 only (level X is set by the product standard)` };
+  }
+  const kv = ESD_TEST_LEVELS_KV[method][level - 1];
+  return { kv, rule: `±${kv} kV`, clause: `IEC 61000-4-2:2025, clause 5, Table 1, ${method} discharge, level ${level}` };
+}
+var ESD_LEVEL_WARNING = "IEC 61000-4-2 sets test voltages for levels 1 to 4 only; level X is set by the product standard";
+var ESD_STANDARD_OPTIONS = [
+  { value: 0, label: "IEC 61000-4-2 contact" },
+  { value: 1, label: "IEC 61000-4-2 air" }
+];
+var ESD_TEST_LEVEL_OPTIONS = [
+  { value: 1, label: "Level 1" },
+  { value: 2, label: "Level 2" },
+  { value: 3, label: "Level 3" },
+  { value: 4, label: "Level 4" }
+];
+var IEC_61000_4_2 = "IEC 61000-4-2:2025 (Edition 3.0), Electromagnetic compatibility – Part 4-2: Electrostatic discharge immunity test, clause 5, Table 1";
+var ESD_SOURCES = {
+  0: `${IEC_61000_4_2}, contact discharge (test levels unchanged from Edition 2.0, 2008)`,
+  1: `${IEC_61000_4_2}, air discharge (test levels unchanged from Edition 2.0, 2008)`
+};
 function calculateEsdTvsDiode(inputs) {
   const { vwm, esd_level, clampMultiplier } = inputs;
+  const standard = inputs.standard ?? 0;
+  const testLevel = inputs.testLevel ?? 4;
+  const esdRating = inputs.esdRating ?? 15;
   if (vwm <= 0) {
     return { values: {}, errors: ["Working voltage must be positive"] };
   }
   if (clampMultiplier < 1) {
     return { values: {}, errors: ["Clamp multiplier must be >= 1"] };
+  }
+  if (!(esdRating > 0)) {
+    return { values: {}, errors: ["ESD rating must be positive"] };
   }
   const level = Math.round(esd_level);
   if (level < 1 || level > 4) {
@@ -30939,14 +35050,20 @@ function calculateEsdTvsDiode(inputs) {
   const IEC_FIRST_PEAK_A_PER_KV = 3.75;
   const ipp = level === 4 ? IEC_FIRST_PEAK_A_PER_KV * (vp / 1e3) : vp / 1500;
   const ppwr = vclamp * ipp;
+  const kv = esdTestLevel(standard, testLevel).kv;
+  const testVoltage = kv === null ? NaN : kv;
+  const limitPercent = kv === null ? NaN : kv / esdRating * 100;
   return {
     values: {
       vclamp,
       vBR,
       ipp,
       ppwr,
-      energy
-    }
+      energy,
+      testVoltage,
+      limitPercent
+    },
+    ...kv === null ? { warnings: [ESD_LEVEL_WARNING] } : {}
   };
 }
 var esdTvsDiode = {
@@ -30977,7 +35094,13 @@ var esdTvsDiode = {
       min: 1,
       max: 4,
       step: 1,
-      tooltip: "1=2kV HBM, 2=4kV HBM, 3=8kV HBM, 4=15kV IEC 61000-4-2. Levels 1-3 use the human-body model (100 pF, 1.5 kΩ); level 4 takes IEC 61000-4-2's contact-discharge first peak, 3.75 A per kV (30 A at 8 kV). The standard specifies a waveform only for contact discharge, so applying it per kV to the 15 kV air level is the usual design assumption.",
+      options: [
+        { value: 1, label: "2 kV HBM" },
+        { value: 2, label: "4 kV HBM" },
+        { value: 3, label: "8 kV HBM" },
+        { value: 4, label: "15 kV IEC 61000-4-2" }
+      ],
+      tooltip: "Sets the peak pulse current. The HBM levels use the human-body model (100 pF, 1.5 kΩ); the 15 kV IEC 61000-4-2 level takes the standard's contact-discharge first peak, 3.75 A per kV (30 A at 8 kV). The standard specifies a waveform only for contact discharge, so applying it per kV to the 15 kV air level is the usual design assumption. Test Level sets only the standards check.",
       presets: [
         { label: "2kV HBM", values: { esd_level: 1 } },
         { label: "4kV HBM", values: { esd_level: 2 } },
@@ -30994,11 +35117,43 @@ var esdTvsDiode = {
       min: 1,
       max: 3,
       tooltip: "Ratio of clamp voltage to breakdown voltage — typical datasheet ratio 1.2-1.5"
+    },
+    {
+      key: "esdRating",
+      label: "TVS ESD Rating",
+      symbol: "V_ESD,rated",
+      unit: "kV",
+      defaultValue: 15,
+      min: 0.1,
+      max: 50,
+      tooltip: "The IEC 61000-4-2 withstand voltage on the TVS datasheet, for the discharge method chosen under Standard (datasheets give contact and air separately)"
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: ESD_STANDARD_OPTIONS,
+      tooltip: "IEC 61000-4-2 contact discharge (preferred) or air discharge (where contact is not possible)"
+    },
+    {
+      key: "testLevel",
+      label: "Test Level",
+      unit: "",
+      defaultValue: 4,
+      min: 1,
+      max: 4,
+      step: 1,
+      options: ESD_TEST_LEVEL_OPTIONS,
+      tooltip: "The IEC 61000-4-2 test level the product must pass; the product standard sets it"
     }
   ],
   outputs: [
     {
       key: "vclamp",
+      primary: true,
       label: "Clamp Voltage",
       symbol: "Vc",
       unit: "V",
@@ -31036,9 +35191,44 @@ var esdTvsDiode = {
       unit: "mJ",
       precision: 3,
       tooltip: "ESD event energy: E = 0.5 × C × V² (HBM: 100pF, IEC: 150pF)"
+    },
+    {
+      key: "testVoltage",
+      label: "Test Voltage",
+      symbol: "V_test",
+      unit: "kV",
+      precision: 1,
+      tooltip: "The IEC 61000-4-2 test voltage of the chosen discharge method and level: the least ESD rating that complies"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The test voltage as a percentage of the TVS rating; above 100 % the rating is below the test level",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
     }
   ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "usb-5-v-8-kv-contact-level-4", label: "5 V USB line, ±8 kV contact TVS, level 4 contact", values: { vwm: 5, esdRating: 8, standard: 0, testLevel: 4 } },
+    { id: "gpio-3v3-12-kv-air-level-4", label: "3.3 V GPIO, ±12 kV air TVS, level 4 air", values: { vwm: 3.3, esdRating: 12, standard: 1, testLevel: 4 } },
+    { id: "industrial-24-v-30-kv-contact-level-4", label: "24 V industrial input, ±30 kV contact TVS, level 4 contact", values: { vwm: 24, esdRating: 30, standard: 0, testLevel: 4 } }
+  ],
   calculate: calculateEsdTvsDiode,
+  standards: {
+    standard: { input: "standard", sources: ESD_SOURCES },
+    class: { input: "testLevel" },
+    value: "esdRating",
+    limit: "testVoltage",
+    // The rating must reach the test level: a floor, judged as limit/value.
+    limitKind: "minimum",
+    percent: "limitPercent",
+    clause: (standard, cls) => esdTestLevel(standard, cls ?? 4).clause,
+    rule: (standard, cls) => esdTestLevel(standard, cls ?? 4).rule,
+    remedies: [{ input: "esdRating", output: "testVoltage", direction: "up" }]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
   formula: {
     primary: "V_{BR} = 1.1 \\times V_{wm},\\quad V_{clamp} = k_{clamp} \\times V_{BR}",
     latex: "I_{pp} = \\frac{V_{ESD}}{R_{HBM}}\\ (\\text{HBM}),\\quad I_{pp} = 3.75\\,\\tfrac{\\text{A}}{\\text{kV}} \\times V_{ESD}\\ (\\text{IEC 61000-4-2}),\\quad P_{pk} = V_{clamp} \\times I_{pp}",
@@ -31084,7 +35274,7 @@ var commonModeChoke = {
     { key: "dcr", label: "DC Resistance (DCR)", symbol: "R_DC", unit: "Ω", defaultValue: 0.5, min: 1e-3 }
   ],
   outputs: [
-    { key: "impedance", label: "Impedance |Z|", symbol: "Z", unit: "Ω", precision: 0 },
+    { key: "impedance", label: "Impedance |Z|", symbol: "Z", unit: "Ω", precision: 0, primary: true },
     { key: "attenuation", label: "Insertion Loss", symbol: "IL", unit: "dB", precision: 1 },
     { key: "qualityFactor", label: "Q Factor", symbol: "Q", unit: "", precision: 1 }
   ],
@@ -31100,8 +35290,19 @@ var commonModeChoke = {
       "Its impedance R_DC + jZ adds to the 100 Ω loop as a phasor: IL = 20·log₁₀(|R_S + R_L + R_DC + jZ| / (R_S + R_L))",
       "In a product the source and load are a LISN and the cable, so the attenuation in circuit differs"
     ],
-    reference: "CISPR 17; Paul, Introduction to Electromagnetic Compatibility, 2nd ed."
+    reference: "CISPR 17; Paul, Introduction to Electromagnetic Compatibility, 2nd ed.",
+    substitution: [
+      { symbol: "|Z|", expression: "2π × {frequency} × {inductance}", output: "impedance" },
+      { symbol: "IL", expression: "20·log₁₀(|100 Ω + {dcr} + j|Z|| / 100 Ω)", output: "attenuation" },
+      { symbol: "Q", expression: "|Z| / {dcr}", output: "qualityFactor" }
+    ]
   },
+  sweep: { input: "frequency", range: [1e4, 1e8], scale: "log" },
+  examples: [
+    { id: "mains-10mh-150k", label: "Mains filter choke, 10 mH at 150 kHz", values: { inductance: 1e4, frequency: 15e4, dcr: 0.1 } },
+    { id: "usb-data-choke", label: "USB data-line choke at 100 MHz", values: { inductance: 0.15, frequency: 1e8, dcr: 0.3 } },
+    { id: "dcdc-input-1mh", label: "DC-DC input choke, 1 mH at 1 MHz", values: { inductance: 1e3, frequency: 1e6, dcr: 0.05 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["ferrite-bead", "emi-filter-lc", "differential-mode-filter"],
   relatedBlogPosts: ["emi-radiated-emissions-pcb-fcc-compliance"]
@@ -31138,7 +35339,7 @@ var decouplingCapacitorEmc = {
   ],
   outputs: [
     { key: "xc", label: "Capacitive Reactance", symbol: "Xc", unit: "Ω", precision: 3 },
-    { key: "impedance", label: "Total Impedance |Z|", symbol: "|Z|", unit: "Ω", precision: 3 },
+    { key: "impedance", label: "Total Impedance |Z|", symbol: "|Z|", unit: "Ω", precision: 3, primary: true },
     { key: "srf", label: "Self-Resonant Freq.", symbol: "f_SRF", unit: "MHz", precision: 1 }
   ],
   calculate: (inputs) => {
@@ -31157,8 +35358,19 @@ var decouplingCapacitorEmc = {
     variables: [
       { symbol: "C", description: "Capacitance", unit: "F" },
       { symbol: "L", description: "Package inductance (varies by package)", unit: "H" }
+    ],
+    substitution: [
+      { symbol: "X_C", expression: "1 / (2π × {frequency} × {capacitance})", output: "xc" },
+      { symbol: "|Z|", expression: "√((2π × {frequency} × {packageInductance} − X_C)² + {esr}²)", output: "impedance" },
+      { symbol: "f_SRF", expression: "1 / (2π √({packageInductance} × {capacitance}))", output: "srf" }
     ]
   },
+  sweep: { input: "frequency", range: [1, 1e6], scale: "log" },
+  examples: [
+    { id: "mlcc-100n-100k", label: "100 nF 0603 at 100 kHz", values: { capacitance: 100, esr: 0.05, frequency: 100, packageInductance: 1 } },
+    { id: "mlcc-10n-100m", label: "10 nF 0402 at 100 MHz", values: { capacitance: 10, esr: 0.1, frequency: 1e5, packageInductance: 0.5 } },
+    { id: "bulk-10u-10k", label: "10 µF bulk capacitor at 10 kHz", values: { capacitance: 1e4, esr: 0.01, frequency: 10, packageInductance: 2 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["emi-filter-lc", "common-mode-choke", "conducted-emissions-filter"],
   relatedBlogPosts: ["emi-radiated-emissions-pcb-fcc-compliance"]
@@ -31167,6 +35379,8 @@ var decouplingCapacitorEmc = {
 // src/lib/calculators/emc/esd-clamp-selection.ts
 function calculateEsdClampSelection(inputs) {
   const { esdVoltage, clampVoltage, lineImpedance } = inputs;
+  const standard = inputs.standard ?? 0;
+  const testLevel = inputs.testLevel ?? 4;
   if (lineImpedance <= 0) {
     return { values: {}, errors: ["Line impedance must be greater than 0"] };
   }
@@ -31177,7 +35391,13 @@ function calculateEsdClampSelection(inputs) {
   const clampPower = clampVoltage * peakCurrent;
   const voltageMargin = esdVoltage - clampVoltage;
   const clampingRatio = clampVoltage / esdVoltage;
-  return { values: { peakCurrent, clampPower, voltageMargin, clampingRatio } };
+  const kv = esdTestLevel(standard, testLevel).kv;
+  const testVoltage = kv === null ? NaN : kv * 1e3;
+  const limitPercent = kv === null ? NaN : testVoltage / esdVoltage * 100;
+  return {
+    values: { peakCurrent, clampPower, voltageMargin, clampingRatio, testVoltage, limitPercent },
+    ...kv === null ? { warnings: [ESD_LEVEL_WARNING] } : {}
+  };
 }
 var esdClampSelection = {
   slug: "esd-clamp-selection",
@@ -31190,15 +35410,71 @@ var esdClampSelection = {
   inputs: [
     { key: "esdVoltage", label: "ESD Strike Voltage", symbol: "V_ESD", unit: "V", defaultValue: 4e3, min: 100, tooltip: "IEC 61000-4-2 Level 4: ±8 kV contact" },
     { key: "clampVoltage", label: "Clamp Voltage (V_cl)", symbol: "V_cl", unit: "V", defaultValue: 15, min: 1, tooltip: "TVS clamping voltage at peak current from datasheet" },
-    { key: "lineImpedance", label: "Line Impedance", symbol: "Z", unit: "Ω", defaultValue: 330, min: 0.1, tooltip: "Series resistance in ESD discharge path" }
+    { key: "lineImpedance", label: "Line Impedance", symbol: "Z", unit: "Ω", defaultValue: 330, min: 0.1, tooltip: "Series resistance in ESD discharge path" },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: ESD_STANDARD_OPTIONS,
+      tooltip: "IEC 61000-4-2 contact discharge (preferred) or air discharge (where contact is not possible)"
+    },
+    {
+      key: "testLevel",
+      label: "Test Level",
+      unit: "",
+      defaultValue: 4,
+      min: 1,
+      max: 4,
+      step: 1,
+      options: ESD_TEST_LEVEL_OPTIONS,
+      tooltip: "The IEC 61000-4-2 test level the product must pass; the product standard sets it"
+    }
   ],
   outputs: [
-    { key: "peakCurrent", label: "Peak Clamp Current", symbol: "I_pk", unit: "A", precision: 1 },
+    { key: "peakCurrent", label: "Peak Clamp Current", symbol: "I_pk", unit: "A", precision: 1, primary: true },
     { key: "clampPower", label: "Peak Power Dissipation", symbol: "P_pk", unit: "W", precision: 0 },
-    { key: "voltageMargin", label: "Voltage Margin", symbol: "ΔV", unit: "V", precision: 0 },
-    { key: "clampingRatio", label: "Clamping Ratio", symbol: "V_cl/V_ESD", unit: "", precision: 3 }
+    { key: "voltageMargin", label: "Voltage Margin", symbol: "ΔV", unit: "V", precision: 0, signed: "explicit" },
+    { key: "clampingRatio", label: "Clamping Ratio", symbol: "V_cl/V_ESD", unit: "", precision: 3 },
+    {
+      key: "testVoltage",
+      label: "Test Voltage",
+      symbol: "V_test",
+      unit: "V",
+      precision: 0,
+      tooltip: "The IEC 61000-4-2 test voltage of the chosen discharge method and level: the least strike voltage the clamp must be checked at"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The test voltage as a percentage of the strike voltage checked; above 100 % the check is below the test level",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    }
+  ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "contact-level-4-15-v-clamp", label: "Level 4 contact, 8 kV into a 15 V clamp", values: { esdVoltage: 8e3, clampVoltage: 15, lineImpedance: 330, standard: 0, testLevel: 4 } },
+    { id: "air-level-4-15-v-clamp", label: "Level 4 air, 15 kV into a 15 V clamp", values: { esdVoltage: 15e3, clampVoltage: 15, lineImpedance: 330, standard: 1, testLevel: 4 } },
+    { id: "contact-level-3-checked-at-4-kv", label: "Level 3 contact (6 kV), checked at 4 kV with a 6 V clamp", values: { esdVoltage: 4e3, clampVoltage: 6, lineImpedance: 330, standard: 0, testLevel: 3 } }
   ],
   calculate: calculateEsdClampSelection,
+  standards: {
+    standard: { input: "standard", sources: ESD_SOURCES },
+    class: { input: "testLevel" },
+    value: "esdVoltage",
+    limit: "testVoltage",
+    // The rating must reach the test level: a floor, judged as limit/value.
+    limitKind: "minimum",
+    percent: "limitPercent",
+    clause: (standard, cls) => esdTestLevel(standard, cls ?? 4).clause,
+    rule: (standard, cls) => esdTestLevel(standard, cls ?? 4).rule,
+    remedies: [{ input: "esdVoltage", output: "testVoltage", direction: "up" }]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
   formula: {
     primary: "I_pk = (V_ESD − V_cl) / Z,  P_pk = V_cl × I_pk",
     variables: [
@@ -31211,58 +35487,184 @@ var esdClampSelection = {
 };
 
 // src/lib/calculators/emc/radiated-emission-estimate.ts
-var CISPR32_CLASS_B = [
-  { lo: 30, hi: 230, ref: 10, value: 30, alt: true },
-  { lo: 230, hi: 1e3, ref: 10, value: 37, alt: true },
-  { lo: 30, hi: 230, ref: 3, value: 40, alt: true },
-  { lo: 230, hi: 1e3, ref: 3, value: 47, alt: true },
-  { lo: 1e3, hi: 3e3, ref: 3, value: 50 },
-  { lo: 3e3, hi: 6e3, ref: 3, value: 54 }
-];
-function cispr32ClassBLimit(fMHz, r) {
-  if (!(fMHz >= 30) || fMHz > 6e3) return null;
+var LOOP_FIELD_K = Math.PI * 4 * Math.PI * 1e-7 / 299792458 * 1e12;
+var CISPR32 = {
+  B: [
+    { lo: 30, hi: 230, ref: 10, value: 30, alt: true, where: "Table A.4, OATS/SAC at 10 m, quasi-peak" },
+    { lo: 230, hi: 1e3, ref: 10, value: 37, alt: true, where: "Table A.4, OATS/SAC at 10 m, quasi-peak" },
+    { lo: 30, hi: 230, ref: 3, value: 40, alt: true, where: "Table A.4, OATS/SAC at 3 m, quasi-peak" },
+    { lo: 230, hi: 1e3, ref: 3, value: 47, alt: true, where: "Table A.4, OATS/SAC at 3 m, quasi-peak" },
+    { lo: 1e3, hi: 3e3, ref: 3, value: 50, where: "Table A.5, FSOATS at 3 m, average" },
+    { lo: 3e3, hi: 6e3, ref: 3, value: 54, where: "Table A.5, FSOATS at 3 m, average" }
+  ],
+  A: [
+    { lo: 30, hi: 230, ref: 10, value: 40, alt: true, where: "Table A.2, OATS/SAC at 10 m, quasi-peak" },
+    { lo: 230, hi: 1e3, ref: 10, value: 47, alt: true, where: "Table A.2, OATS/SAC at 10 m, quasi-peak" },
+    { lo: 30, hi: 230, ref: 3, value: 50, alt: true, where: "Table A.2, OATS/SAC at 3 m, quasi-peak" },
+    { lo: 230, hi: 1e3, ref: 3, value: 57, alt: true, where: "Table A.2, OATS/SAC at 3 m, quasi-peak" },
+    { lo: 1e3, hi: 3e3, ref: 3, value: 56, where: "Table A.3, FSOATS at 3 m, average" },
+    { lo: 3e3, hi: 6e3, ref: 3, value: 60, where: "Table A.3, FSOATS at 3 m, average" }
+  ]
+};
+var FCC = {
+  B: [
+    { lo: 30, hi: 88, ref: 3, value: 100, where: "§15.109(a), Class B" },
+    { lo: 88, hi: 216, ref: 3, value: 150, where: "§15.109(a), Class B" },
+    { lo: 216, hi: 960, ref: 3, value: 200, where: "§15.109(a), Class B" },
+    { lo: 960, hi: 4e4, ref: 3, value: 500, where: "§15.109(a), Class B" }
+  ],
+  A: [
+    { lo: 30, hi: 88, ref: 10, value: 90, where: "§15.109(b), Class A" },
+    { lo: 88, hi: 216, ref: 10, value: 150, where: "§15.109(b), Class A" },
+    { lo: 216, hi: 960, ref: 10, value: 210, where: "§15.109(b), Class A" },
+    { lo: 960, hi: 4e4, ref: 10, value: 300, where: "§15.109(b), Class A" }
+  ]
+};
+var num = (v) => String(Number(v.toPrecision(3)));
+var band = (row) => row.hi >= 4e4 ? `above ${num(row.lo)} MHz` : `${num(row.lo)}–${num(row.hi)} MHz`;
+function emissionLimit(standard, emissionClass, fMHz, r) {
+  const fcc = standard === 1;
+  const cls = emissionClass === 1 ? "A" : "B";
+  const rows = (fcc ? FCC : CISPR32)[cls];
+  const top = fcc ? 4e4 : 6e3;
+  if (!(fMHz >= 30) || fMHz > top) {
+    const outside = !(fMHz >= 30) ? "below 30 MHz" : `above ${fcc ? "40 GHz (§15.33(b)(1))" : "6 GHz (Table 1)"}`;
+    return { uvm: null, rule: "—", clause: fcc ? `47 CFR §15.109, Class ${cls}: no limit ${outside}` : `CISPR 32 Annex A, class ${cls}: no radiated limit ${outside}` };
+  }
   const near = r < Math.sqrt(30) ? 3 : 10;
   let best = null;
-  for (const row of CISPR32_CLASS_B) {
-    if (fMHz < row.lo || fMHz > row.hi || row.alt && row.ref !== near) continue;
-    const uvm = 10 ** (row.value / 20) * row.ref / r;
-    if (best === null || uvm < best) best = uvm;
+  for (const row2 of rows) {
+    if (fMHz < row2.lo || fMHz > row2.hi || row2.alt && row2.ref !== near) continue;
+    const atRef = fcc ? row2.value : 10 ** (row2.value / 20);
+    const uvm2 = atRef * row2.ref / r;
+    if (!best || uvm2 < best.uvm) best = { row: row2, uvm: uvm2 };
   }
-  return best;
+  const { row, uvm } = best;
+  const moved = Math.abs(r - row.ref) > 1e-9;
+  const stated = fcc ? `${num(row.value)} µV/m at ${row.ref} m` : `${num(row.value)} dBµV/m at ${row.ref} m`;
+  const rule = moved ? fcc ? `${stated} × ${row.ref} m/r` : `${stated} + 20·log₁₀(${row.ref} m/r)` : stated;
+  const detector = fcc && fMHz > 1e3 ? ", average (§15.35(b))" : "";
+  const extrapolated = moved ? `; extrapolated to ${num(r)} m at 20 dB/decade${fcc ? " (§15.31(f)(1))" : ""}` : "";
+  const clause = fcc ? `47 CFR ${row.where}, ${band(row)}${detector}, at ${row.ref} m${extrapolated}` : `CISPR 32 ${row.where}, ${band(row)}${extrapolated}`;
+  return { uvm, rule, clause };
 }
-var LOOP_FIELD_K = Math.PI * 4 * Math.PI * 1e-7 / 299792458 * 1e12;
 var radiatedEmissionEstimate = {
   slug: "radiated-emission-estimate",
   title: "Radiated Emission Estimate",
   shortTitle: "Radiated Emissions",
   metaTitle: "Radiated Emission Estimate Calculator - Free Tool",
   category: "emc",
-  description: "Estimate radiated emissions from PCB current loops using the small-loop model. Compare the E-field against the CISPR 32 Class B limit instantly.",
-  keywords: ["radiated emissions", "EMC radiated", "CISPR 22", "FCC radiated emissions", "PCB emissions estimate", "loop antenna emissions"],
+  description: "Estimate radiated emissions from PCB current loops using the small-loop model. Compare the E-field against CISPR 32 or FCC Class A and B limits instantly.",
+  keywords: ["radiated emissions", "EMC radiated", "CISPR 32", "CISPR 22", "FCC radiated emissions", "PCB emissions estimate", "loop antenna emissions"],
   inputs: [
     { key: "current", label: "Loop Current (peak)", symbol: "I", unit: "mA", defaultValue: 10, min: 1e-3 },
     { key: "loopArea", label: "Loop Area", symbol: "A", unit: "cm²", defaultValue: 1, min: 1e-3, tooltip: "Area enclosed by the current loop on PCB" },
     { key: "frequency", label: "Frequency", symbol: "f", unit: "MHz", defaultValue: 100, min: 0.01 },
-    { key: "distance", label: "Measurement Distance", symbol: "r", unit: "m", defaultValue: 3, min: 0.1, tooltip: "CISPR 32 measures at 3 m or 10 m; other distances scale at 20 dB/decade" }
+    { key: "distance", label: "Measurement Distance", symbol: "r", unit: "m", defaultValue: 3, min: 0.1, tooltip: "CISPR 32 and FCC Part 15 measure at 3 m or 10 m; other distances scale at 20 dB/decade" },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "CISPR 32" },
+        { value: 1, label: "FCC §15.109" }
+      ],
+      tooltip: "The radiated-emission limits the field is checked against"
+    },
+    {
+      key: "emissionClass",
+      label: "Class",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Class B" },
+        { value: 1, label: "Class A" }
+      ],
+      tooltip: "Class B: residential equipment, the stricter limit. Class A: commercial and industrial equipment"
+    }
   ],
   outputs: [
-    { key: "eFieldDbuvM", label: "E-Field", symbol: "E", unit: "dBμV/m", precision: 1 },
-    { key: "margin", label: "Margin vs CISPR 32 Class B", symbol: "M", unit: "dB", precision: 1, thresholds: { good: { min: 6 }, warning: { min: 0 } }, tooltip: "The CISPR 32 class B limit at this frequency and distance minus the field; none below 30 MHz or above 6 GHz" }
+    { key: "eFieldDbuvM", label: "E-Field", symbol: "E", unit: "dBμV/m", precision: 1, primary: true },
+    {
+      key: "margin",
+      label: "Margin to Limit",
+      symbol: "M",
+      unit: "dB",
+      precision: 1,
+      thresholds: { good: { min: 6 }, warning: { min: 0 } },
+      signed: "explicit",
+      tooltip: "The limit of the chosen standard and class at this frequency and distance, minus the field; below 0 dB does not comply"
+    },
+    { key: "eFieldUvm", label: "Field Strength", symbol: "E", unit: "µV/m", precision: 2, tooltip: "The field in µV/m, the unit the FCC writes its limits in" },
+    { key: "limitField", label: "Emission Limit", symbol: "E_lim", unit: "µV/m", precision: 2, tooltip: "The limit of the chosen standard and class at this frequency, at the measurement distance" },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The field as a percentage of the limit; above 100 % does not comply (200 % is 6 dB over)",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    { key: "maxCurrent", label: "Compliant Loop Current", symbol: "I_max", unit: "mA", precision: 3, tooltip: "The loop current at which the field equals the limit; at or below it the emission complies" },
+    { key: "maxLoopArea", label: "Compliant Loop Area", symbol: "A_max", unit: "cm²", precision: 3, tooltip: "The loop area at which the field equals the limit; at or below it the emission complies" }
+  ],
+  // At least one that fails and one that passes (site-redesign W5, C9).
+  examples: [
+    { id: "smps-harmonic-30-mhz", label: "SMPS harmonic at 30 MHz, 5 mA in 2 cm²", values: { current: 5, loopArea: 2, frequency: 30, distance: 3, standard: 0, emissionClass: 0 } },
+    { id: "clock-harmonic-300-mhz", label: "Clock harmonic at 300 MHz, 5 mA in 2 cm²", values: { current: 5, loopArea: 2, frequency: 300, distance: 3, standard: 0, emissionClass: 0 } },
+    { id: "industrial-150-mhz-fcc-class-a-10-m", label: "Industrial controller at 150 MHz, FCC Class A at 10 m", values: { current: 10, loopArea: 2, frequency: 150, distance: 10, standard: 1, emissionClass: 1 } },
+    { id: "ddr-clock-1-6-ghz", label: "DDR clock at 1.6 GHz, 1 mA in 0.5 cm²", values: { current: 1, loopArea: 0.5, frequency: 1600, distance: 3, standard: 0, emissionClass: 0 } }
   ],
   calculate: (inputs) => {
     const { current, loopArea, frequency, distance } = inputs;
+    const standard = inputs.standard ?? 0;
+    const emissionClass = inputs.emissionClass ?? 0;
     const currentA = current / 1e3;
     const areaM2 = loopArea * 1e-4;
     const freqMhz = frequency;
     const eField = LOOP_FIELD_K * freqMhz ** 2 * areaM2 * currentA / distance;
     const eFieldDbuvM = eField > 0 ? 20 * Math.log10(eField * 1e6) : -200;
-    const limit = cispr32ClassBLimit(freqMhz, distance);
-    const margin = limit === null ? NaN : 20 * Math.log10(limit) - eFieldDbuvM;
+    const eFieldUvm = eField * 1e6;
+    const limit = emissionLimit(standard, emissionClass, freqMhz, distance).uvm;
     const warnings = [];
     if (limit === null) {
-      warnings.push(!(freqMhz >= 30) ? "CISPR 32 sets no radiated-emission limit below 30 MHz" : "CISPR 32 sets no radiated-emission limit above 6 GHz");
+      const fcc = standard === 1;
+      warnings.push(!(freqMhz >= 30) ? `${fcc ? "FCC §15.109" : "CISPR 32"} sets no radiated-emission limit below 30 MHz` : fcc ? "FCC §15.33(b)(1) requires no radiated measurement above 40 GHz, so §15.109 sets no limit there" : "CISPR 32 sets no radiated-emission limit above 6 GHz");
     }
-    return { values: { eFieldDbuvM, margin }, ...warnings.length > 0 && { warnings } };
+    const limitField = limit === null ? NaN : limit;
+    const margin = limit === null ? NaN : 20 * Math.log10(limit) - eFieldDbuvM;
+    const limitPercent = limit === null ? NaN : eFieldUvm / limit * 100;
+    const maxCurrent = limit === null ? NaN : current * limit / eFieldUvm;
+    const maxLoopArea = limit === null ? NaN : loopArea * limit / eFieldUvm;
+    return {
+      values: { eFieldDbuvM, margin, eFieldUvm, limitField, limitPercent, maxCurrent, maxLoopArea },
+      ...warnings.length > 0 && { warnings }
+    };
+  },
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "CISPR 32:2015+AMD1:2019 (Edition 2.1), Electromagnetic compatibility of multimedia equipment – Emission requirements, Annex A, Tables A.2–A.5 (radiated, OATS/SAC and FSOATS), and Table 1 for the highest frequency",
+        1: "47 CFR §15.109(a)–(c), radiated emission limits (last amended 2016), with §15.31(f)(1) (other distances), §15.33(b)(1) (frequency range) and §15.35(a)–(b) (detectors); eCFR, current to 2 October 2026"
+      }
+    },
+    class: { input: "emissionClass" },
+    value: "eFieldUvm",
+    limit: "limitField",
+    percent: "limitPercent",
+    clause: (standard, cls, inputs) => emissionLimit(standard, cls ?? 0, inputs.frequency ?? 100, inputs.distance ?? 3).clause,
+    rule: (standard, cls, inputs) => emissionLimit(standard, cls ?? 0, inputs.frequency ?? 100, inputs.distance ?? 3).rule,
+    remedies: [
+      { input: "current", output: "maxCurrent", direction: "down" },
+      { input: "loopArea", output: "maxLoopArea", direction: "down" }
+    ],
+    chart: { x: "current", range: [1e-3, 1e3], scale: "log", yScale: "log" }
   },
   formula: {
     primary: "E = π·µ₀·f²·A·I/(c·r) = 1.3169×10⁻² × f² × A × I / r  [V/m, f in MHz, A in m²],  M = E_lim(f, r) − E",
@@ -31365,7 +35767,7 @@ var groundPlaneImpedance = {
     { key: "skinDepth", label: "Skin Depth", symbol: "δ", unit: "μm", precision: 2 },
     { key: "acResistance", label: "AC Resistance", symbol: "R_AC", unit: "mΩ", precision: 2 },
     { key: "inductance", label: "Plane Inductance", symbol: "L", unit: "nH", precision: 2 },
-    { key: "totalImpedance", label: "Total Impedance |Z|", symbol: "|Z|", unit: "mΩ", precision: 2 }
+    { key: "totalImpedance", label: "Total Impedance |Z|", symbol: "|Z|", unit: "mΩ", precision: 2, primary: true }
   ],
   calculate: calculateGroundPlaneImpedance,
   formula: {
@@ -31384,8 +35786,20 @@ var groundPlaneImpedance = {
       "R_AC = (l/w)·Re[(1+j)/(σδ)·coth((1+j)t/δ)] = (l/w)/(σδ)·(sinh 2x + sin 2x)/(cosh 2x − cos 2x), x = t/δ: R_DC when t ≪ δ, (l/w)/(σδ) when t ≫ δ",
       "L = µ₀·h·l/w, the parallel-plate inductance: µ₀·h per square (1.2566 nH per mm of separation); fringing is ignored, so it reads high when w < 5h"
     ],
+    substitution: [
+      { symbol: "R_DC", expression: "{length} / ({conductivity} × {width} × {thickness})", output: "dcResistance" },
+      { symbol: "R_AC", expression: "({length} / {width}) / (σδ) × (sinh 2x + sin 2x) / (cosh 2x − cos 2x), x = {thickness} / δ", output: "acResistance" },
+      { symbol: "L", expression: "μ₀ × {separation} × {length} / {width}", output: "inductance" },
+      { symbol: "|Z|", expression: "√(R_AC² + (2π × {frequency} × L)²)", output: "totalImpedance" }
+    ],
     reference: "Bogatin, Signal and Power Integrity — Simplified (plane-pair inductance per square); Ott, Electromagnetic Compatibility Engineering (2009) §10.6"
   },
+  sweep: { input: "frequency", range: [1e-3, 1e3], scale: "log" },
+  examples: [
+    { id: "plane-100x50-10m", label: "100 × 50 mm 1 oz plane at 10 MHz", values: { length: 100, width: 50, thickness: 35, frequency: 10, conductivity: 58 } },
+    { id: "return-strip-100m", label: "50 × 5 mm return strip at 100 MHz", values: { length: 50, width: 5, thickness: 35, frequency: 100, conductivity: 58 } },
+    { id: "power-ground-2oz", label: "200 × 100 mm 2 oz plane pair, 0.2 mm apart, at 1 MHz", values: { length: 200, width: 100, thickness: 70, frequency: 1, conductivity: 58, separation: 0.2 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["radiated-emission-estimate", "shielding-effectiveness", "emi-margin-budget"]
 };
@@ -31441,17 +35855,22 @@ var pcbCrosstalkEmc = {
   // 100 MHz) were tens of centimetres of tight coupling, electrically long.
   inputs: [
     { key: "aggressorVoltage", label: "Aggressor Voltage", symbol: "V_A", unit: "V", defaultValue: 3.3, min: 1e-3 },
-    { key: "mutualCapacitance", label: "Mutual Capacitance", symbol: "C_m", unit: "pF", defaultValue: 1, min: 1e-3, tooltip: "Total mutual capacitance between traces (pF)" },
-    { key: "mutualInductance", label: "Mutual Inductance", symbol: "L_m", unit: "nH", defaultValue: 3, min: 1e-3, tooltip: "Total mutual inductance between traces (nH)" },
+    { key: "mutualCapacitance", label: "Mutual Capacitance", symbol: "C_m", unit: "pF", defaultValue: 1, min: 1e-3, max: 1e4, tooltip: "Total mutual capacitance between traces (pF)" },
+    { key: "mutualInductance", label: "Mutual Inductance", symbol: "L_m", unit: "nH", defaultValue: 3, min: 1e-3, max: 1e4, tooltip: "Total mutual inductance between traces (nH)" },
     { key: "frequency", label: "Frequency", symbol: "f", unit: "MHz", defaultValue: 25, min: 1e-3 },
     { key: "lineImpedance", label: "Victim Line Impedance", symbol: "Z", unit: "Ω", defaultValue: 50, min: 1, tooltip: "The victim is terminated in this impedance at both ends, and the aggressor carries V_A/Z." }
   ],
   outputs: [
     { key: "capacitiveCoupling", label: "Capacitive Contribution (each end)", symbol: "V_C", unit: "mV", precision: 2 },
     { key: "inductiveCoupling", label: "Inductive Contribution (each end)", symbol: "V_L", unit: "mV", precision: 2 },
-    { key: "totalCrosstalk", label: "Near-End Crosstalk", symbol: "V_NE", unit: "mV", precision: 2 },
+    { key: "totalCrosstalk", label: "Near-End Crosstalk", symbol: "V_NE", unit: "mV", precision: 2, primary: true },
     { key: "crosstalkDb", label: "Near-End Coupling", symbol: "XT", unit: "dB", precision: 1 },
     { key: "farEndCrosstalk", label: "Far-End Crosstalk", symbol: "V_FE", unit: "mV", precision: 2 }
+  ],
+  examples: [
+    { id: "clock-3-3-v-25-mhz", label: "3.3 V, 25 MHz clock beside a 50 Ω line (1 pF, 3 nH)", values: { aggressorVoltage: 3.3, mutualCapacitance: 1, mutualInductance: 3, frequency: 25, lineImpedance: 50 } },
+    { id: "logic-5-v-10-mhz", label: "5 V logic at 10 MHz (2 pF, 6 nH)", values: { aggressorVoltage: 5, mutualCapacitance: 2, mutualInductance: 6, frequency: 10, lineImpedance: 50 } },
+    { id: "io-1-8-v-200-mhz", label: "1.8 V I/O at 200 MHz (0.4 pF, 1.2 nH)", values: { aggressorVoltage: 1.8, mutualCapacitance: 0.4, mutualInductance: 1.2, frequency: 200, lineImpedance: 50 } }
   ],
   calculate: calculatePcbCrosstalkEmc,
   formula: {
@@ -31483,6 +35902,12 @@ var pcbCrosstalkEmc = {
     }
   ],
   visualization: { type: "none" },
+  // No dimensions: the drawing is two lines coupled through C_m and L_m (the coupled family's abstract form).
+  geometry: {
+    drawing: { family: "coupled", roles: { cm: "mutualCapacitance", lm: "mutualInductance" } },
+    synthesis: [{ output: "totalCrosstalk", solveFor: ["mutualCapacitance", "mutualInductance"] }],
+    curve: { x: "mutualCapacitance", y: "totalCrosstalk", range: [0.1, 100], scale: "log" }
+  },
   relatedCalculators: ["ground-plane-impedance", "radiated-emission-estimate", "shielding-effectiveness"]
 };
 
@@ -31504,7 +35929,7 @@ var powerSupplyRippleFilter = {
   outputs: [
     { key: "resonantFreq", label: "Filter Resonant Frequency", symbol: "f₀", unit: "kHz", precision: 1 },
     { key: "attenuation", label: "Attenuation", symbol: "A", unit: "dB", precision: 1 },
-    { key: "outputRipple", label: "Output Ripple", symbol: "V_out", unit: "mV", precision: 3 }
+    { key: "outputRipple", label: "Output Ripple", symbol: "V_out", unit: "mV", precision: 3, primary: true }
   ],
   calculate: (inputs) => {
     const { inputRipple, frequency, inductance, capacitance } = inputs;
@@ -31527,7 +35952,7 @@ var powerSupplyRippleFilter = {
 };
 
 // src/lib/calculators/emc/cable-shield-effectiveness.ts
-var C06 = 299792458;
+var C08 = 299792458;
 var cableShieldEffectiveness = {
   slug: "cable-shield-effectiveness",
   title: "Cable Shield Effectiveness",
@@ -31541,10 +35966,11 @@ var cableShieldEffectiveness = {
     { key: "cableLength", label: "Cable Length", symbol: "l", unit: "m", defaultValue: 2, min: 0.01 },
     { key: "frequency", label: "Frequency", symbol: "f", unit: "MHz", defaultValue: 10, min: 1e-3 },
     { key: "transferInductance", label: "Transfer Inductance", symbol: "M_T", unit: "nH/m", defaultValue: 0.159155, min: 0, tooltip: "Per metre, from the cable datasheet or a transfer-impedance measurement. The default puts the inductive corner of a 10 mΩ/m shield at 10 MHz" },
-    { key: "lineImpedance", label: "Line Impedance", symbol: "Z₁", unit: "Ω", defaultValue: 50, min: 0.1, tooltip: "Characteristic impedance of the line inside the shield, which the coupled voltage is compared with" }
+    { key: "lineImpedance", label: "Line Impedance", symbol: "Z₁", unit: "Ω", defaultValue: 50, min: 0.1, tooltip: "Characteristic impedance of the line inside the shield, which the coupled voltage is compared with" },
+    { key: "targetSE", label: "Target Shielding Effectiveness", symbol: "SE_t", unit: "dB", defaultValue: 40, min: 0, max: 120, tooltip: "The shielding effectiveness the cable must reach. The status fails below 20 dB." }
   ],
   outputs: [
-    { key: "shieldingEffectDb", label: "Shielding Effectiveness", symbol: "SE", unit: "dB", precision: 1, thresholds: { good: { min: 40 }, warning: { min: 20 } } },
+    { key: "shieldingEffectDb", label: "Shielding Effectiveness", symbol: "SE", unit: "dB", precision: 1, thresholds: { good: { min: 40 }, warning: { min: 20 }, danger: { min: 20 } }, primary: true },
     { key: "transferImpedance", label: "Transfer Impedance", symbol: "Z_t", unit: "mΩ", precision: 2 }
   ],
   calculate: (inputs) => {
@@ -31555,7 +35981,7 @@ var cableShieldEffectiveness = {
     const transferImpedance = Math.hypot(shieldResistance, reactance) * cableLength;
     const shieldingEffectDb = 20 * Math.log10(lineImpedance / (transferImpedance * 1e-3));
     const warnings = [];
-    const wavelength = C06 / (frequency * 1e6);
+    const wavelength = C08 / (frequency * 1e6);
     if (cableLength > wavelength / 6) {
       warnings.push("The cable is longer than a sixth of a wavelength at this frequency, so the short-cable relation SE = 20·log₁₀(Z₁/(|Z_T|·l)) does not hold; the result is only an estimate (Hähner & Mund 1998)");
     }
@@ -31581,8 +36007,27 @@ var cableShieldEffectiveness = {
       "SE = 20·log₁₀(Z₁/(|Z_T|·l)); doubling the length lowers it by 6.02 dB",
       "The relation holds while l < λ₀/6, about 30 MHz for a 1 m cable"
     ],
-    reference: "Hähner & Mund, Screening of Cables in the MHz to GHz Frequency Range — Extended Application of a Simple Measuring Method (1998), eqs. 3-1 and 3-2, the method behind IEC 62153-4-4; Vance, IEEE Trans. EMC 17(2), 1975"
+    reference: "Hähner & Mund, Screening of Cables in the MHz to GHz Frequency Range — Extended Application of a Simple Measuring Method (1998), eqs. 3-1 and 3-2, the method behind IEC 62153-4-4; Vance, IEEE Trans. EMC 17(2), 1975",
+    substitution: [
+      { symbol: "Z_t", expression: "|{shieldResistance} + j2π × {frequency} × {transferInductance}| × {cableLength}", output: "transferImpedance" },
+      { symbol: "SE", expression: "20·log₁₀({lineImpedance} / Z_t)", output: "shieldingEffectDb" }
+    ]
   },
+  sweep: {
+    input: "frequency",
+    range: [0.01, 1e3],
+    scale: "log",
+    lines: [
+      { id: "se-floor", kind: "limit", label: "Minimum", value: () => 20, fails: "below" },
+      { id: "se-target", kind: "target", label: "Target", value: (i) => i.targetSE }
+    ]
+  },
+  target: { output: "shieldingEffectDb", input: "targetSE", sense: "min", failAt: 20 },
+  examples: [
+    { id: "braided-coax-2m", label: "2 m of single-braid coax at 10 MHz", values: { shieldResistance: 14, cableLength: 2, frequency: 10 } },
+    { id: "foil-braid-30m", label: "1 m of foil-and-braid cable at 30 MHz", values: { shieldResistance: 15, cableLength: 1, frequency: 30 } },
+    { id: "double-braid-1m", label: "1 m of double-braid coax at 1 MHz", values: { shieldResistance: 6, cableLength: 1, frequency: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["shielding-effectiveness", "radiated-emission-estimate", "emi-margin-budget"],
   relatedBlogPosts: ["emi-filter-design-cispr-compliance"],
@@ -31613,7 +36058,7 @@ var chassisResonance = {
     { key: "height", label: "Height", symbol: "c", unit: "cm", defaultValue: 10, min: 0.1 }
   ],
   outputs: [
-    { key: "fLowest", label: "Lowest Resonant Frequency", symbol: "f_min", unit: "MHz", precision: 0 },
+    { key: "fLowest", label: "Lowest Resonant Frequency", symbol: "f_min", unit: "MHz", precision: 0, primary: true },
     { key: "f101MHz", label: "TE₁₀₁ Mode", symbol: "f_TE101", unit: "MHz", precision: 0 },
     { key: "f110MHz", label: "TE₁₁₀ Mode", symbol: "f_TE110", unit: "MHz", precision: 0 },
     { key: "wavelengthAtResonance", label: "Wavelength at f_min", symbol: "λ", unit: "cm", precision: 0 }
@@ -31661,8 +36106,8 @@ var emiMarginBudget = {
     { key: "safetyMargin", label: "Design Safety Margin", symbol: "SM", unit: "dB", defaultValue: 6, min: 0 }
   ],
   outputs: [
-    { key: "rawMargin", label: "Raw Margin", symbol: "M_raw", unit: "dB", precision: 1 },
-    { key: "adjustedMargin", label: "Adjusted Margin", symbol: "M_adj", unit: "dB", precision: 1, thresholds: { good: { min: 0 } } },
+    { key: "rawMargin", label: "Raw Margin", symbol: "M_raw", unit: "dB", precision: 1, signed: "explicit" },
+    { key: "adjustedMargin", label: "Adjusted Margin", symbol: "M_adj", unit: "dB", precision: 1, thresholds: { good: { min: 0 } }, primary: true, signed: "explicit" },
     { key: "requiredReduction", label: "Reduction Required", symbol: "ΔE", unit: "dB", precision: 1 }
   ],
   calculate: calculateEmiMarginBudget,
@@ -31707,7 +36152,7 @@ var conductedEmissionsFilter = {
     { key: "loadImpedance", label: "Load Impedance", symbol: "Z_L", unit: "Ω", defaultValue: 50, min: 0.1 }
   ],
   outputs: [
-    { key: "requiredF0", label: "Filter Corner Frequency", symbol: "f₀", unit: "kHz", precision: 1 },
+    { key: "requiredF0", label: "Filter Corner Frequency", symbol: "f₀", unit: "kHz", precision: 1, primary: true },
     { key: "cValue", label: "Capacitor Value", symbol: "C", unit: "μF", precision: 3 },
     { key: "lValue", label: "Inductor Value", symbol: "L", unit: "μH", precision: 2 },
     { key: "outputLevel", label: "Output Emission Level", symbol: "V_out", unit: "dBμV", precision: 1 }
@@ -31760,7 +36205,7 @@ var differentialModeFilter = {
   ],
   outputs: [
     { key: "cornerFreq", label: "Corner Frequency", symbol: "f₀", unit: "kHz", precision: 1 },
-    { key: "attenuation", label: "Attenuation at f", symbol: "A", unit: "dB", precision: 1 },
+    { key: "attenuation", label: "Attenuation at f", symbol: "A", unit: "dB", precision: 1, primary: true },
     { key: "characteristicImpedance", label: "Characteristic Impedance", symbol: "Z₀", unit: "Ω", precision: 1 }
   ],
   calculate: calculateDifferentialModeFilter,
@@ -31872,6 +36317,7 @@ var audioPowerAmplifier = {
   outputs: [
     {
       key: "poutMax",
+      primary: true,
       label: "Maximum Output Power",
       symbol: "Pout_max",
       unit: "W",
@@ -31920,8 +36366,19 @@ var audioPowerAmplifier = {
       { symbol: "Vout_peak", description: "Peak output voltage swing", unit: "V" },
       { symbol: "η", description: "Amplifier efficiency", unit: "%" }
     ],
-    reference: 'Cordell, "Designing Audio Power Amplifiers" 2nd ed.'
+    reference: 'Cordell, "Designing Audio Power Amplifiers" 2nd ed.',
+    substitution: [
+      { symbol: "P_max", expression: "(0.9 × {vcc} / 2)² / (2 × {rl})", output: "poutMax" },
+      { symbol: "P_RMS", expression: "P_max / 2", output: "poutRMS" },
+      { symbol: "V_in", expression: "(0.9 × {vcc} / 2 / √2) / 10^({gain}/20)", output: "inputSensitivity" }
+    ]
   },
+  sweep: { input: "vcc", range: [5, 100], scale: "linear" },
+  examples: [
+    { id: "car-amp-12v-4ohm", label: "12 V car amplifier into 4 Ω", values: { vcc: 12, rl: 4, efficiency: 70, gain: 26 } },
+    { id: "class-d-24v-8ohm", label: "Class-D amplifier on 24 V into 8 Ω", values: { vcc: 24, rl: 8, efficiency: 90, gain: 26 } },
+    { id: "class-ab-70v-8ohm", label: "Class-AB amplifier on a 70 V rail into 8 Ω", values: { vcc: 70, rl: 8, efficiency: 60, gain: 32 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["speaker-crossover", "opamp-gain", "opamp-bandwidth"],
   relatedBlogPosts: ["audio-amplifier-design-guide", "class-d-efficiency", "room-modes"]
@@ -32023,7 +36480,10 @@ var speakerCrossover = {
       min: 1,
       max: 2,
       step: 1,
-      tooltip: "1 = 1st order 6dB/octave, 2 = 2nd order Butterworth 12dB/octave",
+      options: [
+        { value: 1, label: "1st order (6 dB/oct)" },
+        { value: 2, label: "2nd order Butterworth (12 dB/oct)" }
+      ],
       presets: [
         { label: "1st order (6dB/oct)", values: { order: 1 } },
         { label: "2nd order (12dB/oct)", values: { order: 2 } }
@@ -32033,6 +36493,7 @@ var speakerCrossover = {
   outputs: [
     {
       key: "wooferL",
+      primary: true,
       label: "Woofer Inductor",
       symbol: "Lw",
       unit: "mH",
@@ -32142,7 +36603,7 @@ var roomModes = {
     { key: "rt60", label: "Reverberation Time (RT60)", symbol: "T₆₀", unit: "s", defaultValue: 0.4, min: 0.05, max: 5, step: 0.05, tooltip: "Typical rooms 0.3–0.8 s" }
   ],
   outputs: [
-    { key: "flLength", label: "Length Mode (1st)", symbol: "f_L", unit: "Hz", precision: 1 },
+    { key: "flLength", label: "Length Mode (1st)", symbol: "f_L", unit: "Hz", precision: 1, primary: true },
     { key: "flWidth", label: "Width Mode (1st)", symbol: "f_W", unit: "Hz", precision: 1 },
     { key: "flHeight", label: "Height Mode (1st)", symbol: "f_H", unit: "Hz", precision: 1 },
     { key: "schroeder", label: "Schroeder Frequency", symbol: "f_S", unit: "Hz", precision: 0 },
@@ -32190,7 +36651,7 @@ var speakerSensitivity = {
   ],
   outputs: [
     { key: "splAtPower", label: "SPL at Full Power (1m)", symbol: "SPL_P", unit: "dB", precision: 1 },
-    { key: "splAtDistance", label: "SPL at Distance", symbol: "SPL_d", unit: "dB", precision: 1 }
+    { key: "splAtDistance", label: "SPL at Distance", symbol: "SPL_d", unit: "dB", precision: 1, primary: true }
   ],
   calculate: calculateSpeakerSensitivity,
   formula: {
@@ -32199,8 +36660,18 @@ var speakerSensitivity = {
       { symbol: "S", description: "Sensitivity (dB/W/m)", unit: "dB" },
       { symbol: "P", description: "Power", unit: "W" },
       { symbol: "d", description: "Distance", unit: "m" }
+    ],
+    substitution: [
+      { symbol: "SPL₁", expression: "{sensitivity} + 10·log₁₀({power})", output: "splAtPower" },
+      { symbol: "SPL", expression: "SPL₁ − 20·log₁₀({distance})", output: "splAtDistance" }
     ]
   },
+  sweep: { input: "distance", range: [0.5, 50], scale: "log" },
+  examples: [
+    { id: "bookshelf-living-room", label: "Bookshelf speaker, 50 W at 3 m", values: { sensitivity: 89, power: 50, distance: 3 } },
+    { id: "pa-horn-20m", label: "PA horn, 500 W at 20 m", values: { sensitivity: 100, power: 500, distance: 20 } },
+    { id: "studio-monitor-nearfield", label: "Near-field studio monitor, 10 W at 1.5 m", values: { sensitivity: 85, power: 10, distance: 1.5 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "room-modes", "headphone-power"],
   relatedBlogPosts: ["audio-amplifier-design-guide", "decibels-explained-db-dbm-dbi"]
@@ -32245,8 +36716,8 @@ var headphonePower = {
     { key: "targetSpl", label: "Target SPL", symbol: "SPL", unit: "dB", defaultValue: 110, min: 70, max: 140 }
   ],
   outputs: [
-    { key: "requiredPowerMw", label: "Required Power", symbol: "P_req", unit: "mW", precision: 3 },
-    { key: "requiredPowerW", label: "Required Power (W)", symbol: "P_W", unit: "W", precision: 4, tooltip: "Power in watts (for amplifier datasheet comparison)" },
+    { key: "requiredPowerMw", label: "Required Power", symbol: "P_req", unit: "mW", precision: 3, primary: true },
+    { key: "requiredPowerW", label: "Required Power (W)", symbol: "P_W", unit: "W", precision: 4, tooltip: "Power in watts (for amplifier datasheet comparison)", display: { unit: "W" } },
     { key: "requiredVoltageRms", label: "Required Voltage (RMS)", symbol: "V_rms", unit: "V", precision: 3 },
     { key: "requiredCurrentMa", label: "Required Current", symbol: "I_req", unit: "mA", precision: 2 }
   ],
@@ -32256,8 +36727,19 @@ var headphonePower = {
     variables: [
       { symbol: "S", description: "Headphone sensitivity", unit: "dB/mW" },
       { symbol: "Z", description: "Headphone impedance", unit: "Ω" }
+    ],
+    substitution: [
+      { symbol: "P", expression: "10^(({targetSpl} − {sensitivity})/10) mW", output: "requiredPowerMw" },
+      { symbol: "V", expression: "√(P × {impedance})", output: "requiredVoltageRms" },
+      { symbol: "I", expression: "V / {impedance}", output: "requiredCurrentMa" }
     ]
   },
+  sweep: { input: "targetSpl", range: [80, 130], scale: "linear" },
+  examples: [
+    { id: "studio-300ohm", label: "300 Ω studio headphones at 110 dB", values: { impedance: 300, sensitivity: 97, targetSpl: 110 } },
+    { id: "earbuds-32ohm", label: "32 Ω earbuds at 100 dB", values: { impedance: 32, sensitivity: 105, targetSpl: 100 } },
+    { id: "planar-50ohm", label: "50 Ω planar-magnetic headphones at 115 dB", values: { impedance: 50, sensitivity: 90, targetSpl: 115 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["speaker-sensitivity", "audio-power-amplifier", "power-amplifier-gain"],
   relatedBlogPosts: ["audio-amplifier-design-guide"]
@@ -32283,10 +36765,11 @@ var audioSnr = {
   keywords: ["audio SNR", "signal to noise ratio audio", "dynamic range audio", "noise floor audio", "audio quality", "ENOB audio"],
   inputs: [
     { key: "signalLevel", label: "Signal Level", symbol: "V_sig", unit: "dBV", defaultValue: 0, min: -80, max: 30 },
-    { key: "noiseFloor", label: "Noise Floor", symbol: "V_noise", unit: "dBV", defaultValue: -90, min: -140, max: 0 }
+    { key: "noiseFloor", label: "Noise Floor", symbol: "V_noise", unit: "dBV", defaultValue: -90, min: -140, max: 0 },
+    { key: "targetSnr", label: "Target SNR", symbol: "SNR_t", unit: "dB", defaultValue: 90, min: 0, max: 160, tooltip: "The signal-to-noise ratio the chain must reach. The status fails below 60 dB." }
   ],
   outputs: [
-    { key: "snr", label: "SNR", symbol: "SNR", unit: "dB", precision: 1, thresholds: { good: { min: 90 }, warning: { min: 60 } } },
+    { key: "snr", label: "SNR", symbol: "SNR", unit: "dB", precision: 1, thresholds: { good: { min: 90 }, warning: { min: 60 }, danger: { min: 60 } }, primary: true },
     { key: "dynamicRange", label: "Dynamic Range", symbol: "DR", unit: "dB", precision: 1, tooltip: "Span from noise floor to 0 dBFS maximum level" },
     { key: "snrLinear", label: "SNR (linear voltage ratio)", symbol: "SNR_V", unit: ":1", precision: 0 },
     { key: "noiseBits", label: "Effective Noise Bits", symbol: "ENOB", unit: "bits", precision: 1 }
@@ -32296,8 +36779,28 @@ var audioSnr = {
     primary: "SNR = V_signal − V_noise (dB)",
     variables: [
       { symbol: "SNR", description: "Signal-to-noise ratio", unit: "dB" }
+    ],
+    substitution: [
+      { symbol: "SNR", expression: "{signalLevel} − ({noiseFloor})", output: "snr" },
+      { symbol: "DR", expression: "0 dBV − ({noiseFloor})", output: "dynamicRange" },
+      { symbol: "N_bits", expression: "SNR / (20·log₁₀ 2)", output: "noiseBits" }
     ]
   },
+  sweep: {
+    input: "noiseFloor",
+    range: [-140, -40],
+    scale: "linear",
+    lines: [
+      { id: "snr-floor", kind: "limit", label: "Minimum", value: () => 60, fails: "below" },
+      { id: "snr-target", kind: "target", label: "Target", value: (i) => i.targetSnr }
+    ]
+  },
+  target: { output: "snr", input: "targetSnr", sense: "min", failAt: 60 },
+  examples: [
+    { id: "consumer-line", label: "Consumer line level, −10 dBV", values: { signalLevel: -10, noiseFloor: -100 } },
+    { id: "pro-line", label: "Professional line level, +4 dBu", values: { signalLevel: 1.78, noiseFloor: -95 } },
+    { id: "phono-stage", label: "Phono preamp output", values: { signalLevel: -20, noiseFloor: -85 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-adc-snr", "audio-power-amplifier", "amplifier-clipping"],
   relatedBlogPosts: ["audio-amplifier-design-guide", "decibels-explained-db-dbm-dbi"]
@@ -32327,9 +36830,9 @@ var opAmpSlewRate = {
     { key: "frequency", label: "Signal Frequency", symbol: "f", unit: "Hz", defaultValue: 2e4, min: 1 }
   ],
   outputs: [
-    { key: "fullPowerBandwidth", label: "Full-Power Bandwidth", symbol: "FPBW", unit: "Hz", precision: 0 },
+    { key: "fullPowerBandwidth", label: "Full-Power Bandwidth", symbol: "FPBW", unit: "Hz", precision: 0, primary: true },
     { key: "minSlewRateRequired", label: "Min. Slew Rate Required", symbol: "SR_min", unit: "V/μs", precision: 3 },
-    { key: "slewMargin", label: "Slew Rate Margin", symbol: "SR_margin", unit: "V/μs", precision: 3, thresholds: { good: { min: 0 } } }
+    { key: "slewMargin", label: "Slew Rate Margin", symbol: "SR_margin", unit: "V/μs", precision: 3, thresholds: { good: { min: 0 } }, signed: "explicit" }
   ],
   calculate: calculateOpAmpSlewRate,
   formula: {
@@ -32337,8 +36840,26 @@ var opAmpSlewRate = {
     variables: [
       { symbol: "SR", description: "Slew rate", unit: "V/μs" },
       { symbol: "V_peak", description: "Peak output voltage", unit: "V" }
+    ],
+    substitution: [
+      { symbol: "f_FP", expression: "{slewRate} / (2π × {amplitude})", output: "fullPowerBandwidth" },
+      { symbol: "SR_min", expression: "2π × {frequency} × {amplitude}", output: "minSlewRateRequired" },
+      { symbol: "SR_margin", expression: "{slewRate} − SR_min", output: "slewMargin" }
     ]
   },
+  sweep: {
+    input: "amplitude",
+    range: [0.1, 20],
+    scale: "log",
+    lines: [
+      { id: "signal-frequency", kind: "limit", label: "Signal frequency", value: (i) => i.frequency, fails: "below" }
+    ]
+  },
+  examples: [
+    { id: "jfet-opamp-10vpk", label: "13 V/µs JFET op-amp, 10 V peak at 20 kHz", values: { slewRate: 13, amplitude: 10, frequency: 2e4 } },
+    { id: "line-driver-9vus", label: "9 V/µs line driver, 7 V peak at 20 kHz", values: { slewRate: 9, amplitude: 7, frequency: 2e4 } },
+    { id: "slow-opamp-5k", label: "0.3 V/µs general-purpose op-amp, 5 V peak at 5 kHz", values: { slewRate: 0.3, amplitude: 5, frequency: 5e3 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "audio-snr", "equalizer-q-factor"],
   relatedBlogPosts: ["opamp-gain"]
@@ -32371,7 +36892,7 @@ var audioTransformer = {
     { key: "primaryCurrent", label: "Primary Current (RMS)", symbol: "I₁", unit: "A", defaultValue: 1e-3, min: 0, step: 1e-4 }
   ],
   outputs: [
-    { key: "turnsRatio", label: "Turns Ratio (n)", symbol: "n", unit: ":1", precision: 3 },
+    { key: "turnsRatio", label: "Turns Ratio (n)", symbol: "n", unit: ":1", precision: 3, primary: true },
     { key: "secondaryVoltage", label: "Secondary Voltage", symbol: "V₂", unit: "V", precision: 4 },
     { key: "secondaryCurrent", label: "Secondary Current", symbol: "I₂", unit: "A", precision: 4 },
     { key: "powerTransferred", label: "Power Transferred", symbol: "P", unit: "W", precision: 4 }
@@ -32382,8 +36903,19 @@ var audioTransformer = {
     variables: [
       { symbol: "n", description: "Turns ratio", unit: "" },
       { symbol: "Z", description: "Impedance", unit: "Ω" }
+    ],
+    substitution: [
+      { symbol: "n", expression: "√({primaryImpedance} / {secondaryImpedance})", output: "turnsRatio" },
+      { symbol: "V₂", expression: "{primaryVoltage} / n", output: "secondaryVoltage" },
+      { symbol: "I₂", expression: "{primaryCurrent} × n", output: "secondaryCurrent" }
     ]
   },
+  sweep: { input: "secondaryImpedance", range: [2, 1e3], scale: "log" },
+  examples: [
+    { id: "line-600-to-8", label: "600 Ω line to an 8 Ω speaker", values: { primaryImpedance: 600, secondaryImpedance: 8, primaryVoltage: 1, primaryCurrent: 1e-3 } },
+    { id: "valve-output-5k-8", label: "Valve output transformer, 5 kΩ to 8 Ω", values: { primaryImpedance: 5e3, secondaryImpedance: 8, primaryVoltage: 100, primaryCurrent: 0.02 } },
+    { id: "mic-step-up-150-15k", label: "Microphone step-up, 150 Ω to 15 kΩ", values: { primaryImpedance: 150, secondaryImpedance: 15e3, primaryVoltage: 2e-3, primaryCurrent: 133e-7 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "speaker-sensitivity", "tweeter-capacitor"],
   relatedBlogPosts: ["transformer-turns-ratio"]
@@ -32423,11 +36955,12 @@ var cableCapacitanceRolloff = {
       ]
     },
     { key: "cableCapacitancePf", label: "Cable Capacitance", symbol: "C/m", unit: "pF/m", defaultValue: 100, min: 1, tooltip: "Per metre, from cable datasheet (typical: 80–150 pF/m)" },
-    { key: "cableLengthM", label: "Cable Length", symbol: "l", unit: "m", defaultValue: 5, min: 0.1 }
+    { key: "cableLengthM", label: "Cable Length", symbol: "l", unit: "m", defaultValue: 5, min: 0.1 },
+    { key: "targetCutoff", label: "Target −3 dB Frequency", symbol: "f_c,t", unit: "Hz", defaultValue: 1e5, min: 1e3, max: 1e7, tooltip: "The −3 dB frequency the cable must stay above. Five times 20 kHz keeps the audio band within 0.2 dB. The status fails below 20 kHz." }
   ],
   outputs: [
     { key: "totalCapacitancePf", label: "Total Cable Capacitance", symbol: "C_total", unit: "pF", precision: 0 },
-    { key: "cutoffFrequency", label: "-3 dB Frequency", symbol: "f_c", unit: "Hz", precision: 0 },
+    { key: "cutoffFrequency", label: "-3 dB Frequency", symbol: "f_c", unit: "Hz", precision: 0, primary: true },
     { key: "rolloffAt20k", label: "Rolloff at 20 kHz", symbol: "ΔdB", unit: "dB", precision: 1 }
   ],
   calculate: calculateCableCapacitanceRolloff,
@@ -32436,8 +36969,28 @@ var cableCapacitanceRolloff = {
     variables: [
       { symbol: "Z_s", description: "Source impedance", unit: "Ω" },
       { symbol: "C_total", description: "Total cable capacitance", unit: "F" }
+    ],
+    substitution: [
+      { symbol: "C", expression: "{cableCapacitancePf} × {cableLengthM}", output: "totalCapacitancePf" },
+      { symbol: "f_c", expression: "1 / (2π × {sourceImpedance} × C)", output: "cutoffFrequency" },
+      { symbol: "A₂₀ₖ", expression: "−20·log₁₀(√(1 + (2π × 20 kHz × {sourceImpedance} × C)²))", output: "rolloffAt20k" }
     ]
   },
+  sweep: {
+    input: "cableLengthM",
+    range: [0.5, 100],
+    scale: "log",
+    lines: [
+      { id: "audio-band-edge", kind: "limit", label: "Audio band edge", value: () => 2e4, fails: "below" },
+      { id: "cutoff-target", kind: "target", label: "Target", value: (i) => i.targetCutoff }
+    ]
+  },
+  target: { output: "cutoffFrequency", input: "targetCutoff", sense: "min", failAt: 2e4 },
+  examples: [
+    { id: "guitar-6m", label: "Guitar pickup into a 6 m cable", values: { sourceImpedance: 1e4, cableCapacitancePf: 100, cableLengthM: 6 } },
+    { id: "line-600-30m", label: "600 Ω line output into a 30 m snake", values: { sourceImpedance: 600, cableCapacitancePf: 100, cableLengthM: 30 } },
+    { id: "valve-preamp-3m", label: "50 kΩ valve preamp output, 3 m", values: { sourceImpedance: 5e4, cableCapacitancePf: 150, cableLengthM: 3 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-transformer", "op-amp-slew-rate", "audio-snr"],
   relatedBlogPosts: ["capacitive-proximity"]
@@ -32487,16 +37040,21 @@ var subwooferBox = {
   metaTitle: "Subwoofer Box Calculator — Sealed & Ported Volume",
   keywords: ["subwoofer box calculator", "bass box calculator", "speaker enclosure calculator", "Thiele-Small", "ported box", "sealed box subwoofer", "Vas Qts Fs"],
   inputs: [
-    { key: "vas", label: "Vas (Equivalent Volume)", symbol: "Vas", unit: "L", defaultValue: 50, min: 0.1, tooltip: "From driver datasheet" },
+    { key: "vas", label: "Vas (Equivalent Volume)", symbol: "Vas", unit: "L", defaultValue: 50, min: 0.1, max: 2e3, tooltip: "From driver datasheet" },
     { key: "qts", label: "Qts (Total Q)", symbol: "Qts", unit: "", defaultValue: 0.35, min: 0.01, max: 2, step: 0.01, tooltip: "Qts < 0.35 → vented, 0.35–0.7 → sealed" },
     { key: "fs", label: "Fs (Resonant Frequency)", symbol: "Fs", unit: "Hz", defaultValue: 35, min: 5, max: 200 }
   ],
   outputs: [
-    { key: "vbSealed", label: "Sealed Box Volume", symbol: "Vb_s", unit: "L", precision: 1 },
+    { key: "vbSealed", label: "Sealed Box Volume", symbol: "Vb_s", unit: "L", precision: 1, primary: true },
     { key: "vbVented", label: "Ported Box Volume", symbol: "Vb_v", unit: "L", precision: 1 },
     { key: "portTuning", label: "Port Tuning Frequency", symbol: "Fb", unit: "Hz", precision: 1 },
     { key: "f3Sealed", label: "-3 dB (Sealed)", symbol: "f_3", unit: "Hz", precision: 1 },
     { key: "f3Vented", label: "-3 dB (Ported)", symbol: "f_3v", unit: "Hz", precision: 1 }
+  ],
+  examples: [
+    { id: "woofer-12in", label: "12-inch subwoofer, Vas 80 L, Qts 0.38, fs 26 Hz", values: { vas: 80, qts: 0.38, fs: 26 } },
+    { id: "woofer-10in", label: "10-inch subwoofer, Vas 45 L, Qts 0.45, fs 30 Hz", values: { vas: 45, qts: 0.45, fs: 30 } },
+    { id: "woofer-8in", label: "8-inch woofer, Vas 25 L, Qts 0.40, fs 38 Hz", values: { vas: 25, qts: 0.4, fs: 38 } }
   ],
   calculate: calculateSubwooferBox,
   formula: {
@@ -32525,6 +37083,15 @@ var subwooferBox = {
     }
   ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "box", roles: { vb: "vbSealed", vbv: "vbVented", vas: "vas", fb: "portTuning", qts: "qts", fs: "fs", f3: "f3Sealed" } },
+    // A box of a given size, or a −3 dB point: the driver that suits it.
+    synthesis: [
+      { output: "vbSealed", solveFor: ["vas", "qts"] },
+      { output: "f3Sealed", solveFor: ["fs", "qts"] }
+    ],
+    curve: { x: "qts", y: "vbSealed", range: [0.2, 0.6], scale: "linear" }
+  },
   relatedCalculators: ["room-modes", "speaker-sensitivity", "tweeter-capacitor"],
   relatedBlogPosts: ["room-modes"]
 };
@@ -32565,7 +37132,7 @@ var tweeterCapacitor = {
     { key: "crossoverFreq", label: "Crossover Frequency", symbol: "f_c", unit: "Hz", defaultValue: 3e3, min: 100 }
   ],
   outputs: [
-    { key: "capacitanceMicroF", label: "Capacitor Value", symbol: "C", unit: "μF", precision: 2 },
+    { key: "capacitanceMicroF", label: "Capacitor Value", symbol: "C", unit: "μF", precision: 2, primary: true },
     { key: "reactanceAt1k", label: "Reactance at 1 kHz", symbol: "Xc", unit: "Ω", precision: 1 },
     { key: "rolloffAt100Hz", label: "Rolloff at 100 Hz", symbol: "ΔdB", unit: "dB", precision: 0 }
   ],
@@ -32624,7 +37191,7 @@ var classDEfficiency = {
     { key: "quiescentCurrent", label: "Quiescent Current", symbol: "I_q", unit: "mA", defaultValue: 30, min: 0 }
   ],
   outputs: [
-    { key: "efficiency", label: "Efficiency", symbol: "η", unit: "%", precision: 1, thresholds: { good: { min: 85 }, warning: { min: 70 } } },
+    { key: "efficiency", label: "Efficiency", symbol: "η", unit: "%", precision: 1, thresholds: { good: { min: 85 }, warning: { min: 70 } }, primary: true },
     { key: "conductionLoss", label: "Conduction Loss", symbol: "P_cond", unit: "W", precision: 2, tooltip: "I²·R_DS(on)·N/2: the FETs that carry the load current at once" },
     { key: "quiescentLoss", label: "Quiescent Loss", symbol: "P_q", unit: "W", precision: 2 },
     { key: "totalLoss", label: "Total Power Loss", symbol: "P_loss", unit: "W", precision: 2, tooltip: "Total heat dissipated — use for heatsink sizing" },
@@ -32715,9 +37282,9 @@ var audioAdcSnr = {
   ],
   outputs: [
     { key: "theoreticalSnr", label: "Theoretical SNR", symbol: "SNR_ideal", unit: "dB", precision: 1 },
-    { key: "oversamplingGain", label: "Oversampling Gain", symbol: "G_OS", unit: "dB", precision: 1 },
+    { key: "oversamplingGain", label: "Oversampling Gain", symbol: "G_OS", unit: "dB", precision: 1, signed: "explicit" },
     { key: "totalSnr", label: "Total SNR", symbol: "SNR_total", unit: "dB", precision: 1, thresholds: { good: { min: 96 } } },
-    { key: "dynamicRange", label: "Dynamic Range", symbol: "DR", unit: "dB", precision: 1 }
+    { key: "dynamicRange", label: "Dynamic Range", symbol: "DR", unit: "dB", precision: 1, primary: true }
   ],
   calculate: calculateAudioAdcSnr,
   formula: {
@@ -32725,8 +37292,19 @@ var audioAdcSnr = {
     variables: [
       { symbol: "N", description: "Bit depth", unit: "bits" },
       { symbol: "OSR", description: "Oversampling ratio", unit: "×" }
+    ],
+    substitution: [
+      { symbol: "DR", expression: "20·log₁₀(2) × {bitDepth} + 10·log₁₀(1.5)", output: "dynamicRange" },
+      { symbol: "G_OS", expression: "10·log₁₀({oversamplingRatio})", output: "oversamplingGain" },
+      { symbol: "SNR", expression: "DR + G_OS", output: "totalSnr" }
     ]
   },
+  sweep: { input: "bitDepth", range: [8, 32], scale: "linear" },
+  examples: [
+    { id: "cd-16bit", label: "CD audio, 16-bit", values: { bitDepth: 16, oversamplingRatio: 1 } },
+    { id: "studio-24bit", label: "Studio converter, 24-bit", values: { bitDepth: 24, oversamplingRatio: 1 } },
+    { id: "oversampled-12bit", label: "12-bit converter with 64× oversampling", values: { bitDepth: 12, oversamplingRatio: 64 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-snr", "amplifier-clipping"]
 };
@@ -32743,6 +37321,10 @@ function calculateEqualizerQFactor(inputs) {
   const upperFreq = centerFreq * Math.pow(2, octaves / 2);
   return { values: { qFactor: qFactor2, octaves, lowerFreq, upperFreq } };
 }
+function qOfOctaves(n) {
+  if (!(n > 0)) return NaN;
+  return 1 / (2 * Math.sinh(n * Math.LN2 / 2));
+}
 var equalizerQFactor = {
   slug: "equalizer-q-factor",
   title: "Equalizer Filter Q & Bandwidth",
@@ -32757,12 +37339,46 @@ var equalizerQFactor = {
     { key: "bandwidth", label: "Bandwidth (−3 dB)", symbol: "BW", unit: "Hz", defaultValue: 200, min: 0.1 }
   ],
   outputs: [
-    { key: "qFactor", label: "Q Factor", symbol: "Q", unit: "", precision: 2 },
+    { key: "qFactor", label: "Q Factor", symbol: "Q", unit: "", precision: 2, primary: true },
     { key: "octaves", label: "Bandwidth", symbol: "BW", unit: "octaves", precision: 2 },
     { key: "lowerFreq", label: "Lower −3 dB Frequency", symbol: "f_L", unit: "Hz", precision: 0 },
     { key: "upperFreq", label: "Upper −3 dB Frequency", symbol: "f_H", unit: "Hz", precision: 0 }
   ],
+  examples: [
+    { id: "kick-drum-60-hz", label: "Kick drum low end: 60 Hz, Q 1.5", values: { centerFreq: 60, bandwidth: 40 } },
+    { id: "vocal-presence-5-khz", label: "Vocal presence: 5 kHz, Q 2", values: { centerFreq: 5e3, bandwidth: 2500 } },
+    { id: "mains-hum-notch-50-hz", label: "50 Hz mains-hum notch, Q 10", values: { centerFreq: 50, bandwidth: 5 } }
+  ],
   calculate: calculateEqualizerQFactor,
+  // C2: one free input, the bandwidth in Hz, at the held centre frequency.
+  // The band edges sit half the octave bandwidth either side of f₀, so each
+  // edge gives the octaves and through them Q.
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: ["qFactor", "octaves", "bandwidth", "lowerFreq", "upperFreq"],
+      free: ["bandwidth"],
+      params: ["centerFreq"],
+      inverse: {
+        qFactor: (q, { centerFreq }) => centerFreq / q,
+        octaves: (n, { centerFreq }) => centerFreq / qOfOctaves(n),
+        lowerFreq: (fl, { centerFreq }) => centerFreq / qOfOctaves(2 * Math.log2(centerFreq / fl)),
+        upperFreq: (fh, { centerFreq }) => centerFreq / qOfOctaves(2 * Math.log2(fh / centerFreq))
+      },
+      picks: { field: "qFactor", values: [0.5, 0.707, 1, 1.414, 2, 4] },
+      reference: { field: "qFactor", values: [0.5, 0.707, 1, 1.414, 2, 4, 10] },
+      scales: {
+        axis: { field: "qFactor", range: [0.3, 30], scale: "log" },
+        fields: [
+          { key: "qFactor", ticks: [0.5, 0.707, 1, 1.414, 2, 3, 5, 10, 20] },
+          { key: "octaves", ticks: [3, 2, 1, 0.5, 1 / 3, 0.25, 0.1] },
+          { key: "bandwidth", ticks: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4] }
+        ],
+        ends: { id: "width", low: "wider band", high: "narrower band" }
+      }
+    }]
+  },
   formula: {
     primary: "Q = f₀ / BW",
     variables: [
@@ -32811,7 +37427,7 @@ var amplifierClipping = {
     { key: "headroom", label: "Headroom Reserve", symbol: "H", unit: "%", defaultValue: 100, min: 10, max: 100, tooltip: "100% = maximum output, lower to add headroom margin" }
   ],
   outputs: [
-    { key: "maxOutputVoltage", label: "Max Output Voltage (peak)", symbol: "V_peak", unit: "V", precision: 2 },
+    { key: "maxOutputVoltage", label: "Max Output Voltage (peak)", symbol: "V_peak", unit: "V", precision: 2, primary: true },
     { key: "rmsVoltage", label: "Max Output Voltage (RMS)", symbol: "V_rms", unit: "V", precision: 2 },
     { key: "clippingPower", label: "Continuous Power at Clipping", symbol: "P_clip_rms", unit: "W", precision: 1 },
     { key: "clippingLevel", label: "Clipping Level", symbol: "dBV", unit: "dBV", precision: 1 }
@@ -32821,8 +37437,19 @@ var amplifierClipping = {
     primary: "V_peak ≈ 0.9 × V_cc,  P_clip = V_peak² / (2 × Z_L)",
     variables: [
       { symbol: "V_cc", description: "Supply rail voltage", unit: "V" }
+    ],
+    substitution: [
+      { symbol: "V_pk", expression: "0.9 × {supplyVoltage} × {headroom}", output: "maxOutputVoltage" },
+      { symbol: "P_clip", expression: "V_pk² / (2 × {loadImpedance})", output: "clippingPower" },
+      { symbol: "L_clip", expression: "20·log₁₀(V_pk / √2)", output: "clippingLevel" }
     ]
   },
+  sweep: { input: "supplyVoltage", range: [5, 100], scale: "linear" },
+  examples: [
+    { id: "class-ab-36v-8ohm", label: "Class-AB amplifier on 36 V into 8 Ω", values: { supplyVoltage: 36, loadImpedance: 8, headroom: 100 } },
+    { id: "car-12v-4ohm", label: "12 V car amplifier into 4 Ω", values: { supplyVoltage: 12, loadImpedance: 4, headroom: 100 } },
+    { id: "class-d-48v-4ohm", label: "Class-D amplifier on 48 V into 4 Ω, 80 % headroom", values: { supplyVoltage: 48, loadImpedance: 4, headroom: 80 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "audio-snr", "power-amplifier-gain"],
   relatedBlogPosts: ["audio-amplifier-design-guide", "db-converter", "opamp-gain"]
@@ -32868,10 +37495,67 @@ var audioDelayTime = {
   ],
   outputs: [
     { key: "beatMs", label: "Quarter-Note Delay", symbol: "t_beat", unit: "ms", precision: 1 },
-    { key: "noteDelayMs", label: "Selected Note Delay", symbol: "t_note", unit: "ms", precision: 1 },
+    { key: "noteDelayMs", label: "Selected Note Delay", symbol: "t_note", unit: "ms", precision: 1, primary: true },
     { key: "propagationMs", label: "Propagation Delay", symbol: "t_prop", unit: "ms", precision: 1 }
   ],
+  // A dotted note is 1.5 times its plain value and a triplet 2/3, so a dotted
+  // eighth is n = 16/3 and an eighth-note triplet n = 12.
+  examples: [
+    { id: "dotted-eighth-120-bpm", label: "Dotted-eighth echo at 120 BPM", values: { bpm: 120, noteValue: 16 / 3 } },
+    { id: "eighth-triplet-90-bpm", label: "Eighth-note triplet at 90 BPM", values: { bpm: 90, noteValue: 12 } },
+    { id: "delay-tower-hot-day", label: "Delay tower 60 m from the main PA on a 35 °C day (c = 352 m/s)", values: { distance: 60, speedOfSound: 352 } },
+    { id: "front-fill-cold-hall", label: "Front fill 8 m from the main PA in a 10 °C hall (c = 337 m/s)", values: { distance: 8, speedOfSound: 337 } }
+  ],
   calculate: calculateAudioDelayTime,
+  // C2: two independent groups. Tempo solves BPM for a delay at the held note
+  // division (t_note = 60000/BPM · 4/n); distance solves the distance for a
+  // propagation delay at the held speed of sound.
+  linked: {
+    groups: [
+      {
+        id: "tempo",
+        prefixed: true,
+        label: "Tempo sync",
+        fields: ["bpm", "beatMs", "noteDelayMs"],
+        free: ["bpm"],
+        params: ["noteValue"],
+        inverse: {
+          beatMs: (t) => 6e4 / t,
+          noteDelayMs: (t, { noteValue }) => 24e4 / (noteValue * t)
+        },
+        picks: { field: "bpm", values: [90, 100, 120, 128, 140] },
+        reference: { field: "bpm", values: [60, 80, 90, 100, 120, 128, 140, 174] },
+        scales: {
+          axis: { field: "bpm", range: [20, 300], scale: "log" },
+          fields: [
+            { key: "bpm", ticks: [20, 30, 40, 60, 80, 100, 120, 150, 200, 300] },
+            { key: "beatMs", ticks: [3e3, 2e3, 1e3, 750, 500, 400, 300, 200] },
+            { key: "noteDelayMs", ticks: [20, 50, 100, 200, 300, 500, 1e3, 2e3, 3e3, 5e3, 1e4] }
+          ]
+        }
+      },
+      {
+        id: "distance",
+        prefixed: true,
+        label: "Propagation",
+        fields: ["distance", "propagationMs"],
+        free: ["distance"],
+        params: ["speedOfSound"],
+        inverse: {
+          propagationMs: (t, { speedOfSound }) => t * speedOfSound / 1e3
+        },
+        picks: { field: "distance", values: [1, 5, 10, 20, 50] },
+        reference: { field: "distance", values: [1, 2, 5, 10, 20, 50, 100] },
+        scales: {
+          axis: { field: "distance", range: [0.3, 300], scale: "log" },
+          fields: [
+            { key: "distance", ticks: [0.5, 1, 2, 5, 10, 20, 50, 100, 200] },
+            { key: "propagationMs", ticks: [1, 2, 5, 10, 20, 50, 100, 200, 500] }
+          ]
+        }
+      }
+    ]
+  },
   formula: {
     primary: "t_beat = 60000/BPM ms,  t_prop = d/c × 1000",
     variables: [
@@ -32914,11 +37598,67 @@ var powerAmplifierGain = {
   ],
   outputs: [
     { key: "voltageGain", label: "Voltage Gain", symbol: "Av", unit: "V/V", precision: 1 },
-    { key: "voltageGainDb", label: "Voltage Gain", symbol: "Av_dB", unit: "dB", precision: 1 },
+    { key: "voltageGainDb", label: "Voltage Gain", symbol: "Av_dB", unit: "dB", precision: 1, primary: true, signed: "explicit" },
     { key: "powerGain", label: "Power Gain", symbol: "Ap", unit: "W/W", precision: 0 },
-    { key: "powerGainDb", label: "Power Gain", symbol: "Ap_dB", unit: "dB", precision: 1 }
+    { key: "powerGainDb", label: "Power Gain", symbol: "Ap_dB", unit: "dB", precision: 1, signed: "explicit" }
+  ],
+  // Rated output voltage √(P·R_load); input power V_in²/R_in, in mW.
+  examples: [
+    { id: "hifi-100w-8-ohm", label: "Hi-fi amp: 100 W into 8 Ω from −10 dBV, 47 kΩ input", values: { inputVoltage: 0.316, outputVoltage: Math.sqrt(100 * 8), inputPower: 0.316 ** 2 / 47e3 * 1e3, outputPower: 100 } },
+    { id: "pro-1000w-4-ohm", label: "Pro amp: 1000 W into 4 Ω from +4 dBu, 10 kΩ input", values: { inputVoltage: 1.228, outputVoltage: Math.sqrt(1e3 * 4), inputPower: 1.228 ** 2 / 1e4 * 1e3, outputPower: 1e3 } },
+    { id: "headphone-amp-32-ohm", label: "Headphone amp: 1 V in, 3 V into 32 Ω, 10 kΩ input", values: { inputVoltage: 1, outputVoltage: 3, inputPower: 1 / 1e4 * 1e3, outputPower: 9 / 32 } }
   ],
   calculate: calculatePowerAmplifierGain,
+  // C2: two independent groups, each solving its output level for a gain at
+  // the held input level. P_in is in mW and P_out in W, hence the 1000.
+  linked: {
+    groups: [
+      {
+        id: "voltage",
+        prefixed: true,
+        label: "Voltage gain",
+        fields: ["voltageGainDb", "voltageGain", "outputVoltage"],
+        free: ["outputVoltage"],
+        params: ["inputVoltage"],
+        inverse: {
+          voltageGain: (g, { inputVoltage }) => g * inputVoltage,
+          voltageGainDb: (db, { inputVoltage }) => inputVoltage * 10 ** (db / 20)
+        },
+        picks: { field: "voltageGainDb", values: [20, 26, 29, 32, 35] },
+        reference: { field: "voltageGainDb", values: [0, 6, 10, 20, 26, 30, 40] },
+        scales: {
+          axis: { field: "voltageGainDb", range: [0, 60], scale: "linear" },
+          fields: [
+            { key: "voltageGainDb" },
+            { key: "voltageGain", ticks: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3] },
+            { key: "outputVoltage" }
+          ]
+        }
+      },
+      {
+        id: "power",
+        prefixed: true,
+        label: "Power gain",
+        fields: ["powerGainDb", "powerGain", "outputPower"],
+        free: ["outputPower"],
+        params: ["inputPower"],
+        inverse: {
+          powerGain: (g, { inputPower }) => g * inputPower / 1e3,
+          powerGainDb: (db, { inputPower }) => 10 ** (db / 10) * inputPower / 1e3
+        },
+        picks: { field: "outputPower", values: [25, 50, 100, 200, 500] },
+        reference: { field: "powerGainDb", values: [20, 30, 40, 50, 60, 70] },
+        scales: {
+          axis: { field: "powerGainDb", range: [20, 80], scale: "linear" },
+          fields: [
+            { key: "powerGainDb" },
+            { key: "powerGain", ticks: [100, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8] },
+            { key: "outputPower" }
+          ]
+        }
+      }
+    ]
+  },
   formula: {
     primary: "Av_dB = 20·log₁₀(V_out/V_in)",
     variables: [
@@ -33082,8 +37822,19 @@ var reactanceCalculator = {
       "Capacitive reactance decreases with frequency: XC = 1/(ωC) = 1/(2πfC)",
       "At resonance XL = XC: 2πf_res·L = 1/(2πf_res·C) → f_res = 1/(2π√LC)"
     ],
-    reference: "Pozar, Microwave Engineering, 4th ed."
+    reference: "Pozar, Microwave Engineering, 4th ed.",
+    substitution: [
+      { symbol: "X_L", expression: "2π × {frequency} × {inductance}", output: "XL" },
+      { symbol: "X_C", expression: "1 / (2π × {frequency} × {capacitance})", output: "XC" },
+      { symbol: "f_res", expression: "1 / (2π √({inductance} × {capacitance}))", output: "f_res_MHz" }
+    ]
   },
+  sweep: { input: "frequency", range: [1e3, 1e9], scale: "log" },
+  examples: [
+    { id: "choke-10uh-1m", label: "10 µH choke and 100 pF at 1 MHz", values: { frequency: 1e6, inductance: 10, capacitance: 100 } },
+    { id: "rf-100nh-2g4", label: "100 nH and 1 pF at 2.4 GHz", values: { frequency: 24e8, inductance: 0.1, capacitance: 1 } },
+    { id: "mains-1h-10uf", label: "1 H and 10 µF at 50 Hz", values: { frequency: 50, inductance: 1e6, capacitance: 1e7 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["lc-resonance", "filter-designer", "coax-impedance", "series-parallel-resistor", "q-factor"],
   verificationData: [
@@ -33277,8 +38028,19 @@ var currentDivider = {
       "Similarly: I2 = V/R2 = I_total × R1/(R1+R2)",
       "Verification: I1 + I2 = I_total (KCL satisfied)"
     ],
-    reference: "Hayt & Kemmerly, Engineering Circuit Analysis, 8th ed."
+    reference: "Hayt & Kemmerly, Engineering Circuit Analysis, 8th ed.",
+    substitution: [
+      { symbol: "I₁", expression: "{totalCurrent} × {r2} / ({r1} + {r2})", output: "i1" },
+      { symbol: "I₂", expression: "{totalCurrent} × {r1} / ({r1} + {r2})", output: "i2" },
+      { symbol: "V", expression: "{totalCurrent} × {r1} × {r2} / ({r1} + {r2})", output: "voltage" }
+    ]
   },
+  sweep: { input: "r1", range: [10, 1e5], scale: "log" },
+  examples: [
+    { id: "ammeter-shunt", label: "Ammeter shunt, 10 A through 10 mΩ beside a 50 Ω meter", values: { totalCurrent: 10, r1: 50, r2: 0.01 } },
+    { id: "parallel-1k-2k", label: "1 A into 1 kΩ and 2 kΩ in parallel", values: { totalCurrent: 1, r1: 1e3, r2: 2e3 } },
+    { id: "led-strings", label: "100 mA shared by 10 Ω and 12 Ω strings", values: { totalCurrent: 0.1, r1: 10, r2: 12 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["ohms-law", "voltage-divider", "series-parallel-resistor", "delta-wye-conversion"],
   verificationData: [
@@ -33336,6 +38098,19 @@ function calculateDeltaWye(inputs) {
     }
   };
 }
+var DELTA = ["rdA", "rdB", "rdC"];
+var WYE = ["r1", "r2", "r3"];
+function deltaWyeEdit(field, value, values) {
+  const system = DELTA.includes(field) ? DELTA : WYE.includes(field) ? WYE : null;
+  if (!system) return null;
+  const [ra, rb, rc] = system.map((k) => k === field ? value : values[k]);
+  const next = { conversionDir: system === DELTA ? 0 : 1, ra, rb, rc };
+  const fits = ["ra", "rb", "rc"].every((k) => {
+    const input = deltaWyeConversion.inputs.find((i) => i.key === k);
+    return Number.isFinite(next[k]) && next[k] >= input.min && next[k] <= input.max;
+  });
+  return fits ? next : null;
+}
 var deltaWyeConversion = {
   slug: "delta-wye-conversion",
   title: "Delta–Wye (Star–Delta) Conversion Calculator",
@@ -33369,7 +38144,10 @@ var deltaWyeConversion = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = Delta → Wye, 1 = Wye → Delta"
+      options: [
+        { value: 0, label: "Delta → Wye" },
+        { value: 1, label: "Wye → Delta" }
+      ]
     },
     {
       key: "ra",
@@ -33475,7 +38253,28 @@ var deltaWyeConversion = {
       tooltip: "Wye→Delta: Rc = (R1R2+R2R3+R3R1)/R3 — Rc opposite R3"
     }
   ],
+  examples: [
+    { id: "balanced-10-ohm", label: "10 Ω (balanced)", values: { ra: 10, rb: 10, rc: 10 } },
+    { id: "1k-2k-3k", label: "1 kΩ / 2 kΩ / 3 kΩ", values: { ra: 1e3, rb: 2e3, rc: 3e3 } }
+  ],
   calculate: calculateDeltaWye,
+  // C2: the three delta and three wye resistors are all fields; the direction
+  // follows the side last edited, so it is not shown.
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: [...DELTA, ...WYE],
+      free: ["ra", "rb", "rc", "conversionDir"],
+      systems: [DELTA, WYE],
+      edit: (field, value, { values }) => deltaWyeEdit(field, value, values),
+      picks: { field: "rdA", values: [10, 22, 47, 100, 470, 1e3] },
+      reference: { field: "rdA", values: [5, 10, 20, 50, 100, 200, 500] },
+      scales: {
+        fields: [...DELTA, ...WYE].map((key) => ({ key, range: [1, 1e6], scale: "log" }))
+      }
+    }]
+  },
   formula: {
     primary: "R_1 = \\frac{R_b R_c}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_1}",
     latex: "R_1 = \\frac{R_b R_c}{R_a+R_b+R_c}, \\quad R_a = \\frac{R_1R_2+R_2R_3+R_3R_1}{R_1}",
@@ -33615,7 +38414,10 @@ var dopplerShift = {
       min: 0,
       max: 1,
       step: 1,
-      tooltip: "0 = m/s, 1 = km/h"
+      options: [
+        { value: 0, label: "m/s" },
+        { value: 1, label: "km/h" }
+      ]
     },
     {
       key: "angle",
@@ -33632,6 +38434,7 @@ var dopplerShift = {
   outputs: [
     {
       key: "f_d_Hz",
+      signed: "explicit",
       label: "Doppler Shift",
       symbol: "f_d",
       unit: "Hz",
@@ -33641,6 +38444,7 @@ var dopplerShift = {
     },
     {
       key: "f_d_kHz",
+      signed: "explicit",
       label: "Doppler Shift",
       symbol: "f_d",
       unit: "kHz",
@@ -33688,8 +38492,18 @@ var dopplerShift = {
       "Velocity from shift: v = f_d·c/(2f·cosθ)",
       "At 10 GHz, 1 m/s velocity produces 66.7 Hz of Doppler shift"
     ],
-    reference: "Skolnik, Introduction to Radar Systems, 3rd ed., Ch.3"
+    reference: "Skolnik, Introduction to Radar Systems, 3rd ed., Ch.3",
+    substitution: [
+      { symbol: "f_d", expression: "2 × v × {frequency} × cos({angle}) / c, v = {velocity}", output: "f_d_Hz" },
+      { symbol: "v_r", expression: "v × cos({angle})", output: "radialVelocity" }
+    ]
   },
+  sweep: { input: "velocity", range: [0, 100], scale: "linear" },
+  examples: [
+    { id: "k-band-police-100kmh", label: "K-band traffic radar, car at 100 km/h", values: { frequency: 24.15, velocity: 100, velocityUnit: 1, angle: 10 } },
+    { id: "automotive-77g", label: "77 GHz automotive radar, 30 m/s closing speed", values: { frequency: 77, velocity: 30, velocityUnit: 0, angle: 0 } },
+    { id: "x-band-weather", label: "X-band weather radar, 20 m/s wind at 30°", values: { frequency: 9.4, velocity: 20, velocityUnit: 0, angle: 30 } }
+  ],
   visualization: { type: "none" },
   liveWidgets: [
     { type: "space-weather", position: "below-outputs" }
@@ -33773,7 +38587,7 @@ var rt60Reverberation = {
     { key: "avgAbsorption", label: "Avg. Absorption Coefficient", symbol: "ᾱ", unit: "", defaultValue: 0.2, min: 0.01, max: 0.99, step: 0.01, tooltip: "Bare concrete ~0.03, carpet ~0.3, acoustic panels ~0.8" }
   ],
   outputs: [
-    { key: "rt60Sabine", label: "RT60 (Sabine)", symbol: "T₆₀", unit: "s", precision: 2 },
+    { key: "rt60Sabine", label: "RT60 (Sabine)", symbol: "T₆₀", unit: "s", precision: 2, primary: true },
     { key: "rt60Eyring", label: "RT60 (Eyring)", symbol: "T₆₀ₑ", unit: "s", precision: 2 },
     { key: "criticalDistance", label: "Critical Distance", symbol: "Dᶜ", unit: "m", precision: 2 },
     { key: "schroederFreq", label: "Schroeder Frequency", symbol: "f_S", unit: "Hz", precision: 0 },
@@ -33852,7 +38666,7 @@ var vfdMotorSpeed = {
     { key: "ratedSlip", label: "Rated Slip", symbol: "s", unit: "%", defaultValue: 3, min: 0, max: 15, step: 0.5, tooltip: "Typical: 2–5% for standard motors" }
   ],
   outputs: [
-    { key: "actualSpeedDrive", label: "Actual Motor Speed", symbol: "n", unit: "RPM", precision: 0 },
+    { key: "actualSpeedDrive", label: "Actual Motor Speed", symbol: "n", unit: "RPM", precision: 0, primary: true },
     { key: "syncSpeedDrive", label: "Synchronous Speed", symbol: "n_s", unit: "RPM", precision: 0 },
     { key: "actualSpeedLine", label: "Speed at Line Frequency", symbol: "n_rated", unit: "RPM", precision: 0 },
     { key: "torqueDerating", label: "Available Torque", symbol: "T_%", unit: "%", precision: 1 },
@@ -33870,8 +38684,18 @@ var vfdMotorSpeed = {
       { symbol: "n_s", description: "Synchronous speed", unit: "RPM" },
       { symbol: "s", description: "Slip (typically 0.02–0.05)", unit: "" },
       { symbol: "n", description: "Actual rotor speed", unit: "RPM" }
+    ],
+    substitution: [
+      { symbol: "n_s", expression: "120 × {driveFrequency} / {poles}", output: "syncSpeedDrive" },
+      { symbol: "n", expression: "n_s × (1 − {ratedSlip})", output: "actualSpeedDrive" }
     ]
   },
+  sweep: { input: "driveFrequency", range: [5, 120], scale: "linear" },
+  examples: [
+    { id: "pump-4p-45hz", label: "4-pole 60 Hz pump slowed to 45 Hz", values: { poles: 4, lineFrequency: 60, driveFrequency: 45, ratedSlip: 3 } },
+    { id: "fan-2p-30hz", label: "2-pole 50 Hz fan at 30 Hz", values: { poles: 2, lineFrequency: 50, driveFrequency: 30, ratedSlip: 3 } },
+    { id: "spindle-2p-400hz", label: "2-pole spindle on a 400 Hz drive", values: { poles: 2, lineFrequency: 50, driveFrequency: 400, ratedSlip: 2 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["induction-motor-slip", "motor-efficiency", "dc-motor-speed", "bldc-motor"]
 };
@@ -33940,10 +38764,20 @@ var voltageDrop = {
     { key: "current", label: "Load Current", symbol: "I", unit: "A", defaultValue: 15, min: 0.1, max: 1e3, step: 0.1 },
     { key: "wireGauge", label: "Wire Gauge (AWG)", symbol: "AWG", unit: "", defaultValue: 12, min: 0, max: 24, step: 2, tooltip: "12 AWG typical for 20A circuits" },
     { key: "cableLength", label: "One-Way Distance", symbol: "d", unit: "m", defaultValue: 30, min: 0.5, max: 5e3, step: 0.5, tooltip: "Distance from panel to load (not round-trip)" },
-    { key: "conductorType", label: "Conductor (0=Cu, 1=Al)", symbol: "", unit: "", defaultValue: 0, min: 0, max: 1, step: 1, tooltip: "0 = Copper, 1 = Aluminum" }
+    {
+      key: "conductorType",
+      label: "Conductor",
+      symbol: "",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      options: [{ value: 0, label: "Copper" }, { value: 1, label: "Aluminum" }]
+    }
   ],
   outputs: [
-    { key: "voltageDrop", label: "Voltage Drop", symbol: "V_drop", unit: "V", precision: 2 },
+    { key: "voltageDrop", label: "Voltage Drop", symbol: "V_drop", unit: "V", precision: 2, primary: true },
     { key: "voltageDropPercent", label: "Voltage Drop", symbol: "V_%", unit: "%", precision: 2 },
     { key: "voltageAtLoad", label: "Voltage at Load", symbol: "V_load", unit: "V", precision: 2 },
     { key: "powerLoss", label: "Cable Power Loss", symbol: "P_loss", unit: "W", precision: 1 },
@@ -33996,6 +38830,8 @@ function calculateCoplanarWaveguide(inputs) {
   const isGrounded = structure >= 0.5;
   const { Z0: impedance, erEff: effectiveDielectric } = isGrounded ? cpwg(traceWidth, gapWidth, substrateHeight, dielectricConst, t) : ungroundedCpw(traceWidth, gapWidth, substrateHeight, dielectricConst, t);
   const propagationDelay = Math.sqrt(effectiveDielectric) / C_MM_PER_PS2;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS2 / (frequency * Math.sqrt(effectiveDielectric));
   const zAtGap = (gap) => isGrounded ? cpwg(traceWidth, gap, substrateHeight, dielectricConst, t).Z0 : ungroundedCpw(traceWidth, gap, substrateHeight, dielectricConst, t).Z0;
   let lo = 0.01;
   let hi = 10;
@@ -34024,7 +38860,9 @@ function calculateCoplanarWaveguide(inputs) {
       effectiveDielectric,
       propagationDelay,
       gapFor50,
-      wavelengthAt1GHz: C_MM_PER_PS2 * 1e3 / Math.sqrt(effectiveDielectric)
+      wavelengthAt1GHz: C_MM_PER_PS2 * 1e3 / Math.sqrt(effectiveDielectric),
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -34059,6 +38897,10 @@ var coplanarWaveguide = {
       presets: [
         { label: "Grounded CPW (GCPW)", values: { structure: 1 } },
         { label: "CPW (no backing plane)", values: { structure: 0 } }
+      ],
+      options: [
+        { value: 1, label: "Grounded CPW (GCPW)" },
+        { value: 0, label: "CPW (no backing plane)" }
       ]
     },
     {
@@ -34068,6 +38910,7 @@ var coplanarWaveguide = {
       unit: "mm",
       defaultValue: 1,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -34077,6 +38920,8 @@ var coplanarWaveguide = {
       unit: "mm",
       defaultValue: 0.3,
       min: 0.02,
+      // The range the 50 Ω gap is searched over; synthesis searches it too.
+      max: 10,
       step: 0.01,
       tooltip: "Edge-to-edge spacing between the centre conductor and each side ground"
     },
@@ -34102,14 +38947,8 @@ var coplanarWaveguide = {
       unit: "",
       defaultValue: 3.55,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "Rogers RO4003C (3.55)", values: { dielectricConst: 3.55 } },
-        { label: "Rogers RO4350B (3.66)", values: { dielectricConst: 3.66 } },
-        { label: "FR4 (4.4)", values: { dielectricConst: 4.4 } },
-        { label: "PTFE / RO5880 (2.2)", values: { dielectricConst: 2.2 } },
-        { label: "Alumina 96% (9.6)", values: { dielectricConst: 9.6 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -34124,6 +38963,16 @@ var coplanarWaveguide = {
         { label: "1 oz (35 μm)", values: { copperThickness: 35 } },
         { label: "2 oz (70 μm)", values: { copperThickness: 70 } }
       ]
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
@@ -34160,7 +39009,15 @@ var coplanarWaveguide = {
       symbol: "λg",
       unit: "mm",
       precision: 2
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength at f", symbol: "λg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength at f", symbol: "λg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "gcpw-ro4003c-0-508-mm-50-ohm", label: "GCPW, 50 Ω on 0.508 mm RO4003C", values: { structure: 1, traceWidth: 1, gapWidth: 0.414, substrateHeight: 0.508, dielectricConst: 3.55, copperThickness: 35 } },
+    { id: "gcpw-ro4350b-0-254-mm-50-ohm", label: "GCPW, 50 Ω on 0.254 mm RO4350B", values: { structure: 1, traceWidth: 0.5, gapWidth: 0.266, substrateHeight: 0.254, dielectricConst: 3.66, copperThickness: 35 } },
+    { id: "gcpw-fr4-1-6-mm-50-ohm", label: "GCPW, 50 Ω on a 1.6 mm FR-4 board", values: { structure: 1, traceWidth: 1.5, gapWidth: 0.28, substrateHeight: 1.6, dielectricConst: 4.4, copperThickness: 35 } },
+    { id: "cpw-alumina-0-635-mm-50-ohm", label: "CPW, 50 Ω on 0.635 mm alumina, 3 µm thin film", values: { structure: 0, traceWidth: 0.1, gapWidth: 0.048, substrateHeight: 0.635, dielectricConst: 9.9, copperThickness: 3 } }
   ],
   calculate: calculateCoplanarWaveguide,
   formula: {
@@ -34214,6 +39071,16 @@ var coplanarWaveguide = {
     }
   ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "cpw",
+      roles: { w: "traceWidth", g: "gapWidth", h: "substrateHeight", t: "copperThickness", er: "dielectricConst" },
+      variant: { input: "structure", byValue: { 1: "grounded", 0: "ungrounded" } }
+    },
+    synthesis: [{ output: "impedance", solveFor: ["gapWidth", "traceWidth"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "gapWidth", y: "impedance", range: [0.05, 2], scale: "log" }
+  },
   relatedCalculators: [
     "microstrip-impedance",
     "controlled-impedance",
@@ -34282,6 +39149,8 @@ function calculateAsymmetricStripline(inputs) {
     t
   );
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS3;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS3 / (frequency * Math.sqrt(dielectricConst));
   const asymmetryRatio = h2 / h1;
   const offsetPenalty = centredImpedance > 0 ? (impedance - centredImpedance) / centredImpedance * 100 : 0;
   if (h2 < h1) {
@@ -34307,7 +39176,9 @@ function calculateAsymmetricStripline(inputs) {
       offsetPenalty,
       propagationDelay,
       planeSpacing,
-      asymmetryRatio
+      asymmetryRatio,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -34335,6 +39206,7 @@ var asymmetricStriplineCalc = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -34344,6 +39216,7 @@ var asymmetricStriplineCalc = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 5,
       step: 0.01,
       tooltip: "Dielectric thickness between the trace and the closer reference plane"
     },
@@ -34378,13 +39251,18 @@ var asymmetricStriplineCalc = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
-        { label: "PTFE (2.2)", values: { dielectricConst: 2.2 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
@@ -34410,6 +39288,7 @@ var asymmetricStriplineCalc = {
     },
     {
       key: "offsetPenalty",
+      signed: "explicit",
       label: "Impedance Shift from Offset",
       symbol: "ΔZ",
       unit: "%",
@@ -34429,7 +39308,14 @@ var asymmetricStriplineCalc = {
       unit: "mm",
       precision: 3
     },
-    { key: "asymmetryRatio", label: "Asymmetry Ratio", symbol: "h₂/h₁", unit: "", precision: 2 }
+    { key: "asymmetryRatio", label: "Asymmetry Ratio", symbol: "h₂/h₁", unit: "", precision: 2 },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "λg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "λg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "fr4-0-15-0-45-mm-50-ohm", label: "50 Ω, 0.15 mm prepreg and 0.45 mm core, FR-4", values: { traceWidth: 0.165, heightToNearPlane: 0.15, heightToFarPlane: 0.45, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "fr4-0-2-0-6-mm-1-oz-50-ohm", label: "50 Ω, 0.2 mm and 0.6 mm, 1 oz copper, FR-4", values: { traceWidth: 0.206, heightToNearPlane: 0.2, heightToFarPlane: 0.6, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "centred-0-3-mm-50-ohm", label: "50 Ω centred, 0.3 mm each side (Cohn’s exact case)", values: { traceWidth: 0.233, heightToNearPlane: 0.3, heightToFarPlane: 0.3, copperThickness: 17.5, dielectricConst: 4.4 } }
   ],
   calculate: calculateAsymmetricStripline,
   // What `asymmetricStripline` computes (`striplineNormC` in lib/pcb/impedance),
@@ -34501,6 +39387,12 @@ var asymmetricStriplineCalc = {
     }
   ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "stripline", roles: { w: "traceWidth", h1: "heightToNearPlane", h2: "heightToFarPlane", t: "copperThickness", er: "dielectricConst" } },
+    synthesis: [{ output: "impedance", solveFor: ["traceWidth", "heightToNearPlane"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "impedance", range: [0.03, 2], scale: "log" }
+  },
   relatedCalculators: [
     "controlled-impedance",
     "dual-stripline",
@@ -34628,6 +39520,8 @@ function calculateDualStripline(inputs) {
   );
   const broadsideCoupling = Zeven + Zodd > 0 ? (Zeven - Zodd) / (Zeven + Zodd) * 100 : 0;
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS4;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS4 / (frequency * Math.sqrt(dielectricConst));
   if (broadsideCoupling > 10) {
     warnings.push(
       `Broadside coupling is ${broadsideCoupling.toFixed(1)}% if the layers overlap — route the two signal layers orthogonally`
@@ -34664,7 +39558,9 @@ function calculateDualStripline(inputs) {
       impedanceLayer2,
       layer2Offset: h2,
       propagationDelay,
-      broadsideCoupling
+      broadsideCoupling,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -34692,6 +39588,7 @@ var dualStripline = {
       unit: "mm",
       defaultValue: 0.13,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -34711,6 +39608,7 @@ var dualStripline = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 5,
       step: 0.01
     },
     {
@@ -34742,12 +39640,18 @@ var dualStripline = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedance does not depend on it in this model"
     }
   ],
   outputs: [
@@ -34790,7 +39694,14 @@ var dualStripline = {
       symbol: "t_pd",
       unit: "ps/mm",
       precision: 3
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "λg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "λg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "symmetric-0-8-mm-50-ohm", label: "50 Ω on both layers, planes 0.8 mm apart, FR-4", values: { traceWidth: 0.202, planeSpacing: 0.8, layer1Offset: 0.2, layerSeparation: 0.33, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "uneven-0-8-mm", label: "Uneven layers, 0.2 mm and 0.23 mm to the planes, FR-4", values: { traceWidth: 0.202, planeSpacing: 0.8, layer1Offset: 0.2, layerSeparation: 0.3, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "ro4350b-1-0-mm-50-ohm", label: "50 Ω on both layers, planes 1.0 mm apart, RO4350B", values: { traceWidth: 0.324, planeSpacing: 1, layer1Offset: 0.25, layerSeparation: 0.43, copperThickness: 35, dielectricConst: 3.66 } }
   ],
   calculate: calculateDualStripline,
   formula: {
@@ -34827,6 +39738,18 @@ var dualStripline = {
     reference: 'S. B. Cohn, “Characteristic Impedance of the Shielded-Strip Transmission Line”, IRE Trans. MTT-2, 1954 (each layer, with the off-centre fringing fitted to rftools.io’s 2-D method-of-moments solver); IPC-2141A; E. Bogatin, "Signal and Power Integrity — Simplified", 3rd ed., ch. 11'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "stripline",
+      roles: { w: "traceWidth", b: "planeSpacing", offset: "layer1Offset", sep: "layerSeparation", h2: "layer2Offset", t: "copperThickness", er: "dielectricConst" }
+    },
+    synthesis: [
+      { output: "impedanceLayer1", solveFor: ["traceWidth", "layer1Offset"] },
+      { output: "impedanceLayer2", solveFor: ["traceWidth"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "impedanceLayer1", range: [0.03, 1], scale: "log" }
+  },
   relatedCalculators: [
     "asymmetric-stripline",
     "controlled-impedance",
@@ -34859,6 +39782,9 @@ function calculateBroadsideCoupledPair(inputs) {
   const t = copperThickness / 1e3;
   const isShielded = shielded >= 0.5;
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS5;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS5 / (frequency * Math.sqrt(dielectricConst));
+  const quarterWavelength = guidedWavelength / 4;
   if (isShielded) {
     const heightToPlane = (planeSpacing - traceSeparation - 2 * t) / 2;
     if (heightToPlane <= 0) {
@@ -34897,7 +39823,9 @@ function calculateBroadsideCoupledPair(inputs) {
         commonImpedance: Zcommon,
         uncoupledImpedance,
         heightToPlane,
-        propagationDelay
+        propagationDelay,
+        guidedWavelength,
+        quarterWavelength
       },
       warnings: warnings.length > 0 ? warnings : void 0
     };
@@ -34920,10 +39848,13 @@ function calculateBroadsideCoupledPair(inputs) {
     values: {
       diffImpedance: Zdiff,
       oddImpedance,
-      commonImpedance: 0,
-      uncoupledImpedance: 0,
-      heightToPlane: 0,
-      propagationDelay
+      // Undefined without planes (the warning says so): absent, null in the API, not 0.
+      commonImpedance: NaN,
+      uncoupledImpedance: NaN,
+      heightToPlane: NaN,
+      propagationDelay,
+      guidedWavelength,
+      quarterWavelength
     },
     warnings
   };
@@ -34956,6 +39887,10 @@ var broadsideCoupledPair = {
       presets: [
         { label: "Shielded (between planes)", values: { shielded: 1 } },
         { label: "Unshielded (no planes)", values: { shielded: 0 } }
+      ],
+      options: [
+        { value: 1, label: "Shielded (between planes)" },
+        { value: 0, label: "Unshielded (no planes)" }
       ]
     },
     {
@@ -34965,6 +39900,7 @@ var broadsideCoupledPair = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -34974,6 +39910,7 @@ var broadsideCoupledPair = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.01,
+      max: 5,
       step: 0.01,
       tooltip: "Dielectric thickness between the two stacked traces"
     },
@@ -35007,13 +39944,18 @@ var broadsideCoupledPair = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
-        { label: "Polyimide flex (3.5)", values: { dielectricConst: 3.5 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
@@ -35062,7 +40004,14 @@ var broadsideCoupledPair = {
       symbol: "t_pd",
       unit: "ps/mm",
       precision: 3
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "λg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "λg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "shielded-100-ohm-1-0-mm", label: "100 Ω between planes 1.0 mm apart, FR-4", values: { shielded: 1, traceWidth: 0.15, traceSeparation: 0.3, planeSpacing: 1, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "shielded-90-ohm-0-8-mm", label: "90 Ω between planes 0.8 mm apart, FR-4", values: { shielded: 1, traceWidth: 0.12, traceSeparation: 0.183, planeSpacing: 0.8, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "flex-no-planes-polyimide", label: "Flex with no planes, 0.1 mm traces on 0.1 mm polyimide", values: { shielded: 0, traceWidth: 0.1, traceSeparation: 0.1, copperThickness: 17.5, dielectricConst: 3.4 } }
   ],
   calculate: calculateBroadsideCoupledPair,
   formula: {
@@ -35085,6 +40034,16 @@ var broadsideCoupledPair = {
     reference: 'B. C. Wadell, "Transmission Line Design Handbook", Artech House 1991, §4.5 (broadside-coupled lines)'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "coupled",
+      roles: { w: "traceWidth", sep: "traceSeparation", b: "planeSpacing", h: "heightToPlane", t: "copperThickness", er: "dielectricConst" },
+      variant: { input: "shielded", byValue: { 1: "broadside", 0: "broadside-open" } }
+    },
+    synthesis: [{ output: "diffImpedance", solveFor: ["traceWidth", "traceSeparation"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "diffImpedance", range: [0.03, 1], scale: "log" }
+  },
   relatedCalculators: [
     "edge-coupled-internal-symmetric",
     "edge-coupled-internal-asymmetric",
@@ -35114,6 +40073,7 @@ var broadsideCoupledPair = {
 // src/lib/calculators/signal/rise-time-bandwidth.ts
 var LN9_OVER_2PI = Math.log(9) / (2 * Math.PI);
 var RATIO_20_80_TO_10_90 = Math.log(9) / Math.log(4);
+var riseTimeOf = (tr1090Ps, inputs) => inputs.riseTimeConvention >= 0.5 ? tr1090Ps / RATIO_20_80_TO_10_90 : tr1090Ps;
 function calculateRiseTimeBandwidth(inputs) {
   const { riseTime, riseTimeConvention, clockFrequency } = inputs;
   const warnings = [];
@@ -35128,7 +40088,7 @@ function calculateRiseTimeBandwidth(inputs) {
   const bandwidth3dB = LN9_OVER_2PI / tr / 1e6;
   const kneeFrequency = 0.5 / tr / 1e6;
   const spectralBandwidth = 1 / (Math.PI * tr) / 1e6;
-  const harmonicNumber = clockFrequency > 0 ? kneeFrequency / clockFrequency : 0;
+  const harmonicNumber = clockFrequency > 0 ? kneeFrequency / clockFrequency : NaN;
   if (clockFrequency > 0 && harmonicNumber < 3) {
     warnings.push(
       "Knee frequency is below the 3rd harmonic — edges are slow relative to the clock, so the waveform will look rounded rather than square"
@@ -35197,6 +40157,10 @@ var riseTimeBandwidth = {
       presets: [
         { label: "10–90%", values: { riseTimeConvention: 0 } },
         { label: "20–80%", values: { riseTimeConvention: 1 } }
+      ],
+      options: [
+        { value: 0, label: "10–90%" },
+        { value: 1, label: "20–80%" }
       ]
     },
     {
@@ -35207,7 +40171,7 @@ var riseTimeBandwidth = {
       defaultValue: 100,
       min: 0,
       step: 1,
-      tooltip: "Optional — used to report how many harmonics fall below the knee frequency",
+      tooltip: "Optional — used to report how many harmonics fall below the knee frequency; 0 leaves it out",
       presets: [
         { label: "25 MHz", values: { clockFrequency: 25 } },
         { label: "100 MHz", values: { clockFrequency: 100 } },
@@ -35256,7 +40220,43 @@ var riseTimeBandwidth = {
       precision: 2
     }
   ],
+  examples: [
+    { id: "lvcmos-clock-25-mhz", label: "LVCMOS clock buffer: 1 ns at 25 MHz", values: { riseTime: 1e3, riseTimeConvention: 0, clockFrequency: 25 } },
+    { id: "usb2-high-speed", label: "USB 2.0 high-speed: 500 ps (10–90 %) at 240 MHz", values: { riseTime: 500, riseTimeConvention: 0, clockFrequency: 240 } },
+    { id: "serial-10g-20-80", label: "10 Gb/s serial lane: 30 ps (20–80 %) at 5.16 GHz", values: { riseTime: 30, riseTimeConvention: 1, clockFrequency: 5156.25 } }
+  ],
   calculate: calculateRiseTimeBandwidth,
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: ["riseTime", "riseTime1090", "bandwidth3dB", "kneeFrequency", "spectralBandwidth", "harmonicNumber"],
+      free: ["riseTime"],
+      params: ["riseTimeConvention", "clockFrequency"],
+      // Each frequency is a constant over the 10–90% rise time (MHz·ps = 10⁶).
+      inverse: {
+        riseTime1090: (t, inputs) => riseTimeOf(t, inputs),
+        bandwidth3dB: (f, inputs) => riseTimeOf(LN9_OVER_2PI / (f * 1e6) / 1e-12, inputs),
+        kneeFrequency: (f, inputs) => riseTimeOf(0.5 / (f * 1e6) / 1e-12, inputs),
+        spectralBandwidth: (f, inputs) => riseTimeOf(1 / (Math.PI * f * 1e6) / 1e-12, inputs),
+        // The harmonic number is the knee over the held clock; no clock, no inverse.
+        harmonicNumber: (n, inputs) => riseTimeOf(0.5 / (n * inputs.clockFrequency * 1e6) / 1e-12, inputs)
+      },
+      // The rise time input states no maximum: 1 ps to 100 ns.
+      search: [1, 1e5],
+      picks: { field: "riseTime", values: [35, 100, 150, 500, 1e3] },
+      reference: { field: "riseTime", values: [20, 50, 100, 200, 500, 1e3, 2e3, 5e3] },
+      scales: {
+        axis: { field: "riseTime", range: [10, 1e4], scale: "log" },
+        fields: [
+          { key: "riseTime", ticks: [10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4] },
+          { key: "bandwidth3dB", ticks: [50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4] },
+          { key: "kneeFrequency", ticks: [50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4] },
+          { key: "harmonicNumber", ticks: [1, 3, 5, 10, 30, 100, 300] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "f_knee = 0.5/t_r,  f_3dB = ln(9)/(2π·t_r) ≈ 0.35/t_r",
     latex: "f_{knee} = \\frac{0.5}{t_r},\\qquad f_{3dB} = \\frac{\\ln 9}{2\\pi t_r} \\approx \\frac{0.35}{t_r}",
@@ -35381,6 +40381,10 @@ var criticalTraceLength = {
       presets: [
         { label: "Microstrip (outer layer)", values: { traceType: 0 } },
         { label: "Stripline (inner layer)", values: { traceType: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Microstrip (outer layer)" },
+        { value: 1, label: "Stripline (inner layer)" }
       ]
     },
     {
@@ -35421,6 +40425,10 @@ var criticalTraceLength = {
       presets: [
         { label: "Conservative (t_d < 0.2·t_r)", values: { criterion: 0 } },
         { label: "Permissive (t_r > 3·t_d)", values: { criterion: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Conservative (t_d < 0.2·t_r)" },
+        { value: 1, label: "Permissive (t_r > 3·t_d)" }
       ]
     }
   ],
@@ -35487,8 +40495,27 @@ var criticalTraceLength = {
       'Bogatin gives two thresholds. Keeping the trace delay under 20% of the rise time makes reflections "virtually invisible" — that is k = 5. The looser form asks only that the rise time exceed three times the delay, which is k = 3.',
       "Microstrip carries part of its field in air, so εr_eff is well below εr and the same trace can run noticeably longer than an inner-layer stripline. The microstrip εr_eff here assumes W/h = 2; across a realistic W/h span of 0.5 to 10 the delay varies by about −5% to +7%."
     ],
-    reference: 'E. Bogatin, "Signal and Power Integrity — Simplified", 2nd ed. (20% rule); E. Bogatin, "The Critical Length of a Transmission Line", Polar Instruments'
+    reference: 'E. Bogatin, "Signal and Power Integrity — Simplified", 2nd ed. (20% rule); E. Bogatin, "The Critical Length of a Transmission Line", Polar Instruments',
+    substitution: [
+      { symbol: "εr_eff", expression: "({dielectricConst} + 1)/2 + ({dielectricConst} − 1)/2 × 7^(−½) for microstrip, {dielectricConst} for stripline", output: "effectiveDielectric" },
+      { symbol: "t_pd", expression: "√εr_eff / c", output: "propagationDelay" },
+      { symbol: "L_crit", expression: "{riseTime} / (k × t_pd), k = 5 conservative or 3 permissive", output: "criticalLength" },
+      { symbol: "L/L_crit", expression: "{traceLength} / L_crit", output: "lengthRatio" }
+    ]
   },
+  sweep: {
+    input: "riseTime",
+    range: [10, 5e3],
+    scale: "log",
+    lines: [
+      { id: "trace-length", kind: "limit", label: "Actual trace length", value: (i) => i.traceLength, fails: "below" }
+    ]
+  },
+  examples: [
+    { id: "ddr4-stripline", label: "DDR4 data line, 100 ps edge, FR4 stripline", values: { riseTime: 100, traceType: 1, dielectricConst: 4.2, traceLength: 40, criterion: 0 } },
+    { id: "usb2-microstrip", label: "USB 2.0 high-speed, 500 ps edge, microstrip", values: { riseTime: 500, traceType: 0, dielectricConst: 4.2, traceLength: 80, criterion: 0 } },
+    { id: "slow-cmos-5ns", label: "Slow CMOS, 5 ns edge, microstrip", values: { riseTime: 5e3, traceType: 0, dielectricConst: 4.4, traceLength: 150, criterion: 1 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "rise-time-bandwidth",
@@ -35716,8 +40743,26 @@ var fusingCurrent = {
       "The constant 33 collects copper's density, specific heat, and resistivity for A expressed in circular mils and S in seconds.",
       "Etched traces are trapezoidal rather than rectangular: each sidewall pulls in by t/EF, so the mean width is used for the area."
     ],
-    reference: 'I. M. Onderdonk, as published in E. R. Stauffacher, "Short-time Current Carrying Capacity of Copper Wire", General Electric Review, 1928; IPC-2152 Appendix A'
+    reference: 'I. M. Onderdonk, as published in E. R. Stauffacher, "Short-time Current Carrying Capacity of Copper Wire", General Electric Review, 1928; IPC-2152 Appendix A',
+    substitution: [
+      { symbol: "I_fuse", expression: "A × √(log₁₀((1083 − {ambientTemp}) / (234 + {ambientTemp}) + 1) / (33 × {duration})), A = mean width × thickness in circular mils, from {traceWidth}, {copperThickness} and etch factor {etchFactor}", output: "fusingCurrent" },
+      { symbol: "t_fuse", expression: "(A / {operatingCurrent})² × log₁₀((1083 − {ambientTemp}) / (234 + {ambientTemp}) + 1) / 33", output: "timeToFuse" },
+      { symbol: "k", expression: "I_fuse / {operatingCurrent}", output: "currentMargin" }
+    ]
   },
+  sweep: {
+    input: "traceWidth",
+    range: [0.05, 5],
+    scale: "log",
+    lines: [
+      { id: "operating-current", kind: "limit", label: "Operating current", value: (i) => i.operatingCurrent, fails: "below" }
+    ]
+  },
+  examples: [
+    { id: "signal-0p25-10ms", label: "0.25 mm 1 oz signal trace, 10 ms fault", values: { traceWidth: 0.25, copperThickness: 35, duration: 0.01, ambientTemp: 25, etchFactor: 0, operatingCurrent: 5 } },
+    { id: "power-2mm-1s", label: "2 mm 2 oz power trace, 1 s fault", values: { traceWidth: 2, copperThickness: 70, duration: 1, ambientTemp: 40, etchFactor: 0, operatingCurrent: 20 } },
+    { id: "fine-0p1-1ms", label: "0.1 mm 0.5 oz trace, 1 ms pulse", values: { traceWidth: 0.1, copperThickness: 17.5, duration: 1e-3, ambientTemp: 25, etchFactor: 0, operatingCurrent: 2 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: [
     "trace-width-current",
@@ -35795,11 +40840,11 @@ var lengthUnits = {
     }
   ],
   outputs: [
-    { key: "mil", label: "Mils (thou)", symbol: "mil", unit: "mil", precision: 4 },
-    { key: "micrometer", label: "Micrometres", symbol: "μm", unit: "μm", precision: 3 },
+    { key: "mil", label: "Mils (thou)", symbol: "mil", unit: "mil", precision: 4, primary: true },
+    { key: "micrometer", label: "Micrometres", symbol: "μm", unit: "μm", precision: 3, display: { unit: "μm" } },
     { key: "inch", label: "Inches", symbol: "in", unit: "in", precision: 6 },
     { key: "centimeter", label: "Centimetres", symbol: "cm", unit: "cm", precision: 5 },
-    { key: "meter", label: "Metres", symbol: "m", unit: "m", precision: 6 },
+    { key: "meter", label: "Metres", symbol: "m", unit: "m", precision: 6, display: { unit: "m" } },
     {
       key: "ounceCopperEquivalent",
       label: "Copper Weight Equivalent",
@@ -35810,6 +40855,26 @@ var lengthUnits = {
     }
   ],
   calculate: calculateLengthUnits,
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["millimeter", "mil", "inch", "micrometer", "centimeter", "meter", "ounceCopperEquivalent"],
+      free: ["millimeter"],
+      affine: true,
+      // 1 mil, design-rule trace widths, 62 mil (1.6 mm) board, 0.1" pitch, 1 inch.
+      picks: { field: "mil", values: [1, 5, 10, 62, 100, 1e3] },
+      // 1 mil, 0.1 / 0.2 / 0.5 mm traces, 1 mm, 1.6 mm board, 0.1" pitch, 1 inch.
+      reference: { field: "millimeter", values: [0.0254, 0.1, 0.2, 0.5, 1, 1.6, 2.54, 25.4] },
+      scales: {
+        axis: { field: "millimeter", range: [0.01, 1e3], scale: "log" },
+        fields: [
+          { key: "millimeter", ticks: [0.01, 0.1, 1, 10, 100, 1e3] },
+          { key: "mil", ticks: [1, 10, 100, 1e3, 1e4] },
+          { key: "inch", ticks: [1e-3, 0.01, 0.1, 1, 10] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "1 in = 25.4 mm exactly;  1 mil = 0.0254 mm;  1 mm = 39.3701 mil",
     latex: "1\\,\\text{mil} = \\frac{25.4}{1000}\\,\\text{mm} = 25.4\\,\\mu\\text{m}",
@@ -35839,6 +40904,36 @@ var lengthUnits = {
 };
 
 // src/lib/calculators/pcb/padstack-annular-ring.ts
+var FABRICATION_ALLOWANCE = [0.4, 0.25, 0.2];
+var LEVELS = ["A", "B", "C"];
+var EXTERNAL_RING_2221 = 0.05;
+var CLASS3_RING = { external: 0.05, internal: 0.025 };
+var fmt3 = (v) => String(Number(v.toPrecision(6)));
+var snap = (v) => Number(v.toPrecision(12));
+function landLimit(standard, ipcClass, level, drill, platingMm, fabricationAllowance, pad) {
+  const hole = drill - 2 * platingMm;
+  if (standard === 1) {
+    if (ipcClass !== 3) {
+      return { mm: null, maxDrill: null, rule: "—", clause: "IPC-6012E Table 3-9, Class 2: 90° breakout permitted, no minimum annular ring" };
+    }
+    const ext = 2 * CLASS3_RING.external - 2 * platingMm;
+    const int = 2 * CLASS3_RING.internal;
+    return {
+      mm: snap(drill + Math.max(ext, int) + fabricationAllowance),
+      maxDrill: snap(pad - fabricationAllowance - Math.max(ext, int)),
+      rule: "max(a + 0.100, D + 0.050) + FA",
+      clause: "IPC-6012E Table 3-9, Class 3: annular ring 0.050 mm external (from the finished hole) and 0.025 mm internal (from the drilled hole), after the fabrication allowance FA"
+    };
+  }
+  const L = Math.min(2, Math.max(0, Math.round(level)));
+  const c2 = FABRICATION_ALLOWANCE[L];
+  return {
+    mm: snap(hole + 2 * EXTERNAL_RING_2221 + c2),
+    maxDrill: snap(pad + 2 * platingMm - 2 * EXTERNAL_RING_2221 - c2),
+    rule: `a + 0.100 + ${fmt3(c2)} mm`,
+    clause: `IPC-2221B §9.1.1, land = a + 2b + c: Table 9-2 (external land, supported hole, b = 0.050 mm), Table 9-1 (Level ${LEVELS[L]}, c = ${fmt3(c2)} mm)`
+  };
+}
 var MIN_DRILL_TABLE_9_6 = [
   { maxThickness: 1 - 1e-9, byClass: [0.15, 0.2, 0.25] },
   // < 1.0 mm
@@ -35852,6 +40947,9 @@ var MIN_DRILL_TABLE_9_6 = [
 var LEVEL_B_MAX_ASPECT = 8;
 function calculatePadstack(inputs) {
   const { drillDiameter, platingThickness, fabricationAllowance, ipcClass, boardThickness } = inputs;
+  const standard = inputs.standard ?? 0;
+  const producibilityLevel = inputs.producibilityLevel ?? 1;
+  const padDiameter = inputs.padDiameter ?? 0.65;
   const platingMm = platingThickness / 1e3;
   const finishedHoleDia = drillDiameter - 2 * platingMm;
   const minAnnularExt = 0.05;
@@ -35880,6 +40978,17 @@ function calculatePadstack(inputs) {
   if (finishedHoleDia < 0.1) {
     warnings.push("Finished hole diameter is very small — verify plating capability");
   }
+  const limit = landLimit(standard, ipcClass, producibilityLevel, drillDiameter, platingMm, fabricationAllowance, padDiameter);
+  if (limit.mm === null) {
+    warnings.push("IPC-6012E Class 2 permits 90° breakout and sets no minimum annular ring");
+  }
+  const minLandDiameter = limit.mm ?? NaN;
+  const landPercent = limit.mm === null || padDiameter <= 0 ? NaN : limit.mm / padDiameter * 100;
+  let maxDrillDiameter = limit.maxDrill ?? NaN;
+  if (limit.maxDrill !== null && limit.maxDrill <= 0) {
+    maxDrillDiameter = NaN;
+    warnings.push("No drill complies: the pad is smaller than the land the standard requires for any hole");
+  }
   return {
     values: {
       finishedHoleDia,
@@ -35890,7 +40999,10 @@ function calculatePadstack(inputs) {
       landAreaExt,
       landAreaInt,
       aspectRatio,
-      maxAspect
+      maxAspect,
+      minLandDiameter,
+      landPercent,
+      maxDrillDiameter
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -35947,7 +41059,11 @@ var padstackAnnularRing = {
       defaultValue: 2,
       min: 2,
       max: 3,
-      step: 1
+      step: 1,
+      options: [
+        { value: 2, label: "Class 2" },
+        { value: 3, label: "Class 3" }
+      ]
     },
     {
       key: "boardThickness",
@@ -35957,6 +41073,44 @@ var padstackAnnularRing = {
       defaultValue: 1.6,
       min: 0.2,
       max: 6
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "IPC-2221B" },
+        { value: 1, label: "IPC-6012E" }
+      ],
+      tooltip: "IPC-2221B: the design rule a + 2b + c. IPC-6012E: the Class 3 acceptance ring after the fabrication allowance"
+    },
+    {
+      key: "producibilityLevel",
+      label: "Producibility Level",
+      unit: "",
+      defaultValue: 1,
+      min: 0,
+      max: 2,
+      step: 1,
+      options: [
+        { value: 0, label: "Level A (general)" },
+        { value: 1, label: "Level B (moderate)" },
+        { value: 2, label: "Level C (high)" }
+      ],
+      tooltip: "Sets the IPC-2221B Table 9-1 fabrication allowance c: 0.4, 0.25 or 0.2 mm"
+    },
+    {
+      key: "padDiameter",
+      label: "Pad Diameter",
+      symbol: "D_pad",
+      unit: "mm",
+      defaultValue: 0.65,
+      min: 0.1,
+      max: 10,
+      tooltip: "The land diameter on your board, checked against the minimum land of the chosen standard"
     }
   ],
   outputs: [
@@ -35983,21 +41137,75 @@ var padstackAnnularRing = {
       label: "Level B Aspect Ratio Limit (IPC-2222)",
       unit: ":1",
       tooltip: "IPC-2222 Table 9-4: Level A up to 5:1, Level B 6:1 to 8:1, Level C 9:1 and up; the same at every class"
+    },
+    {
+      key: "minLandDiameter",
+      label: "Minimum Land",
+      symbol: "D_land",
+      unit: "mm",
+      tooltip: "The smallest land the chosen standard allows for this hole: a + 2b + c (IPC-2221B), or the Class 3 ring after the fabrication allowance (IPC-6012E)"
+    },
+    {
+      key: "landPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The minimum land as a percentage of the pad; above 100 % the pad is too small",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "maxDrillDiameter",
+      label: "Compliant Drill",
+      symbol: "D_max",
+      unit: "mm",
+      tooltip: "The largest drill for which this pad still meets the chosen standard"
     }
   ],
+  examples: [
+    { id: "via-0p3-in-0p5-pad", label: "0.3 mm via in a 0.5 mm pad, Level B", values: { drillDiameter: 0.3, padDiameter: 0.5, producibilityLevel: 1 } },
+    { id: "pth-1-mm-in-1p6-pad", label: "1.0 mm component hole in a 1.6 mm pad, Level A", values: { drillDiameter: 1, padDiameter: 1.6, producibilityLevel: 0 } },
+    { id: "class-3-0p25-in-0p4-pad", label: "Class 3 acceptance, 0.25 mm drill in a 0.4 mm pad", values: { drillDiameter: 0.25, padDiameter: 0.4, ipcClass: 3, standard: 1 } },
+    { id: "via-0p2-on-2p4-mm-board", label: "0.2 mm via in a 0.4 mm pad, 2.4 mm board", values: { drillDiameter: 0.2, padDiameter: 0.4, boardThickness: 2.4 } }
+  ],
   calculate: calculatePadstack,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "IPC-2221B, Generic Standard on Printed Board Design (November 2012), §9.1.1 (land = a + 2b + c), Table 9-1 (fabrication allowance by level) and Table 9-2 (minimum annular ring)",
+        1: "IPC-6012E, Qualification and Performance Specification for Rigid Printed Boards (2020), Table 3-9, annular ring by class"
+      }
+    },
+    class: { input: "ipcClass" },
+    value: "padDiameter",
+    limit: "minLandDiameter",
+    limitKind: "minimum",
+    percent: "landPercent",
+    clause: (standard, cls, inputs) => landLimit(standard, cls ?? 2, inputs.producibilityLevel ?? 1, inputs.drillDiameter ?? 0.3, (inputs.platingThickness ?? 25) / 1e3, inputs.fabricationAllowance ?? 0.05, inputs.padDiameter ?? 0.65).clause,
+    rule: (standard, cls, inputs) => landLimit(standard, cls ?? 2, inputs.producibilityLevel ?? 1, inputs.drillDiameter ?? 0.3, (inputs.platingThickness ?? 25) / 1e3, inputs.fabricationAllowance ?? 0.05, inputs.padDiameter ?? 0.65).rule,
+    remedies: [
+      { input: "padDiameter", output: "minLandDiameter", direction: "up" },
+      { input: "drillDiameter", output: "maxDrillDiameter", direction: "down" }
+    ]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
+  assumptions: [
+    { code: "ipc-2221b-base-allowance", text: "The IPC-2221B fabrication allowance is the Table 9-1 base value; its additions for copper heavier than 1 oz/ft² and for boards of more than eight layers are not applied." },
+    { code: "finished-hole-from-drill", text: "The finished hole is the drill diameter less twice the plating thickness, and stands for IPC-2221B's maximum finished hole a." }
+  ],
   formula: {
     primary: "Pad_min = Drill + 2 × Annular_ring_min + Fab_allowance (a fabricator's rule)",
     latex: "D_{pad} = D_{drill} + 2 \\cdot AR_{min} + FA",
     variables: [
       { symbol: "D_pad", description: "Minimum pad diameter (a fabricator's rule)", unit: "mm" },
       { symbol: "D_drill", description: "Drill diameter", unit: "mm" },
-      { symbol: "AR_min", description: "Minimum annular ring (IPC-6012)", unit: "mm" },
+      { symbol: "AR_min", description: "Minimum annular ring (IPC-2221B Table 9-2)", unit: "mm" },
       { symbol: "FA", description: "Fabrication allowance for drill wander", unit: "mm" }
     ],
     derivation: [
-      "IPC-6012E Table 3-9 sets the minimum annular ring for Class 3 at 0.050 mm external, from the finished hole, and 0.025 mm internal, from the drilled hole; Class 2 is held to the same figures here. Fabrication allowance accounts for drill wander.",
+      "IPC-2221B Table 9-2 sets a minimum annular ring of 0.050 mm on external lands and 0.025 mm on internal lands of plated holes. IPC-6012E Table 3-9 accepts Class 3 boards with at least 0.050 mm external (measured from the finished hole) and 0.025 mm internal (measured from the drilled hole); Class 2 permits 90° breakout, and this calculator holds it to the same figures. Fabrication allowance accounts for drill wander.",
       "The minimum pad, drill + 2 × ring + fabrication allowance, is a fabricator's rule. IPC-2221's minimum land is a + 2b + c, with c an allowance of 0.4, 0.25 or 0.2 mm by producibility level A, B or C.",
+      "The standards check compares a pad with IPC-2221B's land rule a + 2b + c, where a is the finished hole, b = 0.050 mm and c is the Table 9-1 fabrication allowance (0.4, 0.25 or 0.2 mm for Levels A, B and C), or with the IPC-6012E Class 3 ring after your fabrication allowance.",
       "Aspect ratio is judged against IPC-2222 Table 9-4, the same at every class: Level A up to 5:1, Level B 6:1 to 8:1, Level C 9:1 and up. Table 9-6 sets the minimum drilled hole by class and board thickness (0.25 mm for Class 2 and 0.3 mm for Class 3 at 1.0–1.6 mm), one class lower when the hole plating exceeds 0.03 mm."
     ],
     reference: "IPC-6012E, Table 3-9; IPC-2222 (February 1998), Tables 9-4 and 9-6; IPC-2221 (February 1998), §9.1.1 and Table 9-1"
@@ -36020,7 +41228,7 @@ var padstackAnnularRing = {
     },
     {
       question: "What is the difference between Class 2 and Class 3?",
-      answer: "Class 2 (dedicated service electronics) allows tangential breakout on internal layers with a minimum 0.025 mm annular ring. Class 3 (high reliability) allows no breakout: 0.050 mm externally and 0.025 mm internally (IPC-6012E Table 3-9)."
+      answer: "Class 2 (dedicated service electronics) accepts up to 90° breakout of the hole from the land, provided the land-to-conductor junction and the minimum spacing are kept. Class 3 (high reliability) accepts no breakout: at least 0.050 mm of ring on external layers and 0.025 mm on internal layers."
     },
     {
       question: "What does fabrication allowance account for?",
@@ -36030,10 +41238,29 @@ var padstackAnnularRing = {
 };
 
 // src/lib/calculators/pcb/bga-land-pad.ts
+function bgaLand(ballType, ball) {
+  const nonCollapsing = ballType === 1;
+  const row = ball >= 0.55 ? 0 : ball >= 0.25 ? 1 : 2;
+  const band2 = ["balls of 0.55 mm and above", "balls of 0.25–0.50 mm", "balls below 0.25 mm"][row];
+  const percent = nonCollapsing ? [15, 10, 5][row] : [25, 20, 15][row];
+  const factor = nonCollapsing ? 1 + percent / 100 : 1 - percent / 100;
+  const tolerance = ball >= 0.35 ? 0.05 : null;
+  const kind = nonCollapsing ? "non-collapsing" : "collapsing";
+  return {
+    nominal: Number((ball * factor).toPrecision(12)),
+    // 0.6 × 0.75 is 0.45, not 0.44999999999999996
+    percent,
+    tolerance,
+    rule: tolerance === null ? `${factor} × ball` : `${factor} × ball ± 0.05 mm`,
+    clause: `IPC-7351B BGA land, ${kind} balls: ${percent} % ${nonCollapsing ? "larger" : "smaller"} than the ball for ${band2}${tolerance === null ? "" : ", land variation ±0.05 mm"}`
+  };
+}
 function calculateBgaLand(inputs) {
-  const { ballPitch, ballDiameter, densityLevel, solderMaskDefined, viaInPad } = inputs;
-  const factor = densityLevel === 0 ? 1 : densityLevel === 1 ? 0.9 : 0.8;
-  const padDia = Math.round(ballDiameter * factor * 20) / 20;
+  const { ballPitch, ballDiameter, solderMaskDefined, viaInPad } = inputs;
+  const ballType = inputs.ballType ?? 0;
+  const landDiameter = inputs.landDiameter ?? 0.48;
+  const land = bgaLand(ballType, ballDiameter);
+  const padDia = Math.round(land.nominal * 20) / 20;
   const isSMD = solderMaskDefined >= 0.5;
   const maskOpening = isSMD ? padDia - 0.1 : padDia + 0.1;
   const maxViaDrill = viaInPad >= 0.5 ? padDia - 0.2 : 0;
@@ -36055,6 +41282,14 @@ function calculateBgaLand(inputs) {
   if (maxViaDrill > 0 && maxViaDrill < 0.1) {
     warnings.push("Via drill for via-in-pad is below 0.1 mm — check fab capability");
   }
+  const ipcLand = land.nominal;
+  const landDeviation = Math.abs(landDiameter - ipcLand);
+  const landTolerance = land.tolerance ?? NaN;
+  const landPercent = land.tolerance === null ? NaN : landDeviation / land.tolerance * 100;
+  const compliantLand = land.tolerance === null ? NaN : Number((landDiameter >= ipcLand ? ipcLand + land.tolerance : ipcLand - land.tolerance).toPrecision(12));
+  if (land.tolerance === null) {
+    warnings.push("IPC-7351B narrows the land variation for balls below 0.35 mm; it is not checked here");
+  }
   return {
     values: {
       padDia,
@@ -36064,17 +41299,23 @@ function calculateBgaLand(inputs) {
       escapeRoutes,
       maxTraceWidth,
       stencilAperture,
-      padToPadGap
+      padToPadGap,
+      ipcLand,
+      landDeviation,
+      landTolerance,
+      landPercent,
+      compliantLand
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
 }
+var IPC_7351B = "IPC-7351B, Generic Requirements for Surface Mount Design and Land Pattern Standard (June 2010), BGA land table";
 var bgaLandPad = {
   slug: "bga-land-pad",
   title: "BGA Land Pad Calculator",
   shortTitle: "BGA Land Pad",
   category: "pcb",
-  description: "Calculate BGA land pad diameter, solder mask opening, and escape routing per IPC-7351B density levels.",
+  description: "Calculate BGA land pad diameter, solder mask opening, and escape routing per IPC-7351B, which sizes the land by ball diameter.",
   keywords: [
     "BGA",
     "ball grid array",
@@ -36105,54 +41346,142 @@ var bgaLandPad = {
       max: 0.89
     },
     {
-      key: "densityLevel",
-      label: "Density Level (0=Most, 1=Nominal, 2=Least)",
-      unit: "",
-      defaultValue: 1,
-      min: 0,
-      max: 2,
-      step: 1
-    },
-    {
       key: "solderMaskDefined",
-      label: "Solder Mask Defined (0=NSMD, 1=SMD)",
+      label: "Solder Mask Defined",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 1,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "No (NSMD)" },
+        { value: 1, label: "Yes (SMD)" }
+      ]
     },
     {
       key: "viaInPad",
-      label: "Via-in-Pad (0=No, 1=Yes)",
+      label: "Via-in-Pad",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 1,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "No" },
+        { value: 1, label: "Yes" }
+      ]
+    },
+    {
+      key: "ballType",
+      label: "Ball Type",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Collapsing" },
+        { value: 1, label: "Non-collapsing" }
+      ],
+      tooltip: "Collapsing balls (most BGAs) take a land smaller than the ball; non-collapsing balls one larger"
+    },
+    {
+      key: "landDiameter",
+      label: "Land Diameter",
+      symbol: "D_land",
+      unit: "mm",
+      defaultValue: 0.48,
+      min: 0.05,
+      max: 1.5,
+      tooltip: "The land diameter on your board, checked against the IPC-7351B land for the ball"
     }
   ],
+  // IPC-7351B applies no density level to a BGA land (site-redesign W5); a
+  // request that sends it is answered as before, the value ignored.
+  retiredInputs: [{ key: "densityLevel", label: "Density Level (0=Most, 1=Nominal, 2=Least)", retired: "2026-10-06" }],
   outputs: [
     { key: "padDia", label: "Pad Diameter", unit: "mm", primary: true },
     { key: "maskOpening", label: "Solder Mask Opening", unit: "mm" },
     { key: "maxViaDrill", label: "Max Via Drill (via-in-pad)", unit: "mm" },
     { key: "channelWidth", label: "Channel Width", unit: "mm" },
-    { key: "escapeRoutes", label: "Escape Routes per Channel", unit: "" },
+    { key: "escapeRoutes", label: "Escape Routes per Channel", unit: "", display: { integer: true } },
     { key: "maxTraceWidth", label: "Max Trace Width in Channel", unit: "mm" },
     { key: "stencilAperture", label: "Stencil Aperture", unit: "mm" },
-    { key: "padToPadGap", label: "Pad-to-Pad Gap", unit: "mm" }
+    { key: "padToPadGap", label: "Pad-to-Pad Gap", unit: "mm" },
+    {
+      key: "ipcLand",
+      label: "IPC-7351B Nominal Land",
+      symbol: "D_nom",
+      unit: "mm",
+      precision: 4,
+      tooltip: "The ball diameter less 25, 20 or 15 % (collapsing) or plus 15, 10 or 5 % (non-collapsing), by ball size"
+    },
+    {
+      key: "landDeviation",
+      label: "Land Deviation",
+      symbol: "ΔD",
+      unit: "mm",
+      precision: 4,
+      tooltip: "How far your land is from the IPC-7351B nominal land, either way"
+    },
+    {
+      key: "landTolerance",
+      label: "Land Variation",
+      unit: "mm",
+      precision: 3,
+      tooltip: "The IPC-7351B land variation either side of the nominal land"
+    },
+    {
+      key: "landPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The deviation as a percentage of the land variation; above 100 % the land is outside the IPC-7351B range",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "compliantLand",
+      label: "Compliant Land",
+      unit: "mm",
+      precision: 4,
+      tooltip: "The nearer edge of the IPC-7351B land range: the nominal land plus the variation at or above it, minus it below"
+    }
+  ],
+  examples: [
+    { id: "bga-1p0-0p6-ball", label: "1.0 mm pitch, 0.6 mm balls, 0.45 mm land", values: { ballPitch: 1, ballDiameter: 0.6, landDiameter: 0.45 } },
+    { id: "bga-1p0-0p6-ball-old-land", label: "1.0 mm pitch, 0.6 mm balls on an old 0.55 mm land", values: { ballPitch: 1, ballDiameter: 0.6, landDiameter: 0.55 } },
+    { id: "bga-0p8-0p45-ball", label: "0.8 mm pitch, 0.45 mm balls, 0.40 mm land", values: { ballPitch: 0.8, ballDiameter: 0.45, landDiameter: 0.4 } },
+    { id: "cbga-1p27-0p89-ball", label: "Ceramic BGA, 0.89 mm non-collapsing balls at 1.27 mm, 0.89 mm land", values: { ballPitch: 1.27, ballDiameter: 0.89, ballType: 1, landDiameter: 0.89 } }
   ],
   calculate: calculateBgaLand,
+  // One standard, so its two land tables are the selector, and an option input needs two options.
+  standards: {
+    standard: {
+      input: "ballType",
+      sources: {
+        0: `${IPC_7351B}, collapsing balls: 25 %, 20 % and 15 % reduction by ball diameter, land variation ±0.05 mm`,
+        1: `${IPC_7351B}, non-collapsing balls: 15 %, 10 % and 5 % increase by ball diameter, land variation ±0.05 mm`
+      }
+    },
+    value: "landDeviation",
+    limit: "landTolerance",
+    percent: "landPercent",
+    clause: (standard, _cls, inputs) => bgaLand(standard, inputs.ballDiameter ?? 0.6).clause,
+    rule: (standard, _cls, inputs) => bgaLand(standard, inputs.ballDiameter ?? 0.6).rule,
+    remedies: [
+      { input: "landDiameter", output: "compliantLand", direction: "nearest" }
+    ],
+    chart: { x: "landDiameter", range: [0.1, 1.2] }
+  },
   formula: {
-    primary: "Pad = Ball_dia × Factor (rounded to 0.05 mm)",
-    latex: "D_{pad} = \\text{round}_{0.05}(D_{ball} \\times k)",
+    primary: "Pad = Ball_dia × (1 − r), r by ball size (rounded to 0.05 mm)",
+    latex: "D_{pad} = \\text{round}_{0.05}(D_{ball} \\times (1 - r))",
     variables: [
       { symbol: "D_pad", description: "Pad diameter", unit: "mm" },
       { symbol: "D_ball", description: "Ball diameter", unit: "mm" },
-      { symbol: "k", description: "Density factor (1.0/0.9/0.8)", unit: "" }
+      { symbol: "r", description: "IPC-7351B land reduction: 25 % (ball ≥ 0.55 mm), 20 % (0.25–0.50 mm), 15 % (smaller)", unit: "" }
     ],
     derivation: [
-      "IPC-7351B specifies land diameter as a fraction of ball diameter: 100% (most land), 90% (nominal), 80% (least land). NSMD mask opening adds 0.1 mm clearance; SMD subtracts 0.1 mm overlap."
+      "IPC-7351B sizes a BGA land from the nominal ball diameter: collapsing balls take a land 25 % smaller than the ball for balls of 0.55 mm and above, 20 % for 0.25–0.50 mm and 15 % below; non-collapsing balls take one 15 %, 10 % or 5 % larger. The land variation is ±0.05 mm. NSMD mask opening adds 0.1 mm clearance; SMD subtracts 0.1 mm overlap."
     ]
   },
   visualization: { type: "none" },
@@ -36183,23 +41512,24 @@ var bgaLandPad = {
 
 // src/lib/calculators/pcb/minimum-conductor-spacing.ts
 var VOLTAGE_ROWS = [15, 30, 50, 100, 150, 170, 250, 300, 500];
+var ROW_LABELS = ["0–15 V", "16–30 V", "31–50 V", "51–100 V", "101–150 V", "151–170 V", "171–250 V", "251–300 V", "301–500 V"];
 var SPACING_COLUMNS = {
-  B1: { rows: [0.05, 0.05, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.25], perVolt: 25e-4 },
-  // internal conductors
-  B2: { rows: [0.1, 0.1, 0.6, 0.6, 0.6, 1.25, 1.25, 1.25, 2.5], perVolt: 5e-3 },
-  // external, uncoated, sea level to 3,050 m
-  B3: { rows: [0.1, 0.1, 0.6, 1.5, 3.2, 3.2, 6.4, 12.5, 12.5], perVolt: 0.025 },
-  // external, uncoated, over 3,050 m
-  B4: { rows: [0.05, 0.05, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8], perVolt: 305e-5 },
-  // external, permanent polymer coating
-  A5: { rows: [0.13, 0.13, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8], perVolt: 305e-5 }
-  // external, conformal coating over assembly
+  B1: { rows: [0.05, 0.05, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.25], perVolt: 25e-4, name: "internal conductors" },
+  B2: { rows: [0.1, 0.1, 0.6, 0.6, 0.6, 1.25, 1.25, 1.25, 2.5], perVolt: 5e-3, name: "external conductors, uncoated, sea level to 3,050 m" },
+  B3: { rows: [0.1, 0.1, 0.6, 1.5, 3.2, 3.2, 6.4, 12.5, 12.5], perVolt: 0.025, name: "external conductors, uncoated, over 3,050 m" },
+  B4: { rows: [0.05, 0.05, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8], perVolt: 305e-5, name: "external conductors, permanent polymer coating" },
+  A5: { rows: [0.13, 0.13, 0.13, 0.13, 0.4, 0.4, 0.4, 0.4, 0.8], perVolt: 305e-5, name: "external conductors, conformal coating over assembly" },
+  A6: { rows: [0.13, 0.25, 0.4, 0.5, 0.8, 0.8, 0.8, 0.8, 1.5], perVolt: 305e-5, name: "external component lead/termination, uncoated, sea level to 3,050 m" },
+  A7: { rows: [0.13, 0.13, 0.13, 0.13, 0.4, 0.4, 0.4, 0.8, 0.8], perVolt: 305e-5, name: "external component lead/termination, conformal coating" }
 };
-var CONDITION_COLUMNS = ["B1", "B2", "B4", "A5"];
+var CONDITION_COLUMNS = ["B1", "B2", "B4", "A5", "A6", "A7"];
 var ALTITUDE_LIMIT_M = 3050;
+var fmt4 = (v) => String(Number(v.toPrecision(6)));
 function spacingColumn(condition, altitude) {
   const col = CONDITION_COLUMNS[Math.round(condition)] ?? "B2";
-  return altitude > ALTITUDE_LIMIT_M && col === "B2" ? "B3" : col;
+  if (altitude > ALTITUDE_LIMIT_M && col === "B2") return "B3";
+  if (altitude > ALTITUDE_LIMIT_M && col === "A6") return null;
+  return col;
 }
 function columnSpacing(col, voltage) {
   const { rows, perVolt } = SPACING_COLUMNS[col];
@@ -36207,16 +41537,53 @@ function columnSpacing(col, voltage) {
   const i = VOLTAGE_ROWS.findIndex((top) => voltage <= top);
   return rows[i < 0 ? 8 : i];
 }
+function columnMaxVoltage(col, s) {
+  const { rows, perVolt } = SPACING_COLUMNS[col];
+  if (s >= rows[8]) return 500 + (s - rows[8]) / perVolt;
+  let v = NaN;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i] <= s) v = VOLTAGE_ROWS[i];
+    else break;
+  }
+  return v;
+}
+function conductorSpacingLimit(condition, voltage, altitude) {
+  const col = spacingColumn(condition, altitude);
+  if (col === null) {
+    return { mm: null, rule: "—", clause: "IPC-2221B Table 6-1, A6 (external component lead/termination, uncoated): sea level to 3,050 m only" };
+  }
+  const { rows, perVolt, name } = SPACING_COLUMNS[col];
+  if (voltage > 500) {
+    return {
+      mm: columnSpacing(col, voltage),
+      rule: `${fmt4(rows[8])} mm + ${fmt4(perVolt)} mm/V above 500 V`,
+      clause: `IPC-2221B Table 6-1 and §6.3, ${col} (${name}), above 500 V`
+    };
+  }
+  const i = VOLTAGE_ROWS.findIndex((top) => voltage <= top);
+  return { mm: rows[i], rule: `${fmt4(rows[i])} mm`, clause: `IPC-2221B Table 6-1, ${col} (${name}), ${ROW_LABELS[i]}` };
+}
 function calculateSpacing(inputs) {
   const { voltage, condition, altitude } = inputs;
+  const conductorSpacing = inputs.conductorSpacing ?? 0.8;
   const col = spacingColumn(condition, altitude);
-  const spacing = columnSpacing(col, voltage);
-  const seaLevel = columnSpacing(CONDITION_COLUMNS[Math.round(condition)] ?? "B2", voltage);
-  const altitudeFactor = spacing / seaLevel;
+  const warnings = [];
+  if (col === null) {
+    warnings.push("IPC-2221B gives A6 (uncoated component leads) only from sea level to 3,050 m; it sets no spacing above that");
+  }
+  const spacing = col === null ? NaN : columnSpacing(col, voltage);
+  const seaLevel = col === null ? NaN : columnSpacing(CONDITION_COLUMNS[Math.round(condition)] ?? "B2", voltage);
+  const altitudeFactor = col === null ? NaN : spacing / seaLevel;
   const spacingMils = spacing / 0.0254;
   const spacingB1 = columnSpacing("B1", voltage);
   const spacingB2 = columnSpacing("B2", voltage);
   const spacingB3 = columnSpacing("B3", voltage);
+  const spacingB4 = columnSpacing("B4", voltage);
+  const spacingPercent = col === null || conductorSpacing <= 0 ? NaN : spacing / conductorSpacing * 100;
+  const maxVoltage = col === null ? NaN : columnMaxVoltage(col, conductorSpacing);
+  if (col !== null && Number.isNaN(maxVoltage)) {
+    warnings.push(`No voltage complies: ${fmt4(conductorSpacing)} mm is below the smallest spacing IPC-2221B Table 6-1 gives in column ${col} (${fmt4(SPACING_COLUMNS[col].rows[0])} mm)`);
+  }
   return {
     values: {
       spacing,
@@ -36224,11 +41591,15 @@ function calculateSpacing(inputs) {
       altitudeFactor,
       spacingB1,
       spacingB2,
-      spacingB3
+      spacingB3,
+      spacingB4,
+      spacingPercent,
+      maxVoltage
     },
-    warnings: void 0
+    ...warnings.length ? { warnings } : {}
   };
 }
+var SOURCE = "IPC-2221B (November 2012), Table 6-1";
 var minimumConductorSpacing = {
   slug: "minimum-conductor-spacing",
   title: "Minimum Conductor Spacing Calculator",
@@ -36257,12 +41628,21 @@ var minimumConductorSpacing = {
     },
     {
       key: "condition",
-      label: "Condition (0=B1 Internal, 1=B2 Ext Uncoated (B3 above 3,050 m), 2=B4 Polymer Coated, 3=A5 Conformal Coated)",
+      label: "Condition",
       unit: "",
       defaultValue: 1,
       min: 0,
-      max: 3,
-      step: 1
+      max: 5,
+      step: 1,
+      options: [
+        { value: 0, label: "B1 Internal" },
+        { value: 1, label: "B2 External, uncoated" },
+        { value: 2, label: "B4 Polymer coated" },
+        { value: 3, label: "A5 Conformal coated" },
+        { value: 4, label: "A6 Leads, uncoated" },
+        { value: 5, label: "A7 Leads, coated" }
+      ],
+      tooltip: "The IPC-2221B Table 6-1 column; uncoated external conductors above 3,050 m take column B3"
     },
     {
       key: "altitude",
@@ -36272,6 +41652,16 @@ var minimumConductorSpacing = {
       defaultValue: 0,
       min: 0,
       max: 3e4
+    },
+    {
+      key: "conductorSpacing",
+      label: "Conductor Spacing",
+      symbol: "s",
+      unit: "mm",
+      defaultValue: 0.8,
+      min: 0.01,
+      max: 50,
+      tooltip: "The spacing between the two conductors on your board, checked against the IPC-2221B minimum"
     }
   ],
   outputs: [
@@ -36280,11 +41670,60 @@ var minimumConductorSpacing = {
     { key: "altitudeFactor", label: "Altitude Derating Factor", unit: "×", tooltip: "The applied spacing over its sea-level value: B3/B2 for an uncoated board above 3,050 m, 1 otherwise" },
     { key: "spacingB1", label: "B1 (Internal)", unit: "mm" },
     { key: "spacingB2", label: "B2 (External Uncoated, to 3,050 m)", unit: "mm" },
-    { key: "spacingB3", label: "B3 (External Uncoated, above 3,050 m)", unit: "mm" }
+    { key: "spacingB3", label: "B3 (External Uncoated, above 3,050 m)", unit: "mm" },
+    { key: "spacingB4", label: "B4 (Polymer Coated)", unit: "mm", tooltip: "Column B4: external conductors with a permanent polymer coating (solder resist)" },
+    {
+      key: "spacingPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The minimum spacing as a percentage of the spacing on the board; above 100 % the board does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "maxVoltage",
+      label: "Compliant Voltage",
+      symbol: "V_max",
+      unit: "V",
+      precision: 1,
+      tooltip: "The highest voltage at which the spacing on the board meets the IPC-2221B minimum for this condition"
+    }
+  ],
+  examples: [
+    { id: "dc-48v-0p5-mm-outer", label: "48 V DC bus, 0.5 mm, uncoated outer layer", values: { voltage: 48, condition: 1, altitude: 0, conductorSpacing: 0.5 } },
+    { id: "mains-240v-3-mm-outer", label: "240 V mains (340 V peak), 3 mm, uncoated outer layer", values: { voltage: 340, condition: 1, altitude: 0, conductorSpacing: 3 } },
+    { id: "avionics-100v-10-km", label: "100 V at 10,000 m, 1 mm, uncoated outer layer", values: { voltage: 100, condition: 1, altitude: 1e4, conductorSpacing: 1 } },
+    { id: "internal-1kv-2-mm", label: "1 kV between inner-layer conductors, 2 mm", values: { voltage: 1e3, condition: 0, altitude: 0, conductorSpacing: 2 } }
   ],
   calculate: calculateSpacing,
+  // One standard, so the Table 6-1 column is the selector: each condition is
+  // a column of the table, and an option input needs two options.
+  standards: {
+    standard: {
+      input: "condition",
+      sources: {
+        0: "IPC-2221B, Generic Standard on Printed Board Design (November 2012), Table 6-1 Electrical Conductor Spacing and §6.3 (above 500 V), column B1: internal conductors",
+        1: `${SOURCE}, columns B2 (external conductors, uncoated, sea level to 3,050 m) and B3 (over 3,050 m)`,
+        2: `${SOURCE}, column B4: external conductors with permanent polymer coating`,
+        3: `${SOURCE}, column A5: external conductors with conformal coating over assembly`,
+        4: `${SOURCE}, column A6: external component lead/termination, uncoated, sea level to 3,050 m`,
+        5: `${SOURCE}, column A7: external component lead/termination with conformal coating`
+      }
+    },
+    value: "conductorSpacing",
+    limit: "spacing",
+    limitKind: "minimum",
+    percent: "spacingPercent",
+    clause: (standard, _cls, inputs) => conductorSpacingLimit(standard, inputs.voltage ?? 50, inputs.altitude ?? 0).clause,
+    rule: (standard, _cls, inputs) => conductorSpacingLimit(standard, inputs.voltage ?? 50, inputs.altitude ?? 0).rule,
+    remedies: [
+      { input: "conductorSpacing", output: "spacing", direction: "up" },
+      { input: "voltage", output: "maxVoltage", direction: "down" }
+    ]
+    // No chart: the value judged is an input, so it would be y = x.
+  },
   formula: {
-    primary: "IPC-2221B Table 6-1: the value of the voltage band (no interpolation); above 500 V, d(500 V) + (V − 500)·r",
+    primary: "IPC-2221B Table 6-1: the value of the voltage band (no interpolation); above 500 V, d(500 V) + (V − 500)·r_col",
     latex: "d_{min} = \\text{Table 6-1}\\big(\\text{band}(V),\\ \\text{column}\\big)\\ \\ (V \\le 500\\,\\text{V}),\\qquad d_{min} = d_{500} + (V - 500)\\,r_{col}\\ \\ (V > 500\\,\\text{V})",
     variables: [
       { symbol: "d_min", description: "Minimum conductor spacing", unit: "mm" },
@@ -36294,8 +41733,8 @@ var minimumConductorSpacing = {
     ],
     derivation: [
       "IPC-2221B Table 6-1 rows are voltage bands: 0–15, 16–30, 31–50, 51–100, 101–150, 151–170, 171–250, 251–300 and 301–500 V. A voltage takes its band's value; nothing is interpolated.",
-      "Above 500 V the column's per-volt figure is added to its 500 V value: B1 0.0025, B2 0.005, B3 0.025, B4 and A5 0.00305 mm/V.",
-      "Columns: internal conductors B1; external uncoated B2 from sea level to 3,050 m and B3 above 3,050 m; external with permanent polymer coating (solder resist) B4; external with conformal coating over the assembly A5.",
+      "Above 500 V the column's per-volt figure is added to its 500 V value: B1 0.0025, B2 0.005, B3 0.025, B4, A5, A6 and A7 0.00305 mm/V. So 600 V on B1 is 0.25 + 100 × 0.0025 = 0.50 mm.",
+      "Columns: internal conductors B1; external uncoated B2 from sea level to 3,050 m and B3 above 3,050 m; external with permanent polymer coating (solder resist) B4; external with conformal coating over the assembly A5; uncoated component leads A6, from sea level to 3,050 m only; coated component leads A7.",
       "The values are those of three secondary sources (pcbsync, Altium, trafolo), which agree cell for cell; the standard itself was not checked."
     ],
     reference: "IPC-2221B (2012) Table 6-1 and §6.3, as given by pcbsync, Altium and trafolo (agreeing cell for cell)"
@@ -36310,7 +41749,7 @@ var minimumConductorSpacing = {
     },
     {
       question: "Why does altitude affect spacing?",
-      answer: "Air breakdown voltage decreases at lower pressure (higher altitude). IPC-2221B gives uncoated external conductors two columns: B2 from sea level to 3,050 m (10,000 ft) and B3 above it, which is several times wider. Internal conductors (B1) and coated ones (B4, A5) keep their values."
+      answer: "Air breakdown voltage decreases at lower pressure (higher altitude). IPC-2221B gives uncoated external conductors two columns: B2 from sea level to 3,050 m (10,000 ft) and B3 above it, which is up to ten times wider. Internal conductors (B1) and coated ones (B4, A5) keep their values."
     },
     {
       question: "Should I use peak or RMS voltage?",
@@ -36351,6 +41790,9 @@ function calculateSpiralInductor(inputs) {
   const frequency = inputs.frequency ?? 100;
   if (!(innerDiameter >= 0 && innerDiameter < outerDiameter)) {
     return { values: {}, errors: ["Inner diameter must be at least 0 and smaller than the outer diameter"] };
+  }
+  if (!(outerDiameter > 0 && innerDiameter >= 0 && innerDiameter < outerDiameter)) {
+    return { values: {}, errors: ["The inner diameter must be smaller than the outer diameter"] };
   }
   const dAvg = (outerDiameter + innerDiameter) / 2;
   const fillRatio = (outerDiameter - innerDiameter) / (outerDiameter + innerDiameter);
@@ -36486,12 +41928,18 @@ var planarSpiralInductor = {
     },
     {
       key: "shape",
-      label: "Shape (0=Square, 1=Hex, 2=Octagonal, 3=Circular)",
+      label: "Shape",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 3,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "Square" },
+        { value: 1, label: "Hexagonal" },
+        { value: 2, label: "Octagonal" },
+        { value: 3, label: "Circular" }
+      ]
     },
     {
       key: "frequency",
@@ -36547,6 +41995,12 @@ var planarSpiralInductor = {
     ],
     reference: 'Mohan et al., "Simple Accurate Expressions for Planar Spiral Inductances", IEEE JSSC, vol. 34, no. 10, Oct 1999; Jow & Ghovanloo, "Design and Optimization of Printed Spiral Coils for Efficient Transcutaneous Inductive Power Transmission", IEEE TBCAS, vol. 1, no. 3, pp. 193–202, 2007, as restated in Ashoori et al., IEEE EMBC 2011, eqs. 6–12'
   },
+  examples: [
+    { id: "match-22nh-433mhz", label: "22 nH matching coil for 433 MHz, 3 mm square", values: { outerDiameter: 3, innerDiameter: 0.9886623125791758, turns: 3, traceWidth: 0.15, traceSpacing: 0.15, shape: 0, frequency: 433 } },
+    { id: "square-10mm-5-turns", label: "10 mm square spiral, 5 turns", values: { outerDiameter: 10, innerDiameter: 4, turns: 5, traceWidth: 0.3, traceSpacing: 0.2, shape: 0 } },
+    { id: "octagonal-6mm-3-turns", label: "6 mm octagonal spiral, 3 turns", values: { outerDiameter: 6, innerDiameter: 3.2, turns: 3, traceWidth: 0.25, traceSpacing: 0.2, shape: 2 } },
+    { id: "circular-20mm-8-turns", label: "20 mm circular coil, 8 turns", values: { outerDiameter: 20, innerDiameter: 8, turns: 8, traceWidth: 0.5, traceSpacing: 0.25, shape: 3 } }
+  ],
   assumptions: [
     {
       code: "uncoated-fr4",
@@ -36562,6 +42016,15 @@ var planarSpiralInductor = {
     }
   ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "spiral",
+      roles: { dout: "outerDiameter", din: "innerDiameter", n: "turns", w: "traceWidth", s: "traceSpacing" },
+      variant: { input: "shape", byValue: { 0: "square", 1: "hexagonal", 2: "octagonal", 3: "circular" } }
+    },
+    synthesis: [{ output: "inductance", solveFor: ["turns", "innerDiameter"] }],
+    curve: { x: "turns", y: "inductance", range: [1, 20], scale: "linear" }
+  },
   relatedCalculators: ["lc-resonance", "pcb-trace-inductance", "skin-depth", "controlled-impedance"],
   relatedBlogPosts: ["planar-spiral-inductor-design"],
   faqs: [
@@ -36681,12 +42144,19 @@ var embeddedResistor = {
     },
     {
       key: "material",
-      label: "Material (0=NiP 25Ω, 1=NiP 100Ω, 2=TaN, 3=CrSiO, 4=Carbon)",
+      label: "Material",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 4,
-      step: 1
+      step: 1,
+      options: [
+        { value: 0, label: "NiP 25 Ω/sq (Ohmega-Ply)" },
+        { value: 1, label: "NiP 100 Ω/sq" },
+        { value: 2, label: "TaN (100 Ω/sq)" },
+        { value: 3, label: "CrSiO (1000 Ω/sq)" },
+        { value: 4, label: "Carbon (100 Ω/sq)" }
+      ]
     }
   ],
   outputs: [
@@ -36714,7 +42184,21 @@ var embeddedResistor = {
       "An embedded resistor is a thin resistive film patterned on an inner PCB layer. Resistance equals sheet resistance (Ω/square) times number of squares (length/width). Laser trimming tightens tolerance from ±10-20% to ±1-5%."
     ]
   },
+  examples: [
+    { id: "nip-100-ohm-50mw", label: "100 Ω in 25 Ω/□ NiP, rated 50 mW", values: { targetResistance: 100, sheetResistance: 0, width: 0.7071067809839925, trimAllowance: 10, material: 0 } },
+    { id: "nip-50-ohm-termination", label: "50 Ω termination in 25 Ω/□ NiP, 0.5 mm wide", values: { targetResistance: 50, sheetResistance: 0, width: 0.5, trimAllowance: 10, material: 0 } },
+    { id: "tan-1k-pull-up", label: "1 kΩ pull-up in TaN, 0.3 mm wide", values: { targetResistance: 1e3, sheetResistance: 0, width: 0.3, trimAllowance: 10, material: 2 } },
+    { id: "crsio-10k", label: "10 kΩ in 1000 Ω/□ CrSiO, 0.25 mm wide", values: { targetResistance: 1e4, sheetResistance: 0, width: 0.25, trimAllowance: 10, material: 3 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "film-resistor", roles: { w: "width", len: "length", squares: "numSquares", rs: "sheetResistance", r: "targetResistance" } },
+    synthesis: [
+      { output: "maxPower", solveFor: ["width"] },
+      { output: "length", solveFor: ["width"] }
+    ],
+    curve: { x: "width", y: "maxPower", range: [0.2, 5], scale: "log" }
+  },
   relatedCalculators: ["trace-resistance", "voltage-divider", "attenuator-designer", "skin-depth"],
   relatedBlogPosts: ["embedded-resistors-pcb"],
   faqs: [
@@ -36849,9 +42333,9 @@ var viaVoltageDrop = {
     }
   ],
   outputs: [
-    { key: "rSingleMOhm", label: "Single Via Resistance", unit: "mΩ", primary: true },
+    { key: "rSingleMOhm", label: "Single Via Resistance", unit: "mΩ" },
     { key: "rTotalMOhm", label: "Total Resistance (parallel)", unit: "mΩ" },
-    { key: "vDropMV", label: "Voltage Drop", unit: "mV" },
+    { key: "vDropMV", label: "Voltage Drop", unit: "mV", primary: true },
     { key: "pDissipationMW", label: "Power Dissipation", unit: "mW" },
     { key: "areaMm2", label: "Via Cross-Section", unit: "mm²" },
     {
@@ -36884,7 +42368,18 @@ var viaVoltageDrop = {
     ],
     reference: "Resistance R = ρL/A with ρ₂₀ = 1/58 Ω·mm²/m (IEC 60028); self-heating: Incropera, DeWitt, Bergman & Lavine, Fundamentals of Heat and Mass Transfer, 7th ed., section 3.5 (one-dimensional conduction with uniform generation)"
   },
+  examples: [
+    { id: "single-0p3-1a", label: "One 0.3 mm via at 1 A, 1.6 mm board", values: { drillDiameter: 0.3, platingThickness: 25, viaLength: 1.6, current: 1, temperature: 25, numVias: 1 } },
+    { id: "core-rail-10a-6-vias", label: "10 A core rail, six vias at 70 °C, 2 mV drop", values: { drillDiameter: 0.37521404948435133, platingThickness: 25, viaLength: 1.6, current: 10, temperature: 70, numVias: 6 } },
+    { id: "usb-c-5v-3a-2-vias", label: "USB-C 5 V at 3 A through two vias", values: { drillDiameter: 0.3, platingThickness: 25, viaLength: 1.6, current: 3, temperature: 40, numVias: 2 } },
+    { id: "class-2-plating-2a", label: "IPC Class 2 plating (20 µm), 0.25 mm drill at 2 A", values: { drillDiameter: 0.25, platingThickness: 20, viaLength: 1.6, current: 2, temperature: 25, numVias: 1 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "via", roles: { d: "drillDiameter", plating: "platingThickness", len: "viaLength", n: "numVias" } },
+    synthesis: [{ output: "vDropMV", solveFor: ["drillDiameter", "platingThickness"] }],
+    curve: { x: "drillDiameter", y: "vDropMV", range: [0.15, 1], scale: "linear" }
+  },
   relatedCalculators: ["via-calculator", "via-thermal-resistance", "padstack-annular-ring", "trace-resistance"],
   relatedBlogPosts: ["via-resistance-power-delivery"],
   faqs: [
@@ -36932,6 +42427,41 @@ function calculateRectangularPolar(inputs) {
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
+}
+function nearTurn(deg, current) {
+  const d = deg + 360 * Math.round((current - deg) / 360);
+  return Math.abs(d) <= 360 ? d : deg;
+}
+function rectPolarEdit(field, value, inputs, values) {
+  const rect = (re, im) => ({
+    real: re,
+    imaginary: im,
+    magnitude: Math.hypot(re, im),
+    angleDeg: nearTurn(Math.atan2(im, re) * DEG_PER_RAD, inputs.angleDeg)
+  });
+  const part = (r, x) => Math.abs(x) < 1e-12 * r ? 0 : r * x;
+  const polar = (r, deg) => ({
+    real: part(r, Math.cos(deg / DEG_PER_RAD)),
+    imaginary: part(r, Math.sin(deg / DEG_PER_RAD)),
+    magnitude: r,
+    angleDeg: deg
+  });
+  switch (field) {
+    case "real":
+      return rect(value, values.imaginary);
+    case "imaginary":
+      return rect(values.real, value);
+    case "magnitude":
+      return value >= 0 ? polar(value, values.angleDeg) : null;
+    case "angleDeg":
+      return Math.abs(value) <= 360 ? polar(values.magnitude, value) : null;
+    case "angleRadOut":
+      return polar(values.magnitude, nearTurn(value * DEG_PER_RAD, inputs.angleDeg));
+    case "angleDeg360":
+      return polar(values.magnitude, nearTurn(value, inputs.angleDeg));
+    default:
+      return null;
+  }
 }
 var rectangularPolar = {
   slug: "rectangular-polar",
@@ -37007,7 +42537,42 @@ var rectangularPolar = {
     { key: "realOut", label: "Real Part from r∠θ", symbol: "a", unit: "" },
     { key: "imagOut", label: "Imaginary Part from r∠θ", symbol: "b", unit: "" }
   ],
+  // Each example sets all four inputs, a + jb and r∠θ describing the same
+  // number: the linked page shows both sides, and an example that set only one
+  // pair left the other at the defaults (50 − j25 beside 5∠53.13°).
+  examples: [
+    { id: "rect-3-j4", label: "3 + j4 (magnitude 5)", values: { real: 3, imaginary: 4, magnitude: 5, angleDeg: 53.13010235415598 } },
+    { id: "rect-50-j0", label: "50 + j0 (matched load)", values: { real: 50, imaginary: 0, magnitude: 50, angleDeg: 0 } },
+    { id: "rect-50-minus-j25", label: "50 − j25 (capacitive)", values: { real: 50, imaginary: -25, magnitude: 55.90169943749474, angleDeg: -26.56505117707799 } },
+    { id: "rect-minus-30-j40", label: "−30 + j40 (quadrant II)", values: { real: -30, imaginary: 40, magnitude: 50, angleDeg: 126.86989764584402 } },
+    { id: "rect-0-j1", label: "0 + j1 (pure reactance)", values: { real: 0, imaginary: 1, magnitude: 1, angleDeg: 90 } },
+    { id: "polar-1-0-deg", label: "1 ∠ 0° (unit vector)", values: { real: 1, imaginary: 0, magnitude: 1, angleDeg: 0 } },
+    { id: "polar-0-5-180-deg", label: "0.5 ∠ 180° (Γ real negative)", values: { real: -0.5, imaginary: 0, magnitude: 0.5, angleDeg: 180 } },
+    { id: "polar-100-minus-45-deg", label: "100 ∠ −45°", values: { real: 70.71067811865476, imaginary: -70.71067811865474, magnitude: 100, angleDeg: -45 } }
+  ],
   calculate: calculateRectangularPolar,
+  // C2: a, b, r and θ are the inputs; the angle in radians and in 0…360° are
+  // fields too. The outputs that only restate an input once both sides agree
+  // (|a + jb|, the −180…180° angle, a and b from r∠θ) are not shown twice.
+  linked: {
+    groups: [{
+      id: "values",
+      fields: ["real", "imaginary", "magnitude", "angleDeg", "angleRadOut", "angleDeg360"],
+      free: ["real", "imaginary", "magnitude", "angleDeg"],
+      systems: [["real", "imaginary"], ["magnitude", "angleDeg", "angleRadOut", "angleDeg360"]],
+      edit: (field, value, { inputs, values }) => rectPolarEdit(field, value, inputs, values),
+      picks: { field: "angleDeg", values: [-90, -45, 0, 45, 90, 180] },
+      reference: { field: "angleDeg", values: [0, 30, 45, 60, 90, 120, 135, 180] },
+      scales: {
+        fields: [
+          { key: "magnitude", range: [0.01, 1e3], scale: "log" },
+          { key: "angleDeg", range: [-180, 180], scale: "linear", ticks: [-180, -135, -90, -45, 0, 45, 90, 135, 180] },
+          { key: "angleDeg360", range: [0, 360], scale: "linear", ticks: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+          { key: "angleRadOut", range: [-Math.PI, Math.PI], scale: "linear", ticks: [-3, -2, -1, 0, 1, 2, 3] }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "r = √(a² + b²), θ = atan2(b, a) · 180/π ; a = r·cos θ, b = r·sin θ",
     latex: "r = \\sqrt{a^{2} + b^{2}},\\quad \\theta = \\operatorname{atan2}(b,\\,a) \\qquad a = r\\cos\\theta,\\quad b = r\\sin\\theta",
@@ -37082,11 +42647,14 @@ function calculateFrequencyPpmTolerance(inputs) {
   const warnings = [];
   if (totalPpmWorst > 50) {
     warnings.push(
-      `Worst-case ${totalPpmWorst.toFixed(1)} ppm exceeds the ±50 ppm budget most UART links assume`
+      `Worst-case ${totalPpmWorst.toFixed(1)} ppm exceeds ±50 ppm, the tolerance of 100BASE-TX Ethernet and the Bluetooth LE radio clock`
     );
   }
   if (totalPpmWorst > 100) {
-    warnings.push("Above ±100 ppm — too loose for USB, Ethernet, and most radio reference clocks");
+    warnings.push("Above ±100 ppm — outside every Ethernet clock tolerance and most radio reference clocks");
+  }
+  if (totalPpmWorst > 500) {
+    warnings.push("Above ±500 ppm — outside USB 2.0 high speed (±500 ppm); full speed allows ±2500 ppm");
   }
   if (years > 5 && agingPerYear > 0) {
     warnings.push(
@@ -37107,6 +42675,15 @@ function calculateFrequencyPpmTolerance(inputs) {
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
+}
+var initialOfWorst = (worstPpm, inputs) => worstPpm - inputs.tempStability - inputs.agingPerYear * inputs.years;
+var initialOfDeviation = (deviationHz, inputs) => initialOfWorst(deviationHz * 1e6 / (inputs.nominalFrequency * 1e6), inputs);
+function initialOfRss(rssPpm, inputs) {
+  if (rssPpm < 0) return NaN;
+  const aging = inputs.agingPerYear * inputs.years;
+  const held = inputs.tempStability * inputs.tempStability + aging * aging;
+  const square = rssPpm * rssPpm - held;
+  return square < 0 && square > -1e-12 * held ? 0 : Math.sqrt(square);
 }
 var frequencyPpmTolerance = {
   slug: "frequency-ppm-tolerance",
@@ -37144,7 +42721,7 @@ var frequencyPpmTolerance = {
           values: { nominalFrequency: 8, initialTolerance: 30, tempStability: 20, agingPerYear: 5, years: 5 }
         },
         {
-          label: "25 MHz Ethernet (±50 ppm)",
+          label: "25 MHz Ethernet (±30 ppm)",
           values: { nominalFrequency: 25, initialTolerance: 30, tempStability: 15, agingPerYear: 3, years: 5 }
         },
         {
@@ -37152,7 +42729,7 @@ var frequencyPpmTolerance = {
           values: { nominalFrequency: 26, initialTolerance: 0.5, tempStability: 0.5, agingPerYear: 1, years: 3 }
         },
         {
-          label: "12 MHz USB (±0.25%)",
+          label: "12 MHz USB (±50 ppm)",
           values: { nominalFrequency: 12, initialTolerance: 50, tempStability: 30, agingPerYear: 5, years: 10 }
         }
       ]
@@ -37204,13 +42781,63 @@ var frequencyPpmTolerance = {
     { key: "totalPpmRss", label: "Total Error (RSS)", symbol: "±ppm", unit: "ppm" },
     { key: "agingTotalPpm", label: "Accumulated Aging", symbol: "±ppm", unit: "ppm" },
     { key: "deviationHz", label: "Frequency Deviation", symbol: "±Δf", unit: "Hz" },
-    { key: "fMinHz", label: "Minimum Frequency", symbol: "f_min", unit: "Hz" },
-    { key: "fMaxHz", label: "Maximum Frequency", symbol: "f_max", unit: "Hz" },
+    { key: "fMinHz", label: "Minimum Frequency", symbol: "f_min", unit: "Hz", display: { sig: 9 } },
+    { key: "fMaxHz", label: "Maximum Frequency", symbol: "f_max", unit: "Hz", display: { sig: 9 } },
     { key: "spanHz", label: "Total Frequency Span", symbol: "Δf_pp", unit: "Hz" },
     { key: "driftSecPerDay", label: "Clock Drift", symbol: "", unit: "s/day" },
     { key: "driftMinPerYear", label: "Clock Drift", symbol: "", unit: "min/year" }
   ],
+  examples: [
+    { id: "rtc-32-768-khz", label: "32.768 kHz RTC (±20 ppm)", values: { nominalFrequency: 0.032768, initialTolerance: 20, tempStability: 10, agingPerYear: 3, years: 10 } },
+    { id: "mcu-8-mhz", label: "8 MHz MCU (±30 ppm)", values: { nominalFrequency: 8, initialTolerance: 30, tempStability: 20, agingPerYear: 5, years: 5 } },
+    { id: "ethernet-25-mhz", label: "25 MHz Ethernet (±30 ppm)", values: { nominalFrequency: 25, initialTolerance: 30, tempStability: 15, agingPerYear: 3, years: 5 } },
+    { id: "lte-tcxo-26-mhz", label: "26 MHz LTE TCXO (±0.5 ppm)", values: { nominalFrequency: 26, initialTolerance: 0.5, tempStability: 0.5, agingPerYear: 1, years: 3 } },
+    { id: "usb-12-mhz", label: "12 MHz USB (±50 ppm)", values: { nominalFrequency: 12, initialTolerance: 50, tempStability: 30, agingPerYear: 5, years: 10 } }
+  ],
   calculate: calculateFrequencyPpmTolerance,
+  // ppm ↔ Hz ↔ drift at a held nominal frequency: the initial tolerance moves,
+  // the temperature and aging terms are held (the accumulated aging is theirs
+  // alone, so it is not a field).
+  linked: {
+    groups: [{
+      id: "values",
+      prefixed: true,
+      fields: [
+        "initialTolerance",
+        "totalPpmWorst",
+        "totalPpmRss",
+        "deviationHz",
+        "fMinHz",
+        "fMaxHz",
+        "spanHz",
+        "driftSecPerDay",
+        "driftMinPerYear"
+      ],
+      free: ["initialTolerance"],
+      params: ["nominalFrequency", "tempStability", "agingPerYear", "years"],
+      inverse: {
+        totalPpmWorst: (w, inputs) => initialOfWorst(w, inputs),
+        totalPpmRss: (r, inputs) => initialOfRss(r, inputs),
+        deviationHz: (d, inputs) => initialOfDeviation(d, inputs),
+        fMinHz: (f, inputs) => initialOfDeviation(inputs.nominalFrequency * 1e6 - f, inputs),
+        fMaxHz: (f, inputs) => initialOfDeviation(f - inputs.nominalFrequency * 1e6, inputs),
+        spanHz: (s, inputs) => initialOfDeviation(s / 2, inputs),
+        driftSecPerDay: (d, inputs) => initialOfWorst(d * 1e6 / SECONDS_PER_DAY, inputs),
+        driftMinPerYear: (d, inputs) => initialOfWorst(d * 1e6 / MINUTES_PER_YEAR, inputs)
+      },
+      picks: { field: "initialTolerance", values: [5, 10, 20, 30, 50, 100] },
+      reference: { field: "initialTolerance", values: [1, 5, 10, 20, 30, 50, 100] },
+      scales: {
+        axis: { field: "initialTolerance", range: [0, 100], scale: "linear" },
+        fields: [
+          { key: "initialTolerance" },
+          { key: "totalPpmWorst" },
+          { key: "deviationHz" },
+          { key: "driftSecPerDay" }
+        ]
+      }
+    }]
+  },
   formula: {
     primary: "Δf = f₀ × ppm_total / 10⁶, ppm_total = ppm_init + ppm_temp + ppm_age × years",
     latex: "\\Delta f = f_0 \\cdot \\frac{\\text{ppm}_{\\text{init}} + \\text{ppm}_{\\text{temp}} + \\text{ppm}_{\\text{age}}\\, t}{10^{6}} \\qquad \\text{ppm}_{\\text{RSS}} = \\sqrt{\\text{ppm}_{\\text{init}}^{2} + \\text{ppm}_{\\text{temp}}^{2} + (\\text{ppm}_{\\text{age}} t)^{2}}",
@@ -37351,7 +42978,7 @@ var effectiveDielectricConstant = {
       max: 50,
       presets: [
         { label: "50 Ω on 0.2 mm FR-4", values: { traceWidth: 0.36, dielectricHeight: 0.2, dielectricConst: 4.3 } },
-        { label: "50 Ω on 0.508 mm RO4350B", values: { traceWidth: 1.1, dielectricHeight: 0.508, dielectricConst: 3.48 } },
+        { label: "50 Ω on 0.508 mm RO4350B", values: { traceWidth: 1.065, dielectricHeight: 0.508, dielectricConst: 3.66 } },
         { label: "50 Ω on 0.254 mm RT/duroid 5880", values: { traceWidth: 0.78, dielectricHeight: 0.254, dielectricConst: 2.2 } },
         { label: "Narrow 0.1 mm signal trace", values: { traceWidth: 0.1, dielectricHeight: 0.2, dielectricConst: 4.3 } }
       ]
@@ -37373,14 +43000,8 @@ var effectiveDielectricConstant = {
       unit: "",
       defaultValue: 4.3,
       min: 1,
-      max: 20,
-      presets: [
-        { label: "FR-4 (4.3)", values: { dielectricConst: 4.3 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } },
-        { label: "Rogers RO4003C (3.38)", values: { dielectricConst: 3.38 } },
-        { label: "RT/duroid 5880 (2.2)", values: { dielectricConst: 2.2 } },
-        { label: "Alumina (9.8)", values: { dielectricConst: 9.8 } }
-      ]
+      max: 20
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
     },
     {
       key: "copperThickness",
@@ -37426,6 +43047,13 @@ var effectiveDielectricConstant = {
     { key: "wavelengthMm", label: "Guided Wavelength", symbol: "λg", unit: "mm" },
     { key: "quarterWaveMm", label: "Quarter Wavelength", symbol: "λg/4", unit: "mm" }
   ],
+  examples: [
+    { id: "fr4-0-2-mm-50-ohm", label: "50 Ω on 0.2 mm FR-4", values: { traceWidth: 0.36, dielectricHeight: 0.2, dielectricConst: 4.3 } },
+    // RO4350B at its design Dk, 3.66, the material library's value (3.48 is the process Dk).
+    { id: "ro4350b-0-508-mm-50-ohm", label: "50 Ω on 0.508 mm RO4350B", values: { traceWidth: 1.065, dielectricHeight: 0.508, dielectricConst: 3.66 } },
+    { id: "rt-duroid-5880-50-ohm", label: "50 Ω on 0.254 mm RT/duroid 5880", values: { traceWidth: 0.78, dielectricHeight: 0.254, dielectricConst: 2.2 } },
+    { id: "narrow-0-1-mm-trace", label: "Narrow 0.1 mm signal trace", values: { traceWidth: 0.1, dielectricHeight: 0.2, dielectricConst: 4.3 } }
+  ],
   calculate: calculateEffectiveDielectricConstant,
   formula: {
     primary: "εeff = (εr+1)/2 + ((εr−1)/2)·(1 + 10h/w)^(−a·b)",
@@ -37450,6 +43078,15 @@ var effectiveDielectricConstant = {
     reference: 'E. Hammerstad & Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design", IEEE MTT-S 1980; W. J. Getsinger, "Microstrip Dispersion Model", IEEE Trans. MTT-21, 1973'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "microstrip", roles: { w: "traceWidth", h: "dielectricHeight", t: "copperThickness", er: "dielectricConst" } },
+    synthesis: [
+      { output: "z0Ohm", solveFor: ["traceWidth", "dielectricHeight"] },
+      { output: "erEff", solveFor: ["traceWidth"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "erEff", range: [0.02, 5], scale: "log" }
+  },
   relatedCalculators: [
     "microstrip-impedance",
     "controlled-impedance",
@@ -37529,11 +43166,11 @@ function calculateViaStepResponse(inputs) {
   const inductanceNH = 0.2 * h * (Math.log(4 * h / d) + 0.5);
   const capacitancePF = 0.0554 * er * h * d1 / (d2 - d1);
   const L = inductanceNH * 1e-9;
-  const C9 = capacitancePF * 1e-12;
-  const zViaOhm = Math.sqrt(L / C9);
-  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C9)) / 1e9;
-  const excessC = C9 - L / (z0 * z0);
-  const excessL = L - C9 * z0 * z0;
+  const C10 = capacitancePF * 1e-12;
+  const zViaOhm = Math.sqrt(L / C10);
+  const fResonanceGHz = 1 / (2 * Math.PI * Math.sqrt(L * C10)) / 1e9;
+  const excessC = C10 - L / (z0 * z0);
+  const excessL = L - C10 * z0 * z0;
   const excessCapacitancePF = excessC * 1e12;
   const excessInductanceNH = excessL * 1e9;
   const trIn = riseTime * 1e-12;
@@ -37700,8 +43337,8 @@ var viaStepResponse = {
     { key: "reflectionPercent", label: "Peak Reflection", symbol: "|ρ|", unit: "%" },
     { key: "inductanceNH", label: "Via Inductance", symbol: "L", unit: "nH" },
     { key: "capacitancePF", label: "Via Capacitance", symbol: "C", unit: "pF" },
-    { key: "excessCapacitancePF", label: "Excess Capacitance", symbol: "C_exc", unit: "pF" },
-    { key: "excessInductanceNH", label: "Excess Inductance", symbol: "L_exc", unit: "nH" },
+    { key: "excessCapacitancePF", label: "Excess Capacitance", symbol: "C_exc", unit: "pF", signed: "explicit" },
+    { key: "excessInductanceNH", label: "Excess Inductance", symbol: "L_exc", unit: "nH", signed: "explicit" },
     { key: "zViaOhm", label: "Via Impedance √(L/C)", symbol: "Z_via", unit: "Ω" },
     { key: "fResonanceGHz", label: "LC Self-Resonance", symbol: "f₀", unit: "GHz" },
     { key: "kneeFrequencyGHz", label: "Signal Knee Frequency", symbol: "f_knee", unit: "GHz" }
@@ -37771,6 +43408,12 @@ var RHO_20 = COPPER_RESISTIVITY_20C;
 var ALPHA_CU = 393e-5;
 var K_CU = 385;
 var MIL2_IN_M2 = 254e-7 * 254e-7;
+function microviaChart(standard, conductorClass) {
+  if (standard === 1) {
+    return { k: 0.024, rule: "0.024·ΔT^0.44·(N·A)^0.725", clause: "IPC-2152 (2009) §A.3.4: the vias’ summed cross-section at least the conductor’s, sized on Figure 5-1 (either curve)" };
+  }
+  return conductorClass === 1 ? { k: 0.048, rule: "0.048·ΔT^0.44·(N·A)^0.725", clause: "IPC-2221A (2003) §6.2, Figure 6-4, chart A, external conductors; note 5, summed cross-section of parallel conductors" } : { k: 0.024, rule: "0.024·ΔT^0.44·(N·A)^0.725", clause: "IPC-2221A (2003) §6.2, Figure 6-4, chart C, internal conductors; note 5, summed cross-section of parallel conductors" };
+}
 function calculateMicroviaCurrentCapacity(inputs) {
   const {
     viaDiameter,
@@ -37821,6 +43464,12 @@ function calculateMicroviaCurrentCapacity(inputs) {
   const deltaTSelfHeat = current * current * rTotal * thetaVia / 8;
   const currentDensityAPerMm2 = current / (n * barrelAreaMm2);
   const aspectRatio = viaDepth / viaDiameter;
+  const kDT = microviaChart(inputs.standard ?? 0, inputs.conductorClass ?? 0).k * Math.pow(tempRise, 0.44);
+  const limitCurrent = kDT * Math.pow(n * areaMil2, 0.725);
+  const limitPercent = current / limitCurrent * 100;
+  const areaNeededMil2 = Math.pow(current / kDT, 1 / 0.725);
+  const minVias = Math.ceil(areaNeededMil2 / areaMil2);
+  const minViaDiameter = (areaNeededMil2 / n * MIL2_IN_M2 / (Math.PI * t) + t) * 1e3;
   const warnings = [];
   if (viaDiameter > 0.15) {
     warnings.push(
@@ -37861,7 +43510,11 @@ function calculateMicroviaCurrentCapacity(inputs) {
       powerDissipationMW,
       deltaTSelfHeat,
       currentDensityAPerMm2,
-      aspectRatio
+      aspectRatio,
+      limitCurrent,
+      limitPercent,
+      minVias,
+      minViaDiameter
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -37962,6 +43615,32 @@ var microviaCurrentCapacity = {
       min: -40,
       max: 150,
       tooltip: "Sets copper resistivity; does not change the IPC-2221 capacity, which is a rise above ambient."
+    },
+    {
+      key: "conductorClass",
+      label: "Chart Curve",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "Internal (k = 0.024)" },
+        { value: 1, label: "External (k = 0.048)" }
+      ],
+      tooltip: "The IPC-2221A curve the barrels are read on: internal (conservative; the vias are buried) or external (the pads sink heat). IPC-2152 uses its conservative chart either way."
+    },
+    {
+      key: "standard",
+      label: "Standard",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      options: [
+        { value: 0, label: "IPC-2221A Fig. 6-4" },
+        { value: 1, label: "IPC-2152 §A.3.4" }
+      ],
+      tooltip: "The rule the design current is checked against, both read at the vias’ summed barrel cross-section"
     }
   ],
   outputs: [
@@ -37993,9 +43672,69 @@ var microviaCurrentCapacity = {
       tooltip: "Peak rise of a barrel heated along its length with both ends at the pad temperature: P·L/(8·k·A·N)"
     },
     { key: "currentDensityAPerMm2", label: "Current Density", symbol: "J", unit: "A/mm²" },
-    { key: "aspectRatio", label: "Aspect Ratio (depth : diameter)", symbol: "", unit: ":1" }
+    { key: "aspectRatio", label: "Aspect Ratio (depth : diameter)", symbol: "", unit: ":1" },
+    {
+      key: "limitCurrent",
+      label: "Current Limit (N vias)",
+      symbol: "I_max",
+      unit: "A",
+      tooltip: "The most current the vias may carry at the allowed rise, read on the chosen chart at their summed barrel cross-section"
+    },
+    {
+      key: "limitPercent",
+      label: "Percent of Limit",
+      unit: "%",
+      precision: 1,
+      tooltip: "The design current as a percentage of the limit; above 100 % does not comply",
+      thresholds: { good: { max: 100 }, danger: { max: 100 } }
+    },
+    {
+      key: "minVias",
+      label: "Compliant Via Count",
+      symbol: "N_min",
+      unit: "",
+      precision: 0,
+      tooltip: "The fewest parallel microvias whose summed cross-section carries the design current within the limit"
+    },
+    {
+      key: "minViaDiameter",
+      label: "Compliant Diameter",
+      symbol: "D_min",
+      unit: "mm",
+      precision: 4,
+      tooltip: "The microvia diameter at which the design current equals the limit with this count and plating; at or above it the vias comply"
+    }
+  ],
+  examples: [
+    { id: "hdi-75-um", label: "75 µm advanced HDI", values: { viaDiameter: 0.075, viaDepth: 0.06, platingThickness: 15 } },
+    { id: "hdi-100-um", label: "100 µm standard HDI", values: { viaDiameter: 0.1, viaDepth: 0.075, platingThickness: 18 } },
+    { id: "hdi-125-um", label: "125 µm relaxed HDI", values: { viaDiameter: 0.125, viaDepth: 0.1, platingThickness: 20 } },
+    { id: "microvia-150-um", label: "150 µm max microvia", values: { viaDiameter: 0.15, viaDepth: 0.125, platingThickness: 25 } },
+    { id: "rail-1a-six-100-um", label: "1 A rail through six 100 µm microvias", values: { viaDiameter: 0.1, viaDepth: 0.075, platingThickness: 18, current: 1, numVias: 6 } },
+    { id: "rail-2a-eight-100-um", label: "2 A rail through eight 100 µm microvias", values: { viaDiameter: 0.1, viaDepth: 0.075, platingThickness: 18, current: 2, numVias: 8 } }
   ],
   calculate: calculateMicroviaCurrentCapacity,
+  standards: {
+    standard: {
+      input: "standard",
+      sources: {
+        0: "IPC-2221A, Generic Standard on Printed Board Design (May 2003), §6.2 and Figure 6-4 with its note 5 on parallel conductors, the chart of IPC-2221 (February 1998), read through its published fit I = k·ΔT^0.44·A^0.725 (I in A, ΔT in °C, A in mil²)",
+        1: "IPC-2152, Standard for Determining Current Carrying Capacity in Printed Board Design (August 2009), §A.3.4 (vias at least the conductor’s cross-section) with §5, Figure 5-1, the conservative chart"
+      }
+    },
+    class: { input: "conductorClass" },
+    value: "current",
+    limit: "limitCurrent",
+    percent: "limitPercent",
+    limitKind: "maximum",
+    clause: (standard, cls) => microviaChart(standard, cls ?? 0).clause,
+    rule: (standard, cls) => microviaChart(standard, cls ?? 0).rule,
+    remedies: [
+      { input: "numVias", output: "minVias", direction: "up" },
+      { input: "viaDiameter", output: "minViaDiameter", direction: "up" },
+      { input: "current", output: "limitCurrent", direction: "down" }
+    ]
+  },
   formula: {
     primary: "I = k·ΔT^0.44·A^0.725 with A = π·t·(D − t) converted to mil²;  I_N = I·N^0.725 for N vias (summed cross-section)",
     latex: "A = \\pi\\, t\\,(D - t), \\qquad I = k\\,\\Delta T^{0.44} A_{\\text{mil}^2}^{0.725}, \\qquad k = \\begin{cases} 0.024 & \\text{internal} \\\\ 0.048 & \\text{external} \\end{cases}, \\qquad I_N = I\\,N^{0.725}",
@@ -38071,6 +43810,8 @@ function calculateEdgeCoupledInternalSymmetric(inputs) {
   const pair = coupledStripline(traceWidth, traceSpacing, planeSpacing, dielectricConst, t);
   const single = symmetricStripline(traceWidth, planeSpacing, dielectricConst, t);
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS8;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS8 / (frequency * Math.sqrt(dielectricConst));
   const warnings = [];
   const couplingLoss = 1 - pair.Zdiff / (2 * single.Z0);
   if (couplingLoss < 0.02) {
@@ -38091,7 +43832,9 @@ function calculateEdgeCoupledInternalSymmetric(inputs) {
       evenImpedance: pair.Zeven,
       uncoupledImpedance: single.Z0,
       couplingCoefficient: (pair.Zeven - pair.Zodd) / (pair.Zeven + pair.Zodd),
-      propagationDelay
+      propagationDelay,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -38119,6 +43862,7 @@ var edgeCoupledInternalSymmetric = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -38128,6 +43872,7 @@ var edgeCoupledInternalSymmetric = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.02,
+      max: 10,
       step: 0.01,
       tooltip: "Gap between the facing edges of the two traces"
     },
@@ -38162,12 +43907,18 @@ var edgeCoupledInternalSymmetric = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
@@ -38212,7 +43963,14 @@ var edgeCoupledInternalSymmetric = {
       unit: "ps/mm",
       precision: 3,
       tooltip: "Both modes travel at the same speed in a stripline — the dielectric is homogeneous"
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "λg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "λg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "lvds-100-ohm-b-0-5-mm", label: "100 Ω LVDS, planes 0.5 mm apart, FR-4", values: { traceWidth: 0.1, traceSpacing: 0.11, planeSpacing: 0.5, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "usb-90-ohm-b-0-5-mm", label: "90 Ω USB, planes 0.5 mm apart, FR-4", values: { traceWidth: 0.12, traceSpacing: 0.088, planeSpacing: 0.5, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "pcie-85-ohm-b-0-5-mm", label: "85 Ω PCIe, planes 0.5 mm apart, FR-4", values: { traceWidth: 0.188, traceSpacing: 0.15, planeSpacing: 0.5, copperThickness: 17.5, dielectricConst: 4.4 } }
   ],
   calculate: calculateEdgeCoupledInternalSymmetric,
   formula: {
@@ -38236,6 +43994,12 @@ var edgeCoupledInternalSymmetric = {
     reference: 'S. B. Cohn, "Shielded Coupled-Strip Transmission Line", IRE Trans. MTT-3 (1955), pp. 29–38. Verified against a 2-D method-of-moments solve to 0.008%.'
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "coupled", roles: { w: "traceWidth", s: "traceSpacing", b: "planeSpacing", t: "copperThickness", er: "dielectricConst" } },
+    synthesis: [{ output: "diffImpedance", solveFor: ["traceWidth", "traceSpacing"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "diffImpedance", range: [0.03, 1], scale: "log" }
+  },
   relatedCalculators: [
     "edge-coupled-internal-asymmetric",
     "edge-coupled-embedded",
@@ -38283,6 +44047,8 @@ function calculateEdgeCoupledInternalAsymmetric(inputs) {
   );
   const single = asymmetricStripline(traceWidth, heightBelow, heightAbove, dielectricConst, t);
   const propagationDelay = Math.sqrt(dielectricConst) / C_MM_PER_PS9;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS9 / (frequency * Math.sqrt(dielectricConst));
   const warnings = [];
   if (!pair.inRange) {
     warnings.push(
@@ -38309,7 +44075,9 @@ function calculateEdgeCoupledInternalAsymmetric(inputs) {
       uncoupledImpedance: single.Z0,
       offsetRatio: asymmetry,
       propagationDelay,
-      inValidatedRange: pair.inRange ? 1 : 0
+      inValidatedRange: pair.inRange ? 1 : 0,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -38329,7 +44097,7 @@ var edgeCoupledInternalAsymmetric = {
     "dual stripline differential"
   ],
   inputs: [
-    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.13, min: 0.02, step: 0.01 },
+    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.13, min: 0.02, max: 10, step: 0.01 },
     {
       key: "traceSpacing",
       label: "Trace Spacing (edge to edge)",
@@ -38337,6 +44105,7 @@ var edgeCoupledInternalAsymmetric = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -38379,11 +44148,18 @@ var edgeCoupledInternalAsymmetric = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
@@ -38422,7 +44198,14 @@ var edgeCoupledInternalAsymmetric = {
       precision: 0,
       tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
       thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
-    }
+    },
+    { key: "guidedWavelength", label: "Guided Wavelength", symbol: "λg", unit: "mm", precision: 3, format: "standard" },
+    { key: "quarterWavelength", label: "Quarter Wavelength", symbol: "λg/4", unit: "mm", precision: 3, format: "standard" }
+  ],
+  examples: [
+    { id: "lvds-100-ohm-0-15-0-35-mm", label: "100 Ω LVDS, 0.15 mm below and 0.35 mm above, FR-4", values: { traceWidth: 0.1, traceSpacing: 0.13, heightBelow: 0.15, heightAbove: 0.35, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "usb-90-ohm-0-15-0-35-mm", label: "90 Ω USB, 0.15 mm below and 0.35 mm above, FR-4", values: { traceWidth: 0.1, traceSpacing: 0.077, heightBelow: 0.15, heightAbove: 0.35, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "pcie-85-ohm-0-15-0-35-mm", label: "85 Ω PCIe, 0.15 mm below and 0.35 mm above, FR-4", values: { traceWidth: 0.164, traceSpacing: 0.15, heightBelow: 0.15, heightAbove: 0.35, copperThickness: 17.5, dielectricConst: 4.4 } }
   ],
   calculate: calculateEdgeCoupledInternalAsymmetric,
   formula: {
@@ -38450,6 +44233,12 @@ var edgeCoupledInternalAsymmetric = {
     insideOutput: "inValidatedRange"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "coupled", roles: { w: "traceWidth", s: "traceSpacing", h1: "heightBelow", h2: "heightAbove", t: "copperThickness", er: "dielectricConst" } },
+    synthesis: [{ output: "diffImpedance", solveFor: ["traceWidth", "traceSpacing"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "diffImpedance", range: [0.03, 1], scale: "log" }
+  },
   relatedCalculators: [
     "edge-coupled-internal-symmetric",
     "edge-coupled-embedded",
@@ -38514,6 +44303,8 @@ function calculateEdgeCoupledEmbedded(inputs) {
   );
   const delayOdd = Math.sqrt(pair.erEffOdd) / C_MM_PER_PS10;
   const delayEven = Math.sqrt(pair.erEffEven) / C_MM_PER_PS10;
+  const frequency = inputs.frequency ?? 2.4;
+  const guidedWavelength = 1e3 * C_MM_PER_PS10 / (frequency * Math.sqrt(pair.erEffOdd));
   const warnings = [];
   if (!pair.inRange) {
     warnings.push(
@@ -38542,7 +44333,9 @@ function calculateEdgeCoupledEmbedded(inputs) {
       erEffEven: pair.erEffEven,
       propagationDelay: delayOdd,
       propagationDelayEven: delayEven,
-      inValidatedRange: pair.inRange ? 1 : 0
+      inValidatedRange: pair.inRange ? 1 : 0,
+      guidedWavelength,
+      quarterWavelength: guidedWavelength / 4
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -38563,7 +44356,7 @@ var edgeCoupledEmbedded = {
     "mode skew microstrip"
   ],
   inputs: [
-    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.2, min: 0.02, step: 0.01 },
+    { key: "traceWidth", label: "Trace Width", symbol: "W", unit: "mm", defaultValue: 0.2, min: 0.02, max: 10, step: 0.01 },
     {
       key: "traceSpacing",
       label: "Trace Spacing (edge to edge)",
@@ -38571,6 +44364,7 @@ var edgeCoupledEmbedded = {
       unit: "mm",
       defaultValue: 0.2,
       min: 0.02,
+      max: 10,
       step: 0.01
     },
     {
@@ -38634,11 +44428,18 @@ var edgeCoupledEmbedded = {
       unit: "",
       defaultValue: 4.2,
       min: 1,
-      step: 0.01,
-      presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
-      ]
+      step: 0.01
+      // The material picker sets it (lib/geometry/materials.ts, design Dk where published).
+    },
+    {
+      key: "frequency",
+      label: "Frequency",
+      symbol: "f",
+      unit: "GHz",
+      defaultValue: 2.4,
+      min: 1e-3,
+      max: 300,
+      tooltip: "Used only for the guided wavelength of the differential (odd) mode; the impedances do not depend on it in this model"
     }
   ],
   outputs: [
@@ -38698,7 +44499,30 @@ var edgeCoupledEmbedded = {
       precision: 0,
       tooltip: "1 when the geometry lies inside the range the model was checked against a field solver",
       thresholds: { good: { min: 0.5 }, danger: { min: 0.5 } }
+    },
+    {
+      key: "guidedWavelength",
+      label: "Guided Wavelength (odd mode)",
+      symbol: "λg",
+      unit: "mm",
+      precision: 3,
+      format: "standard",
+      tooltip: "Wavelength of the differential (odd) mode on the pair at the frequency, c/(f·√εeff,odd)"
+    },
+    {
+      key: "quarterWavelength",
+      label: "Quarter Wavelength (odd mode)",
+      symbol: "λg/4",
+      unit: "mm",
+      precision: 3,
+      format: "standard"
     }
+  ],
+  examples: [
+    { id: "ethernet-100-ohm-soldermask", label: "100 Ω under 25 µm soldermask, 0.2 mm FR-4", values: { traceWidth: 0.23, traceSpacing: 0.2, substrateHeight: 0.2, coverThickness: 0.025, coverDielectric: 3.5, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "ethernet-100-ohm-bare", label: "100 Ω bare pair with no mask, 0.2 mm FR-4", values: { traceWidth: 0.256, traceSpacing: 0.2, substrateHeight: 0.2, coverThickness: 0, copperThickness: 35, dielectricConst: 4.4 } },
+    { id: "usb-90-ohm-soldermask-0-1-mm", label: "90 Ω USB under soldermask, 0.1 mm FR-4", values: { traceWidth: 0.16, traceSpacing: 0.15, substrateHeight: 0.1, coverThickness: 0.025, coverDielectric: 3.5, copperThickness: 17.5, dielectricConst: 4.4 } },
+    { id: "under-0-1-mm-prepreg", label: "Same pair buried under 0.1 mm of FR-4 prepreg", values: { traceWidth: 0.23, traceSpacing: 0.2, substrateHeight: 0.2, coverThickness: 0.1, coverDielectric: 4.4, copperThickness: 35, dielectricConst: 4.4 } }
   ],
   calculate: calculateEdgeCoupledEmbedded,
   formula: {
@@ -38727,6 +44551,15 @@ var edgeCoupledEmbedded = {
     insideOutput: "inValidatedRange"
   },
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "coupled",
+      roles: { w: "traceWidth", s: "traceSpacing", h: "substrateHeight", t: "copperThickness", er: "dielectricConst", cover: "coverThickness", coverEr: "coverDielectric" }
+    },
+    synthesis: [{ output: "diffImpedance", solveFor: ["traceWidth", "traceSpacing"] }],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst" } },
+    curve: { x: "traceWidth", y: "diffImpedance", range: [0.03, 2], scale: "log" }
+  },
   relatedCalculators: [
     "differential-pair",
     "edge-coupled-internal-symmetric",
@@ -38754,7 +44587,7 @@ var edgeCoupledEmbedded = {
 };
 
 // src/lib/calculators/pcb/differential-via.ts
-var C8 = 299792458;
+var C9 = 299792458;
 var ETA_05 = FREE_SPACE_IMPEDANCE;
 var MU_03 = 4e-7 * Math.PI;
 var SIGMA_CU = 58e6;
@@ -38788,10 +44621,10 @@ function calculateDifferentialVia(inputs) {
   const sqrtEr = Math.sqrt(dielectricConst);
   const zDense = ETA_05 / (Math.PI * sqrtEr) * Math.log(antipadDiameter / barrelDiameter);
   const stubLength = Math.max(boardThickness - exitDepth, 0);
-  const vp = C8 / sqrtEr;
+  const vp = C9 / sqrtEr;
   const stubResonance = stubLength > 0 ? vp / (4 * stubLength * 1e-3) / 1e9 : Infinity;
   const lossPerMm = (fHz) => {
-    const dielectric2 = Math.PI * fHz * sqrtEr * lossTangent / C8 * NEPER_TO_DB * 1e-3;
+    const dielectric2 = Math.PI * fHz * sqrtEr * lossTangent / C9 * NEPER_TO_DB * 1e-3;
     const surfaceR = Math.sqrt(Math.PI * fHz * MU_03 / SIGMA_CU);
     const conductor2 = surfaceR * (1 / (barrelDiameter * 1e-3) + 1 / (antipadDiameter * 1e-3)) / (Math.PI * zDense) * NEPER_TO_DB * 1e-3;
     return { dielectric: dielectric2, conductor: conductor2 };
@@ -38877,6 +44710,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 0.25,
       min: 0.05,
+      max: 2,
       step: 0.01
     },
     {
@@ -38886,6 +44720,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 0.9,
       min: 0.1,
+      max: 5,
       step: 0.05,
       tooltip: "Clearance opening in the reference planes around the via"
     },
@@ -38896,6 +44731,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 0.8,
       min: 0.1,
+      max: 5,
       step: 0.05
     },
     {
@@ -38905,6 +44741,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 1.6,
       min: 0.1,
+      max: 10,
       step: 0.1
     },
     {
@@ -38914,6 +44751,7 @@ var differentialVia = {
       unit: "mm",
       defaultValue: 0.4,
       min: 0,
+      max: 10,
       step: 0.05,
       tooltip: "Depth from the entry surface at which the signal leaves the via. The rest of the barrel is stub."
     },
@@ -38925,10 +44763,9 @@ var differentialVia = {
       defaultValue: 4.2,
       min: 1,
       step: 0.01,
+      // The material picker sets it (lib/geometry/materials.ts); Megtron 6 is not in the library yet.
       presets: [
-        { label: "FR4 (4.2)", values: { dielectricConst: 4.2 } },
-        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } },
-        { label: "Rogers RO4350B (3.48)", values: { dielectricConst: 3.48 } }
+        { label: "Megtron 6 (3.4)", values: { dielectricConst: 3.4 } }
       ]
     },
     {
@@ -38939,10 +44776,9 @@ var differentialVia = {
       defaultValue: 0.02,
       min: 1e-4,
       step: 1e-3,
+      // The material picker sets it with εr; Megtron 6 is not in the library yet.
       presets: [
-        { label: "FR4 (0.02)", values: { lossTangent: 0.02 } },
-        { label: "Megtron 6 (0.004)", values: { lossTangent: 4e-3 } },
-        { label: "Rogers RO4350B (0.0037)", values: { lossTangent: 37e-4 } }
+        { label: "Megtron 6 (0.004)", values: { lossTangent: 4e-3 } }
       ]
     },
     {
@@ -39032,6 +44868,11 @@ var differentialVia = {
     ],
     reference: "Stub loading from S₂₁ of a shunt admittance; the coaxial conductor loss α_c = R_s(1/a + 1/b)/(2η·ln(b/a)) (Pozar, Microwave Engineering, 4th ed., §2.7); the field solution of openspec fix-calculator-formulas-followup (2026-10-12). A via transition is three-dimensional — see the linked full-wave tool."
   },
+  examples: [
+    { id: "pcie4-2p4mm-fr4", label: "PCIe 4.0 pair, 2.4 mm FR-4, stub at 24 GHz", values: { barrelDiameter: 0.25, antipadDiameter: 1.1, viaPitch: 0.8, boardThickness: 2.4, exitDepth: 0.9112453477029002, dielectricConst: 4.4, lossTangent: 0.02, startFrequency: 0.1, stopFrequency: 8 } },
+    { id: "backdrilled-1p6mm-fr4", label: "Backdrilled pair, 1.6 mm FR-4, no stub", values: { barrelDiameter: 0.25, antipadDiameter: 1.1, viaPitch: 0.8, boardThickness: 1.6, exitDepth: 1.6, dielectricConst: 4.4, lossTangent: 0.02, startFrequency: 0.1, stopFrequency: 20 } },
+    { id: "backplane-3mm-stub-in-band", label: "3.0 mm backplane, exit near the top: stub in band", values: { barrelDiameter: 0.3, antipadDiameter: 1.2, viaPitch: 0.9, boardThickness: 3, exitDepth: 0.5, dielectricConst: 4.4, lossTangent: 0.02, startFrequency: 0.1, stopFrequency: 20 } }
+  ],
   assumptions: [
     {
       code: "no-impedance",
@@ -39047,6 +44888,17 @@ var differentialVia = {
     }
   ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "via", roles: { d: "barrelDiameter", antipad: "antipadDiameter", pitch: "viaPitch", len: "boardThickness", er: "dielectricConst", exit: "exitDepth", stub: "stubLength" } },
+    // No impedance since fix-calculator-formulas-followup 7.2 (it depends on the
+    // plane pitch, which is not an input): the stub is what the reader designs.
+    synthesis: [
+      { output: "stubResonance", solveFor: ["exitDepth", "boardThickness"] },
+      { output: "worstInsertionLoss", solveFor: ["exitDepth"] }
+    ],
+    material: { library: "pcb-dielectric", sets: { er: "dielectricConst", tanD: "lossTangent" } },
+    curve: { x: "exitDepth", y: "worstInsertionLoss", range: [0, 1.6], scale: "linear" }
+  },
   relatedCalculators: [
     "via-stub-resonance",
     "via-calculator",
@@ -39185,7 +45037,8 @@ var skinDepthPercentage = {
       defaultValue: 20,
       min: -55,
       step: 1
-    }
+    },
+    { key: "targetPercentage", label: "Target Skin Depth Share", symbol: "δ/t_t", unit: "%", defaultValue: 50, min: 1, max: 1e3, tooltip: "The skin depth, as a share of the conductor thickness, the design should reach so that most of the copper carries current. The status fails below 33 %." }
   ],
   outputs: [
     {
@@ -39234,8 +45087,28 @@ var skinDepthPercentage = {
       "The AC to DC resistance ratio is then the thickness divided by that effective depth, which tends to 1 when the skin depth is large and grows as the square root of frequency when it is small.",
       "Resistivity is corrected for temperature with α = 0.00393/°C for copper, so the ratio is meaningful at operating temperature and not only at 20 °C."
     ],
-    reference: "Standard skin-effect result; ρ₂₀(Cu) = 1.724×10⁻⁸ Ω·m, α = 0.00393/°C."
+    reference: "Standard skin-effect result; ρ₂₀(Cu) = 1.724×10⁻⁸ Ω·m, α = 0.00393/°C.",
+    substitution: [
+      { symbol: "δ", expression: "√(ρ / (π × {frequency} × μ₀)), ρ = 1.7241×10⁻⁸ Ω·m × {resistivityRatio} × (1 + 0.00393 × ({temperature} − 20 °C))", output: "skinDepth" },
+      { symbol: "δ/t", expression: "δ / {conductorThickness}", output: "skinDepthPercentage" },
+      { symbol: "R_ac/R_dc", expression: "{conductorThickness} / min(2δ(1 − e^(−t/2δ)), t)", output: "acDcRatio" }
+    ]
   },
+  sweep: {
+    input: "frequency",
+    range: [0.01, 1e4],
+    scale: "log",
+    lines: [
+      { id: "share-floor", kind: "limit", label: "Minimum", value: () => 33, fails: "below" },
+      { id: "share-target", kind: "target", label: "Target", value: (i) => i.targetPercentage }
+    ]
+  },
+  target: { output: "skinDepthPercentage", input: "targetPercentage", sense: "min", failAt: 33 },
+  examples: [
+    { id: "one-oz-1ghz", label: "1 oz copper at 1 GHz", values: { frequency: 1e3, conductorThickness: 35, resistivityRatio: 1, temperature: 20 } },
+    { id: "two-oz-500khz", label: "2 oz power trace at 500 kHz, 60 °C", values: { frequency: 0.5, conductorThickness: 70, resistivityRatio: 1, temperature: 60 } },
+    { id: "half-oz-100mhz", label: "0.5 oz copper at 100 MHz", values: { frequency: 100, conductorThickness: 17.5, resistivityRatio: 1, temperature: 25 } }
+  ],
   visualization: { type: "none" },
   relatedCalculators: ["skin-depth", "trace-resistance", "trace-width-current", "coax-loss"],
   relatedBlogPosts: ["ground-plane-impedance"],
@@ -39320,7 +45193,7 @@ var conductorToPadWidth = {
     "dfm trace width"
   ],
   inputs: [
-    { key: "padDiameter", label: "Pad Diameter", symbol: "D_pad", unit: "mm", defaultValue: 0.6, min: 0.05, step: 0.05 },
+    { key: "padDiameter", label: "Pad Diameter", symbol: "D_pad", unit: "mm", defaultValue: 0.6, min: 0.05, max: 10, step: 0.05 },
     {
       key: "neighbourPitch",
       label: "Pitch to the Neighbouring Pad",
@@ -39328,6 +45201,7 @@ var conductorToPadWidth = {
       unit: "mm",
       defaultValue: 1.27,
       min: 0.1,
+      max: 10,
       step: 0.01,
       presets: [
         { label: "0.5 mm", values: { neighbourPitch: 0.5 } },
@@ -39344,6 +45218,7 @@ var conductorToPadWidth = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.01,
+      max: 1,
       step: 0.01,
       tooltip: "Your fabricator’s copper-to-copper minimum. This is a shop rule, not a constant.",
       presets: [
@@ -39416,7 +45291,18 @@ var conductorToPadWidth = {
     ],
     reference: "IPC-2221B clearance practice; the clearance value itself is a fabricator rule and is an input here."
   },
+  examples: [
+    { id: "dip-two-traces", label: "Two 0.2 mm traces between DIP pins, 1.69 mm pads", values: { padDiameter: 1.69, neighbourPitch: 2.54, minClearance: 0.15, conductorCount: 2 } },
+    { id: "dip-1p6-pads-one-trace", label: "2.54 mm DIP, 1.6 mm pads, one trace", values: { padDiameter: 1.6, neighbourPitch: 2.54, minClearance: 0.15, conductorCount: 1 } },
+    { id: "pitch-1p27-0p8-pads", label: "1.27 mm pitch, 0.8 mm pads, one trace", values: { padDiameter: 0.8, neighbourPitch: 1.27, minClearance: 0.15, conductorCount: 1 } },
+    { id: "pitch-0p8-fine-clearance", label: "0.8 mm pitch, 0.45 mm pads, 0.075 mm clearance", values: { padDiameter: 0.45, neighbourPitch: 0.8, minClearance: 0.075, conductorCount: 1 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "pads", roles: { pad: "padDiameter", pitch: "neighbourPitch", clear: "minClearance", n: "conductorCount", w: "maxTraceWidth" } },
+    synthesis: [{ output: "maxTraceWidth", solveFor: ["padDiameter", "neighbourPitch", "minClearance"] }],
+    curve: { x: "neighbourPitch", y: "maxTraceWidth", range: [1, 2.54], scale: "linear" }
+  },
   relatedCalculators: [
     "bga-breakout-width",
     "maximum-pad-diameter",
@@ -39488,7 +45374,7 @@ function calculateBgaBreakoutWidth(inputs) {
     warnings.push(
       `A ${maxTraceWidth.toFixed(4)} mm trace is beyond standard fabrication; this geometry needs an advanced process or fewer traces per channel`
     );
-  } else if (maxTraceWidth < 0.1) {
+  } else if (maxTraceWidth < 0.1 - 1e-9) {
     warnings.push(
       `A ${maxTraceWidth.toFixed(4)} mm trace is below the 0.1 mm most shops quote as standard — expect a surcharge`
     );
@@ -39547,6 +45433,7 @@ var bgaBreakoutWidth = {
       unit: "mm",
       defaultValue: 0.4,
       min: 0.05,
+      max: 2,
       step: 0.01,
       tooltip: "Solder-mask-defined or non-solder-mask-defined land, whichever the footprint uses"
     },
@@ -39557,6 +45444,7 @@ var bgaBreakoutWidth = {
       unit: "mm",
       defaultValue: 0.1,
       min: 0.01,
+      max: 1,
       step: 5e-3,
       presets: [
         { label: "Standard (0.1 mm)", values: { minClearance: 0.1 } },
@@ -39587,6 +45475,10 @@ var bgaBreakoutWidth = {
       presets: [
         { label: "Orthogonal (between adjacent lands)", values: { diagonalRoute: 0 } },
         { label: "Diagonal (through the √2 gap)", values: { diagonalRoute: 1 } }
+      ],
+      options: [
+        { value: 0, label: "Orthogonal" },
+        { value: 1, label: "Diagonal (√2 gap)" }
       ]
     }
   ],
@@ -39604,6 +45496,7 @@ var bgaBreakoutWidth = {
     { key: "effectivePitch", label: "Effective Pitch", symbol: "p_eff", unit: "mm", precision: 4 },
     {
       key: "escapeRows",
+      display: { integer: true },
       label: "Rows Escapable per Layer",
       symbol: "rows",
       unit: "",
@@ -39637,7 +45530,22 @@ var bgaBreakoutWidth = {
     ],
     reference: 'IPC-7351B land geometry; clearance is a fabricator rule and is supplied as an input; rows per layer from Intel AN 114, "Board Design Guidelines for Intel Programmable Device Packages" (2019.12.31), section 1.3.4.1.'
   },
+  examples: [
+    { id: "pbga-1p27-two-5-mil", label: "1.27 mm PBGA, two 5 mil traces per channel", values: { ballPitch: 1.27, landDiameter: 0.635, minClearance: 0.127, tracesPerChannel: 2, diagonalRoute: 0 } },
+    { id: "bga-1p0-0p45-lands", label: "1.0 mm BGA, 0.45 mm lands, one trace", values: { ballPitch: 1, landDiameter: 0.45, minClearance: 0.1, tracesPerChannel: 1, diagonalRoute: 0 } },
+    { id: "bga-0p8-0p4-lands", label: "0.8 mm BGA, 0.4 mm lands, one trace", values: { ballPitch: 0.8, landDiameter: 0.4, minClearance: 0.1, tracesPerChannel: 1, diagonalRoute: 0 } },
+    { id: "bga-0p65-diagonal", label: "0.65 mm BGA, 0.3 mm lands, two traces on the diagonal", values: { ballPitch: 0.65, landDiameter: 0.3, minClearance: 0.075, tracesPerChannel: 2, diagonalRoute: 1 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: {
+      family: "bga",
+      roles: { pitch: "ballPitch", land: "landDiameter", clear: "minClearance", n: "tracesPerChannel", w: "maxTraceWidth" },
+      variant: { input: "diagonalRoute", byValue: { 0: "orthogonal", 1: "diagonal" } }
+    },
+    synthesis: [{ output: "maxTraceWidth", solveFor: ["landDiameter", "minClearance"] }],
+    curve: { x: "landDiameter", y: "maxTraceWidth", range: [0.2, 0.55], scale: "linear" }
+  },
   relatedCalculators: [
     "bga-land-pad",
     "conductor-to-pad-width",
@@ -39700,10 +45608,10 @@ function calculateApertureDiagonal(inputs) {
   if (entered) {
     cutter = routerBitInput;
   } else {
-    const routerCandidates = PCB_DRILL_SIZES.filter((size2) => size2.mm <= shortSide + 1e-9);
+    const routerCandidates = PCB_DRILL_SIZES.filter((size2) => size2.mm <= shortSide + 1e-6);
     cutter = routerCandidates.length > 0 ? routerCandidates[routerCandidates.length - 1].mm : null;
   }
-  const cutterFits = cutter !== null && cutter <= shortSide + 1e-9;
+  const cutterFits = cutter !== null && cutter <= shortSide + 1e-6;
   const errors = [];
   if (!coveringDrill) {
     errors.push(
@@ -39765,6 +45673,7 @@ var apertureDiagonal = {
       unit: "mm",
       defaultValue: 2,
       min: 0.05,
+      max: 500,
       step: 0.05
     },
     {
@@ -39774,6 +45683,7 @@ var apertureDiagonal = {
       unit: "mm",
       defaultValue: 1,
       min: 0.05,
+      max: 500,
       step: 0.05
     },
     {
@@ -39850,7 +45760,17 @@ var apertureDiagonal = {
     ],
     reference: "Geometry; tooling grid is stocked metric PCB tooling in 0.05 mm steps. 1 in = 25.4 mm exactly."
   },
+  examples: [
+    { id: "opening-2-by-1p5", label: "2.0 × 1.5 mm opening, one 2.5 mm drill", values: { apertureLength: 2, apertureWidth: 1.5 } },
+    { id: "shell-tab-slot", label: "Connector shell tab slot, 1.7 × 0.6 mm", values: { apertureLength: 1.7, apertureWidth: 0.6 } },
+    { id: "m3-adjustment-slot", label: "M3 adjustment slot, 6.0 × 3.2 mm (routed)", values: { apertureLength: 6, apertureWidth: 3.2 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "aperture", roles: { l: "apertureLength", w: "apertureWidth", diag: "diagonal", drill: "coveringDrillSize", r: "cornerRadius" } },
+    synthesis: [{ output: "diagonal", solveFor: ["apertureLength", "apertureWidth"] }],
+    curve: { x: "apertureLength", y: "diagonal", range: [0.5, 10], scale: "linear" }
+  },
   relatedCalculators: [
     "padstack-annular-ring",
     "maximum-pad-diameter",
@@ -39952,6 +45872,7 @@ var maximumPadDiameter = {
       unit: "mm",
       defaultValue: 1.27,
       min: 0.1,
+      max: 10,
       step: 0.01,
       presets: [
         { label: "0.5 mm", values: { pitch: 0.5 } },
@@ -39968,6 +45889,7 @@ var maximumPadDiameter = {
       unit: "mm",
       defaultValue: 0.15,
       min: 0.01,
+      max: 1,
       step: 5e-3,
       presets: [
         { label: "Standard (0.15 mm)", values: { minClearance: 0.15 } },
@@ -40042,7 +45964,18 @@ var maximumPadDiameter = {
     ],
     reference: "IPC-2221B clearance practice; the clearance value is a fabricator rule supplied as an input."
   },
+  examples: [
+    { id: "pitch-1p5-one-trace", label: "1.5 mm pitch, one 0.2 mm trace between", values: { pitch: 1.5, minClearance: 0.15, tracesBetween: 1, traceWidth: 0.2 } },
+    { id: "dip-2p54-one-trace", label: "2.54 mm DIP, one 0.25 mm trace between pins", values: { pitch: 2.54, minClearance: 0.15, tracesBetween: 1, traceWidth: 0.25 } },
+    { id: "bga-1p0-one-trace", label: "1.0 mm BGA, one 0.1 mm trace between lands", values: { pitch: 1, minClearance: 0.1, tracesBetween: 1, traceWidth: 0.1 } },
+    { id: "pitch-0p5-nothing-between", label: "0.5 mm pitch, nothing routed between", values: { pitch: 0.5, minClearance: 0.1, tracesBetween: 0, traceWidth: 0.15 } }
+  ],
   visualization: { type: "none" },
+  geometry: {
+    drawing: { family: "pads", roles: { pad: "maxPadDiameter", pitch: "pitch", clear: "minClearance", n: "tracesBetween", w: "traceWidth" } },
+    synthesis: [{ output: "maxPadDiameter", solveFor: ["pitch", "minClearance"] }],
+    curve: { x: "pitch", y: "maxPadDiameter", range: [0.5, 2.54], scale: "linear" }
+  },
   relatedCalculators: [
     "conductor-to-pad-width",
     "bga-breakout-width",
@@ -44992,9 +50925,9 @@ var FRACTIONAL_DRILLS = Array.from({ length: 64 }, (_, i) => {
     const g = gcd2(a, b);
     return [a / g, b / g];
   };
-  const [num, den] = divide(sixtyFourths, 64);
+  const [num2, den] = divide(sixtyFourths, 64);
   return {
-    designation: den === 1 ? `${num}"` : `${num}/${den}"`,
+    designation: den === 1 ? `${num2}"` : `${num2}/${den}"`,
     series: "fractional",
     inches: sixtyFourths / 64,
     mm: inch(sixtyFourths / 64)
