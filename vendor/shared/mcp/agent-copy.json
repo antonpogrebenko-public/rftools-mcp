@@ -1,0 +1,249 @@
+{
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "jobTypes": {
+    "antenna_sim": {
+      "slug": "antenna-sim",
+      "title": "Wire Antenna Simulator (NEC-2)",
+      "question": "Solve your own wire antenna with the NEC-2 method of moments: dipoles, Yagis, verticals and loops, element by element.",
+      "description": "Solve your own wire antenna with the NEC-2 method of moments: dipoles, Yagis, verticals and loops, element by element. Radiation pattern, gain, impedance, VSWR, efficiency and current distribution, at one frequency or across a sweep, with a multi-objective optimiser on Pro.",
+      "returns": "Peak gain, front-to-back ratio, beamwidths, feed impedance and VSWR (per frequency on a sweep, with the VSWR bandwidth), the azimuth and elevation patterns described as series, and for Optimize the recommended design and its Pareto front.",
+      "example": {
+        "source": "defaults",
+        "arguments": {
+          "solveMode": "instant",
+          "freq": 146000000
+        }
+      }
+    },
+    "emi_radiated": {
+      "slug": "emi-radiated",
+      "title": "EMI Radiated Emissions Estimator",
+      "question": "Estimate radiated emissions from PCB loops and cables using Paul's analytical DM/CM models.",
+      "description": "Estimate radiated emissions from PCB loops and cables using Paul's analytical DM/CM models. Monte Carlo confidence intervals vs. FCC Part 15 and CISPR 32 limits.",
+      "returns": "Pass or fail against the chosen limit, the margin at the 5th, 50th and 95th percentiles, the strongest harmonics, and the emission spectrum and limit line described as series.",
+      "example": {
+        "source": "preset",
+        "label": "USB 2.0 Trace Loop",
+        "arguments": {
+          "standard": "fcc_b",
+          "measDist": 3,
+          "dmCurrent_mA": 5,
+          "loopArea_cm2": 0.5,
+          "cmCurrent_uA": 2,
+          "cableLen_m": 1,
+          "fClk_MHz": 480,
+          "dutyCycle": 50,
+          "tRise_ns": 0.5,
+          "nTrials": 100000
+        }
+      }
+    },
+    "eye_diagram": {
+      "slug": "eye-diagram",
+      "title": "Eye Diagram from S-Parameters",
+      "question": "Upload a Touchstone (.s2p) file and generate a PRBS eye diagram.",
+      "description": "Upload a Touchstone (.s2p) file and generate a PRBS eye diagram. Shows the channel insertion loss and impulse response, then renders the eye with its height, width and jitter measured over the whole bit sequence.",
+      "returns": "Eye height, eye width and peak-to-peak and RMS jitter (null with a reason when the eye has no crossings), the channel loss, and the eye traces, impulse response and transfer function described as series.",
+      "example": {
+        "source": "defaults",
+        "arguments": {
+          "dataRate": 10000000000,
+          "prbs": "prbs15",
+          "samplesPerUI": 64
+        }
+      }
+    },
+    "fdtd_sparam": {
+      "slug": "fdtd-sparam",
+      "title": "FDTD Transmission Line Simulator",
+      "question": "Solve microstrip stubs, coupled-line filters, via transitions, and step discontinuities across a ladder of named solve modes — from a 2D cross-section in seconds to a fine 3D openEMS field solve.",
+      "description": "Solve microstrip stubs, coupled-line filters, via transitions, and step discontinuities across a ladder of named solve modes — from a 2D cross-section in seconds to a fine 3D openEMS field solve. S-parameters, Smith chart, and impedance analysis.",
+      "returns": "The solve mode and method actually used, S11 and S21 in dB and the Smith-chart traces described as series, the summary figures such as resonance, notch depth and input impedance, and flags for a degraded or physically invalid result.",
+      "example": {
+        "source": "defaults",
+        "arguments": {
+          "structureType": "microstrip_open_stub",
+          "substrateName": "FR4",
+          "subEr": 4.4,
+          "subH": 1.6,
+          "subTanD": 0.02,
+          "traceW": 3
+        }
+      }
+    },
+    "filter_monte_carlo": {
+      "slug": "filter-monte-carlo",
+      "title": "RF Filter Monte Carlo Analysis",
+      "question": "Analyse how component tolerances affect your filter's passband ripple and stopband rejection.",
+      "description": "Analyse how component tolerances affect your filter's passband ripple and stopband rejection. Run thousands of Monte Carlo trials to get yield and worst-case statistics.",
+      "returns": "The yield in percent with its 95% confidence interval against the stated ripple and rejection limits, each component with its sensitivity, and the Monte Carlo envelope and the ideal and standard-value responses described as series.",
+      "example": {
+        "source": "defaults",
+        "arguments": {
+          "filterType": "butterworth",
+          "bandType": "lowpass",
+          "order": 5,
+          "freqCutoff": 1000000000,
+          "ripple": 0.5,
+          "impedance": 50
+        }
+      }
+    },
+    "impedance_match": {
+      "slug": "impedance-matching",
+      "title": "Broadband Impedance Matching Synthesizer",
+      "question": "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation.",
+      "description": "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation. Enter source/load impedances across a frequency band and get optimized component values with simulated S-parameters. Export results as Touchstone (.s2p) for ADS/Genesys/scikit-rf.",
+      "returns": "The chosen topology and its component values, snapped to the requested series and ideal, the worst-case return loss in the band and whether the target was met, the achieved bandwidth and Q, and the S11 and Smith-chart trajectory described as series.",
+      "example": {
+        "source": "defaults",
+        "arguments": {
+          "sourceR": 50,
+          "sourceX": 0,
+          "loadR": 200,
+          "loadX": 0,
+          "freqStart": 800000000,
+          "freqStop": 1200000000
+        }
+      }
+    },
+    "magnetics_optimizer": {
+      "slug": "magnetics-optimizer",
+      "title": "Magnetics & Transformer Design Optimizer",
+      "question": "NSGA-II optimizer finds Pareto-optimal core and winding designs across 40 cores (E, ETD, PQ, RM and toroids) and 104 core/material combinations, with TDK and Ferroxcube ferrites and Micrometals iron powder.",
+      "description": "NSGA-II optimizer finds Pareto-optimal core and winding designs across 40 cores (E, ETD, PQ, RM and toroids) and 104 core/material combinations, with TDK and Ferroxcube ferrites and Micrometals iron powder. Minimizes total loss and volume simultaneously — shows the full efficiency-vs-size trade-off frontier.",
+      "returns": "The best design (core, turns, air gap, wire gauges and flux densities), its losses, efficiency and temperature rise with a thermal pass or fail, and the Pareto front and evolution history described as series.",
+      "example": {
+        "source": "defaults",
+        "arguments": {
+          "topology": "flyback_xfmr",
+          "Vin": 48,
+          "Vout": 12,
+          "Iout": 3,
+          "fSw": 100000,
+          "dutyCycle": 0.45
+        }
+      }
+    },
+    "pdn_impedance": {
+      "slug": "pdn-impedance",
+      "title": "PDN Impedance Analyzer & Decoupling Capacitor Optimizer",
+      "question": "Choose decoupling capacitors for a PCB power delivery network.",
+      "description": "Choose decoupling capacitors for a PCB power delivery network. Enter the plane pair, the regulator and a flat target impedance, and a genetic algorithm finds the capacitor mix that keeps Z_PDN lowest across the decoupling band, which ends at 0.8 × the board's first cavity mode. Above the band the plane-pair cavity sets the impedance; the plot shows its resonances as one observation port sees them, with every capacitor lumped at that port.",
+      "returns": "The chosen decoupling capacitors, the worst impedance in the decoupling band against the target with a pass or fail and any frequencies no budget can reach, the cavity resonances of the board, and the impedance curves described as series.",
+      "example": {
+        "source": "preset",
+        "label": "Credit Card Size (85x54mm)",
+        "arguments": {
+          "boardWidth_mm": 85,
+          "boardLength_mm": 54,
+          "dielectricEr": 4.5,
+          "lossTangent": 0.02,
+          "boardThickness_mm": 1,
+          "portX_mm": 28.3,
+          "portY_mm": 18,
+          "vrmBandwidth_hz": 100000,
+          "vrmDcr_mohm": 5,
+          "targetImpedance_mohm": 15,
+          "freqMin_hz": 1000,
+          "freqMax_hz": 500000000,
+          "maxCapCount": 15
+        }
+      }
+    },
+    "radar_detection": {
+      "slug": "radar-detection",
+      "title": "Radar Detection Performance Monte Carlo",
+      "question": "Compute probability of detection (Pd) vs range for pulsed radar systems.",
+      "description": "Compute probability of detection (Pd) vs range for pulsed radar systems. Select Swerling target model (0–IV), specify antenna gains, noise figure, pulse parameters, and rain rate. Monte Carlo over RCS fluctuations and system uncertainties produces Pd confidence bands and ROC curves.",
+      "returns": "The detection ranges at 50% and 90% probability, the SNR at maximum range, and the probability of detection against range with its 5th to 95th percentile band and the ROC curve described as series.",
+      "example": {
+        "source": "preset",
+        "label": "Surveillance Radar (Long Range)",
+        "arguments": {
+          "frequency_hz": 3000000000,
+          "peakPower_w": 5000,
+          "antGainTx_dbi": 35,
+          "antGainRx_dbi": 35,
+          "noiseFig_db": 4,
+          "pulseWidth_s": 0.00001,
+          "nPulses": 20,
+          "swerlingModel": "1",
+          "targetRcs_dbsm": 5,
+          "rangeMax_km": 300
+        }
+      }
+    },
+    "rf_cascade": {
+      "slug": "rf-cascade",
+      "title": "RF Cascade Budget Analyzer",
+      "question": "Compute cascaded noise figure, gain, IIP3, and P1dB for an N-stage RF signal chain using Friis formulas.",
+      "description": "Compute cascaded noise figure, gain, IIP3, and P1dB for an N-stage RF signal chain using Friis formulas. Paste your stage list as JSON, set your system specs, and get a line-by-line cascade table, sensitivity analysis, and Monte Carlo yield statistics across component tolerances.",
+      "returns": "Total gain, noise figure, input and output IIP3 and P1dB, SFDR and output power, the cumulative figures after each stage, and the Monte Carlo yield against the specs with its distributions described as series.",
+      "example": {
+        "source": "defaults",
+        "arguments": {
+          "stages": "[{\"name\":\"LNA\",\"type\":\"amp\",\"gain_db\":15,\"nf_db\":1.5,\"iip3_dbm\":-5,\"p1db_dbm\":-15},{\"name\":\"BPF\",\"type\":\"filter\",\"gain_db\":-1.5,\"nf_db\":1.5,\"iip3_dbm\":40,\"p1db_dbm\":30},{\"name\":\"Mixer\",\"type\":\"mixer\",\"gain_db\":-7,\"nf_db\":8,\"iip3_dbm\":12,\"p1db_dbm\":2},{\"name\":\"IF Amp\",\"type\":\"amp\",\"gain_db\":20,\"nf_db\":4,\"iip3_dbm\":10,\"p1db_dbm\":0},{\"name\":\"IF Filter\",\"type\":\"filter\",\"gain_db\":-2,\"nf_db\":2,\"iip3_dbm\":40,\"p1db_dbm\":30},{\"name\":\"ADC Driver\",\"type\":\"amp\",\"gain_db\":6,\"nf_db\":6,\"iip3_dbm\":18,\"p1db_dbm\":8}]"
+        }
+      }
+    },
+    "sat_link_budget": {
+      "slug": "sat-link-budget",
+      "title": "Satellite & Terrestrial Link Budget",
+      "question": "Compute probabilistic link margins using ITU-R propagation models (P.618 rain, P.676 gaseous, P.840 cloud) with climate data read from the ITU-R maps at your site.",
+      "description": "Compute probabilistic link margins using ITU-R propagation models (P.618 rain, P.676 gaseous, P.840 cloud) with climate data read from the ITU-R maps at your site. Enter EIRP, G/T, frequency, and site latitude and longitude. Get a full line-by-line budget, availability curve, and Monte Carlo confidence intervals over rain, pointing, and EIRP/G·T uncertainties.",
+      "returns": "The nominal link budget (free-space loss, gas, cloud and rain attenuation, C/N0 and margin), the margin at the target availability, Monte Carlo margin percentiles, the availability curve described as a series, each climate value with the ITU-R Recommendation it came from, and what is not modelled.",
+      "example": {
+        "source": "preset",
+        "label": "Amateur CubeSat (UHF, AMSAT/SatNOGS)",
+        "arguments": {
+          "latitude_deg": 40,
+          "longitude_deg": -74,
+          "linkType": "satellite",
+          "frequency_ghz": 0.437,
+          "eirp_dbw": -3,
+          "gt_db_k": -12,
+          "distance_km": 739,
+          "elevationAngle_deg": 30,
+          "modulation": "bpsk",
+          "reqEbN0_db": 5,
+          "dataRate_bps": 9600,
+          "targetAvailability_pct": 95
+        }
+      }
+    },
+    "smps_control_loop": {
+      "slug": "smps-control-loop",
+      "title": "SMPS Control Loop Stability Analyzer",
+      "question": "Model switch-mode power supply control loops using small-signal transfer functions.",
+      "description": "Model switch-mode power supply control loops using small-signal transfer functions. Get Bode plots of T(s), extract phase margin, gain margin, and crossover frequency, then run Monte Carlo trials over component tolerances (L ±20%, C ±20%, ESR ±50%, load ±30%) to compute manufacturing yield.",
+      "returns": "The nominal crossover frequency, phase margin and gain margin with a stability verdict, Monte Carlo margin statistics including the share of trials with no margin, and the loop gain, phase and plant responses described as series.",
+      "example": {
+        "source": "defaults",
+        "arguments": {
+          "topology": "buck",
+          "controlMode": "voltage_mode",
+          "Vin": 12,
+          "Vout": 5,
+          "Iout": 2,
+          "L": 0.000047
+        }
+      }
+    },
+    "sparam_pipeline": {
+      "slug": "sparam-pipeline",
+      "title": "S-Parameter Analysis Pipeline",
+      "question": "Upload up to 4 Touchstone files and get component values (L, C, R, Q, self-resonance) for a single component, plus insertion loss, return loss, group delay, TDR and passband ripple — all in one automated report.",
+      "description": "Upload up to 4 Touchstone files and get component values (L, C, R, Q, self-resonance) for a single component, plus insertion loss, return loss, group delay, TDR and passband ripple — all in one automated report.",
+      "returns": "The port count, frequency range and detected two-port topology, each analysis stage it ran (network representations, passivity, and the extracted R, L or C with Q and self-resonance) with its values described as series, and any advisories.",
+      "example": {
+        "source": "defaults",
+        "arguments": {
+          "refImpedance": 50,
+          "freqStart": 0,
+          "freqStop": 0
+        }
+      }
+    }
+  }
+}

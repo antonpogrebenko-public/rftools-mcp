@@ -1,0 +1,255 @@
+{
+  "source": "docs/research/data/search.json, queries.top50_by_clicks: Google Search Console, 2026-06-25 to 2026-09-23 (generated 2026-09-23)",
+  "rule": "Each query that names a calculator, with the calculator a searcher means; search_calculators must rank it in the top three. Queries for the site itself are excluded.",
+  "excluded": [
+    {
+      "query": "rf tools",
+      "reason": "the site's own name, not a calculator"
+    },
+    {
+      "query": "rf tool",
+      "reason": "the site's own name, not a calculator"
+    },
+    {
+      "query": "rf-tools",
+      "reason": "the site's own name, not a calculator"
+    }
+  ],
+  "queries": [
+    {
+      "query": "smith chart online",
+      "expected": "smith-chart",
+      "clicks": 159
+    },
+    {
+      "query": "充電速度 計測 サイト",
+      "expected": "battery-charge-time",
+      "clicks": 153
+    },
+    {
+      "query": "winding scheme calculator",
+      "expected": "bldc-winding",
+      "clicks": 135
+    },
+    {
+      "query": "bldc winding calculator",
+      "expected": "bldc-winding",
+      "clicks": 91
+    },
+    {
+      "query": "lc filter calculator",
+      "expected": "filter-designer",
+      "clicks": 88
+    },
+    {
+      "query": "smith chart calculator",
+      "expected": "smith-chart",
+      "clicks": 76
+    },
+    {
+      "query": "dipole antenna calculator",
+      "expected": "dipole-antenna",
+      "clicks": 69
+    },
+    {
+      "query": "八木アンテナ 自作 計算",
+      "expected": "yagi-antenna",
+      "clicks": 63
+    },
+    {
+      "query": "online smith chart tool",
+      "expected": "smith-chart",
+      "clicks": 52
+    },
+    {
+      "query": "bldc motor winding calculator",
+      "expected": "bldc-winding",
+      "clicks": 47
+    },
+    {
+      "query": "充電時間 計算",
+      "expected": "battery-charge-time",
+      "clicks": 46
+    },
+    {
+      "query": "online smith chart",
+      "expected": "smith-chart",
+      "clicks": 45
+    },
+    {
+      "query": "充電 速度 計測 サイト",
+      "expected": "battery-charge-time",
+      "clicks": 44
+    },
+    {
+      "query": "スミス チャート 計算 サイト",
+      "expected": "smith-chart",
+      "clicks": 43
+    },
+    {
+      "query": "emi filter calculator",
+      "expected": "emi-filter-lc",
+      "clicks": 40
+    },
+    {
+      "query": "common mode choke calculator",
+      "expected": "common-mode-choke",
+      "clicks": 34
+    },
+    {
+      "query": "lc filter design tool",
+      "expected": "filter-designer",
+      "clicks": 33
+    },
+    {
+      "query": "pll loop filter calculator",
+      "expected": "pll-loop-filter",
+      "clicks": 33
+    },
+    {
+      "query": "motor winding calculator",
+      "expected": "bldc-winding",
+      "clicks": 31
+    },
+    {
+      "query": "充電時間計算 サイト",
+      "expected": "battery-charge-time",
+      "clicks": 31
+    },
+    {
+      "query": "bldc motor calculator",
+      "expected": "bldc-motor",
+      "clicks": 29
+    },
+    {
+      "query": "ギア比 計算",
+      "expected": "gear-ratio",
+      "clicks": 29
+    },
+    {
+      "query": "dipole calculator",
+      "expected": "dipole-antenna",
+      "clicks": 28
+    },
+    {
+      "query": "horn antenna calculator",
+      "expected": "horn-antenna",
+      "clicks": 28
+    },
+    {
+      "query": "balun calculator",
+      "expected": "balun-transformer",
+      "clicks": 27
+    },
+    {
+      "query": "bldc calculator",
+      "expected": "bldc-motor",
+      "clicks": 27
+    },
+    {
+      "query": "smith chart tool",
+      "expected": "smith-chart",
+      "clicks": 26
+    },
+    {
+      "query": "三相電力計算 サイト",
+      "expected": "three-phase-power",
+      "clicks": 25
+    },
+    {
+      "query": "carta de smith online",
+      "expected": "smith-chart",
+      "clicks": 24
+    },
+    {
+      "query": "mixer spur calculator",
+      "expected": "mixer-spur-calculator",
+      "clicks": 22
+    },
+    {
+      "query": "rf filter calculator",
+      "expected": "filter-designer",
+      "clicks": 22
+    },
+    {
+      "query": "equalizer calculator",
+      "expected": "equalizer-q-factor",
+      "clicks": 20
+    },
+    {
+      "query": "rf low pass filter calculator",
+      "expected": "filter-designer",
+      "clicks": 20
+    },
+    {
+      "query": "brushless motor winding calculator",
+      "expected": "bldc-winding",
+      "clicks": 19
+    },
+    {
+      "query": "pt1000 rechner",
+      "expected": "pt100-resistance",
+      "clicks": 19
+    },
+    {
+      "query": "smith chart simulator",
+      "expected": "smith-chart",
+      "clicks": 19
+    },
+    {
+      "query": "yagi calculator",
+      "expected": "yagi-antenna",
+      "clicks": 19
+    },
+    {
+      "query": "smith chart online tool",
+      "expected": "smith-chart",
+      "clicks": 18
+    },
+    {
+      "query": "motor winding scheme calculator",
+      "expected": "bldc-winding",
+      "clicks": 17
+    },
+    {
+      "query": "johnson noise calculator",
+      "expected": "johnson-noise",
+      "clicks": 16
+    },
+    {
+      "query": "yagi antenna calculator",
+      "expected": "yagi-antenna",
+      "clicks": 16
+    },
+    {
+      "query": "coax choke balun calculator",
+      "expected": "balun-transformer",
+      "clicks": 15
+    },
+    {
+      "query": "loop antenna calculator",
+      "expected": "loop-antenna",
+      "clicks": 15
+    },
+    {
+      "query": "loop filter calculator",
+      "expected": "pll-loop-filter",
+      "clicks": 15
+    },
+    {
+      "query": "yagi antenne berechnen",
+      "expected": "yagi-antenna",
+      "clicks": 14
+    },
+    {
+      "query": "バッテリー 充電時間 計算",
+      "expected": "battery-charge-time",
+      "clicks": 14
+    },
+    {
+      "query": "同軸 減衰 シュミレータ",
+      "expected": "coax-loss",
+      "clicks": 14
+    }
+  ]
+}

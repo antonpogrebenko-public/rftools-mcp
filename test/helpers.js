@@ -4,6 +4,9 @@
 // Every network interaction in these tests goes through the scripted fetch.
 // Nothing here reaches rftools.io.
 
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -140,6 +143,43 @@ export async function connectedServer(options = {}) {
     server,
     client,
     names,
+    async close() {
+      await client.close();
+      await server.close();
+    },
+  };
+}
+
+/**
+ * The built bundle, dist/mcp-server.cjs, with a client connected to the whole
+ * server it creates: calculator tools, simulation tools and resources. The
+ * calculator and reference modules import the frontend through the `@` alias,
+ * which only the build resolves, so they are tested through what npm ships —
+ * and `npm run build:check` fails whenever that is not what the sources make.
+ */
+export const BUNDLE_PATH = new URL('../dist/mcp-server.cjs', import.meta.url);
+
+export function loadBundle() {
+  const path = fileURLToPath(BUNDLE_PATH);
+  if (!existsSync(path)) throw new Error('dist/mcp-server.cjs is missing: run `npm run build` in the rfhub monorepo');
+  return createRequire(import.meta.url)(path);
+}
+
+export async function connectBundle() {
+  const bundle = loadBundle();
+  const server = bundle.createServer();
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'test-client', version: '0.0.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  return {
+    bundle,
+    client,
+    /** Call a tool; `json` is the parsed body when it succeeded. */
+    async call(name, args) {
+      const result = await client.callTool({ name, arguments: args });
+      const text = result.content.map((c) => c.text).join('\n');
+      return { isError: Boolean(result.isError), text, json: result.isError ? null : JSON.parse(text) };
+    },
     async close() {
       await client.close();
       await server.close();

@@ -64,7 +64,7 @@
       "x-derived": "one-third point (boardWidth_mm / 3)",
       "x-label": "Port X location",
       "x-unit": "mm",
-      "x-tooltip": "Where the IC draws current (its power pins). Leave blank for the one-third point, where every cavity mode is visible; the board centre hides every mode with an odd index."
+      "x-tooltip": "Where the IC draws current (its power pins). Leave blank for the one-third point of the board width: no cavity mode has a voltage null there, so every mode shows on the plot. The board centre hides every mode with an odd index."
     },
     "portY_mm": {
       "type": "number",
@@ -72,7 +72,8 @@
       "maximum": 500,
       "x-derived": "one-third point (boardLength_mm / 3)",
       "x-label": "Port Y location",
-      "x-unit": "mm"
+      "x-unit": "mm",
+      "x-tooltip": "Where the IC draws current, along the board length. Leave blank for the one-third point of the board length (see Port X location)."
     },
     "portSize_mm": {
       "type": "number",
@@ -118,7 +119,7 @@
       "default": 10,
       "x-label": "Target Impedance",
       "x-unit": "mΩ",
-      "x-tooltip": "Flat target impedance — keep Z_PDN below this across all frequencies"
+      "x-tooltip": "Flat target impedance. Z_PDN is judged against it across the decoupling band, up to 0.8 × the first cavity mode."
     },
     "freqMin_hz": {
       "type": "number",

@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
-**MCP server for [rftools.io](https://rftools.io) — 241 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
+**MCP server for [rftools.io](https://rftools.io) — 255 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
 
 Give Claude, Cursor, or any MCP-compatible AI assistant access to validated engineering calculators and heavy server-side simulations. Microstrip impedance, link budgets, filter design, converter sizing, antenna patterns, and 200+ more calculators — plus NEC2 antenna simulation, FDTD, Monte Carlo, SMPS analysis, EMI estimation, and more, all callable as MCP tools.
 
@@ -16,7 +16,7 @@ Calculators work with no API key, and so do the simulation tools: without one, a
 
 ### Without API key
 
-All 241 calculators run locally with no sign-up required, and every simulation tool that takes no file still submits — on the free lane, with the free limits and the free-lane parameter bounds stated on the response.
+All 255 calculators run locally with no sign-up required, and every simulation tool that takes no file still submits — on the free lane, with the free limits and the free-lane parameter bounds stated on the response.
 
 A job type that takes a file is the exception. Uploading a file needs an API key; set `RFTOOLS_API_KEY`. Without one, a call carrying `inputFiles` or `inputPaths` is refused here, with that sentence, before the file is read and before any request leaves this machine.
 
@@ -94,6 +94,191 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Tools
 
+24 tools: six for calculators, one `simulate_*` tool for each of the 13 job
+types, and five for the job lifecycle; plus the site's reference tables as
+resources.
+
+### What changed in 2.5.7
+
+No tool changed. Results follow rftools.io's trace thermal model (changelog,
+2026-10-14):
+- **`trace-width-current` gains `widthBoardMm`** and **`pcb-trace-temp`
+  gains `tempRiseBoard` and `maxTempBoard`**: the width and rise for this
+  board, from rftools' own thermal model (never labelled IPC-2152), with
+  `inModelRange` and a 15 % margin. New optional inputs: `boardThickness`,
+  `planeDistance`, `planeCopperWeight` (and `isExternal` on
+  `pcb-trace-temp`).
+- **`provenance.validRange.models`** lists both fitted models on these two
+  calculators, each with its own `inside`.
+- Both calculators refuse a zero or negative current, rise, copper weight or
+  length, as the API does.
+
+### What changed in 2.5.6
+
+No tool changed. `simulate_emi_radiated`'s fields now use the exact π·µ₀/c and
+µ₀ (once the worker deploys), and calculator results follow the rftools.io
+formula follow-up (changelog, 2026-10-13):
+- **Seven outputs are removed** (breaking): differential-via's five
+  impedances (a field solution showed they depend on the plane pitch, which
+  is not an input), usb-termination `eyeOpening` and parabolic-dish-antenna
+  `noiseTemperature`.
+- **Values that do not exist are null** (breaking): USB 3.0 rise time,
+  crosstalk above the weak-coupling limit, sealed subwoofer at Qts ≥ 0.707,
+  spiral Q at or above resonance, a lossless LC circuit's Q, a via with no
+  stub; and a refused input returns no values instead of zeros.
+- **Models corrected:** the planar spiral's self-resonance and Q, Paul's
+  two-end crosstalk with a far-end output, Margolis & Small port tuning,
+  coupled-microstrip pcb-crosstalk, Balanis' slot model for the patch, LC Q
+  in parallel mode plus the impedance at resonance, microvia arrays, via
+  self-heating, BGA escape rows, IPC-2222 aspect ratios.
+- **Exact constants:** one η₀ = µ₀·c, η₀/2π in every microstrip impedance
+  (−0.069 %), and IEC 60028 copper.
+- **New inputs:** planar-spiral-inductor `frequency`, pcb-crosstalk
+  `dielectricConst`, aperture-diagonal `routerBit`.
+
+### What changed in 2.5.5
+
+No tool or argument changed. Calculator inputs and outputs follow the
+rftools.io input audit (changelog, 2026-10-12):
+- **Twelve inputs that never changed a result are retired**: a call that
+  still sends one is computed and answered with the warning "Input 'X' is
+  not read by this calculator and was ignored." (`get_calculator_schema`
+  no longer lists them).
+- **Eight inputs now drive new outputs**: patch-antenna's feed resistance at
+  the inset, flyback's primary inductance, solar autonomy, the RS-485 baud
+  rate against the cable's maximum, the ADC's Nyquist zone and alias,
+  bldc-thermal's share of the rating, bldc-winding's no-load speed, and the
+  ISM band. Yagi reports `assumedBoomLength`.
+- **Four constant outputs are removed** (breaking): balun-transformer
+  `vswr` and `insertionLoss`, opamp-bandwidth `slewLimited`, capacitor-code
+  `voltageCode`.
+- **`loop-antenna`'s gain includes its radiation efficiency** (it always read
+  1.76 dBi); a `radiationEfficiency` output is added.
+
+### What changed in 2.5.4
+
+No tool or name changed. `trace-width-current`'s IPC-2152 width
+(`width2152mm`) is now IPC-2152 Figure 5-1 (the conservative chart, by its
+published closed form) instead of IPC-2221 × 0.75/0.85, which erred on the
+unsafe side: 5 A at a 10 °C rise in 1 oz copper needs 7.19 mm, not 2.09 mm.
+A new optional `traceWidth` input sets the width that resistance, voltage
+drop and power are computed at. `pcb-trace-temp` adds the Figure 5-1 rise
+and maximum temperature (rftools.io changelog, 2026-10-12).
+
+### What changed in 2.5.3
+
+No tool, argument or name changed. Twelve calculators now compute the model
+they cite (rftools.io changelog, 2026-10-12):
+- `mosfet-operating-point` solves the drain load line (11.96 mA at the
+  defaults, not 450 mA; `biasMode` 1 keeps the entered V_DS);
+- `radar-range-equation` takes the range at the required SNR (Albersheim,
+  new `pd`, `pfa` and `pulses` inputs);
+- `cable-shield-effectiveness` refers the shielding to a 50 Ω line;
+- `ferrite-bead` uses a complex bead model (AN-1368);
+- `bldc-motor` solves the loaded speed;
+- `ethernet-cable` uses TIA-568-C.2 insertion loss at each PHY's signalling
+  frequency (Category 8 on IEEE 802.3bq draft coefficients);
+- `bldc-efficiency` and `bldc-thermal` take I²·R copper loss, and
+  bldc-thermal's hot resistance (it is null above the runaway current);
+- `class-d-efficiency` and `motor-driver-power` count two conducting FETs;
+- `coax-impedance` and `via-calculator` use η₀/2π.
+
+### What changed in 2.5.2
+
+No tool, argument or name changed. `bldc-winding` now counts both coil sides
+in each slot (a double-layer winding), so its fill factor is
+2·N·A_wire/A_slot and is no longer capped at 100 %. Its distribution factor
+comes from the star-of-slots method (12N14P: 0.933, not 0.966), and its
+default maximum current is 5 A, a winding that builds (rftools.io
+changelog, 2026-10-11).
+
+### What changed in 2.5.1
+
+No tool, argument or name changed. Thirty-one calculators that computed
+something other than their cited reference now compute it, with the same
+numbers as the website and the REST API (rftools.io changelog, 2026-10-07).
+Among them: `shielding-effectiveness` (reflection loss carries η₀, 45.5 dB
+was missing; multiple reflections added), `ground-plane-impedance` (µ₀·h·l/w,
+with a new optional `separation` input, default 1 mm), `speaker-crossover`
+(2nd-order inductors √2·R/ω_c), `esd-tvs-diode` (IEC 61000-4-2's 3.75 A/kV
+first peak), `common-mode-choke` (a 50 Ω/50 Ω system), `minimum-conductor-spacing`
+(IPC-2221B Table 6-1 by band), `radiated-emission-estimate` (CISPR 32
+Class B at the distance; no margin below 30 MHz or above 6 GHz) and
+`via-thermal-resistance` (IPC-2221 current capacity, new optional `tempRise`).
+
+### What changed in 2.5.0
+
+No tool was added, removed or renamed, and no tool's arguments changed.
+
+- **Fourteen new calculators** (255 in all), each checked against a cited
+  textbook, standard or datasheet value:
+  - antennas: `helical-antenna`, `monopole-antenna`, `antenna-downtilt`;
+  - RF: `line-of-sight`, `wilkinson-power-divider`, `directional-coupler`,
+    `circular-waveguide`, `microstrip-mitered-bend`, `5g-nr-band-lookup`
+    (3GPP Release 18 band table) and `5g-nr-link-budget`;
+  - power: `rc-snubber`, `rcd-clamp-snubber`.
+- **A new category, `iot`** ("IoT & LPWAN"), holding `lora-link-budget` and
+  `ble-link-budget`. `list_calculators` with `category: "iot"` lists them.
+- **Corrected outputs:**
+  - `filter-designer`: its Chebyshev prototype values were wrong from order 4
+    (g3 1.5733, now 2.3661), a first-order Butterworth gave g1 = 1 (now 2),
+    and the band-pass element values were ten times too small at Q = 10. The
+    values are now computed, not tabulated.
+  - `waveguide-cutoff`, `free-space-path-loss`, `rf-link-budget`,
+    `fresnel-zone`, `link-margin` and `radar-range-equation` use the exact
+    speed of light, not 3×10⁸. Lengths move by about 0.07 % and path loss by
+    0.006 dB. `radar-range-equation` also uses the exact Boltzmann constant.
+  - `planar-spiral-inductor` refuses an inner diameter at or above the outer
+    one instead of returning NaN.
+
+### What changed in 2.4.0
+
+No existing tool was removed or renamed, and no existing tool's arguments
+changed: every name and every argument 2.3.0 accepted is accepted the same way.
+
+- **New tool: `search_calculators`.** Finds calculators by words — "trace
+  impedance on FR4 microstrip" — instead of listing all 255. It matches English
+  titles, keywords, input and output names and descriptions, and the German,
+  Spanish, French, Japanese, Korean and Portuguese titles and keywords, so
+  "マイクロストリップ インピーダンス" finds the microstrip calculator too.
+- **New tool: `get_calculator_schema`.** One calculator's inputs as a JSON
+  Schema (2020-12): each a number with its unit, minimum, maximum, default and
+  description, with the outputs, the formula and its reference, and the page
+  URL. A misspelt identifier is refused with the closest ones.
+- **`run_calculation` lists what it assumed.** A new `defaultedInputs` field
+  names every declared input the call left out, which therefore took its
+  default. An undeclared input key is still computed around and named in a
+  warning, in the REST API's wording; it is not refused.
+- **Every tool carries annotations**: a `title` and `readOnlyHint`,
+  `destructiveHint`, `idempotentHint` and `openWorldHint`, so a host can tell
+  what it may run without asking (see **Annotations** below).
+- **Every description says what the tool answers**, its inputs' units and
+  ranges (or which tool states them), one complete example call and what it
+  returns. The 13 `simulate_*` descriptions are generated from the website's
+  tool registry, so they change when the tool does.
+- **Reference tables as resources**: frequency bands, RF connectors, standard
+  values, component marking codes and PCB specifications, at
+  `rftools://reference/{domain}/{id}` (see **Reference resources** below).
+- **`--manifest`**: `npx rftools-mcp --manifest` prints what this build lists —
+  tools, resources, templates, counts — as JSON, and exits.
+- `run_calculation`'s `webUrl` is now the page's canonical address, with its
+  trailing slash.
+
+### Annotations
+
+| Tools | read-only | destructive | idempotent | open world |
+|---|---|---|---|---|
+| `list_calculators`, `search_calculators`, `get_calculator_info`, `get_calculator_schema`, `run_calculation`, `list_simulation_tools`, `get_simulation_status`, `get_simulation_result` | yes | no | yes | no |
+| `solve_calculation`, `submit_simulation`, `run_simulation`, every `simulate_*` | no | no | no | no |
+
+A tool that starts a job or makes a metered call spends the account's monthly
+allowance, so it is not marked read-only — a host that runs read-only tools
+without asking would otherwise spend a free account's five runs unprompted —
+and it is not idempotent, because a repeat spends again (identical job
+submissions merge only inside 60 seconds). Nothing deletes or overwrites
+anything, and every tool talks only to rftools.io, so no tool is destructive
+or open-world.
+
 ### What changed in 2.2.0
 
 - **New tool: `solve_calculation`.** Finds the value of one calculator input
@@ -162,10 +347,11 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ### Calculator tools
 
-`list_calculators`, `get_calculator_info` and `run_calculation` need no API
-key — they run locally, for free. `solve_calculation` is the exception: it
-runs on rftools.io itself and needs a key, exactly as `run_calculation` needs
-none — see its own section below.
+`list_calculators`, `search_calculators`, `get_calculator_info`,
+`get_calculator_schema` and `run_calculation` need no API key — they run
+locally, for free. `solve_calculation` is the exception: it runs on rftools.io
+itself and needs a key, exactly as `run_calculation` needs none — see its own
+section below.
 
 #### `list_calculators`
 
@@ -178,7 +364,36 @@ List available calculators, optionally filtered by category.
 ```
 
 **Parameters:**
-- `category` (optional): `rf`, `pcb`, `power`, `signal`, `antenna`, `general`, `motor`, `protocol`, `emc`, `thermal`, `sensor`, `unit-conversion`, `audio`
+- `category` (optional): `rf`, `pcb`, `power`, `signal`, `antenna`, `general`, `motor`, `protocol`, `emc`, `thermal`, `sensor`, `unit-conversion`, `audio`, `iot`
+
+#### `search_calculators`
+
+Find calculators by words, in English or in any of the site's other six
+languages, ranked by how well they match.
+
+```
+"Which calculator gives trace impedance on FR4 microstrip?"
+"Find a calculator for battery charge time"
+```
+
+**Parameters:**
+- `query` (required): the words to match
+- `category` (optional): restrict to one category; an unknown one is refused with the list
+- `limit` (optional): 1 to 25 results, default 10
+
+Each result carries `slug`, `title`, `category`, a one-line `description`, the
+page `url` and its `score`; `matched` says how many calculators matched in all.
+A search that matches nothing is returned as an error saying so, not as an
+empty list.
+
+The ranking is deterministic, so the hosted endpoint can reproduce it exactly:
+text is NFKC-normalised and lower-cased; Latin text splits into words (accents
+folded, one plural `s` dropped), Japanese and Korean into character bigrams;
+each calculator field has a weight (English title 10, translated title 8,
+keywords 6, translated keywords 5, input and output names 3, description 2);
+a calculator scores the sum over the query's words of its best field weight
+times `ln(1 + N/df)`; ties keep registry order. The rules are written out in
+`src/calculator-search.ts`.
 
 #### `get_calculator_info`
 
@@ -196,9 +411,22 @@ Each input carries its stated `min`/`max` (the same bounds `run_calculation`'s
 `provenance.validRange` checks against). An input with neither is unbounded —
 `solve_calculation` needs an explicit `range` to solve for one of those.
 
+#### `get_calculator_schema`
+
+The same inputs as a JSON Schema (draft 2020-12) — what a call to
+`run_calculation` may send — with the outputs, the formula and the page URL.
+
+**Parameters:**
+- `slug` (required): Calculator identifier. A misspelt one is refused, naming the three closest (`microstrip-impedence` → `microstrip-impedance`, …).
+
+Returns `inputSchema` (each property a `number` with `title`, `description`
+— label, unit and tooltip — `default`, `minimum`, `maximum` and `x-unit`),
+`outputs` (`key`, `label`, `unit`), `formula` (`primary`, `latex` where there
+is one, and `reference`, the source the formula comes from) and `url`.
+
 #### `run_calculation`
 
-Run a calculator with specific inputs. Returns results with units, a link to the interactive version on rftools.io, and the result's `provenance` (formula source, assumptions, inputs used, whether they lie inside the calculator's stated range, engine version and time). An input left out takes its default. Runs locally — instant, no quota consumed.
+Run a calculator with specific inputs. Returns results with units, a link to the interactive version on rftools.io, `defaultedInputs`, and the result's `provenance` (formula source, assumptions, inputs used, whether they lie inside the calculator's stated range, engine version and time). An input left out takes its default and is named in `defaultedInputs`; an input key the calculator does not declare is not read and is named in `warnings`; a value outside the stated range is computed and named in `warnings`. Runs locally — instant, no quota consumed.
 
 ```
 "Calculate microstrip impedance for a 0.3mm trace on 0.2mm Rogers RO4003C"
@@ -308,6 +536,28 @@ The compatibility form of a `simulate_*` call: `jobType`, `params`, optional fil
 
 Failures are classified by HTTP status and by the service's own error kind, never by matching text: an invalid key, a spent allowance, a rate limit with its retry time, a refused parameter (with the service's own detail, unchanged), a job too large for its lane, a mode the tier does not carry, a timeout and a service fault each read differently. Polling stops at once on a 4xx, and after five failures in a row that are not.
 
+---
+
+### Reference resources
+
+The tables published under [rftools.io/reference](https://rftools.io/reference/)
+are MCP resources, one per page, built from the same data the pages are, so
+the counts always match the site. Each domain has a template for lookup by
+identifier:
+
+| Template | What each entry holds |
+|---|---|
+| `rftools://reference/bands/{id}` | A frequency band: limits in Hz, wavelength, ITU designation, uses, propagation and regulatory notes |
+| `rftools://reference/connectors/{id}` | An RF connector: impedance, frequency and power limits, VSWR, mating cycles, materials, uses |
+| `rftools://reference/values/{id}` | A standard-value table: E24/E96 resistors, capacitors, AWG, drills, threads, SI prefixes |
+| `rftools://reference/codes/{id}` | A marking-code chart: SMD resistor codes, capacitor value, voltage, tolerance and dielectric codes |
+| `rftools://reference/pcb/{id}` | A PCB table: copper weight against thickness and current, standard board thicknesses |
+
+A read returns JSON with the entry's values, its `source` (the standards the
+page names and its note on where the values come from) and the page `url`. An
+unknown identifier fails with invalid params, naming the template and the
+valid identifiers. Hosts that offer completion can complete `{id}`.
+
 ## Example Conversations
 
 ### PCB Design
@@ -328,15 +578,15 @@ Failures are classified by HTTP status and by the service's own error kind, neve
 >
 > **AI:** *Calls `run_calculation` with buck-converter* → Duty cycle: 20.8%, inductor: 17.4 μH, output cap: 22 μF. [View on rftools.io →](https://rftools.io/calculators/power/buck-converter)
 
-## All 241 Calculators
+## All 255 Calculators
 
 | Category | Count | Examples |
 |----------|------:|---------|
-| **RF & Microwave** | 29 | Microstrip impedance, coplanar waveguide (CPW/GCPW), VSWR/return loss, Smith chart, link budget, noise figure cascade, radar range, free-space path loss, mixer spur |
+| **RF & Microwave** | 36 | Microstrip impedance, coplanar waveguide (CPW/GCPW), VSWR/return loss, Smith chart, link budget, noise figure cascade, radar range, free-space path loss, mixer spur, Wilkinson divider, directional coupler, circular waveguide, line of sight, 5G NR band lookup and link budget |
 | **PCB Design** | 36 | Trace width for current, controlled impedance, edge-coupled stripline pairs (symmetric, offset, embedded), differential via with stub loss, skin depth percentage, conductor-to-pad width, BGA breakout width, aperture diagonal, maximum pad diameter, effective dielectric constant, via step response, microvia current capacity, asymmetric (offset) stripline, dual stripline, broadside-coupled pair, differential pair, via calculator, crosstalk, critical trace length, fusing current, decoupling capacitor, padstack/annular ring, BGA land pad, conductor spacing, planar spiral inductor, embedded resistor, via voltage drop |
-| **Power Electronics** | 21 | Buck converter, boost converter, flyback, LDO thermal, battery life, MOSFET dissipation, solar panel sizing |
+| **Power Electronics** | 23 | Buck converter, boost converter, flyback, LDO thermal, battery life, MOSFET dissipation, solar panel sizing, RC snubber, RCD clamp snubber |
 | **Signal Processing** | 14 | Filter designer, ADC SNR, FFT bin resolution, PLL loop filter, BER/SNR, Johnson noise, rise time to bandwidth |
-| **Antenna Design** | 8 | Dipole, patch, Yagi-Uda, horn, parabolic dish, loop, EIRP, beamwidth |
+| **Antenna Design** | 11 | Dipole, patch, Yagi-Uda, horn, parabolic dish, loop, EIRP, beamwidth, helical, monopole/whip, antenna downtilt |
 | **General Electronics** | 24 | Ohm's law, crystal PPM tolerance, op-amp gain, 555 timer, BJT bias, MOSFET operating point, Schmitt trigger, crystal load capacitance |
 | **Motor Control** | 22 | DC motor speed, stepper, BLDC, servo, PID tuning, gear ratio, H-bridge selection, torque converter |
 | **Communications** | 11 | UART baud rate, I2C pull-up, SPI timing, CAN bus, USB termination, RS-485, Ethernet, Modbus, LIN bus |
@@ -345,6 +595,7 @@ Failures are classified by HTTP status and by the service's own error kind, neve
 | **Sensor Interface** | 17 | NTC thermistor, RTD, thermocouple, Wheatstone bridge, load cell, photodiode, 4-20 mA loop transmitter |
 | **Unit Conversion** | 19 | dBm↔Watts, rectangular↔polar, frequency↔wavelength, length (mm/mil/inch), AWG wire, capacitor code, temperature, inductance, data rate |
 | **Audio Electronics** | 18 | Speaker crossover, room modes, headphone power, class-D efficiency, audio transformer, equalizer Q |
+| **IoT & LPWAN** | 2 | LoRa link budget (sensitivity by spreading factor, time on air, duty-cycle off-time, Okumura–Hata range), BLE link budget by PHY (ITU-R P.1238 indoor path loss) |
 
 ## Why Use This Instead of Asking the AI to Calculate?
 
@@ -384,8 +635,10 @@ AI Agent ←stdio→ rftools-mcp ←HTTPS (key optional)→ rftools.io API → S
 
 ## Machine-Readable Documentation
 
+- **[rftools.io/agents](https://rftools.io/agents/)** — This server's tools, install steps and example prompts, in seven languages
 - **[rftools.io/llms.txt](https://rftools.io/llms.txt)** — Summary with API info and MCP setup
-- **[rftools.io/llms-full.txt](https://rftools.io/llms-full.txt)** — Complete listing of all 241 calculators with inputs, outputs, units, and URLs
+- **[rftools.io/llms-full.txt](https://rftools.io/llms-full.txt)** — Complete listing of all 255 calculators with inputs, outputs, units, and URLs
+- **`npx rftools-mcp --manifest`** — Everything this build lists (tools with their descriptions, annotations and input schemas, resources, templates and counts) as one JSON document; the agents page is built from it
 
 ## Links
 
