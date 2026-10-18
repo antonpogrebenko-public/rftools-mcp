@@ -832,67 +832,56 @@ var dbConverter = {
 };
 
 // src/lib/calculators/rf/noise-figure-cascade.ts
+var MAX_STAGES = 10;
+var T0 = 290;
+var BOLTZMANN = 1380649e-29;
 function calculateNoiseFigureCascade(inputs) {
-  const {
-    stage1NF,
-    stage1Gain,
-    stage1IIP3,
-    stage2NF,
-    stage2Gain,
-    stage2IIP3,
-    stage3NF,
-    stage3Gain,
-    stage3IIP3,
-    stage4NF,
-    stage4Gain,
-    stage4IIP3,
-    numStages
-  } = inputs;
-  const n = Math.round(numStages);
-  if (n < 1 || n > 4) {
-    return { values: {}, errors: ["Number of stages must be between 1 and 4"] };
+  const n = Math.round(inputs.numStages);
+  if (n < 1 || n > MAX_STAGES) {
+    return { values: {}, errors: [`Number of stages must be between 1 and ${MAX_STAGES}`] };
   }
-  const F1 = Math.pow(10, stage1NF / 10);
-  const G1 = Math.pow(10, stage1Gain / 10);
-  const F2 = Math.pow(10, stage2NF / 10);
-  const G2 = Math.pow(10, stage2Gain / 10);
-  const F3 = Math.pow(10, stage3NF / 10);
-  const G3 = Math.pow(10, stage3Gain / 10);
-  const F4 = Math.pow(10, stage4NF / 10);
-  let F_total = F1;
-  if (n >= 2) F_total += (F2 - 1) / G1;
-  if (n >= 3) F_total += (F3 - 1) / (G1 * G2);
-  if (n >= 4) F_total += (F4 - 1) / (G1 * G2 * G3);
+  let F_total = 0;
+  let invIip3 = 0;
+  let gainBefore = 1;
+  let totalGain = 0;
+  const contributions = [];
+  for (let k = 1; k <= n; k++) {
+    const F = Math.pow(10, inputs[`stage${k}NF`] / 10);
+    const iip3_mW = Math.pow(10, inputs[`stage${k}IIP3`] / 10);
+    const term = k === 1 ? F : (F - 1) / gainBefore;
+    F_total += term;
+    contributions.push(k === 1 ? 10 * Math.log10(F) : 10 * Math.log10(1 + term));
+    invIip3 += gainBefore / iip3_mW;
+    gainBefore *= Math.pow(10, inputs[`stage${k}Gain`] / 10);
+    totalGain += inputs[`stage${k}Gain`];
+  }
   const cascadedNF = 10 * Math.log10(F_total);
-  const contrib1 = 10 * Math.log10(F1);
-  const contrib2 = n >= 2 ? 10 * Math.log10(1 + (F2 - 1) / G1) : 0;
-  const contrib3 = n >= 3 ? 10 * Math.log10(1 + (F3 - 1) / (G1 * G2)) : 0;
-  const iip3_1_mW = Math.pow(10, stage1IIP3 / 10);
-  const iip3_2_mW = Math.pow(10, stage2IIP3 / 10);
-  const iip3_3_mW = Math.pow(10, stage3IIP3 / 10);
-  const iip3_4_mW = Math.pow(10, stage4IIP3 / 10);
-  let inv_iip3 = 1 / iip3_1_mW;
-  if (n >= 2) inv_iip3 += G1 / iip3_2_mW;
-  if (n >= 3) inv_iip3 += G1 * G2 / iip3_3_mW;
-  if (n >= 4) inv_iip3 += G1 * G2 * G3 / iip3_4_mW;
-  const iip3_total_mW = 1 / inv_iip3;
-  const cascadedIIP3 = 10 * Math.log10(iip3_total_mW);
-  let totalGain = stage1Gain;
-  if (n >= 2) totalGain += stage2Gain;
-  if (n >= 3) totalGain += stage3Gain;
-  if (n >= 4) totalGain += stage4Gain;
-  const cascadedOIP3 = cascadedIIP3 + totalGain;
+  const cascadedIIP3 = 10 * Math.log10(1 / invIip3);
+  const bandwidthHz = (inputs.bandwidth ?? 1) * 1e6;
+  const noiseFloor = 10 * Math.log10(BOLTZMANN * T0 * bandwidthHz * 1e3) + cascadedNF;
   return {
     values: {
       cascadedNF,
       cascadedF: F_total,
-      stage1Contribution: contrib1,
-      stage2Contribution: contrib2,
-      stage3Contribution: contrib3,
+      stage1Contribution: contributions[0],
+      stage2Contribution: contributions[1] ?? 0,
+      stage3Contribution: contributions[2] ?? 0,
       cascadedIIP3,
-      cascadedOIP3
+      cascadedOIP3: cascadedIIP3 + totalGain,
+      cascadedGain: totalGain,
+      noiseTemperature: T0 * (F_total - 1),
+      noiseFloor
     }
   };
+}
+var SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉";
+var sub = (k) => String(k).split("").map((d) => SUBSCRIPT[Number(d)]).join("");
+function stageInputs(k, d, tips) {
+  return [
+    { key: `stage${k}NF`, label: `Stage ${k} Noise Figure`, symbol: `NF${sub(k)}`, unit: "dB", defaultValue: d.nf, min: 0, max: 30, step: 0.1, tooltip: tips.nf, group: `Stage ${k}` },
+    { key: `stage${k}Gain`, label: `Stage ${k} Gain`, symbol: `G${sub(k)}`, unit: "dB", defaultValue: d.gain, min: -20, max: 40, step: 0.1, tooltip: tips.gain, group: `Stage ${k}` },
+    { key: `stage${k}IIP3`, label: `Stage ${k} IIP3`, symbol: `IIP3${sub(k)}`, unit: "dBm", defaultValue: d.iip3, min: -40, max: 50, step: 0.5, tooltip: tips.iip3, group: `Stage ${k}` }
+  ];
 }
 var noiseFigureCascade = {
   slug: "noise-figure-cascade",
@@ -910,9 +899,9 @@ var noiseFigureCascade = {
       unit: "",
       defaultValue: 3,
       min: 1,
-      max: 4,
+      max: MAX_STAGES,
       step: 1,
-      tooltip: "Number of cascaded RF stages (1–4)",
+      tooltip: `Number of cascaded RF stages (1–${MAX_STAGES})`,
       presets: [
         { label: "1 stage", values: { numStages: 1 } },
         { label: "2 stages", values: { numStages: 2 } },
@@ -920,149 +909,41 @@ var noiseFigureCascade = {
         { label: "4 stages", values: { numStages: 4 } }
       ]
     },
+    ...stageInputs(1, { nf: 1.5, gain: 15, iip3: -5 }, {
+      nf: "Noise figure of stage 1 (typically the LNA)",
+      gain: "Gain of stage 1",
+      iip3: "Input third-order intercept point of stage 1 (LNA). Typical LNA: −5 to +10 dBm."
+    }),
+    ...stageInputs(2, { nf: 8, gain: -6, iip3: 10 }, {
+      nf: "Noise figure of stage 2 (e.g. mixer)",
+      gain: "Gain of stage 2 (may be negative for a mixer)",
+      iip3: "Input third-order intercept point of stage 2 (e.g. mixer). Typical passive mixer: +10 to +20 dBm."
+    }),
+    ...stageInputs(3, { nf: 6, gain: 20, iip3: 20 }, {
+      nf: "Noise figure of stage 3 (e.g. IF amplifier)",
+      gain: "Gain of stage 3",
+      iip3: "Input third-order intercept point of stage 3 (IF amplifier). Typical: +15 to +25 dBm."
+    }),
+    ...stageInputs(4, { nf: 3, gain: 10, iip3: 25 }, {
+      nf: "Noise figure of stage 4",
+      gain: "Gain of stage 4",
+      iip3: "Input third-order intercept point of stage 4."
+    }),
+    ...Array.from({ length: MAX_STAGES - 4 }, (_, i) => i + 5).flatMap((k) => stageInputs(k, { nf: 3, gain: 10, iip3: 25 }, {
+      nf: `Noise figure of stage ${k}`,
+      gain: `Gain of stage ${k}`,
+      iip3: `Input third-order intercept point of stage ${k}.`
+    })),
     {
-      key: "stage1NF",
-      label: "Stage 1 Noise Figure",
-      symbol: "NF₁",
-      unit: "dB",
-      defaultValue: 1.5,
-      min: 0,
-      max: 30,
+      key: "bandwidth",
+      label: "Noise Bandwidth",
+      symbol: "B",
+      unit: "MHz",
+      defaultValue: 1,
+      min: 1e-6,
+      max: 1e5,
       step: 0.1,
-      tooltip: "Noise figure of stage 1 (typically the LNA)",
-      group: "Stage 1"
-    },
-    {
-      key: "stage1Gain",
-      label: "Stage 1 Gain",
-      symbol: "G₁",
-      unit: "dB",
-      defaultValue: 15,
-      min: -20,
-      max: 40,
-      step: 0.1,
-      tooltip: "Gain of stage 1",
-      group: "Stage 1"
-    },
-    {
-      key: "stage1IIP3",
-      label: "Stage 1 IIP3",
-      symbol: "IIP3₁",
-      unit: "dBm",
-      defaultValue: -5,
-      min: -40,
-      max: 50,
-      step: 0.5,
-      tooltip: "Input third-order intercept point of stage 1 (LNA). Typical LNA: −5 to +10 dBm.",
-      group: "Stage 1"
-    },
-    {
-      key: "stage2NF",
-      label: "Stage 2 Noise Figure",
-      symbol: "NF₂",
-      unit: "dB",
-      defaultValue: 8,
-      min: 0,
-      max: 30,
-      step: 0.1,
-      tooltip: "Noise figure of stage 2 (e.g. mixer)",
-      group: "Stage 2"
-    },
-    {
-      key: "stage2Gain",
-      label: "Stage 2 Gain",
-      symbol: "G₂",
-      unit: "dB",
-      defaultValue: -6,
-      min: -20,
-      max: 40,
-      step: 0.1,
-      tooltip: "Gain of stage 2 (may be negative for a mixer)",
-      group: "Stage 2"
-    },
-    {
-      key: "stage2IIP3",
-      label: "Stage 2 IIP3",
-      symbol: "IIP3₂",
-      unit: "dBm",
-      defaultValue: 10,
-      min: -40,
-      max: 50,
-      step: 0.5,
-      tooltip: "Input third-order intercept point of stage 2 (e.g. mixer). Typical passive mixer: +10 to +20 dBm.",
-      group: "Stage 2"
-    },
-    {
-      key: "stage3NF",
-      label: "Stage 3 Noise Figure",
-      symbol: "NF₃",
-      unit: "dB",
-      defaultValue: 6,
-      min: 0,
-      max: 30,
-      step: 0.1,
-      tooltip: "Noise figure of stage 3 (e.g. IF amplifier)",
-      group: "Stage 3"
-    },
-    {
-      key: "stage3Gain",
-      label: "Stage 3 Gain",
-      symbol: "G₃",
-      unit: "dB",
-      defaultValue: 20,
-      min: -20,
-      max: 40,
-      step: 0.1,
-      tooltip: "Gain of stage 3",
-      group: "Stage 3"
-    },
-    {
-      key: "stage3IIP3",
-      label: "Stage 3 IIP3",
-      symbol: "IIP3₃",
-      unit: "dBm",
-      defaultValue: 20,
-      min: -40,
-      max: 50,
-      step: 0.5,
-      tooltip: "Input third-order intercept point of stage 3 (IF amplifier). Typical: +15 to +25 dBm.",
-      group: "Stage 3"
-    },
-    {
-      key: "stage4NF",
-      label: "Stage 4 Noise Figure",
-      symbol: "NF₄",
-      unit: "dB",
-      defaultValue: 3,
-      min: 0,
-      max: 30,
-      step: 0.1,
-      tooltip: "Noise figure of stage 4",
-      group: "Stage 4"
-    },
-    {
-      key: "stage4Gain",
-      label: "Stage 4 Gain",
-      symbol: "G₄",
-      unit: "dB",
-      defaultValue: 10,
-      min: -20,
-      max: 40,
-      step: 0.1,
-      tooltip: "Gain of stage 4",
-      group: "Stage 4"
-    },
-    {
-      key: "stage4IIP3",
-      label: "Stage 4 IIP3",
-      symbol: "IIP3₄",
-      unit: "dBm",
-      defaultValue: 25,
-      min: -40,
-      max: 50,
-      step: 0.5,
-      tooltip: "Input third-order intercept point of stage 4.",
-      group: "Stage 4"
+      tooltip: "The bandwidth the noise floor is given in: kT₀B at 290 K plus the cascaded noise figure. Changes no other result."
     }
   ],
   outputs: [
@@ -1073,6 +954,8 @@ var noiseFigureCascade = {
       symbol: "NF_total",
       unit: "dB",
       precision: 2,
+      // A receiver's noise figure reads in hundredths (0.88 dB), as the ExBudget board writes it.
+      display: { decimals: 2 },
       format: "standard",
       tooltip: "Total cascaded noise figure of the signal chain",
       thresholds: {
@@ -1122,6 +1005,7 @@ var noiseFigureCascade = {
       symbol: "IIP3_in",
       unit: "dBm",
       precision: 1,
+      signed: "explicit",
       format: "standard",
       tooltip: "Input-referred third-order intercept point of the cascade. Higher is better (less intermodulation distortion).",
       thresholds: {
@@ -1135,18 +1019,113 @@ var noiseFigureCascade = {
       symbol: "OIP3_out",
       unit: "dBm",
       precision: 1,
+      signed: "explicit",
       format: "standard",
       tooltip: "Output-referred third-order intercept point. OIP3 = IIP3 + cascaded gain."
+    },
+    {
+      key: "cascadedGain",
+      label: "Cascaded Gain",
+      symbol: "G_total",
+      unit: "dB",
+      precision: 1,
+      format: "standard",
+      tooltip: "Sum of the stage gains in dB"
+    },
+    {
+      key: "noiseTemperature",
+      label: "Equivalent Noise Temperature",
+      symbol: "T_e",
+      unit: "K",
+      precision: 1,
+      format: "standard",
+      tooltip: "T_e = 290 K × (F − 1), the input-referred noise temperature of the chain"
+    },
+    {
+      key: "noiseFloor",
+      label: "Noise Floor",
+      symbol: "N_floor",
+      unit: "dBm",
+      precision: 1,
+      format: "standard",
+      tooltip: "Input-referred noise power in the noise bandwidth: 10·log₁₀(k·290 K·B) + NF"
     }
   ],
   calculate: calculateNoiseFigureCascade,
+  examples: [
+    {
+      id: "lna-saw-gain-block",
+      label: "Front end: LNA, SAW filter, gain block",
+      values: { numStages: 3, stage1Gain: 20, stage1NF: 0.8, stage1IIP3: 10, stage2Gain: -2, stage2NF: 2, stage2IIP3: 40, stage3Gain: 15, stage3NF: 3, stage3IIP3: 20 }
+    },
+    {
+      id: "gps-l1-front-end",
+      label: "GPS L1 front end: LNA, SAW, second LNA, mixer",
+      values: { numStages: 4, stage1Gain: 18, stage1NF: 0.9, stage1IIP3: -5, stage2Gain: -1.5, stage2NF: 1.5, stage2IIP3: 50, stage3Gain: 15, stage3NF: 1.5, stage3IIP3: 0, stage4Gain: -8, stage4NF: 8, stage4IIP3: 10 }
+    },
+    {
+      id: "mixer-before-lna",
+      label: "Mixer ahead of the LNA (the order to avoid)",
+      values: { numStages: 3, stage1Gain: -7, stage1NF: 7, stage1IIP3: 15, stage2Gain: 20, stage2NF: 0.8, stage2IIP3: 10, stage3Gain: 15, stage3NF: 3, stage3IIP3: 20 }
+    }
+  ],
+  chain: {
+    title: "Signal chain",
+    caption: "Source at 290 K · stages in signal order",
+    row: "stage",
+    columns: [
+      { label: "Gain", key: "stage{n}Gain" },
+      { label: "NF", key: "stage{n}NF" },
+      { label: "IIP3", key: "stage{n}IIP3" }
+    ],
+    list: {
+      count: "numStages",
+      types: [
+        { id: "amplifier", label: "Amplifier", symbol: "amplifier", values: [15, 3, 20] },
+        { id: "lna", label: "LNA", symbol: "amplifier", values: [20, 0.8, 10] },
+        { id: "filter", label: "Filter", symbol: "filter", values: [-2, 2, 40], tag: "passive" },
+        { id: "mixer", label: "Mixer", symbol: "mixer", values: [-7, 7, 15] },
+        { id: "attenuator", label: "Attenuator", symbol: "attenuator", values: [-3, 3, 50], tag: "passive" },
+        { id: "cable", label: "Cable", symbol: "cable", values: [-1, 1, 50], tag: "passive" }
+      ],
+      // A passive part's noise figure equals its loss; a low-noise gain stage is an LNA.
+      typeOf: ([gain, nf]) => gain > 0 ? nf <= 2 ? "lna" : "amplifier" : Math.abs(nf + gain) <= 0.05 ? "filter" : "mixer"
+    },
+    running: [
+      { output: "cascadedGain", label: "Σ Gain" },
+      { output: "cascadedNF", label: "Σ NF" },
+      { output: "cascadedIIP3", label: "Σ IIP3" }
+    ],
+    share: { output: "cascadedF", label: "NF share", mode: "diff", base: 1 },
+    totals: ["cascadedNF", "cascadedGain", "cascadedIIP3", "cascadedOIP3", "noiseFloor"],
+    heroNote: "noiseTemperature",
+    diagram: { start: "In", end: "Out", link: "cascadedGain", signed: true, antenna: true },
+    // Linearity: the stage whose IIP3, referred to the chain's input, is lowest.
+    // A part 10 dB better there is the change to try (the board's gain block at OIP3 +45 dBm).
+    limit: ({ rows, running, inputs }) => {
+      let worst = -1;
+      let worstReferred = Infinity;
+      rows.forEach((row, r) => {
+        const gainBefore = r === 0 ? 0 : running[r - 1].cascadedGain;
+        const referred = (row.values[2] ?? NaN) - gainBefore;
+        if (Number.isFinite(referred) && referred < worstReferred) {
+          worst = r;
+          worstReferred = referred;
+        }
+      });
+      if (worst < 0 || rows.length < 2) return null;
+      const key = rows[worst].keys[2];
+      const value = Math.min(inputs[key] + 10, 50);
+      return value > inputs[key] ? { row: worst, output: "cascadedIIP3", change: { [key]: value } } : null;
+    }
+  },
   schematicSections: (inputs) => {
     const n = Math.round(inputs.numStages);
-    const names = ["LNA", "Mixer", "IF Amp", "Stage 4"];
+    const names = ["LNA", "Mixer", "IF Amp"];
     const elements = Array.from({ length: n }, (_, i) => ({
       type: "R",
       placement: "series",
-      label: `${names[i]} NF=${inputs[`stage${i + 1}NF`]}dB`
+      label: `${names[i] ?? `Stage ${i + 1}`} NF=${inputs[`stage${i + 1}NF`]}dB`
     }));
     return [{ label: "RF Signal Chain", elements }];
   },
@@ -1796,48 +1775,132 @@ var coaxImpedance = {
 
 // src/lib/calculators/rf/coax-loss.ts
 var CABLES = [
-  { name: "LMR-400", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [0.66, 1.5, 2.15, 3.08, 4.69, 6.73, 9.8, 11.5] },
-  { name: "LMR-240", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [1.1, 2.5, 3.6, 5.1, 7.8, 11.2, 16.4, 19.4] },
-  { name: "LMR-200", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [1.5, 3.3, 4.8, 6.9, 10.5, 15.1, 22.1, 26] },
-  { name: "LMR-100", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [3.3, 7.5, 10.8, 15.5, 23.8, 34.5, 51.5, 61] },
-  { name: "RG-58/U", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [2.9, 6.8, 10, 14.6, 23, 34, 52, 64] },
-  { name: "RG-8X", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [1.8, 4.2, 6.1, 8.9, 13.7, 20.1, 31, 38] },
-  { name: "RG-213/U", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [1.4, 3.2, 4.7, 6.8, 10.5, 15.5, 23.5, 28.5] },
-  { name: "RG-174/U", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [5.6, 13.1, 19, 28, 44, 65, 100, 120] },
-  { name: "Belden 9913", freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [0.75, 1.7, 2.5, 3.6, 5.5, 7.9, 11.6, 13.7] },
-  { name: 'Andrew LDF4-50A (7/8")', freqs: [10, 50, 100, 200, 450, 900, 1800, 2400], loss: [0.22, 0.49, 0.7, 1.01, 1.55, 2.24, 3.32, 3.95] }
+  // 0. Times Microwave LMR-400 datasheet (talleycom.com/images/pdf/timlmr400.pdf):
+  // k1 0.122290, k2 0.000260; table 30–8000 MHz (0.7 … 13.0 dB/100 ft), the
+  // coefficients within 0.05 dB of every cell. Jacket 0.405 in (10.29 mm), "LMR-400
+  // Outdoor PE Black", UV-resistant PE; cutoff 16.2 GHz.
+  { name: "LMR-400", k1: 0.12229, k2: 26e-5, odMm: 10.29, impedance: 50, flexible: true, outdoor: true, plenum: false, maxMHz: 16200 },
+  // 1. Times LMR-240 (rfparts.com/old_site/pdf_docs/LMR/LMR-240.pdf): k1 0.242080,
+  // k2 0.000330; table 30–5800 MHz, within 0.05 dB. 0.240 in (6.10 mm), PE outdoor; cutoff 31 GHz.
+  { name: "LMR-240", k1: 0.24208, k2: 33e-5, odMm: 6.1, impedance: 50, flexible: true, outdoor: true, plenum: false, maxMHz: 31e3 },
+  // 2. Times LMR-200 (…/LMR-200.pdf): k1 0.320900, k2 0.000330; table 30–5800 MHz,
+  // within 0.05 dB. 0.195 in (4.95 mm), PE outdoor; cutoff 39 GHz.
+  { name: "LMR-200", k1: 0.3209, k2: 33e-5, odMm: 4.95, impedance: 50, flexible: true, outdoor: true, plenum: false, maxMHz: 39e3 },
+  // 3. Times LMR-100A (…/LMR-100A.pdf): k1 0.709140, k2 0.001740; table 30–5800 MHz,
+  // within 0.05 dB. 0.110 in (2.79 mm), "designed for outdoor exposure … UV"; cutoff 90 GHz.
+  { name: "LMR-100A", k1: 0.70914, k2: 174e-5, odMm: 2.79, impedance: 50, flexible: true, outdoor: true, plenum: false, maxMHz: 9e4 },
+  // 4. Belden 8240, RG-58/U, 20 AWG solid BC (catalog.belden.com/techdata/EN/8240_techdata.pdf),
+  // "50 Ohm Wireless Transmission Coax" (nominal 52 Ω). Table, dB/100 ft: 1 MHz 0.3, 10 1.1,
+  // 50 2.5, 100 3.8, 200 5.6, 400 8.4, 700 11.7, 900 13.7, 1000 14.5. Fit: worst +0.106 dB
+  // (50 MHz); within 10 % from 10 MHz (+15.2 % at 1 MHz). 0.193 in (4.90 mm), PVC,
+  // "Outdoor - Aerial, Indoor", NEC CMX.
+  { name: "RG-58/U (Belden 8240)", k1: 0.341904, k2: 37668e-7, odMm: 4.9, impedance: 50, flexible: true, outdoor: true, plenum: false, tableMaxMHz: 1e3, fitFromMHz: 10 },
+  // 5. Belden 9258, RG-8X, 16 AWG stranded (…/9258_techdata.pdf). 1 MHz 0.3, 10 0.9, 50 2.1,
+  // 100 3.1, 200 4.5, 400 6.6, 700 9.1, 900 10.7, 1000 11.2. Fit: worst −0.110 dB (900 MHz),
+  // −4.1 % at 1 MHz. 0.242 in (6.15 mm), PVC, "Indoor/Outdoor", NEC CM.
+  { name: "RG-8X (Belden 9258)", k1: 0.285372, k2: 22543e-7, odMm: 6.15, impedance: 50, flexible: true, outdoor: true, plenum: false, tableMaxMHz: 1e3 },
+  // 6. Belden 8267, RG-213/U (…/8267_techdata.pdf). 1 MHz 0.17, 10 0.55, 50 1.3, 100 1.9,
+  // 200 2.7, 400 4.1, 700 6.5, 900 7.6, 1000 8.0, 4000 21.5. Fit: worst +0.297 dB (+7.2 %,
+  // 400 MHz). 0.405 in (10.3 mm), PVC, "Indoor (Not Riser or Plenum)", NEC CMX.
+  { name: "RG-213/U (Belden 8267)", k1: 0.164008, k2: 27918e-7, odMm: 10.3, impedance: 50, flexible: true, outdoor: false, plenum: false, tableMaxMHz: 4e3 },
+  // 7. Belden 8216, RG-174/U, 26 AWG stranded copper-covered steel (…/8216_techdata.pdf).
+  // 1 MHz 1.9, 10 3.3, 50 5.8, 100 8.4, 200 12.5, 400 19.0, 700 27.0, 900 31.0, 1000 34.0.
+  // Fit: worst −1.129 dB (−59.4 %, 1 MHz), −24.1 % at 10 MHz, within 10 % from 50 MHz (the
+  // steel centre's loss is not of the k1√f + k2f form). 0.110 in (2.79 mm), PVC, "Outdoor - Aerial".
+  { name: "RG-174/U (Belden 8216)", k1: 0.761725, k2: 95514e-7, odMm: 2.79, impedance: 50, flexible: true, outdoor: true, plenum: false, tableMaxMHz: 1e3, fitFromMHz: 50 },
+  // 8. Belden 9913, 10 AWG solid BC, foil + braid (…/9913_techdata.pdf). 5 MHz 0.4, 10 0.5,
+  // 50 1.0, 100 1.4, 200 1.8, 400 2.6, 700 3.6, 900 4.1, 1000 4.4. Fit: worst −0.108 dB
+  // (−27.1 %, 5 MHz), −17.4 % at 10 MHz, within 10 % from 50 MHz. "Recommend use of 7810R,
+  // 7810A, 9913F7, or 9914 for applications above 1 GHz". 0.405 in (10.3 mm), PVC, "Indoor (Not Riser or Plenum)".
+  { name: "Belden 9913", k1: 0.129914, k2: 2376e-7, odMm: 10.3, impedance: 50, flexible: true, outdoor: false, plenum: false, tableMaxMHz: 1e3, fitFromMHz: 50 },
+  // 9. CommScope (Andrew) LDF4-50A, HELIAX 1/2 in, corrugated copper (CommScope product
+  // specifications, 2020, mirrored at tempestns.com; the 2002 Andrew sheet at repeater-builder.com
+  // has the same table): 52 points 0.5–8800 MHz, 20 °C, "guaranteed within 5 %". Fit: worst
+  // +0.001 dB, +1.1 % at 0.5 MHz. Jacket 0.625 in (15.875 mm), black PE, no NEC rating;
+  // operating band 1–8800 MHz.
+  { name: 'Andrew LDF4-50A (1/2")', k1: 0.064193, k2: 19e-5, odMm: 15.875, impedance: 50, flexible: false, outdoor: true, plenum: false, maxMHz: 8800, tableMaxMHz: 8800 },
+  // 10. Times LMR-600 (…/LMR-600.pdf): k1 0.075550, k2 0.000260; table 30–5800 MHz, within
+  // 0.05 dB. 0.590 in (14.99 mm), PE outdoor; cutoff 10.3 GHz.
+  { name: "LMR-600", k1: 0.07555, k2: 26e-5, odMm: 14.99, impedance: 50, flexible: true, outdoor: true, plenum: false, maxMHz: 10300 },
+  // 11. Times LMR-195 (…/LMR-195.pdf): k1 0.356859, k2 0.000470; table 30–5800 MHz, within
+  // 0.05 dB. 0.195 in (4.95 mm), PE outdoor; cutoff 41 GHz.
+  { name: "LMR-195", k1: 0.356859, k2: 47e-5, odMm: 4.95, impedance: 50, flexible: true, outdoor: true, plenum: false, maxMHz: 41e3 },
+  // 12. Times LMR-400-UltraFlex, LMR-400-UF (…/LMR-400-UF.pdf): k1 0.146748, k2 0.000312;
+  // table 30–5800 MHz, within 0.05 dB. Stranded BC centre, 0.405 in (10.29 mm), "Indoor/Outdoor
+  // TPE Black"; cutoff 16.2 GHz.
+  { name: "LMR-400-UltraFlex", k1: 0.146748, k2: 312e-6, odMm: 10.29, impedance: 50, flexible: true, outdoor: true, plenum: false, maxMHz: 16200 },
+  // 13. Times LMR-400-LLPL (…/LMR-400-LLPL.pdf): k1 0.129140, k2 0.000150; table 30–5800 MHz,
+  // within 0.05 dB. "Indoor Plenum FRPVC Orange", UL/NEC CMP; 0.405 in (10.29 mm); cutoff 15 GHz.
+  { name: "LMR-400-LLPL (plenum)", k1: 0.12914, k2: 15e-5, odMm: 10.29, impedance: 50, flexible: true, outdoor: false, plenum: true, maxMHz: 15e3 },
+  // 14. Belden 83284, RG-316, 26 AWG silver-covered copper-covered steel, FEP (…/83284_techdata.pdf).
+  // 1 MHz 1.2, 10 2.7, 50 5.6, 100 8.3, 200 12.0, 400 17.5, 700 23.7, 900 27.3, 1000 29.0,
+  // 1500 36.5, 2000 42.5, 2400 47.2, 3000 53.6. Fit: worst −0.378 dB (−31.5 %, 1 MHz), within
+  // 10 % from 10 MHz. 0.098 in (2.5 mm), "Indoor/Outdoor … Sunlight Resistance".
+  { name: "RG-316 (Belden 83284)", k1: 0.818836, k2: 29642e-7, odMm: 2.5, impedance: 50, flexible: true, outdoor: true, plenum: false, tableMaxMHz: 3e3, fitFromMHz: 10 },
+  // 15. Belden 1694A, RG-6, 75 Ω, 18 AWG solid BC, foil + braid (…/1694A_techdata.pdf):
+  // 27 points 1–6000 MHz (1 MHz 0.24 … 1000 6.3, 3000 11.5, 6000 17.7). Fit: worst −0.273 dB
+  // (6000 MHz), −24.0 % at 1 MHz, within 10 % from 67.5 MHz. 0.274 in (6.96 mm), PVC,
+  // "Indoor/Outdoor, … UV Resistance", NEC CMR.
+  { name: "RG-6 (Belden 1694A, 75 Ω)", k1: 0.181902, k2: 5562e-7, odMm: 6.96, impedance: 75, flexible: true, outdoor: true, plenum: false, tableMaxMHz: 6e3, fitFromMHz: 67.5 },
+  // 16. Andrew LDF5-50A, HELIAX 7/8 in (Andrew spec sheet, 2002, repeater-builder.com;
+  // discontinued, AVA5-50 replaces it): 44 points 0.5–5000 MHz, 20 °C. Fit: worst +0.001 dB,
+  // −1.2 % at 0.5 MHz. 1.08 in (27.4 mm), black PE; maximum frequency 5.00 GHz.
+  { name: 'Andrew LDF5-50A (7/8")', k1: 0.034819, k2: 1532e-7, odMm: 27.4, impedance: 50, flexible: false, outdoor: true, plenum: false, maxMHz: 5e3, tableMaxMHz: 5e3 },
+  // 17. Times LMR-900 (…/LMR-900.pdf): k1 0.051770, k2 0.000160; table 30–5800 MHz, within
+  // 0.05 dB. 0.870 in (22.10 mm), PE outdoor; cutoff 6.9 GHz.
+  { name: "LMR-900", k1: 0.05177, k2: 16e-5, odMm: 22.1, impedance: 50, flexible: true, outdoor: true, plenum: false, maxMHz: 6900 }
 ];
-function interpolateLoss(cable, freqMHz) {
-  const { freqs, loss } = cable;
-  if (freqMHz <= freqs[0]) return loss[0];
-  if (freqMHz >= freqs[freqs.length - 1]) return loss[loss.length - 1];
-  for (let i = 0; i < freqs.length - 1; i++) {
-    if (freqMHz >= freqs[i] && freqMHz <= freqs[i + 1]) {
-      const t = Math.log(freqMHz / freqs[i]) / Math.log(freqs[i + 1] / freqs[i]);
-      return loss[i] + t * (loss[i + 1] - loss[i]);
-    }
-  }
-  return loss[loss.length - 1];
-}
+var FT = 0.3048;
 function calculateCoaxLoss(inputs) {
   const { cableIndex, frequencyMHz, lengthM } = inputs;
+  const inputPower = inputs.inputPower ?? 30;
   if (lengthM <= 0) return { values: {}, errors: ["Length must be greater than 0"] };
   if (frequencyMHz <= 0) return { values: {}, errors: ["Frequency must be greater than 0"] };
   const idx = Math.round(cableIndex);
   const cable = CABLES[Math.min(Math.max(idx, 0), CABLES.length - 1)];
-  const lossPer100m = interpolateLoss(cable, frequencyMHz);
+  const lossPer100ft = cable.k1 * Math.sqrt(frequencyMHz) + cable.k2 * frequencyMHz;
+  const lossPer100m = lossPer100ft / FT;
   const attenuation_dB = lossPer100m * lengthM / 100;
   const powerRemaining_pct = Math.pow(10, -attenuation_dB / 10) * 100;
   const voltageRemaining_pct = Math.pow(10, -attenuation_dB / 20) * 100;
+  const powerOut_dBm = inputPower - attenuation_dB;
+  const powerOut_W = Math.pow(10, (powerOut_dBm - 30) / 10);
+  const warnings = [];
+  if (cable.maxMHz !== void 0 && frequencyMHz > cable.maxMHz) {
+    warnings.push(`${cable.name} is rated to ${String(cable.maxMHz)} MHz by its datasheet; above it the loss is extrapolated outside the rating`);
+  } else if (cable.tableMaxMHz !== void 0 && frequencyMHz > cable.tableMaxMHz) {
+    warnings.push(`The datasheet tabulates ${cable.name} only to ${String(cable.tableMaxMHz)} MHz; above it the k₁√f + k₂f fit is extrapolated`);
+  }
+  if (cable.fitFromMHz !== void 0 && frequencyMHz < cable.fitFromMHz) {
+    warnings.push(`Below ${String(cable.fitFromMHz)} MHz the k₁√f + k₂f fit departs by more than 10 % from the datasheet table of ${cable.name}`);
+  }
   return {
     values: {
       attenuation_dB,
       lossPer100m,
       powerRemaining_pct,
-      voltageRemaining_pct
-    }
+      voltageRemaining_pct,
+      powerOut_dBm,
+      powerOut_W,
+      lossPerMeter: lossPer100m / 100
+    },
+    ...warnings.length > 0 && { warnings }
   };
 }
+var cableId = (name) => {
+  const ids = {
+    "RG-58/U (Belden 8240)": "rg-58-u",
+    "RG-8X (Belden 9258)": "rg-8x",
+    "RG-213/U (Belden 8267)": "rg-213-u",
+    "RG-174/U (Belden 8216)": "rg-174-u",
+    'Andrew LDF4-50A (1/2")': "ldf4-50a",
+    "LMR-400-LLPL (plenum)": "lmr-400-llpl",
+    "RG-316 (Belden 83284)": "rg-316",
+    "RG-6 (Belden 1694A, 75 Ω)": "rg-6",
+    'Andrew LDF5-50A (7/8")': "ldf5-50a"
+  };
+  return ids[name] ?? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+};
 var coaxLoss = {
   slug: "coax-loss",
   title: "Coaxial Cable Loss Calculator",
@@ -1855,7 +1918,7 @@ var coaxLoss = {
       min: 0,
       max: CABLES.length - 1,
       step: 1,
-      tooltip: "Loss is interpolated from the cable's datasheet attenuation table",
+      tooltip: "Attenuation is k₁√f + k₂f from the cable's datasheet: Times Microwave's own coefficients, or a fit to Belden's or CommScope's table",
       presets: CABLES.map((c2, i) => ({ label: c2.name, values: { cableIndex: i } })),
       options: CABLES.map((c2, i) => ({ value: i, label: c2.name }))
     },
@@ -1874,6 +1937,16 @@ var coaxLoss = {
       defaultValue: 10,
       min: 0.1,
       max: 1e4
+    },
+    {
+      key: "inputPower",
+      label: "Input Power",
+      symbol: "P_in",
+      unit: "dBm",
+      defaultValue: 30,
+      min: -50,
+      max: 80,
+      tooltip: "Power into the cable; the power out is this less the insertion loss, into a matched load"
     }
   ],
   outputs: [
@@ -1906,17 +1979,68 @@ var coaxLoss = {
       label: "Voltage at Load",
       unit: "%",
       precision: 1
+    },
+    {
+      key: "powerOut_dBm",
+      label: "Output Power",
+      symbol: "P_out",
+      unit: "dBm",
+      precision: 2,
+      tooltip: "Input power less the insertion loss"
+    },
+    {
+      key: "powerOut_W",
+      label: "Output Power (linear)",
+      symbol: "P_out",
+      unit: "W",
+      precision: 3,
+      format: "engineering"
+    },
+    {
+      key: "lossPerMeter",
+      label: "Loss per Metre",
+      unit: "dB/m",
+      precision: 4
     }
   ],
   calculate: calculateCoaxLoss,
+  // C6 Catalog & compare (canvas board ExCatalog; waves/W6.md, task 10.5).
+  catalog: {
+    title: "Cables",
+    item: "cable",
+    items: CABLES.map((c2, i) => ({
+      id: cableId(c2.name),
+      label: c2.name,
+      values: { cableIndex: i },
+      attributes: { od: c2.odMm, impedance: c2.impedance, flexible: c2.flexible, outdoor: c2.outdoor, plenum: c2.plenum }
+    })),
+    attributes: [{ id: "od", label: "OD", unit: "mm" }],
+    filters: [
+      { id: "z50", label: "50 Ω", attribute: "impedance", equals: 50 },
+      { id: "flexible", label: "Flexible", attribute: "flexible", equals: true },
+      { id: "outdoor", label: "Outdoor", attribute: "outdoor", equals: true },
+      { id: "plenum", label: "Plenum", attribute: "plenum", equals: true }
+    ],
+    columns: [
+      { output: "lossPer100m", label: "dB / 100 m" },
+      { output: "attenuation_dB", label: "Loss over the length", bar: true },
+      { output: "powerOut_dBm", label: "Power out" },
+      { output: "powerRemaining_pct", label: "Delivered" }
+    ],
+    detail: ["attenuation_dB", "powerOut_dBm", "powerOut_W", "lossPerMeter"],
+    chart: { x: "frequencyMHz", y: "attenuation_dB", range: [10, 6e3], scale: "log" },
+    source: "Attenuation k₁√f + k₂f: Times Microwave coefficients at 25 °C; least-squares fits to Belden and CommScope tables"
+  },
   formula: {
-    primary: "Loss (dB) = α(f) × L / 100",
-    latex: "\\text{Loss} = \\alpha(f) \\times \\frac{L}{100}",
+    primary: "Loss (dB) = α(f) × L / 100, α(f) = (k₁√f + k₂f) / 0.3048",
+    latex: "\\text{Loss} = \\alpha(f) \\times \\frac{L}{100},\\quad \\alpha(f) = \\frac{k_1\\sqrt{f} + k_2 f}{0.3048}",
     variables: [
       { symbol: "α(f)", description: "Cable attenuation at frequency f", unit: "dB/100m" },
+      { symbol: "k₁, k₂", description: "The cable's attenuation coefficients per 100 ft (conductor and dielectric loss), f in MHz", unit: "" },
+      { symbol: "f", description: "Frequency", unit: "MHz" },
       { symbol: "L", description: "Cable length", unit: "m" }
     ],
-    reference: "Times Microwave LMR cable datasheets; Belden cable catalog"
+    reference: "Times Microwave LMR datasheets (k₁, k₂ at VSWR 1.0, +25 °C); Belden technical data sheets 8240, 9258, 8267, 8216, 9913, 83284, 1694A; CommScope/Andrew LDF4-50A and LDF5-50A specifications (20 °C)"
   },
   relatedCalculators: ["coax-impedance", "rf-link-budget", "vswr-return-loss", "link-margin"],
   relatedBlogPosts: ["eirp-calculator", "ethernet-cable", "vswr-return-loss"],
@@ -1926,7 +2050,9 @@ var coaxLoss = {
   methodology: {
     references: [
       { title: "Microwave Engineering, 4th ed.", source: "David M. Pozar (2011), Chapter 3.4 — Coaxial line loss" },
-      { title: "Times Microwave LMR Coaxial Cable Datasheet", source: "Times Microwave Systems (2020), Application Note AN-107" }
+      { title: "LMR Flexible Low Loss Communications Coax datasheets", source: 'Times Microwave Systems — "Calculate Attenuation = (k₁)·√FMHz + (k₂)·FMHz", dB/100 ft, VSWR 1.0, +25 °C' },
+      { title: "Technical data sheets 8240, 9258, 8267, 8216, 9913, 83284 and 1694A", source: "Belden — nominal attenuation tables, dB/100 ft", url: "https://catalog.belden.com/" },
+      { title: "HELIAX LDF4-50A and LDF5-50A product specifications", source: "CommScope (Andrew) — attenuation at 20 °C, VSWR 1.0" }
     ]
   }
 };
@@ -5367,7 +5493,7 @@ var buckConverter = {
     {
       key: "fsw",
       label: "Switching Frequency",
-      symbol: "fₛw",
+      symbol: "f_{sw}",
       unit: "kHz",
       defaultValue: 500,
       min: 10,
@@ -5453,7 +5579,7 @@ var buckConverter = {
       { symbol: "D", description: "Duty cycle", unit: "" },
       { symbol: "Vᵢₙ", description: "Input voltage", unit: "V" },
       { symbol: "Vₒᵤₜ", description: "Output voltage", unit: "V" },
-      { symbol: "fₛw", description: "Switching frequency", unit: "Hz" },
+      { symbol: "f_{sw}", description: "Switching frequency", unit: "Hz" },
       { symbol: "ΔIL", description: "Inductor current ripple", unit: "A" }
     ],
     reference: 'Erickson & Maksimovic, "Fundamentals of Power Electronics" 3rd ed.'
@@ -5530,7 +5656,7 @@ var ldoThermal = {
     {
       key: "iload",
       label: "Load Current",
-      symbol: "Iₗₒₐd",
+      symbol: "I_{load}",
       unit: "mA",
       defaultValue: 500,
       min: 1,
@@ -5555,7 +5681,7 @@ var ldoThermal = {
     {
       key: "tamb",
       label: "Ambient Temperature",
-      symbol: "Tₐₘb",
+      symbol: "T_{amb}",
       unit: "°C",
       defaultValue: 25,
       min: -40,
@@ -5643,9 +5769,9 @@ var ldoThermal = {
       { symbol: "Pdiss", description: "Power dissipation", unit: "W" },
       { symbol: "Vᵢₙ", description: "Input voltage", unit: "V" },
       { symbol: "Vₒᵤₜ", description: "Output voltage", unit: "V" },
-      { symbol: "Iₗₒₐd", description: "Load current", unit: "A" },
+      { symbol: "I_{load}", description: "Load current", unit: "A" },
       { symbol: "TJ", description: "Junction temperature", unit: "°C" },
-      { symbol: "Tₐₘb", description: "Ambient temperature", unit: "°C" },
+      { symbol: "T_{amb}", description: "Ambient temperature", unit: "°C" },
       { symbol: "θJA", description: "Thermal resistance junction-to-ambient", unit: "°C/W" }
     ],
     reference: "Texas Instruments Application Note SLVA061; IEC 60747-6",
@@ -5684,6 +5810,8 @@ var ldoThermal = {
 };
 
 // src/lib/calculators/power/battery-life.ts
+var MAX_LOADS = 7;
+var LOAD_DEFAULT = { current: 10, duty: 10 };
 function calculateBatteryLife(inputs) {
   const { capacity, avgCurrent, dutyCycle, selfDischarge, cutoffSoc } = inputs;
   if (capacity <= 0) {
@@ -5692,7 +5820,19 @@ function calculateBatteryLife(inputs) {
   if (avgCurrent <= 0) {
     return { values: {}, errors: ["Average current must be greater than zero"] };
   }
-  const effectiveCurrent = avgCurrent * (dutyCycle / 100);
+  const numLoads = Math.round(inputs.numLoads ?? 0);
+  if (!(numLoads >= 0 && numLoads <= MAX_LOADS)) {
+    return { values: {}, errors: [`Number of additional loads must be between 0 and ${MAX_LOADS}`] };
+  }
+  let effectiveCurrent = avgCurrent * (dutyCycle / 100);
+  for (let k = 1; k <= numLoads; k++) {
+    const current = inputs[`load${k}Current`] ?? LOAD_DEFAULT.current;
+    const duty = inputs[`load${k}Duty`] ?? LOAD_DEFAULT.duty;
+    if (!(current >= 0) || !(duty >= 0 && duty <= 100)) {
+      return { values: {}, errors: ["Load currents must be zero or more, and duty cycles between 0 and 100 %"] };
+    }
+    effectiveCurrent += current * (duty / 100);
+  }
   const usableCapacity = capacity * (1 - cutoffSoc / 100);
   const selfDischargePerHour = capacity * (selfDischarge / 100) / (30 * 24);
   const totalDrainPerHour = effectiveCurrent + selfDischargePerHour;
@@ -5707,10 +5847,44 @@ function calculateBatteryLife(inputs) {
       runtimeHours,
       runtimeDays,
       effectiveCurrent,
-      usableCapacityMAh
+      usableCapacityMAh,
+      selfDischargeCurrent: selfDischargePerHour
     }
   };
 }
+var SUBSCRIPT2 = "₀₁₂₃₄₅₆₇₈₉";
+var sub2 = (k) => String(k).split("").map((d) => SUBSCRIPT2[Number(d)]).join("");
+var loadInputs = [
+  {
+    key: "numLoads",
+    label: "Additional Loads",
+    symbol: "N",
+    unit: "",
+    defaultValue: 0,
+    min: 0,
+    max: MAX_LOADS,
+    step: 1,
+    tooltip: `Loads on the battery beside the device, each with its own current and duty cycle (0–${MAX_LOADS})`,
+    presets: [
+      { label: "None", values: { numLoads: 0 } },
+      { label: "1 load", values: { numLoads: 1 } },
+      { label: "2 loads", values: { numLoads: 2 } },
+      { label: "3 loads", values: { numLoads: 3 } }
+    ]
+  },
+  ...Array.from({ length: MAX_LOADS }, (_, i) => i + 1).flatMap((n) => [
+    { key: `load${n}Current`, label: `Load ${n} Current`, symbol: `I${sub2(n)}`, unit: "mA", defaultValue: LOAD_DEFAULT.current, min: 0, max: 1e4, tooltip: `Current additional load ${n} draws while it is on`, group: `Load ${n}` },
+    { key: `load${n}Duty`, label: `Load ${n} Duty Cycle`, symbol: `D${sub2(n)}`, unit: "%", defaultValue: LOAD_DEFAULT.duty, min: 0, max: 100, tooltip: `Share of the time additional load ${n} is on`, group: `Load ${n}` }
+  ])
+];
+var LOAD_TYPES = [
+  { id: "load", label: "Load", symbol: "load", values: [LOAD_DEFAULT.current, LOAD_DEFAULT.duty] },
+  { id: "mcu", label: "MCU active", symbol: "load", values: [5, 2] },
+  { id: "radio", label: "Radio TX", symbol: "load", values: [20, 1] },
+  { id: "sensor", label: "Sensor", symbol: "load", values: [1, 10] },
+  { id: "led", label: "LED", symbol: "load", values: [5, 5] },
+  { id: "sleep", label: "Sleep current", symbol: "load", values: [5e-3, 100] }
+];
 var batteryLife = {
   slug: "battery-life",
   title: "Battery Life Calculator",
@@ -5764,7 +5938,7 @@ var batteryLife = {
     {
       key: "selfDischarge",
       label: "Self-Discharge Rate",
-      symbol: "Rₛd",
+      symbol: "R_{sd}",
       unit: "%/month",
       defaultValue: 2,
       min: 0,
@@ -5786,7 +5960,8 @@ var batteryLife = {
       min: 0,
       max: 80,
       tooltip: "Minimum state of charge at which the device stops operating. 20% = device shuts off with 20% capacity remaining."
-    }
+    },
+    ...loadInputs
   ],
   outputs: [
     {
@@ -5817,7 +5992,7 @@ var batteryLife = {
       symbol: "I_eff",
       unit: "mA",
       precision: 2,
-      tooltip: "Actual average current after applying duty cycle"
+      tooltip: "Average current after applying duty cycles: the device plus every additional load, before self-discharge"
     },
     {
       key: "usableCapacityMAh",
@@ -5826,21 +6001,84 @@ var batteryLife = {
       unit: "mAh",
       precision: 0,
       tooltip: "Capacity available after accounting for the cutoff state of charge"
+    },
+    {
+      key: "selfDischargeCurrent",
+      label: "Self-Discharge Drain",
+      symbol: "R_sd",
+      unit: "mA",
+      precision: 4,
+      tooltip: "The battery’s self-discharge as an equivalent current: capacity × rate per month / 720 h"
     }
   ],
   calculate: calculateBatteryLife,
+  examples: [
+    {
+      id: "lora-node-lithium-aa",
+      label: "LoRa sensor node on two lithium AA cells",
+      values: { capacity: 3e3, selfDischarge: 0.1, cutoffSoc: 10, avgCurrent: 0.01, dutyCycle: 100, numLoads: 3, load1Current: 5, load1Duty: 0.5, load2Current: 44, load2Duty: 0.05, load3Current: 1.5, load3Duty: 0.2 }
+    },
+    {
+      id: "ble-beacon-cr2032",
+      label: "BLE beacon on a CR2032 coin cell",
+      values: { capacity: 230, selfDischarge: 0.1, cutoffSoc: 0, avgCurrent: 2e-3, dutyCycle: 100, numLoads: 1, load1Current: 8, load1Duty: 0.3 }
+    },
+    {
+      id: "gps-tracker-lipo",
+      label: "GPS tracker with an LTE-M modem on a 1000 mAh LiPo",
+      values: { capacity: 1e3, selfDischarge: 2, cutoffSoc: 20, avgCurrent: 0.05, dutyCycle: 100, numLoads: 2, load1Current: 25, load1Duty: 10, load2Current: 60, load2Duty: 2 }
+    }
+  ],
+  chain: {
+    title: "Load budget",
+    caption: "Loads on the battery · current in mA, duty in %, runtime in h",
+    row: "load",
+    columns: [
+      { label: "Current", key: "load{n}Current" },
+      { label: "Duty", key: "load{n}Duty" }
+    ],
+    // The device comes first and is never cut, so its neutral values are never applied.
+    fixed: [{ id: "device", label: "Device", symbol: "load", keys: ["avgCurrent", "dutyCycle"], neutral: [0, 0] }],
+    list: { count: "numLoads", types: LOAD_TYPES },
+    running: [
+      { output: "effectiveCurrent", label: "Σ I" },
+      { output: "runtimeHours", label: "Runtime" }
+    ],
+    share: { output: "effectiveCurrent", label: "Current share", mode: "diff" },
+    totals: ["runtimeHours", "effectiveCurrent", "selfDischargeCurrent", "usableCapacityMAh"],
+    heroNote: "runtimeDays",
+    diagram: { start: "Batt", end: "Σ", link: "effectiveCurrent" },
+    // The load drawing the most average current, and its duty cycle halved.
+    limit: ({ rows, running, inputs }) => {
+      if (rows.length < 2) return null;
+      let worst = -1;
+      let worstStep = 0;
+      rows.forEach((_, r) => {
+        const step = running[r].effectiveCurrent - (r === 0 ? 0 : running[r - 1].effectiveCurrent);
+        if (Number.isFinite(step) && step > worstStep) {
+          worst = r;
+          worstStep = step;
+        }
+      });
+      if (worst < 0) return null;
+      const key = rows[worst].keys[1];
+      const value = Math.max(inputs[key] / 2, batteryLife.inputs.find((i) => i.key === key)?.min ?? 0);
+      return value < inputs[key] ? { row: worst, output: "runtimeHours", change: { [key]: value } } : null;
+    }
+  },
   formula: {
-    primary: "I_{eff} = I_{avg} \\cdot \\frac{D}{100},\\quad t = \\frac{C \\cdot (1 - SoC_{min}/100)}{I_{eff} + R_{sd}}",
+    primary: "I_{eff} = \\sum I_k \\cdot \\frac{D_k}{100},\\quad t = \\frac{C \\cdot (1 - SoC_{min}/100)}{I_{eff} + R_{sd}}",
     variables: [
       { symbol: "I_eff", description: "Effective current after duty cycle", unit: "mA" },
       { symbol: "I_avg", description: "Average current draw", unit: "mA" },
       { symbol: "D", description: "Duty cycle", unit: "%" },
+      { symbol: "I_k, D_k", description: "Current and duty cycle of the device and each additional load", unit: "mA, %" },
       { symbol: "C", description: "Battery capacity", unit: "mAh" },
       { symbol: "SoC_min", description: "Cutoff state of charge", unit: "%" },
       { symbol: "R_sd", description: "Self-discharge per hour", unit: "mAh/h" }
     ],
     derivation: [
-      "Effective current = avgCurrent × (dutyCycle / 100)",
+      "Effective current = avgCurrent × (dutyCycle / 100) + Σ loadₖCurrent × (loadₖDuty / 100)",
       "Usable capacity = capacity × (1 − cutoffSoc / 100)",
       "Self-discharge per hour = capacity × (selfDischarge / 100) / (30 × 24)",
       "Total drain per hour = effectiveCurrent + selfDischargePerHour",
@@ -5915,8 +6153,8 @@ function chebyshevEvenLoadG(rippleDb) {
   const beta = Math.log(1 / Math.tanh(rippleDb * Math.LN10 / 40));
   return 1 / Math.tanh(beta / 4) ** 2;
 }
-var SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉";
-var subscript = (n) => String(n).replace(/\d/g, (d) => SUBSCRIPT[Number(d)]);
+var SUBSCRIPT3 = "₀₁₂₃₄₅₆₇₈₉";
+var subscript = (n) => String(n).replace(/\d/g, (d) => SUBSCRIPT3[Number(d)]);
 function chebyshevLoadWarning(order, filterType, z0) {
   const gl = chebyshevEvenLoadG(CHEBYSHEV_RIPPLE_DB);
   const g = `g${subscript(order + 1)}`;
@@ -7744,6 +7982,37 @@ var resistorColorCode = {
     { key: "maxResistance", label: "Max Value", unit: "Ω", precision: 3, format: "engineering" }
   ],
   calculate: calculateColorCode,
+  catalog: {
+    title: "E12 values",
+    item: "resistor",
+    items: (() => {
+      const E12 = [10, 12, 15, 18, 22, 27, 33, 39, 47, 56, 68, 82];
+      const out = [];
+      const fmt5 = (ohms) => {
+        const [v, u] = ohms >= 1e6 ? [ohms / 1e6, "MΩ"] : ohms >= 1e3 ? [ohms / 1e3, "kΩ"] : [ohms, "Ω"];
+        return { text: `${Number(v.toPrecision(3))} ${u}`, id: `${Number(v.toPrecision(3))}`.replace(".", u === "MΩ" ? "m" : u === "kΩ" ? "k" : "r") + (Number.isInteger(Number(v.toPrecision(3))) ? u === "MΩ" ? "m" : u === "kΩ" ? "k" : "r" : "") };
+      };
+      for (let mult = 0; mult <= 5; mult++) {
+        for (const e of E12) {
+          if (mult === 5 && e > 10) break;
+          const b1 = Math.floor(e / 10), b2 = e % 10;
+          const f = fmt5(e * 10 ** mult);
+          const colours = [b1, b2, mult].map((d) => ["black", "brown", "red", "orange", "yellow", "green", "blue", "violet", "grey", "white"][d]).join(" ");
+          out.push({ id: `r-${f.id}`, label: f.text, values: { numBands: 4, band1: b1, band2: b2, multiplier: mult }, attributes: { bands: colours } });
+        }
+      }
+      return out;
+    })(),
+    // Every item is E12, so the series is the title, not a column or a chip; search finds a value or its colours.
+    attributes: [{ id: "bands", label: "Colour bands" }],
+    columns: [
+      { output: "resistance", label: "Resistance" },
+      { output: "minResistance", label: "Minimum" },
+      { output: "maxResistance", label: "Maximum" }
+    ],
+    detail: ["resistance", "tolerance", "minResistance", "maxResistance"],
+    source: "Preferred values of IEC 60063 (E12), coded as a 4-band resistor (IEC 60062)"
+  },
   formula: {
     primary: "R = (10 \\cdot d_1 + d_2) \\times 10^n",
     variables: [
@@ -7850,12 +8119,17 @@ var rcTimeConstant = {
 };
 
 // src/lib/calculators/general/series-parallel-resistor.ts
+var MAX_PARTS = 8;
 function calculateSeriesParallel(inputs) {
-  const { r1, r2, r3, r4, componentType } = inputs;
-  const candidates = [r1, r2, r3, r4];
+  const { componentType } = inputs;
+  const n = Math.round(inputs.numParts ?? 4);
+  if (!(n >= 1 && n <= MAX_PARTS)) {
+    return { values: {}, errors: [`Number of parts must be between 1 and ${MAX_PARTS}`] };
+  }
+  const candidates = Array.from({ length: n }, (_, i) => inputs[`r${i + 1}`] ?? 0);
   const activeValues = candidates.filter((v) => v > 0);
-  if (activeValues.length < 2) {
-    return { values: {}, errors: ["Need at least 2 values"] };
+  if (activeValues.length < 1) {
+    return { values: {}, errors: ["Need at least 1 value"] };
   }
   let seriesTotal;
   let parallelTotal;
@@ -7868,22 +8142,34 @@ function calculateSeriesParallel(inputs) {
   }
   let voltDividerRatio = 0;
   if (componentType === 0 && activeValues.length === 2) {
-    voltDividerRatio = r2 / (r1 + r2);
+    voltDividerRatio = activeValues[1] / (activeValues[0] + activeValues[1]);
   }
   return {
     values: {
       seriesTotal,
       parallelTotal,
-      voltDividerRatio
+      voltDividerRatio,
+      // The plain sum, each part's share of which the chain shows.
+      sumOfValues: activeValues.reduce((sum, v) => sum + v, 0)
     }
   };
 }
+var morePartInputs = Array.from({ length: MAX_PARTS - 4 }, (_, i) => i + 5).map((n) => ({
+  key: `r${n}`,
+  label: `R${n} (optional)`,
+  symbol: `R${n}`,
+  unit: "Ω",
+  defaultValue: 0,
+  min: 0,
+  max: 1e9,
+  tooltip: "Set to 0 to ignore."
+}));
 var seriesParallelResistor = {
   slug: "series-parallel-resistor",
   title: "Series / Parallel Resistor, Capacitor & Inductor Calculator",
   shortTitle: "Series/Parallel R·C·L",
   category: "general",
-  description: "Calculate the equivalent series and parallel combination of up to four resistors, capacitors, or inductors. Also computes the voltage divider ratio for two-resistor networks.",
+  description: "Calculate the equivalent series and parallel combination of up to eight resistors, capacitors, or inductors. Also computes the voltage divider ratio for two-resistor networks.",
   keywords: [
     "series parallel resistor calculator",
     "parallel resistor calculator",
@@ -7900,7 +8186,8 @@ var seriesParallelResistor = {
       symbol: "R1",
       unit: "Ω",
       defaultValue: 1e3,
-      min: 1e-3,
+      // 0 like every other position: a part not fitted, which the list's moves can bring to the top.
+      min: 0,
       max: 1e9
     },
     {
@@ -7931,6 +8218,24 @@ var seriesParallelResistor = {
       min: 0,
       max: 1e9,
       tooltip: "Set to 0 to ignore."
+    },
+    ...morePartInputs,
+    {
+      key: "numParts",
+      label: "Number of Parts",
+      symbol: "N",
+      unit: "",
+      defaultValue: 4,
+      min: 1,
+      max: MAX_PARTS,
+      step: 1,
+      tooltip: `How many of R1–R${MAX_PARTS} are in the network (1–${MAX_PARTS}); a position set to 0 is ignored`,
+      presets: [
+        { label: "2 parts", values: { numParts: 2 } },
+        { label: "4 parts", values: { numParts: 4 } },
+        { label: "6 parts", values: { numParts: 6 } },
+        { label: "8 parts", values: { numParts: 8 } }
+      ]
     },
     {
       key: "componentType",
@@ -7972,9 +8277,56 @@ var seriesParallelResistor = {
       unit: "V/V",
       precision: 4,
       tooltip: "Output voltage as a fraction of input voltage (Vout/Vin = R2/(R1+R2)). Only valid for two-resistor networks."
+    },
+    {
+      key: "sumOfValues",
+      label: "Sum of Values",
+      symbol: "Σx",
+      unit: "Ω / nF / μH",
+      precision: 4,
+      format: "engineering",
+      tooltip: "The plain sum of the parts in use: the series total of resistors or inductors, the parallel total of capacitors. Each part’s share is its part of this sum."
     }
   ],
   calculate: calculateSeriesParallel,
+  examples: [
+    {
+      id: "i2c-pullups-parallel",
+      label: "Two 10 kΩ pull-ups on one I²C line",
+      values: { componentType: 0, numParts: 2, r1: 1e4, r2: 1e4 }
+    },
+    {
+      id: "decoupling-bank",
+      label: "Decoupling bank: 10 µF, 1 µF and 100 nF capacitors",
+      values: { componentType: 1, numParts: 3, r1: 1e4, r2: 1e3, r3: 100 }
+    },
+    {
+      id: "high-voltage-string",
+      label: "High-voltage string of four 1 MΩ resistors",
+      values: { componentType: 0, numParts: 4, r1: 1e6, r2: 1e6, r3: 1e6, r4: 1e6 }
+    }
+  ],
+  chain: {
+    title: "Parts",
+    caption: "Values in Ω, nF or µH by component type · a part set to 0 is not fitted",
+    row: "part",
+    columns: [{ label: "Value", key: "r{n}" }],
+    list: {
+      count: "numParts",
+      types: [
+        { id: "part", label: "Part", symbol: "block", values: [1e3] },
+        { id: "unfitted", label: "Not fitted", symbol: "block", values: [0], tag: "ignored" }
+      ],
+      typeOf: ([value]) => value > 0 ? "part" : "unfitted"
+    },
+    running: [
+      { output: "seriesTotal", label: "Σ Series" },
+      { output: "parallelTotal", label: "Σ Parallel" }
+    ],
+    share: { output: "sumOfValues", label: "Share of Σ", mode: "diff" },
+    totals: ["seriesTotal", "parallelTotal", "voltDividerRatio"],
+    diagram: { start: "A", end: "B", link: "seriesTotal" }
+  },
   formula: {
     primary: "R_{series} = R_1 + R_2 + \\ldots, \\quad \\frac{1}{R_{parallel}} = \\frac{1}{R_1} + \\frac{1}{R_2} + \\ldots",
     variables: [
@@ -8381,7 +8733,7 @@ var opampGain = {
     {
       key: "f3db_kHz",
       label: "−3 dB Bandwidth",
-      symbol: "f₋₃dB",
+      symbol: "f_{−3dB}",
       unit: "kHz",
       precision: 2,
       format: "engineering"
@@ -8412,7 +8764,7 @@ var opampGain = {
       { symbol: "Rf", description: "Feedback resistor (R1)", unit: "kΩ" },
       { symbol: "Rin", description: "Input resistor (R2)", unit: "kΩ" },
       { symbol: "GBW", description: "Gain-bandwidth product", unit: "Hz" },
-      { symbol: "f₋₃dB", description: "−3 dB bandwidth", unit: "Hz" },
+      { symbol: "f_{−3dB}", description: "−3 dB bandwidth", unit: "Hz" },
       { symbol: "Zin", description: "Input impedance", unit: "Ω" }
     ],
     derivation: [
@@ -9009,20 +9361,29 @@ var i2cPullup = {
 };
 
 // src/lib/calculators/protocol/clock-jitter.ts
+var MAX_JITTER_TERMS = 6;
+function extraTermsSquared(inputs) {
+  const count = Math.max(0, Math.min(MAX_JITTER_TERMS, Math.round(inputs.jitterTerms ?? 0)));
+  let sum = 0;
+  for (let n = 1; n <= count; n++) sum += (inputs[`term${n}Jitter_ps`] ?? 0) ** 2;
+  return sum;
+}
 function calculateClockJitter(inputs) {
   const { refJitter_ps, pllJitter_ps, bufferJitter_ps, bufferStages, traceDelay_ps, setupTime_ps, holdTime_ps, clockFreqMHz } = inputs;
   if (clockFreqMHz <= 0) return { values: {}, errors: ["Clock frequency must be > 0"] };
   const periodPs = 1e6 / clockFreqMHz;
   const bufferTotalJitter_ps = bufferJitter_ps * Math.sqrt(bufferStages);
   const totalJitter_ps = Math.sqrt(
-    refJitter_ps ** 2 + pllJitter_ps ** 2 + bufferTotalJitter_ps ** 2
+    refJitter_ps ** 2 + pllJitter_ps ** 2 + bufferTotalJitter_ps ** 2 + extraTermsSquared(inputs)
   ) + traceDelay_ps;
   const availableBudget_ps = periodPs - setupTime_ps - holdTime_ps;
   const setupMargin_ps = availableBudget_ps - totalJitter_ps;
-  const budgetUsed_pct = totalJitter_ps / availableBudget_ps * 100;
+  const budgetUsed_pct = availableBudget_ps > 0 ? totalJitter_ps / availableBudget_ps * 100 : Infinity;
   const warnings = [];
   if (setupMargin_ps < 0) {
     warnings.push(`Timing violation: setup margin is ${setupMargin_ps.toFixed(0)} ps — reduce jitter or lower clock frequency`);
+  } else if (!Number.isFinite(budgetUsed_pct)) {
+    warnings.push("Setup and hold time take the whole clock period: no timing budget is left for jitter");
   } else if (budgetUsed_pct > 80) {
     warnings.push(`Jitter uses ${budgetUsed_pct.toFixed(0)}% of timing budget — consider tighter jitter sources`);
   }
@@ -9038,6 +9399,16 @@ function calculateClockJitter(inputs) {
     warnings: warnings.length ? warnings : void 0
   };
 }
+var termInput = (n) => ({
+  key: `term${n}Jitter_ps`,
+  label: `Term ${n} Jitter`,
+  unit: "ps",
+  defaultValue: 0,
+  min: 0,
+  max: 1e4,
+  tooltip: "RMS jitter added by another stage in the clock path, such as a different fanout buffer, a divider or a level translator",
+  group: `Term ${n}`
+});
 var clockJitter = {
   slug: "clock-jitter",
   title: "Clock Tree Jitter Budget Calculator",
@@ -9054,7 +9425,18 @@ var clockJitter = {
     { key: "pllJitter_ps", label: "PLL Added Jitter", unit: "ps", defaultValue: 100, min: 0, max: 1e4, tooltip: "RMS jitter added by PLL — from PLL datasheet or simulation" },
     { key: "bufferJitter_ps", label: "Clock Buffer Jitter", unit: "ps", defaultValue: 25, min: 0, max: 1e3, tooltip: "Additive jitter per clock buffer stage (e.g. CDCLVP1204: 20 ps)" },
     { key: "bufferStages", label: "Buffer Stages", unit: "", defaultValue: 2, min: 0, max: 10, step: 1, tooltip: "Number of clock buffer/fanout stages between PLL and destination" },
-    { key: "traceDelay_ps", label: "PCB Trace Skew", unit: "ps", defaultValue: 20, min: 0, max: 1e3, tooltip: "Clock tree routing skew — 150 ps/inch on FR4 at 6 mil trace" }
+    { key: "traceDelay_ps", label: "PCB Trace Skew", unit: "ps", defaultValue: 20, min: 0, max: 1e3, tooltip: "Clock tree routing skew — 150 ps/inch on FR4 at 6 mil trace" },
+    {
+      key: "jitterTerms",
+      label: "Extra Jitter Terms",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: MAX_JITTER_TERMS,
+      step: 1,
+      tooltip: `How many further jitter terms the clock path adds, each in quadrature (0–${MAX_JITTER_TERMS})`
+    },
+    ...Array.from({ length: MAX_JITTER_TERMS }, (_, i) => termInput(i + 1))
   ],
   outputs: [
     {
@@ -9064,9 +9446,11 @@ var clockJitter = {
       precision: 1,
       primary: true,
       signed: "explicit",
+      // In ps beside the jitter, never re-prefixed: the chain's Σ columns carry no unit.
+      display: { unit: "ps" },
       thresholds: { good: { min: 100 }, warning: { min: 0, max: 100 }, danger: { min: 0 } }
     },
-    { key: "totalJitter_ps", label: "Total Jitter", unit: "ps", precision: 1 },
+    { key: "totalJitter_ps", label: "Total Jitter", unit: "ps", precision: 1, display: { unit: "ps" } },
     {
       key: "budgetUsed_pct",
       label: "Budget Used",
@@ -9079,14 +9463,85 @@ var clockJitter = {
     { key: "bufferTotalJitter_ps", label: "Buffer Total Jitter", unit: "ps", precision: 1 }
   ],
   calculate: calculateClockJitter,
+  examples: [
+    {
+      id: "fpga-fabric-250mhz",
+      label: "FPGA fabric clock at 250 MHz through two fanout buffers",
+      values: { clockFreqMHz: 250, setupTime_ps: 60, holdTime_ps: 30, refJitter_ps: 30, pllJitter_ps: 110, bufferJitter_ps: 20, bufferStages: 2, traceDelay_ps: 25 }
+    },
+    {
+      id: "board-clock-oscillator-divider",
+      label: "Board clock at 100 MHz: oscillator, one buffer and a divider, no PLL",
+      values: { clockFreqMHz: 100, setupTime_ps: 500, holdTime_ps: 200, refJitter_ps: 50, pllJitter_ps: 0, bufferJitter_ps: 25, bufferStages: 1, traceDelay_ps: 150, jitterTerms: 1, term1Jitter_ps: 15 }
+    },
+    {
+      id: "soc-core-1ghz",
+      label: "SoC core clock at 1 GHz with a level translator",
+      values: { clockFreqMHz: 1e3, setupTime_ps: 30, holdTime_ps: 20, refJitter_ps: 5, pllJitter_ps: 15, bufferJitter_ps: 5, bufferStages: 1, traceDelay_ps: 10, jitterTerms: 1, term1Jitter_ps: 8 }
+    }
+  ],
+  chain: {
+    title: "Jitter budget",
+    caption: "Reference to register · random terms in quadrature, skew added",
+    row: "term",
+    columns: [
+      { label: "Jitter", key: "term{n}Jitter_ps" },
+      { label: "Stages" }
+    ],
+    fixed: [
+      { id: "reference", label: "Oscillator", symbol: "source", keys: ["refJitter_ps", null], neutral: [0, null] },
+      { id: "pll", label: "PLL", symbol: "block", keys: ["pllJitter_ps", null], neutral: [0, null] },
+      { id: "buffers", label: "Buffers", symbol: "amplifier", keys: ["bufferJitter_ps", "bufferStages"], neutral: [null, 0] },
+      { id: "skew", label: "Trace skew", symbol: "cable", keys: ["traceDelay_ps", null], neutral: [0, null] }
+    ],
+    list: {
+      count: "jitterTerms",
+      // Between the buffers and the trace: further stages of the tree.
+      after: 3,
+      types: [
+        { id: "term", label: "Jitter term", symbol: "block", values: [10, 0] },
+        { id: "buffer", label: "Fanout buffer", symbol: "amplifier", values: [25, 0] },
+        { id: "divider", label: "Clock divider", symbol: "block", values: [15, 0] },
+        { id: "translator", label: "Level translator", symbol: "block", values: [20, 0] },
+        { id: "supply", label: "Supply noise", symbol: "source", values: [30, 0] }
+      ]
+    },
+    running: [
+      { output: "totalJitter_ps", label: "Σ Jitter" },
+      { output: "setupMargin_ps", label: "Margin" }
+    ],
+    share: { output: "totalJitter_ps", label: "Jitter share", mode: "rss" },
+    totals: ["setupMargin_ps", "totalJitter_ps", "budgetUsed_pct", "availableBudget_ps", "periodPs"],
+    diagram: { start: "In", end: "Out", link: "totalJitter_ps" },
+    // The row that adds most to the total jitter (its step in the square), and a
+    // part with half its jitter there: a quieter PLL, buffer or oscillator, or a shorter route.
+    limit: ({ rows, running, inputs }) => {
+      if (rows.length < 2) return null;
+      let worst = -1;
+      let worstStep = 0;
+      rows.forEach((_, r) => {
+        const after = running[r].totalJitter_ps;
+        const before = r === 0 ? 0 : running[r - 1].totalJitter_ps;
+        const step = after * after - before * before;
+        if (Number.isFinite(step) && step > worstStep) {
+          worst = r;
+          worstStep = step;
+        }
+      });
+      if (worst < 0) return null;
+      const key = rows[worst].keys[0];
+      return inputs[key] > 0 ? { row: worst, output: "totalJitter_ps", change: { [key]: inputs[key] / 2 } } : null;
+    }
+  },
   formula: {
-    primary: "J_total = √(J_ref² + J_pll² + N·J_buf²) + t_skew",
-    latex: "J_{total} = \\sqrt{J_{ref}^2 + J_{pll}^2 + N \\cdot J_{buf}^2} + t_{skew}",
+    primary: "J_total = √(J_ref² + J_pll² + N·J_buf² + ΣJ_n²) + t_skew",
+    latex: "J_{total} = \\sqrt{J_{ref}^2 + J_{pll}^2 + N \\cdot J_{buf}^2 + \\sum_n J_n^2} + t_{skew}",
     variables: [
       { symbol: "J_ref", description: "Reference oscillator jitter (RMS)", unit: "ps" },
       { symbol: "J_pll", description: "PLL additive jitter (RMS)", unit: "ps" },
       { symbol: "J_buf", description: "Per-stage buffer jitter", unit: "ps" },
       { symbol: "N", description: "Number of buffer stages", unit: "" },
+      { symbol: "J_n", description: "Extra jitter term n (RMS)", unit: "ps" },
       { symbol: "t_skew", description: "PCB trace skew (deterministic)", unit: "ps" }
     ]
   },
@@ -9094,17 +9549,106 @@ var clockJitter = {
   relatedBlogPosts: ["phase-noise-to-jitter", "pll-loop-filter"]
 };
 
+// src/lib/calculators/thermal/_layers.ts
+var MAX_LAYERS = 6;
+var LAYER_DEFAULT = 1;
+function layerInputs() {
+  return [
+    {
+      key: "numLayers",
+      label: "Extra Layers",
+      symbol: "N_L",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: MAX_LAYERS,
+      step: 1,
+      tooltip: `Thermal layers in series between the case and the heatsink besides θ_CS, such as an insulating pad, a spreader or a board with thermal vias (0–${MAX_LAYERS})`,
+      presets: [
+        { label: "None", values: { numLayers: 0 } },
+        { label: "1 layer", values: { numLayers: 1 } },
+        { label: "2 layers", values: { numLayers: 2 } },
+        { label: "3 layers", values: { numLayers: 3 } }
+      ]
+    },
+    ...Array.from({ length: MAX_LAYERS }, (_, i) => i + 1).map((n) => ({
+      key: `layer${n}Theta`,
+      label: `Layer ${n} Thermal Resistance`,
+      symbol: `θ_L${n}`,
+      unit: "°C/W",
+      defaultValue: LAYER_DEFAULT,
+      min: 0,
+      max: 100,
+      step: 0.01,
+      tooltip: `Thermal resistance of extra layer ${n}, in series between the case and the heatsink`,
+      group: `Layer ${n}`
+    }))
+  ];
+}
+function layersTheta(inputs) {
+  const n = Math.round(inputs.numLayers ?? 0);
+  if (!(n >= 0 && n <= MAX_LAYERS)) return { sum: NaN, error: `Number of extra layers must be between 0 and ${MAX_LAYERS}` };
+  let sum = 0;
+  for (let k = 1; k <= n; k++) {
+    const theta = inputs[`layer${k}Theta`] ?? LAYER_DEFAULT;
+    if (!(theta >= 0)) return { sum: NaN, error: "Layer thermal resistances must be zero or more" };
+    sum += theta;
+  }
+  return { sum };
+}
+var LAYER_TYPES = [
+  { id: "insulator", label: "Insulating pad", symbol: "resistor", values: [1] },
+  { id: "grease", label: "Thermal grease", symbol: "resistor", values: [0.2] },
+  { id: "spreader", label: "Spreader", symbol: "resistor", values: [0.1] },
+  { id: "pcb", label: "PCB vias", symbol: "resistor", values: [10] }
+];
+function layerTypeOf([theta]) {
+  let best = LAYER_TYPES[0].id;
+  let bestDistance = Infinity;
+  const x = Math.log(Math.max(theta, 1e-6));
+  for (const t of LAYER_TYPES) {
+    const d = Math.abs(x - Math.log(t.values[0]));
+    if (d < bestDistance) {
+      best = t.id;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+function halveLargestTheta(output, minOf2) {
+  return ({ rows, inputs }) => {
+    if (rows.length < 2) return null;
+    let worst = -1;
+    let worstTheta = 0;
+    rows.forEach((row, r) => {
+      const theta = row.values[0] ?? NaN;
+      if (Number.isFinite(theta) && theta > worstTheta) {
+        worst = r;
+        worstTheta = theta;
+      }
+    });
+    if (worst < 0) return null;
+    const key = rows[worst].keys[0];
+    const value = Math.max(worstTheta / 2, minOf2(key));
+    return value < inputs[key] ? { row: worst, output, change: { [key]: value } } : null;
+  };
+}
+
 // src/lib/calculators/thermal/heatsink-calculator.ts
 function calculateHeatsink(inputs) {
   const { powerDissipation, maxJunctionTemp, ambientTemp, thetaJC, thetaCS } = inputs;
   if (powerDissipation <= 0) {
     return { values: {}, errors: ["Power dissipation must be greater than 0"] };
   }
+  const layers = layersTheta(inputs);
+  if (layers.error) return { values: {}, errors: [layers.error] };
   const warnings = [];
   const thetaJA_total = (maxJunctionTemp - ambientTemp) / powerDissipation;
-  const thetaSA_required = thetaJA_total - thetaJC - thetaCS;
-  const junctionTemp = ambientTemp + powerDissipation * (thetaJC + thetaCS + Math.max(0, thetaSA_required));
+  const thetaSA_required = thetaJA_total - thetaJC - thetaCS - layers.sum;
+  const thetaJS = thetaJC + thetaCS + layers.sum;
+  const junctionTemp = ambientTemp + powerDissipation * (thetaJC + thetaCS + layers.sum + Math.max(0, thetaSA_required));
   const tempRise = junctionTemp - ambientTemp;
+  const heatsinkTemp = junctionTemp - powerDissipation * thetaJS;
   if (thetaSA_required < 0) {
     warnings.push("Thermal design infeasible — even with an ideal heatsink (θ_SA = 0), junction temperature exceeds T_Jmax. Reduce power dissipation or improve θ_JC/θ_CS.");
   } else if (thetaSA_required < 1) {
@@ -9115,7 +9659,9 @@ function calculateHeatsink(inputs) {
       thetaSA_required,
       junctionTemp,
       thetaJA_total,
-      tempRise
+      tempRise,
+      thetaJS,
+      heatsinkTemp
     },
     warnings
   };
@@ -9173,7 +9719,8 @@ var heatsinkCalculator = {
       defaultValue: 0.5,
       min: 0,
       tooltip: "Case-to-heatsink thermal resistance (thermal pad/grease)"
-    }
+    },
+    ...layerInputs()
   ],
   outputs: [
     {
@@ -9215,18 +9762,75 @@ var heatsinkCalculator = {
       symbol: "ΔT",
       unit: "°C",
       precision: 1
+    },
+    {
+      key: "thetaJS",
+      label: "Junction-to-Heatsink θ",
+      symbol: "θ_JS",
+      unit: "°C/W",
+      precision: 2,
+      tooltip: "The stack between the junction and the heatsink: θ_JC + θ_CS + the extra layers"
+    },
+    {
+      key: "heatsinkTemp",
+      label: "Heatsink Temperature",
+      symbol: "T_S",
+      unit: "°C",
+      precision: 1,
+      tooltip: "Temperature of the heatsink where the device mounts: T_J − P_D·θ_JS"
     }
   ],
   calculate: calculateHeatsink,
+  examples: [
+    {
+      id: "to220-mosfet-enclosure",
+      label: "TO-220 MOSFET at 8 W in a 50 °C enclosure, rated 150 °C",
+      values: { powerDissipation: 8, maxJunctionTemp: 150, ambientTemp: 50, thetaJC: 1.15, thetaCS: 0.5 }
+    },
+    {
+      id: "insulated-to247-igbt",
+      label: "Insulated TO-247 IGBT at 60 W in 40 °C air",
+      values: { powerDissipation: 60, maxJunctionTemp: 150, ambientTemp: 40, thetaJC: 0.35, thetaCS: 0.24, numLayers: 1, layer1Theta: 0.5 }
+    },
+    {
+      id: "dpak-vias-to-chassis",
+      label: "D²PAK at 3 W through thermal vias and an insulating pad to the chassis",
+      values: { powerDissipation: 3, maxJunctionTemp: 125, ambientTemp: 55, thetaJC: 1.5, thetaCS: 0.2, numLayers: 2, layer1Theta: 10, layer2Theta: 1.5 }
+    }
+  ],
+  // Rows from the junction, held at T_Jmax, down to the heatsink: each row's
+  // running values are the temperature at its cold side and the θ_SA the
+  // heatsink may still have, the last being the answer.
+  chain: {
+    title: "Thermal stack",
+    caption: "From the junction at T_Jmax down to the heatsink · θ in °C/W, temperatures in °C",
+    row: "layer",
+    columns: [{ label: "θ", key: "layer{n}Theta" }],
+    fixed: [
+      { id: "jc", label: "Package", symbol: "resistor", keys: ["thetaJC"], neutral: [0] },
+      { id: "cs", label: "Interface", symbol: "resistor", keys: ["thetaCS"], neutral: [0] }
+    ],
+    list: { count: "numLayers", types: LAYER_TYPES, typeOf: layerTypeOf },
+    running: [
+      { output: "thetaJS", label: "Σ θ" },
+      { output: "heatsinkTemp", label: "T" },
+      { output: "thetaSA_required", label: "θSA left" }
+    ],
+    share: { output: "thetaJS", label: "θ share", mode: "diff" },
+    totals: ["thetaSA_required", "junctionTemp", "heatsinkTemp", "thetaJA_total", "tempRise"],
+    diagram: { start: "TJ", end: "Sink", link: "heatsinkTemp" },
+    limit: halveLargestTheta("thetaSA_required", (key) => heatsinkCalculator.inputs.find((i) => i.key === key)?.min ?? 0)
+  },
   formula: {
-    primary: "θ_SA = (T_Jmax - T_A) / P_D - θ_JC - θ_CS",
+    primary: "θ_SA = (T_Jmax - T_A) / P_D - θ_JC - θ_CS - Σθ_L",
     variables: [
       { symbol: "θ_SA", description: "Heatsink-to-ambient thermal resistance", unit: "°C/W" },
       { symbol: "T_Jmax", description: "Maximum junction temperature", unit: "°C" },
       { symbol: "T_A", description: "Ambient temperature", unit: "°C" },
       { symbol: "P_D", description: "Power dissipation", unit: "W" },
       { symbol: "θ_JC", description: "Junction-to-case thermal resistance", unit: "°C/W" },
-      { symbol: "θ_CS", description: "Case-to-heatsink thermal resistance", unit: "°C/W" }
+      { symbol: "θ_CS", description: "Case-to-heatsink thermal resistance", unit: "°C/W" },
+      { symbol: "Σθ_L", description: "Extra layers between case and heatsink (pad, spreader, board), in series", unit: "°C/W" }
     ],
     reference: "JEDEC JESD51 thermal measurement standard"
   },
@@ -10364,6 +10968,21 @@ var wireGauge = {
     }
   ],
   calculate: calculateWireGauge,
+  catalog: {
+    title: "Wire sizes",
+    item: "wire",
+    // Every gauge the input takes; gauge 0 is 1/0 ("one-aught", 0.3249 in).
+    items: Array.from({ length: 41 }, (_, g) => ({ id: g === 0 ? "awg-1-0" : `awg-${g}`, label: g === 0 ? "1/0 AWG" : `${g} AWG`, values: { awg: g } })),
+    columns: [
+      { output: "diameter", label: "Diameter" },
+      { output: "crossSection", label: "Area" },
+      { output: "voltageDrop", label: "Voltage drop", bar: true },
+      { output: "currentCapacity", label: "Current capacity" }
+    ],
+    detail: ["crossSection", "resistance", "voltageDrop", "currentCapacity"],
+    chart: { x: "length", y: "voltageDrop", range: [0.5, 50], scale: "linear" },
+    source: "AWG diameter d = 0.127 mm × 92^((36 − AWG)/39) (ASTM B258); resistance from the resistivity entered"
+  },
   formula: {
     primary: "d = 0.127 × 92^((36-AWG)/39) mm, A = π(d/2)²",
     variables: [
@@ -11735,7 +12354,7 @@ var antennaBeamwidth = {
     ],
     substitution: [
       { symbol: "λ", expression: "c / {frequency}", output: "wavelength" },
-      { symbol: "θ₃dB", expression: "70° × λ / {apertureDiameter}", output: "beamwidthHPBW" },
+      { symbol: "θ_{3dB}", expression: "70° × λ / {apertureDiameter}", output: "beamwidthHPBW" },
       { symbol: "G", expression: "10·log₁₀({apertureEfficiency} × (π × {apertureDiameter} / λ)²)", output: "gainFromAperture" }
     ]
   },
@@ -17747,6 +18366,7 @@ function calculateNrBandLookup(inputs) {
     warnings
   };
 }
+var CATALOG_BANDS = [1, 2, 3, 5, 7, 8, 20, 25, 28, 38, 40, 41, 48, 66, 71, 77, 78, 79, 257, 258, 259, 260, 261];
 var BAND_PRESETS = [
   { label: "n78 (3.5 GHz TDD)", values: { band: 78, channelBandwidth: 100, scs: 30, arfcn: 636666, frequency: 3549.99 } },
   { label: "n77 (3.7 GHz TDD)", values: { band: 77, channelBandwidth: 100, scs: 30, arfcn: 65e4, frequency: 3750 } },
@@ -17862,6 +18482,40 @@ var nrBandLookup = {
     { key: "frequencyArfcn", label: "NR-ARFCN of the Frequency", symbol: "N_{REF}", unit: "", precision: 0 }
   ],
   calculate: calculateNrBandLookup,
+  // C6 Catalog & compare (waves/W6.md, task 10.5). Duplex mode and frequency
+  // range are each band's row of TS 38.101-1 / 38.101-2 Table 5.2-1, read from
+  // `nr-bands.json`. N_RB is in the detail, not a column: it depends on the
+  // range, bandwidth and SCS only (one value per range), and FR2 has none at
+  // the default 30 kHz. No chart, and no default comparison: no condition is
+  // continuous along a band, and the hero (the NR-ARFCN's frequency) is the
+  // same for every band.
+  catalog: {
+    title: "NR operating bands",
+    item: "band",
+    items: CATALOG_BANDS.map((n) => {
+      const b = nrBand(n);
+      return { id: `n${n}`, label: `n${n}`, values: { band: n }, attributes: { duplex: b.duplex, fr: `FR${b.fr}` } };
+    }),
+    attributes: [
+      { id: "duplex", label: "Duplex" },
+      { id: "fr", label: "Range" }
+    ],
+    filters: [
+      { id: "fdd", label: "FDD", attribute: "duplex", equals: "FDD" },
+      { id: "tdd", label: "TDD", attribute: "duplex", equals: "TDD" },
+      { id: "fr2", label: "FR2", attribute: "fr", equals: "FR2" }
+    ],
+    columns: [
+      { output: "dlLow", label: "DL low" },
+      { output: "dlHigh", label: "DL high" },
+      { output: "ulLow", label: "UL low" },
+      { output: "ulHigh", label: "UL high" }
+    ],
+    detail: ["arfcnFrequency", "frequencyArfcn", "duplexSpacing", "resourceBlocks"],
+    // Every band gives the same hero, the channel's frequency, so there is nothing to compare.
+    compare: false,
+    source: "3GPP Release 18: TS 38.101-1 and TS 38.101-2 Table 5.2-1 (bands), Table 5.4.2.3-1 (NR-ARFCN), Table 5.3.2-1 (N_RB)"
+  },
   formula: {
     primary: "F_REF = F_REF-Offs + ΔF_Global × (N_REF − N_REF-Offs); BW_tx = N_RB × 12 × SCS",
     latex: "F_{REF} = F_{REF\\text{-}Offs} + \\Delta F_{Global}\\,(N_{REF} - N_{REF\\text{-}Offs}),\\quad BW_{tx} = N_{RB} \\times 12 \\times \\Delta f",
@@ -17973,6 +18627,99 @@ var nrBandLookup = {
   }
 };
 
+// src/lib/calculators/link-budget-chain.ts
+var MAX_EXTRA_LOSSES2 = 6;
+function extraLossSum2(inputs) {
+  const count = Math.max(0, Math.min(MAX_EXTRA_LOSSES2, Math.round(inputs.extraLossCount ?? 0)));
+  let sum = 0;
+  for (let n = 1; n <= count; n++) sum += inputs[`extraLoss${n}`] ?? 0;
+  return sum;
+}
+var NO_EXTRA_LOSSES = Object.fromEntries([
+  ["extraLossCount", 0],
+  ...Array.from({ length: MAX_EXTRA_LOSSES2 }, (_, i) => [`extraLoss${i + 1}`, 0])
+]);
+function extraLossInputs() {
+  return [
+    {
+      key: "extraLossCount",
+      label: "Extra Loss Terms",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: MAX_EXTRA_LOSSES2,
+      step: 1,
+      tooltip: `How many further losses the link adds, such as building entry, foliage, body or polarisation mismatch (0–${MAX_EXTRA_LOSSES2})`
+    },
+    ...Array.from({ length: MAX_EXTRA_LOSSES2 }, (_, i) => ({
+      key: `extraLoss${i + 1}`,
+      label: `Extra Loss ${i + 1}`,
+      symbol: `L_${i + 1}`,
+      unit: "dB",
+      defaultValue: 0,
+      min: 0,
+      max: 50,
+      tooltip: "A further loss on the link, such as building entry, foliage, body loss or polarisation mismatch",
+      group: `Extra Loss ${i + 1}`
+    }))
+  ];
+}
+var TOTAL_LOSS_OUTPUT = {
+  key: "totalLoss",
+  label: "Total Loss",
+  symbol: "L_{total}",
+  unit: "dB",
+  precision: 2,
+  tooltip: "The cable and other losses, the path loss and every extra loss, added"
+};
+function linkLossLimit({ rows, inputs }) {
+  let worst = -1;
+  let worstValue = 0;
+  rows.forEach((row, r) => {
+    if (!(row.kind === "list" || row.id === "losses")) return;
+    const v = row.values[0] ?? NaN;
+    if (Number.isFinite(v) && v > worstValue) {
+      worst = r;
+      worstValue = v;
+    }
+  });
+  if (worst < 0) return null;
+  const key = rows[worst].keys[0];
+  return { row: worst, output: "linkMargin", change: { [key]: inputs[key] / 2 } };
+}
+function linkBudgetChain(lossesLabel, types, totals) {
+  return {
+    title: "Link budget",
+    caption: "Transmitter to receiver · level at each term’s output",
+    row: "term",
+    columns: [
+      { label: "Value", key: "extraLoss{n}" },
+      { label: "Distance" }
+    ],
+    fixed: [
+      { id: "transmitter", label: "Transmitter", symbol: "source", keys: ["txPower", null], neutral: [null, null] },
+      { id: "losses", label: lossesLabel, symbol: "cable", keys: ["losses", null], neutral: [0, null] },
+      { id: "txAntenna", label: "Tx antenna", symbol: "antenna", keys: ["txGain", null], neutral: [0, null] },
+      { id: "path", label: "Path", symbol: "path", keys: [null, "distance"], neutral: [null, 0] },
+      { id: "rxAntenna", label: "Rx antenna", symbol: "antenna", keys: ["rxGain", null], neutral: [0, null] }
+    ],
+    list: {
+      count: "extraLossCount",
+      // After the path, before the receive antenna.
+      after: 4,
+      types
+    },
+    running: [
+      { output: "receivedPower", label: "Σ Level" },
+      { output: "linkMargin", label: "Margin" }
+    ],
+    share: { output: "totalLoss", label: "Loss share", mode: "diff" },
+    totals,
+    diagram: { start: "Tx", end: "Rx", link: "receivedPower" },
+    limit: linkLossLimit
+  };
+}
+
 // src/lib/calculators/rf/5g-nr-link-budget.ts
 var C03 = 299792458;
 var KT0_DBM_PER_HZ = 10 * Math.log10(1380649e-29 * 290 * 1e3);
@@ -18065,7 +18812,7 @@ function calculateNrLinkBudget(inputs) {
   if (!(scs > 0)) return { values: {}, errors: ["Subcarrier spacing must be greater than 0"] };
   if (!(bsHeight > 0)) return { values: {}, errors: ["Base-station height must be greater than 0"] };
   if (!(utHeight > 0)) return { values: {}, errors: ["UT height must be greater than 0"] };
-  if (!(distance > 0)) return { values: {}, errors: ["Distance must be greater than 0"] };
+  if (!(distance >= 0)) return { values: {}, errors: ["Distance cannot be negative"] };
   if (!(noiseFigure >= 0)) return { values: {}, errors: ["Noise figure cannot be negative"] };
   if (!(layers >= 1)) return { values: {}, errors: ["At least one MIMO layer is needed"] };
   if (!(modulationOrder > 0)) return { values: {}, errors: ["Modulation order must be greater than 0"] };
@@ -18073,7 +18820,8 @@ function calculateNrLinkBudget(inputs) {
   const los = losIn === 1;
   const s = SCENARIOS[scenario];
   const warnings = [];
-  const { pl: pathLoss, sigma: shadowFadingStd, breakpoint } = tr38901PathLoss(scenario, los, frequency, distance, bsHeight, utHeight);
+  const { pl, sigma: shadowFadingStd, breakpoint } = tr38901PathLoss(scenario, los, frequency, distance, bsHeight, utHeight);
+  const pathLoss = distance === 0 ? 0 : pl;
   const dh = bsHeight - utHeight;
   const distance3d = Math.sqrt(distance * distance + dh * dh);
   if (scenario === 1 && utHeight >= 13) {
@@ -18100,10 +18848,12 @@ function calculateNrLinkBudget(inputs) {
   const occupiedBandwidth = resourceBlocks * 12 * scs / 1e3;
   const thermalNoise = KT0_DBM_PER_HZ + 10 * Math.log10(occupiedBandwidth * 1e6);
   const noiseFloor = thermalNoise + noiseFigure;
-  const receivedPower = txPower + txGain + rxGain - losses - pathLoss;
+  const extraLoss = extraLossSum2(inputs);
+  const receivedPower = txPower + txGain + rxGain - losses - extraLoss - pathLoss;
   const sinr = receivedPower - (noiseFloor + interferenceMargin);
-  const maxPathLoss = txPower + txGain + rxGain - losses - shadowMargin - (noiseFloor + interferenceMargin + requiredSinr);
+  const maxPathLoss = txPower + txGain + rxGain - losses - extraLoss - shadowMargin - (noiseFloor + interferenceMargin + requiredSinr);
   const linkMargin2 = maxPathLoss - pathLoss;
+  const totalLoss = losses + pathLoss + extraLoss;
   let maxRange = NaN;
   if (Number.isFinite(maxPathLoss)) {
     const dMax = s.dMax(los);
@@ -18162,7 +18912,8 @@ function calculateNrLinkBudget(inputs) {
       noiseFloor,
       breakpointDistance: breakpoint,
       shadowFadingStd,
-      peakDataRate
+      peakDataRate,
+      totalLoss
     },
     warnings
   };
@@ -18303,7 +19054,8 @@ var nrLinkBudget = {
         { label: "Downlink", values: { linkDirection: 0 } },
         { label: "Uplink", values: { linkDirection: 1 } }
       ]
-    }
+    },
+    ...extraLossInputs()
   ],
   outputs: [
     { key: "linkMargin", label: "Link Margin", symbol: "M", unit: "dB", precision: 2, primary: true, thresholds: { good: { min: 3 }, warning: { min: 0, max: 3 }, danger: { min: 0 } } },
@@ -18318,9 +19070,76 @@ var nrLinkBudget = {
     { key: "noiseFloor", label: "Receiver Noise Floor (kTB + NF)", symbol: "N", unit: "dBm", precision: 2 },
     { key: "breakpointDistance", label: "Breakpoint Distance", symbol: "d'_{BP}", unit: "m", precision: 1 },
     { key: "shadowFadingStd", label: "Shadow-Fading Std (σ_SF)", symbol: "σ_{SF}", unit: "dB", precision: 2 },
-    { key: "peakDataRate", label: "Peak Data Rate (TS 38.306)", symbol: "R_{peak}", unit: "Mbps", precision: 1 }
+    { key: "peakDataRate", label: "Peak Data Rate (TS 38.306)", symbol: "R_{peak}", unit: "Mbps", precision: 1 },
+    TOTAL_LOSS_OUTPUT
   ],
   calculate: calculateNrLinkBudget,
+  examples: [
+    {
+      id: "n78-uma-indoor-user",
+      label: "n78 urban macro at 3.5 GHz, user indoors behind a low-loss façade",
+      values: { scenario: 1, lineOfSight: 0, frequency: 3.5, channelBandwidth: 100, scs: 30, bsHeight: 25, utHeight: 1.5, distance: 300, extraLossCount: 1, extraLoss1: 13 }
+    },
+    {
+      id: "n78-uma-in-car",
+      label: "n78 urban macro at 3.5 GHz, user in a car",
+      values: { scenario: 1, lineOfSight: 0, frequency: 3.5, channelBandwidth: 100, scs: 30, bsHeight: 25, utHeight: 1.5, distance: 500, extraLossCount: 1, extraLoss1: 9 }
+    },
+    {
+      id: "n28-rma-rural-coverage",
+      label: "n28 rural macro at 700 MHz, 10 MHz carrier from a 35 m mast",
+      values: {
+        scenario: 0,
+        lineOfSight: 0,
+        frequency: 0.7,
+        channelBandwidth: 10,
+        scs: 15,
+        bsHeight: 35,
+        utHeight: 1.5,
+        distance: 4e3,
+        txPower: 46,
+        txGain: 15,
+        rxGain: 0,
+        losses: 3,
+        requiredSinr: -3,
+        layers: 2,
+        modulationOrder: 6
+      }
+    },
+    {
+      id: "n257-umi-mmwave-los",
+      label: "n257 street-canyon small cell at 28 GHz in line of sight, user holding the phone",
+      values: {
+        scenario: 2,
+        lineOfSight: 1,
+        frequency: 28,
+        channelBandwidth: 100,
+        scs: 120,
+        bsHeight: 10,
+        utHeight: 1.5,
+        distance: 150,
+        txPower: 30,
+        txGain: 24,
+        rxGain: 10,
+        losses: 1,
+        noiseFigure: 10,
+        shadowMargin: 4,
+        extraLossCount: 1,
+        extraLoss1: 4
+      }
+    }
+  ],
+  chain: linkBudgetChain(
+    "Cable & body",
+    [
+      { id: "loss", label: "Extra loss", symbol: "attenuator", values: [3, 0] },
+      { id: "building", label: "Building entry", symbol: "attenuator", values: [13, 0] },
+      { id: "car", label: "Car penetration", symbol: "attenuator", values: [9, 0] },
+      { id: "body", label: "Body", symbol: "attenuator", values: [3, 0] },
+      { id: "foliage", label: "Foliage", symbol: "attenuator", values: [6, 0] }
+    ],
+    ["linkMargin", "receivedPower", "sinr", "pathLoss", "maxRange"]
+  ),
   formula: {
     primary: "M = P_TX + G_TX + G_RX − L − PL − M_SF − (N + M_I + SINR_req); N = −173.975 + 10log₁₀(N_RB·12·Δf) + NF",
     latex: "M = P_{TX} + G_{TX} + G_{RX} - L - PL - M_{SF} - \\left(N + M_I + SINR_{req}\\right),\\quad N = 10\\log_{10}(kT_0) + 10\\log_{10}\\left(N_{RB}\\cdot 12\\cdot \\Delta f\\right) + NF",
@@ -18380,7 +19199,8 @@ var nrLinkBudget = {
         layers: 4,
         modulationOrder: 8,
         scalingFactor: 1,
-        linkDirection: 0
+        linkDirection: 0,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { pathLoss: 98.27, breakpointDistance: 560.4 },
       tolerance: 1e-4,
@@ -18407,7 +19227,8 @@ var nrLinkBudget = {
         layers: 4,
         modulationOrder: 8,
         scalingFactor: 1,
-        linkDirection: 0
+        linkDirection: 0,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { pathLoss: 129.92, resourceBlocks: 273, occupiedBandwidth: 98.28, thermalNoise: -94.05 },
       tolerance: 1e-4,
@@ -18434,7 +19255,8 @@ var nrLinkBudget = {
         layers: 4,
         modulationOrder: 8,
         scalingFactor: 1,
-        linkDirection: 0
+        linkDirection: 0,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { peakDataRate: 2337 },
       tolerance: 1e-3,
@@ -18461,7 +19283,8 @@ var nrLinkBudget = {
         layers: 1,
         modulationOrder: 2,
         scalingFactor: 1,
-        linkDirection: 0
+        linkDirection: 0,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { pathLoss: 69.7 },
       tolerance: 1e-12,
@@ -18564,7 +19387,7 @@ function calculateLora(inputs) {
   if (!(noiseFigure >= 0)) return { values: {}, errors: ["Noise figure cannot be negative"] };
   if (!(frequency > 0)) return { values: {}, errors: ["Frequency must be greater than 0"] };
   if (!(model >= 0 && model <= 5)) return { values: {}, errors: ["Path-loss model must be 0 (free space) or 1 to 5 (Okumura–Hata)"] };
-  if (!(distance > 0)) return { values: {}, errors: ["Distance must be greater than 0"] };
+  if (!(distance >= 0)) return { values: {}, errors: ["Distance cannot be negative"] };
   if (!(baseHeight > 0)) return { values: {}, errors: ["Base-station height must be greater than 0"] };
   if (!(mobileHeight > 0)) return { values: {}, errors: ["Mobile height must be greater than 0"] };
   if (!(dutyCycle > 0 && dutyCycle <= 100)) return { values: {}, errors: ["Duty cycle must be greater than 0 and at most 100%"] };
@@ -18589,13 +19412,14 @@ function calculateLora(inputs) {
   const fHz = frequency * 1e6;
   let pathLoss;
   let maxRange;
-  const eirpAndGains = txPower + txGain + rxGain - losses;
+  const extraLoss = extraLossSum2(inputs);
+  const eirpAndGains = txPower + txGain + rxGain - losses - extraLoss;
   const maxPathLoss = eirpAndGains - sensitivity;
   if (model === 0) {
-    pathLoss = 20 * Math.log10(4 * Math.PI * distance * 1e3 * fHz / C04);
+    pathLoss = distance === 0 ? 0 : 20 * Math.log10(4 * Math.PI * distance * 1e3 * fHz / C04);
     maxRange = C04 / (4 * Math.PI * fHz) * 10 ** (maxPathLoss / 20) / 1e3;
   } else {
-    pathLoss = hataPathLoss(model, frequency, distance, baseHeight, mobileHeight);
+    pathLoss = distance === 0 ? 0 : hataPathLoss(model, frequency, distance, baseHeight, mobileHeight);
     const at1km = hataPathLoss(model, frequency, 1, baseHeight, mobileHeight);
     maxRange = 10 ** ((maxPathLoss - at1km) / (44.9 - 6.55 * Math.log10(baseHeight)));
     if (model === 2 && frequency > 200 && frequency < 400) {
@@ -18606,6 +19430,7 @@ function calculateLora(inputs) {
   }
   const receivedPower = eirpAndGains - pathLoss;
   const linkMargin2 = receivedPower - sensitivity;
+  const totalLoss = losses + pathLoss + extraLoss;
   warnings.push(...checkValidity(loraValidity(model), {
     bandwidth,
     frequency,
@@ -18627,7 +19452,8 @@ function calculateLora(inputs) {
       lowDataRateOptimize: de,
       bitRate,
       offTime,
-      packetsPerHour
+      packetsPerHour,
+      totalLoss
     },
     warnings
   };
@@ -18797,7 +19623,8 @@ var loraLinkBudget = {
         { label: "1%", values: { dutyCycle: 1 } },
         { label: "10%", values: { dutyCycle: 10 } }
       ]
-    }
+    },
+    ...extraLossInputs()
   ],
   outputs: [
     { key: "linkMargin", label: "Link Margin", symbol: "M", unit: "dB", precision: 2, primary: true, thresholds: { good: { min: 10 }, warning: { min: 0, max: 10 }, danger: { min: 0 } } },
@@ -18811,9 +19638,66 @@ var loraLinkBudget = {
     { key: "lowDataRateOptimize", label: "Low-Data-Rate Optimisation (1 = On)", symbol: "DE", unit: "", precision: 0 },
     { key: "bitRate", label: "Equivalent Bit Rate", symbol: "R_b", unit: "bit/s", precision: 1 },
     { key: "offTime", label: "Minimum Off-Time After Each Packet", symbol: "T_{off}", unit: "s", precision: 3 },
-    { key: "packetsPerHour", label: "Packets per Hour at the Duty Cycle", symbol: "N_{h}", unit: "", precision: 1 }
+    { key: "packetsPerHour", label: "Packets per Hour at the Duty Cycle", symbol: "N_{h}", unit: "", precision: 1 },
+    TOTAL_LOSS_OUTPUT
   ],
   calculate: calculateLora,
+  examples: [
+    {
+      id: "eu868-basement-meter",
+      label: "EU868 water meter in a basement at SF12, to an urban gateway",
+      values: {
+        spreadingFactor: 12,
+        frequency: 868,
+        txPower: 14,
+        txGain: 0,
+        rxGain: 5,
+        losses: 1,
+        pathLossModel: 1,
+        distance: 1,
+        baseHeight: 30,
+        mobileHeight: 1,
+        extraLossCount: 1,
+        extraLoss1: 20
+      }
+    },
+    {
+      id: "us915-rural-farm",
+      label: "US915 farm sensor at SF10 to a rural gateway, through trees",
+      values: {
+        spreadingFactor: 10,
+        payloadLength: 11,
+        frequency: 915,
+        txPower: 20,
+        txGain: 2.15,
+        rxGain: 6,
+        losses: 1,
+        pathLossModel: 5,
+        distance: 10,
+        baseHeight: 40,
+        mobileHeight: 2,
+        dutyCycle: 100,
+        extraLossCount: 1,
+        extraLoss1: 6
+      }
+    },
+    {
+      id: "eu868-line-of-sight-sf7",
+      label: "EU868 hilltop line of sight in free space at SF7",
+      values: { spreadingFactor: 7, frequency: 868, txPower: 14, txGain: 2.15, rxGain: 5, losses: 2, pathLossModel: 0, distance: 15 }
+    }
+  ],
+  chain: linkBudgetChain(
+    "Cable & losses",
+    [
+      { id: "loss", label: "Extra loss", symbol: "attenuator", values: [3, 0] },
+      { id: "building", label: "Building entry", symbol: "attenuator", values: [15, 0] },
+      { id: "foliage", label: "Foliage", symbol: "attenuator", values: [6, 0] },
+      { id: "body", label: "Body", symbol: "attenuator", values: [3, 0] },
+      { id: "polarisation", label: "Polarisation", symbol: "attenuator", values: [3, 0] }
+    ],
+    ["linkMargin", "receivedPower", "sensitivity", "pathLoss", "maxRange"]
+  ),
   formula: {
     primary: "S = −173.975 + 10log₁₀(BW) + NF + SNR(SF); T_sym = 2^SF/BW; ToA = (n_pre + 4.25 + n_payload)·T_sym; M = P_TX + G_TX + G_RX − L − L_p − S",
     latex: "S = 10\\log_{10}(kT_0) + 10\\log_{10}(BW) + NF + SNR_{SF},\\quad T_{sym} = \\frac{2^{SF}}{BW},\\quad n_{payload} = 8 + \\max\\left(\\left\\lceil\\frac{8PL - 4SF + 28 + 16CRC - 20IH}{4(SF - 2DE)}\\right\\rceil (CR + 4),\\,0\\right)",
@@ -18874,7 +19758,8 @@ var loraLinkBudget = {
         distance: 1,
         baseHeight: 30,
         mobileHeight: 1.5,
-        dutyCycle: 1
+        dutyCycle: 1,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { sensitivity: -137, timeOnAir: 2465.792, lowDataRateOptimize: 1, pathLoss: 91.22 },
       tolerance: 1e-4,
@@ -18899,7 +19784,8 @@ var loraLinkBudget = {
         distance: 2,
         baseHeight: 30,
         mobileHeight: 1.5,
-        dutyCycle: 1
+        dutyCycle: 1,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { timeOnAir: 41.216, symbolTime: 1.024, payloadSymbols: 28, sensitivity: -124.5 },
       tolerance: 1e-4,
@@ -18924,7 +19810,8 @@ var loraLinkBudget = {
         distance: 2,
         baseHeight: 30,
         mobileHeight: 1.5,
-        dutyCycle: 1
+        dutyCycle: 1,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { timeOnAir: 264.2, sensitivity: -132 },
       tolerance: 1e-3,
@@ -18949,7 +19836,8 @@ var loraLinkBudget = {
         distance: 2,
         baseHeight: 30,
         mobileHeight: 1.5,
-        dutyCycle: 1
+        dutyCycle: 1,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { timeOnAir: 528.4, sensitivity: -134, lowDataRateOptimize: 1 },
       tolerance: 1e-3,
@@ -18974,7 +19862,8 @@ var loraLinkBudget = {
         distance: 2,
         baseHeight: 30,
         mobileHeight: 1.5,
-        dutyCycle: 1
+        dutyCycle: 1,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { bitRate: 293 },
       tolerance: 1e-3,
@@ -18999,7 +19888,8 @@ var loraLinkBudget = {
         distance: 1,
         baseHeight: 30,
         mobileHeight: 1.5,
-        dutyCycle: 1
+        dutyCycle: 1,
+        ...NO_EXTRA_LOSSES
       },
       expectedOutputs: { pathLoss: 126.4 },
       tolerance: 1e-4,
@@ -19074,28 +19964,30 @@ function calculateBle(inputs) {
   if (!(phy >= 0 && phy <= 3)) return { values: {}, errors: ["PHY must be 0 (LE 1M), 1 (LE 2M), 2 (LE Coded S=2) or 3 (LE Coded S=8)"] };
   if (!(model >= 0 && model <= 8)) return { values: {}, errors: ["Path-loss model must be 0 (free space) or 1 to 8 (ITU-R P.1238)"] };
   if (!(frequency > 0)) return { values: {}, errors: ["Frequency must be greater than 0"] };
-  if (!(distance > 0)) return { values: {}, errors: ["Distance must be greater than 0"] };
+  if (!(distance >= 0)) return { values: {}, errors: ["Distance cannot be negative"] };
   if (!(sensitivityOverride <= 0)) {
     return { values: {}, errors: ["A datasheet sensitivity is negative dBm; enter 0 to use the Core Specification value"] };
   }
   const p = PHYS[phy];
   const sensitivityUsed = sensitivityOverride === 0 ? p.sensitivity : sensitivityOverride;
   const fGHz = frequency / 1e3;
-  const maxPathLoss = txPower + txGain + rxGain - losses - sensitivityUsed;
+  const extraLoss = extraLossSum2(inputs);
+  const maxPathLoss = txPower + txGain + rxGain - losses - extraLoss - sensitivityUsed;
   let pathLoss;
   let maxRange;
   let shadowFadingStd = NaN;
   if (model === 0) {
-    pathLoss = 20 * Math.log10(4 * Math.PI * distance * frequency * 1e6 / C05);
+    pathLoss = distance === 0 ? 0 : 20 * Math.log10(4 * Math.PI * distance * frequency * 1e6 / C05);
     maxRange = C05 / (4 * Math.PI * frequency * 1e6) * 10 ** (maxPathLoss / 20);
   } else {
     const [, , , , , alpha, beta, gamma, sigma] = P1238_ROWS[model - 1];
-    pathLoss = 10 * alpha * Math.log10(distance) + beta + 10 * gamma * Math.log10(fGHz);
+    pathLoss = distance === 0 ? 0 : 10 * alpha * Math.log10(distance) + beta + 10 * gamma * Math.log10(fGHz);
     maxRange = 10 ** ((maxPathLoss - beta - 10 * gamma * Math.log10(fGHz)) / (10 * alpha));
     shadowFadingStd = sigma;
   }
-  const receivedPower = txPower + txGain + rxGain - losses - pathLoss;
+  const receivedPower = txPower + txGain + rxGain - losses - extraLoss - pathLoss;
   const linkMargin2 = receivedPower - sensitivityUsed;
+  const totalLoss = losses + pathLoss + extraLoss;
   const warnings = checkValidity(bleValidity(model), {
     txPower,
     frequency,
@@ -19111,7 +20003,8 @@ function calculateBle(inputs) {
       pathLoss,
       receivedPower,
       maxRange,
-      shadowFadingStd
+      shadowFadingStd,
+      totalLoss
     },
     warnings
   };
@@ -19195,7 +20088,8 @@ var bleLinkBudget = {
       max: 0,
       step: 1,
       tooltip: "Enter the radio's datasheet sensitivity to replace the Core Specification reference; 0 keeps the reference"
-    }
+    },
+    ...extraLossInputs()
   ],
   outputs: [
     { key: "linkMargin", label: "Link Margin", symbol: "M", unit: "dB", precision: 2, primary: true, thresholds: { good: { min: 10 }, warning: { min: 0, max: 10 }, danger: { min: 0 } } },
@@ -19204,9 +20098,38 @@ var bleLinkBudget = {
     { key: "pathLoss", label: "Path Loss", symbol: "L_p", unit: "dB", precision: 2 },
     { key: "receivedPower", label: "Received Power", symbol: "P_{RX}", unit: "dBm", precision: 2 },
     { key: "maxRange", label: "Maximum Range", symbol: "d_{max}", unit: "m", precision: 2 },
-    { key: "shadowFadingStd", label: "Shadow-Fading Std (P.1238 σ)", symbol: "σ", unit: "dB", precision: 2 }
+    { key: "shadowFadingStd", label: "Shadow-Fading Std (P.1238 σ)", symbol: "σ", unit: "dB", precision: 2 },
+    TOTAL_LOSS_OUTPUT
   ],
   calculate: calculateBle,
+  examples: [
+    {
+      id: "wearable-to-phone-office",
+      label: "Wrist wearable to a phone across an office, LE 1M, worn on the body",
+      values: { phy: 0, txPower: 0, txGain: -1, rxGain: -1, losses: 0, pathLossModel: 2, distance: 8, extraLossCount: 1, extraLoss1: 6 }
+    },
+    {
+      id: "nrf52840-coded-warehouse",
+      label: "nRF52840 asset tag at +8 dBm on LE Coded S=8 in a warehouse, its datasheet sensitivity",
+      values: { phy: 3, txPower: 8, txGain: 0, rxGain: 2, losses: 1, pathLossModel: 6, distance: 60, sensitivityOverride: -103 }
+    },
+    {
+      id: "sensor-corridor-le2m",
+      label: "Ceiling sensor down a corridor on LE 2M, behind a plastic enclosure",
+      values: { phy: 1, txPower: 4, txGain: 0, rxGain: 0, losses: 2, pathLossModel: 3, distance: 40 }
+    }
+  ],
+  chain: linkBudgetChain(
+    "Body & enclosure",
+    [
+      { id: "loss", label: "Extra loss", symbol: "attenuator", values: [3, 0] },
+      { id: "wall", label: "Interior wall", symbol: "attenuator", values: [5, 0] },
+      { id: "body", label: "Body", symbol: "attenuator", values: [6, 0] },
+      { id: "enclosure", label: "Enclosure", symbol: "attenuator", values: [2, 0] },
+      { id: "polarisation", label: "Polarisation", symbol: "attenuator", values: [3, 0] }
+    ],
+    ["linkMargin", "receivedPower", "sensitivityUsed", "pathLoss", "maxRange"]
+  ),
   formula: {
     primary: "M = P_TX + G_TX + G_RX − L − L_p − S; L_p = 20log₁₀(4πdf/c) or 10α log₁₀(d) + β + 10γ log₁₀(f)",
     latex: "M = P_{TX} + G_{TX} + G_{RX} - L - L_p - S,\\quad L_p^{FS} = 20\\log_{10}\\frac{4\\pi d f}{c},\\quad L_p^{P.1238} = 10\\alpha\\log_{10} d + \\beta + 10\\gamma\\log_{10} f_{GHz}",
@@ -19241,19 +20164,19 @@ var bleLinkBudget = {
   ],
   verificationData: [
     ...PHYS.map((p, i) => ({
-      inputs: { phy: i, txPower: 0, txGain: 0, rxGain: 0, losses: 0, frequency: 2440, pathLossModel: 0, distance: 10, sensitivityOverride: 0 },
+      inputs: { phy: i, txPower: 0, txGain: 0, rxGain: 0, losses: 0, frequency: 2440, pathLossModel: 0, distance: 10, sensitivityOverride: 0, ...NO_EXTRA_LOSSES },
       expectedOutputs: { sensitivityUsed: p.sensitivity, dataRate: p.rate },
       tolerance: 1e-12,
       source: `${CORE}, §4.1, Table 4.2 (${p.name}: ≤ ${String(p.sensitivity).replace("-", "−")} dBm) and §1 (${p.name} at ${String(p.rate)} Mb/s)`
     })),
     {
-      inputs: { phy: 0, txPower: 0, txGain: 0, rxGain: 0, losses: 0, frequency: 2440, pathLossModel: 0, distance: 10, sensitivityOverride: 0 },
+      inputs: { phy: 0, txPower: 0, txGain: 0, rxGain: 0, losses: 0, frequency: 2440, pathLossModel: 0, distance: 10, sensitivityOverride: 0, ...NO_EXTRA_LOSSES },
       expectedOutputs: { pathLoss: 60.2 },
       tolerance: 1e-4,
       source: "ITU-R P.525-4 (08/2019), §2.2, Eq. (3): free-space loss 60.20 dB at 2440 MHz and 10 m"
     },
     {
-      inputs: { phy: 0, txPower: 0, txGain: 0, rxGain: 0, losses: 0, frequency: 1e3, pathLossModel: 2, distance: 10, sensitivityOverride: 0 },
+      inputs: { phy: 0, txPower: 0, txGain: 0, rxGain: 0, losses: 0, frequency: 1e3, pathLossModel: 2, distance: 10, sensitivityOverride: 0, ...NO_EXTRA_LOSSES },
       expectedOutputs: { pathLoss: 54.03 },
       tolerance: 1e-12,
       source: "ITU-R P.1238-13 (09/2025), §3.1, Eq. (1) and Table 2, office NLoS (α = 2.39, β = 30.13, γ = 2.40): exactly 10α + β = 54.03 dB at 10 m and 1 GHz"
@@ -21052,16 +21975,31 @@ var mosfetPowerDissipation = {
 };
 
 // src/lib/calculators/power/solar-panel-sizing.ts
+var MAX_LOADS2 = 9;
+var LOAD_DEFAULT2 = { power: 50, hours: 4 };
 function calculateSolarPanelSizing(inputs) {
   const { loadPower, peakSunHours, systemVoltage, batteryCapacity, daysAutonomy } = inputs;
+  const loadHours = inputs.loadHours ?? 24;
+  const numLoads = Math.round(inputs.numLoads ?? 0);
+  if (!(numLoads >= 0 && numLoads <= MAX_LOADS2)) {
+    return { values: {}, errors: [`Number of additional loads must be between 0 and ${MAX_LOADS2}`] };
+  }
   const safeVoltage = Math.max(systemVoltage, 0.1);
   const safeSunHours = Math.max(peakSunHours, 0.1);
-  const energyPerDay = loadPower * 24;
+  let energyPerDay = loadPower * loadHours;
+  for (let k = 1; k <= numLoads; k++) {
+    const power = inputs[`load${k}Power`] ?? LOAD_DEFAULT2.power;
+    const hours = inputs[`load${k}Hours`] ?? LOAD_DEFAULT2.hours;
+    if (!(power >= 0) || !(hours >= 0 && hours <= 24)) {
+      return { values: {}, errors: ["Load powers must be zero or more, and hours a day between 0 and 24"] };
+    }
+    energyPerDay += power * hours;
+  }
   const panelWattage = energyPerDay / safeSunHours * 1.25;
   const panelCurrent = panelWattage / safeVoltage;
-  const batteryAh = loadPower * 24 * daysAutonomy / safeVoltage / 0.5;
+  const batteryAh = energyPerDay * daysAutonomy / safeVoltage / 0.5;
   const chargeControllerAmps = panelCurrent * 1.25;
-  const batteryAutonomyDays = batteryCapacity * safeVoltage * 0.5 / (loadPower * 24);
+  const batteryAutonomyDays = batteryCapacity * safeVoltage * 0.5 / energyPerDay;
   return {
     values: {
       energyPerDay,
@@ -21073,6 +22011,39 @@ function calculateSolarPanelSizing(inputs) {
     }
   };
 }
+var SUBSCRIPT4 = "₀₁₂₃₄₅₆₇₈₉";
+var sub3 = (k) => String(k).split("").map((d) => SUBSCRIPT4[Number(d)]).join("");
+var loadInputs2 = [
+  {
+    key: "numLoads",
+    label: "Additional Loads",
+    symbol: "N",
+    unit: "",
+    defaultValue: 0,
+    min: 0,
+    max: MAX_LOADS2,
+    step: 1,
+    tooltip: `Loads beside the base load, each with its own power and hours a day (0–${MAX_LOADS2})`,
+    presets: [
+      { label: "None", values: { numLoads: 0 } },
+      { label: "1 load", values: { numLoads: 1 } },
+      { label: "2 loads", values: { numLoads: 2 } },
+      { label: "3 loads", values: { numLoads: 3 } }
+    ]
+  },
+  ...Array.from({ length: MAX_LOADS2 }, (_, i) => i + 1).flatMap((n) => [
+    { key: `load${n}Power`, label: `Load ${n} Power`, symbol: `P${sub3(n)}`, unit: "W", defaultValue: LOAD_DEFAULT2.power, min: 0, max: 1e4, tooltip: `Power additional load ${n} draws while it runs`, group: `Load ${n}` },
+    { key: `load${n}Hours`, label: `Load ${n} Hours per Day`, symbol: `t${sub3(n)}`, unit: "h", defaultValue: LOAD_DEFAULT2.hours, min: 0, max: 24, tooltip: `Hours a day additional load ${n} runs`, group: `Load ${n}` }
+  ])
+];
+var LOAD_TYPES2 = [
+  { id: "load", label: "Load", symbol: "load", values: [LOAD_DEFAULT2.power, LOAD_DEFAULT2.hours] },
+  { id: "fridge", label: "Refrigerator", symbol: "load", values: [45, 8] },
+  { id: "lights", label: "LED lighting", symbol: "load", values: [20, 5] },
+  { id: "router", label: "Wi-Fi router", symbol: "load", values: [10, 24] },
+  { id: "laptop", label: "Laptop", symbol: "load", values: [60, 4] },
+  { id: "pump", label: "Water pump", symbol: "load", values: [100, 1] }
+];
 var solarPanelSizing = {
   slug: "solar-panel-sizing",
   title: "Solar Panel Sizing Calculator",
@@ -21099,6 +22070,16 @@ var solarPanelSizing = {
       defaultValue: 100,
       min: 0.1,
       tooltip: "Continuous power consumption of the load"
+    },
+    {
+      key: "loadHours",
+      label: "Load Hours per Day",
+      symbol: "t_load",
+      unit: "h",
+      defaultValue: 24,
+      min: 0.1,
+      max: 24,
+      tooltip: "Hours a day the load runs. 24 = always on."
     },
     {
       key: "peakSunHours",
@@ -21146,7 +22127,8 @@ var solarPanelSizing = {
       max: 30,
       step: 1,
       tooltip: "Number of cloudy days the system must operate without sun"
-    }
+    },
+    ...loadInputs2
   ],
   outputs: [
     {
@@ -21195,10 +22177,66 @@ var solarPanelSizing = {
     }
   ],
   calculate: calculateSolarPanelSizing,
+  examples: [
+    {
+      id: "cabin-12v",
+      label: "Off-grid cabin at 12 V: router, refrigerator, lights and a laptop",
+      values: { loadPower: 10, loadHours: 24, peakSunHours: 4, systemVoltage: 12, batteryCapacity: 200, daysAutonomy: 2, numLoads: 3, load1Power: 45, load1Hours: 8, load2Power: 20, load2Hours: 5, load3Power: 60, load3Hours: 3 }
+    },
+    {
+      id: "remote-camera-site",
+      label: "Remote security camera with a 4G router at 12 V",
+      values: { loadPower: 6, loadHours: 24, peakSunHours: 3, systemVoltage: 12, batteryCapacity: 100, daysAutonomy: 5, numLoads: 1, load1Power: 8, load1Hours: 24 }
+    },
+    {
+      id: "camper-van-24v",
+      label: "Camper van at 24 V: refrigerator, roof fan, lights and water pump",
+      values: { loadPower: 45, loadHours: 8, peakSunHours: 5, systemVoltage: 24, batteryCapacity: 200, daysAutonomy: 2, numLoads: 3, load1Power: 30, load1Hours: 6, load2Power: 20, load2Hours: 4, load3Power: 100, load3Hours: 0.5 }
+    }
+  ],
+  chain: {
+    title: "Load budget",
+    caption: "Energy a day · power in W, time in h a day, energy in Wh",
+    row: "load",
+    columns: [
+      { label: "Power", key: "load{n}Power" },
+      { label: "Hours/day", key: "load{n}Hours" }
+    ],
+    // The base load comes first and is never cut, so its neutral values are never applied.
+    fixed: [{ id: "base", label: "Base load", symbol: "load", keys: ["loadPower", "loadHours"], neutral: [0, 0] }],
+    list: { count: "numLoads", types: LOAD_TYPES2 },
+    running: [
+      { output: "energyPerDay", label: "Σ Energy" },
+      { output: "panelWattage", label: "Panel" }
+    ],
+    share: { output: "energyPerDay", label: "Energy share", mode: "diff" },
+    totals: ["panelWattage", "energyPerDay", "batteryAh", "chargeControllerAmps", "batteryAutonomyDays"],
+    heroNote: "panelCurrent",
+    diagram: { start: "PV", end: "Σ", link: "energyPerDay" },
+    // The load using the most energy a day, and its hours halved.
+    limit: ({ rows, running, inputs }) => {
+      if (rows.length < 2) return null;
+      let worst = -1;
+      let worstStep = 0;
+      rows.forEach((_, r) => {
+        const step = running[r].energyPerDay - (r === 0 ? 0 : running[r - 1].energyPerDay);
+        if (Number.isFinite(step) && step > worstStep) {
+          worst = r;
+          worstStep = step;
+        }
+      });
+      if (worst < 0) return null;
+      const key = rows[worst].keys[1];
+      const value = Math.max(inputs[key] / 2, solarPanelSizing.inputs.find((i) => i.key === key)?.min ?? 0);
+      return value < inputs[key] ? { row: worst, output: "panelWattage", change: { [key]: value } } : null;
+    }
+  },
   formula: {
-    primary: "P_panel = (P_load × 24) / PSH × 1.25, C_req = P_load × 24 × N_days / V_sys / 0.5, N_batt = C_batt × V_sys × 0.5 / (P_load × 24)",
+    primary: "E_day = Σ P_k × t_k, P_panel = E_day / PSH × 1.25, C_req = E_day × N_days / V_sys / 0.5, N_batt = C_batt × V_sys × 0.5 / E_day",
     variables: [
       { symbol: "P_load", description: "Load power", unit: "W" },
+      { symbol: "P_k, t_k", description: "Power and hours a day of the base load and each additional load", unit: "W, h" },
+      { symbol: "E_day", description: "Energy used per day", unit: "Wh" },
       { symbol: "PSH", description: "Peak sun hours", unit: "hr" },
       { symbol: "V_sys", description: "System voltage", unit: "V" },
       { symbol: "N_days", description: "Days of autonomy", unit: "" },
@@ -23786,9 +24824,11 @@ var currentMirror = {
 // src/lib/calculators/thermal/thermal-resistance-network.ts
 function calculateThermalResistanceNetwork(inputs) {
   const { powerDissipation, thetaJC, thetaCS, thetaSA, ambientTemp } = inputs;
-  const totalThetaJA = thetaJC + thetaCS + thetaSA;
+  const layers = layersTheta(inputs);
+  if (layers.error) return { values: {}, errors: [layers.error] };
+  const totalThetaJA = thetaJC + thetaCS + layers.sum + thetaSA;
   const junctionTemp = ambientTemp + powerDissipation * totalThetaJA;
-  const caseTemp = ambientTemp + powerDissipation * (thetaCS + thetaSA);
+  const caseTemp = ambientTemp + powerDissipation * (thetaCS + layers.sum + thetaSA);
   const heatsinkTemp = ambientTemp + powerDissipation * thetaSA;
   const thermalMargin = 150 - junctionTemp;
   return {
@@ -23801,6 +24841,61 @@ function calculateThermalResistanceNetwork(inputs) {
     }
   };
 }
+var INPUTS = [
+  {
+    key: "powerDissipation",
+    label: "Power Dissipation",
+    symbol: "P_D",
+    unit: "W",
+    defaultValue: 5,
+    min: 1e-3,
+    tooltip: "Total power dissipated by the device"
+  },
+  {
+    key: "thetaJC",
+    label: "Junction-to-Case (θJC)",
+    symbol: "θ_JC",
+    unit: "°C/W",
+    defaultValue: 2,
+    min: 0.01,
+    tooltip: "Junction-to-case thermal resistance from device datasheet"
+  },
+  {
+    key: "thetaCS",
+    label: "Case-to-Heatsink (θCS)",
+    symbol: "θ_CS",
+    unit: "°C/W",
+    defaultValue: 0.5,
+    min: 0,
+    tooltip: "Case-to-heatsink thermal resistance (thermal interface material)"
+  },
+  {
+    key: "thetaSA",
+    label: "Heatsink-to-Ambient (θSA)",
+    symbol: "θ_SA",
+    unit: "°C/W",
+    defaultValue: 10,
+    min: 0.1,
+    tooltip: "Heatsink-to-ambient thermal resistance (heatsink specification)"
+  },
+  {
+    key: "ambientTemp",
+    label: "Ambient Temperature",
+    symbol: "T_A",
+    unit: "°C",
+    defaultValue: 25,
+    min: -55,
+    max: 85,
+    presets: [
+      { label: "25°C (room)", values: { ambientTemp: 25 } },
+      { label: "40°C (warm)", values: { ambientTemp: 40 } },
+      { label: "70°C (hot)", values: { ambientTemp: 70 } },
+      { label: "85°C (max spec)", values: { ambientTemp: 85 } }
+    ]
+  },
+  ...layerInputs()
+];
+var minOf = (key) => INPUTS.find((i) => i.key === key)?.min ?? 0;
 var thermalResistanceNetwork = {
   slug: "thermal-resistance-network",
   title: "Thermal Resistance Network Calculator",
@@ -23819,59 +24914,7 @@ var thermalResistanceNetwork = {
     "thermal management",
     "semiconductor cooling"
   ],
-  inputs: [
-    {
-      key: "powerDissipation",
-      label: "Power Dissipation",
-      symbol: "P_D",
-      unit: "W",
-      defaultValue: 5,
-      min: 1e-3,
-      tooltip: "Total power dissipated by the device"
-    },
-    {
-      key: "thetaJC",
-      label: "Junction-to-Case (θJC)",
-      symbol: "θ_JC",
-      unit: "°C/W",
-      defaultValue: 2,
-      min: 0.01,
-      tooltip: "Junction-to-case thermal resistance from device datasheet"
-    },
-    {
-      key: "thetaCS",
-      label: "Case-to-Heatsink (θCS)",
-      symbol: "θ_CS",
-      unit: "°C/W",
-      defaultValue: 0.5,
-      min: 0,
-      tooltip: "Case-to-heatsink thermal resistance (thermal interface material)"
-    },
-    {
-      key: "thetaSA",
-      label: "Heatsink-to-Ambient (θSA)",
-      symbol: "θ_SA",
-      unit: "°C/W",
-      defaultValue: 10,
-      min: 0.1,
-      tooltip: "Heatsink-to-ambient thermal resistance (heatsink specification)"
-    },
-    {
-      key: "ambientTemp",
-      label: "Ambient Temperature",
-      symbol: "T_A",
-      unit: "°C",
-      defaultValue: 25,
-      min: -55,
-      max: 85,
-      presets: [
-        { label: "25°C (room)", values: { ambientTemp: 25 } },
-        { label: "40°C (warm)", values: { ambientTemp: 40 } },
-        { label: "70°C (hot)", values: { ambientTemp: 70 } },
-        { label: "85°C (max spec)", values: { ambientTemp: 85 } }
-      ]
-    }
-  ],
+  inputs: INPUTS,
   outputs: [
     {
       key: "junctionTemp",
@@ -23922,14 +24965,54 @@ var thermalResistanceNetwork = {
     }
   ],
   calculate: calculateThermalResistanceNetwork,
+  examples: [
+    {
+      id: "to220-mosfet-heatsink",
+      label: "TO-220 MOSFET at 10 W on a 5 °C/W heatsink",
+      values: { powerDissipation: 10, thetaJC: 1.15, thetaCS: 0.5, thetaSA: 5, ambientTemp: 40 }
+    },
+    {
+      id: "insulated-to247-fan",
+      label: "Insulated TO-247 at 40 W on a fan-cooled heatsink",
+      values: { powerDissipation: 40, thetaJC: 0.5, thetaCS: 0.24, numLayers: 1, layer1Theta: 0.5, thetaSA: 1, ambientTemp: 40 }
+    },
+    {
+      id: "qfn-vias-to-chassis",
+      label: "QFN exposed pad through thermal vias and an insulating pad to the chassis",
+      values: { powerDissipation: 2, thetaJC: 2, thetaCS: 0.2, numLayers: 2, layer1Theta: 10, layer2Theta: 1, thetaSA: 8, ambientTemp: 50 }
+    }
+  ],
+  // Rows from ambient up to the junction, so each row's running value is the
+  // temperature at its hot side and the last is the junction's.
+  chain: {
+    title: "Thermal stack",
+    caption: "From ambient up to the junction · θ in °C/W, temperatures in °C",
+    row: "layer",
+    columns: [{ label: "θ", key: "layer{n}Theta" }],
+    fixed: [
+      { id: "sa", label: "Heatsink", symbol: "heatsink", keys: ["thetaSA"], neutral: [0] },
+      { id: "cs", label: "Interface", symbol: "resistor", keys: ["thetaCS"], neutral: [0] },
+      { id: "jc", label: "Package", symbol: "resistor", keys: ["thetaJC"], neutral: [0] }
+    ],
+    list: { count: "numLayers", after: 1, types: LAYER_TYPES, typeOf: layerTypeOf },
+    running: [
+      { output: "totalThetaJA", label: "Σ θ" },
+      { output: "junctionTemp", label: "T" }
+    ],
+    share: { output: "totalThetaJA", label: "θ share", mode: "diff" },
+    totals: ["junctionTemp", "caseTemp", "heatsinkTemp", "totalThetaJA", "thermalMargin"],
+    diagram: { start: "TA", end: "TJ", link: "junctionTemp" },
+    limit: halveLargestTheta("junctionTemp", minOf)
+  },
   formula: {
-    primary: "T_J = T_A + P_D × (θ_JC + θ_CS + θ_SA)",
+    primary: "T_J = T_A + P_D × (θ_JC + θ_CS + Σθ_L + θ_SA)",
     variables: [
       { symbol: "T_J", description: "Junction temperature", unit: "°C" },
       { symbol: "T_A", description: "Ambient temperature", unit: "°C" },
       { symbol: "P_D", description: "Power dissipation", unit: "W" },
       { symbol: "θ_JC", description: "Junction-to-case thermal resistance", unit: "°C/W" },
       { symbol: "θ_CS", description: "Case-to-heatsink thermal resistance", unit: "°C/W" },
+      { symbol: "Σθ_L", description: "Extra layers between case and heatsink (pad, spreader, board), in series", unit: "°C/W" },
       { symbol: "θ_SA", description: "Heatsink-to-ambient thermal resistance", unit: "°C/W" }
     ]
   },
@@ -25043,15 +26126,67 @@ var servoMotor = {
 };
 
 // src/lib/calculators/motor/gear-ratio.ts
+var MAX_EXTRA_STAGES = 5;
+var STAGE_DEFAULT = { driver: 12, driven: 36, efficiency: 98 };
 function calculateGearRatio(inputs) {
   const { driverTeeth, drivenTeeth, inputSpeed, inputTorque, efficiency } = inputs;
-  const gearRatio2 = drivenTeeth / driverTeeth;
+  const n = Math.round(inputs.extraStages ?? 0);
+  if (!(n >= 0 && n <= MAX_EXTRA_STAGES)) {
+    return { values: {}, errors: [`Number of stages before the output pair must be between 0 and ${MAX_EXTRA_STAGES}`] };
+  }
+  let ratioBefore = 1;
+  let etaBefore = 1;
+  for (let k = 1; k <= n; k++) {
+    const driver = inputs[`stage${k}Driver`] ?? STAGE_DEFAULT.driver;
+    const driven = inputs[`stage${k}Driven`] ?? STAGE_DEFAULT.driven;
+    const eta2 = inputs[`stage${k}Efficiency`] ?? STAGE_DEFAULT.efficiency;
+    if (!(driver > 0 && driven > 0) || !(eta2 > 0 && eta2 <= 100)) {
+      return { values: {}, errors: ["Teeth counts must be positive, and efficiencies above 0 and at most 100 %"] };
+    }
+    ratioBefore *= driven / driver;
+    etaBefore *= eta2 / 100;
+  }
+  const gearRatio2 = ratioBefore * (drivenTeeth / driverTeeth);
+  const eta = etaBefore * (efficiency / 100);
   const outputSpeed = inputSpeed / gearRatio2;
-  const outputTorque = inputTorque * gearRatio2 * (efficiency / 100);
+  const outputTorque = inputTorque * gearRatio2 * eta;
   const inputPower = inputTorque * inputSpeed * Math.PI / 30;
-  const outputPower = inputPower * (efficiency / 100);
-  return { values: { gearRatio: gearRatio2, outputSpeed, outputTorque, inputPower, outputPower } };
+  const outputPower = inputPower * eta;
+  return { values: { gearRatio: gearRatio2, outputSpeed, outputTorque, inputPower, outputPower, totalEfficiency: eta * 100 } };
 }
+var SUBSCRIPT5 = "₀₁₂₃₄₅₆₇₈₉";
+var sub4 = (k) => String(k).split("").map((d) => SUBSCRIPT5[Number(d)]).join("");
+var stageInputs2 = [
+  {
+    key: "extraStages",
+    label: "Stages Before the Output Pair",
+    symbol: "N",
+    unit: "",
+    defaultValue: 0,
+    min: 0,
+    max: MAX_EXTRA_STAGES,
+    step: 1,
+    tooltip: `Gear stages between the input shaft and the output pair, in order from the input (0–${MAX_EXTRA_STAGES})`,
+    presets: [
+      { label: "None", values: { extraStages: 0 } },
+      { label: "1 stage", values: { extraStages: 1 } },
+      { label: "2 stages", values: { extraStages: 2 } },
+      { label: "3 stages", values: { extraStages: 3 } }
+    ]
+  },
+  ...Array.from({ length: MAX_EXTRA_STAGES }, (_, i) => i + 1).flatMap((n) => [
+    { key: `stage${n}Driver`, label: `Stage ${n} Driver Teeth`, symbol: `N_${n}a`, unit: "teeth", defaultValue: STAGE_DEFAULT.driver, min: 1, max: 1e3, tooltip: `Teeth (or worm starts) on stage ${n}’s driving gear`, group: `Stage ${n}` },
+    { key: `stage${n}Driven`, label: `Stage ${n} Driven Teeth`, symbol: `N_${n}b`, unit: "teeth", defaultValue: STAGE_DEFAULT.driven, min: 1, max: 1e3, tooltip: `Teeth on stage ${n}’s driven gear`, group: `Stage ${n}` },
+    { key: `stage${n}Efficiency`, label: `Stage ${n} Efficiency`, symbol: `η${sub4(n)}`, unit: "%", defaultValue: STAGE_DEFAULT.efficiency, min: 10, max: 100, tooltip: `Mesh efficiency of stage ${n}`, group: `Stage ${n}` }
+  ])
+];
+var STAGE_TYPES = [
+  { id: "spur", label: "Spur pair", symbol: "gear", values: [STAGE_DEFAULT.driver, STAGE_DEFAULT.driven, STAGE_DEFAULT.efficiency] },
+  { id: "helical", label: "Helical pair", symbol: "gear", values: [15, 45, 98] },
+  { id: "bevel", label: "Bevel pair", symbol: "gear", values: [15, 30, 96] },
+  { id: "worm", label: "Worm and wheel", symbol: "gear", values: [1, 30, 60] },
+  { id: "belt", label: "Timing belt", symbol: "gear", values: [20, 40, 97] }
+];
 var gearRatio = {
   slug: "gear-ratio",
   title: "Gear Ratio Calculator",
@@ -25065,22 +26200,85 @@ var gearRatio = {
     { key: "drivenTeeth", label: "Driven (Output) Teeth", symbol: "N₂", unit: "teeth", defaultValue: 40, min: 1 },
     { key: "inputSpeed", label: "Input Speed", symbol: "n₁", unit: "RPM", defaultValue: 1e3, min: 0 },
     { key: "inputTorque", label: "Input Torque", symbol: "T₁", unit: "N·m", defaultValue: 0.5, min: 0, step: 0.01 },
-    { key: "efficiency", label: "Gear Efficiency", symbol: "η", unit: "%", defaultValue: 95, min: 10, max: 100 }
+    { key: "efficiency", label: "Gear Efficiency", symbol: "η", unit: "%", defaultValue: 95, min: 10, max: 100 },
+    ...stageInputs2
   ],
   outputs: [
     { key: "gearRatio", label: "Gear Ratio", symbol: "GR", unit: ":1", precision: 2, primary: true },
     { key: "outputSpeed", label: "Output Speed", symbol: "n₂", unit: "RPM", precision: 1 },
     { key: "outputTorque", label: "Output Torque", symbol: "T₂", unit: "N·m", precision: 3 },
     { key: "inputPower", label: "Input Power", symbol: "P_in", unit: "W", precision: 2 },
-    { key: "outputPower", label: "Output Power", symbol: "P_out", unit: "W", precision: 2 }
+    { key: "outputPower", label: "Output Power", symbol: "P_out", unit: "W", precision: 2 },
+    { key: "totalEfficiency", label: "Overall Efficiency", symbol: "η_total", unit: "%", precision: 2, tooltip: "The product of every stage’s efficiency, the output pair’s included" }
   ],
   calculate: calculateGearRatio,
+  examples: [
+    {
+      id: "two-stage-spur-reducer",
+      label: "Two-stage spur reducer on a 3000 RPM motor",
+      values: { inputSpeed: 3e3, inputTorque: 0.2, extraStages: 1, stage1Driver: 12, stage1Driven: 36, stage1Efficiency: 98, driverTeeth: 10, drivenTeeth: 50, efficiency: 98 }
+    },
+    {
+      id: "worm-winch",
+      label: "Winch: a worm stage, then a spur output pair",
+      values: { inputSpeed: 1500, inputTorque: 0.5, extraStages: 1, stage1Driver: 1, stage1Driven: 40, stage1Efficiency: 60, driverTeeth: 15, drivenTeeth: 45, efficiency: 97 }
+    },
+    {
+      id: "three-stage-gearbox",
+      label: "Three-stage spur gearbox on a 1450 RPM induction motor",
+      values: { inputSpeed: 1450, inputTorque: 2, extraStages: 2, stage1Driver: 14, stage1Driven: 42, stage1Efficiency: 98, stage2Driver: 12, stage2Driven: 48, stage2Efficiency: 98, driverTeeth: 16, drivenTeeth: 64, efficiency: 98 }
+    }
+  ],
+  chain: {
+    title: "Gear train",
+    caption: "From the input shaft to the output · speed in RPM, torque in N·m",
+    row: "stage",
+    columns: [
+      { label: "Driver", key: "stage{n}Driver" },
+      { label: "Driven", key: "stage{n}Driven" },
+      { label: "η", key: "stage{n}Efficiency" }
+    ],
+    // The output pair is the last stage; a 1:1 pair at 100 % takes it out of the cut.
+    fixed: [{ id: "output", label: "Output pair", symbol: "gear", keys: ["driverTeeth", "drivenTeeth", "efficiency"], neutral: [1, 1, 100] }],
+    list: {
+      count: "extraStages",
+      after: 0,
+      types: STAGE_TYPES,
+      // A driver of four or fewer is a worm's starts.
+      typeOf: ([driver]) => driver <= 4 ? "worm" : "spur"
+    },
+    running: [
+      { output: "gearRatio", label: "Σ Ratio" },
+      { output: "outputSpeed", label: "Speed" },
+      { output: "outputTorque", label: "Torque" }
+    ],
+    share: { output: "totalEfficiency", label: "Loss share", mode: "diff", base: 100 },
+    totals: ["gearRatio", "outputSpeed", "outputTorque", "totalEfficiency", "outputPower"],
+    diagram: { start: "In", end: "Out", link: "gearRatio" },
+    // The least efficient stage; ten points better (at most 98 %) is the change to try.
+    limit: ({ rows, inputs }) => {
+      if (rows.length < 2) return null;
+      let worst = -1;
+      let worstEta = 98;
+      rows.forEach((row, r) => {
+        const eta = row.values[2] ?? NaN;
+        if (Number.isFinite(eta) && eta < worstEta) {
+          worst = r;
+          worstEta = eta;
+        }
+      });
+      if (worst < 0) return null;
+      const key = rows[worst].keys[2];
+      return { row: worst, output: "outputTorque", change: { [key]: Math.min(inputs[key] + 10, 98) } };
+    }
+  },
   formula: {
-    primary: "GR = N₂/N₁,  n₂ = n₁/GR,  T₂ = T₁ × GR × η",
+    primary: "GR = Π N₂/N₁,  n₂ = n₁/GR,  T₂ = T₁ × GR × Πη",
     variables: [
       { symbol: "N₁", description: "Driver teeth count", unit: "" },
       { symbol: "N₂", description: "Driven teeth count", unit: "" },
-      { symbol: "η", description: "Gear efficiency", unit: "%" }
+      { symbol: "η", description: "Gear efficiency", unit: "%" },
+      { symbol: "Π", description: "Product over the stages before the output pair and the output pair itself", unit: "" }
     ]
   },
   visualization: { type: "none" },
@@ -25579,15 +26777,65 @@ var motorStartingTorque = {
 };
 
 // src/lib/calculators/motor/battery-runtime-motor.ts
+var MAX_LOADS3 = 5;
+var LOAD_DEFAULT3 = { current: 0.5, duty: 100, efficiency: 85 };
 function calculateBatteryRuntimeMotor(inputs) {
   const { batteryCapacityMah, batteryVoltage, motorCurrentA, efficiency, depthOfDischarge } = inputs;
+  const motorDuty = inputs.motorDuty ?? 100;
+  const numLoads = Math.round(inputs.numLoads ?? 0);
+  if (!(numLoads >= 0 && numLoads <= MAX_LOADS3)) {
+    return { values: {}, errors: [`Number of additional loads must be between 0 and ${MAX_LOADS3}`] };
+  }
   const usableCapacityMah = batteryCapacityMah * (depthOfDischarge / 100);
-  const effectiveCurrent = motorCurrentA / (efficiency / 100);
-  const runtimeHours = usableCapacityMah / (effectiveCurrent * 1e3);
+  let batteryCurrent = motorCurrentA * (motorDuty / 100) / (efficiency / 100);
+  for (let k = 1; k <= numLoads; k++) {
+    const current = inputs[`load${k}Current`] ?? LOAD_DEFAULT3.current;
+    const duty = inputs[`load${k}Duty`] ?? LOAD_DEFAULT3.duty;
+    const eta = inputs[`load${k}Efficiency`] ?? LOAD_DEFAULT3.efficiency;
+    if (!(current >= 0) || !(duty >= 0 && duty <= 100) || !(eta > 0 && eta <= 100)) {
+      return { values: {}, errors: ["Load currents must be zero or more, duty cycles between 0 and 100 % and efficiencies above 0 and at most 100 %"] };
+    }
+    batteryCurrent += current * (duty / 100) / (eta / 100);
+  }
+  const runtimeHours = usableCapacityMah / (batteryCurrent * 1e3);
   const runtimeMinutes = runtimeHours * 60;
   const energyWh = batteryCapacityMah * batteryVoltage / 1e3;
-  return { values: { usableCapacityMah, runtimeHours, runtimeMinutes, energyWh } };
+  return { values: { usableCapacityMah, runtimeHours, runtimeMinutes, energyWh, batteryCurrent } };
 }
+var SUBSCRIPT6 = "₀₁₂₃₄₅₆₇₈₉";
+var sub5 = (k) => String(k).split("").map((d) => SUBSCRIPT6[Number(d)]).join("");
+var loadInputs3 = [
+  {
+    key: "numLoads",
+    label: "Additional Loads",
+    symbol: "N",
+    unit: "",
+    defaultValue: 0,
+    min: 0,
+    max: MAX_LOADS3,
+    step: 1,
+    tooltip: `Loads on the battery beside the motor: more motors, servos, a controller board (0–${MAX_LOADS3})`,
+    presets: [
+      { label: "None", values: { numLoads: 0 } },
+      { label: "1 load", values: { numLoads: 1 } },
+      { label: "2 loads", values: { numLoads: 2 } },
+      { label: "3 loads", values: { numLoads: 3 } }
+    ]
+  },
+  ...Array.from({ length: MAX_LOADS3 }, (_, i) => i + 1).flatMap((n) => [
+    { key: `load${n}Current`, label: `Load ${n} Current`, symbol: `I${sub5(n)}`, unit: "A", defaultValue: LOAD_DEFAULT3.current, min: 0, max: 100, tooltip: `Average current additional load ${n} draws while on, referred to the battery voltage`, group: `Load ${n}` },
+    { key: `load${n}Duty`, label: `Load ${n} Duty Cycle`, symbol: `D${sub5(n)}`, unit: "%", defaultValue: LOAD_DEFAULT3.duty, min: 0, max: 100, tooltip: `Share of the time additional load ${n} is on`, group: `Load ${n}` },
+    { key: `load${n}Efficiency`, label: `Load ${n} Efficiency`, symbol: `η${sub5(n)}`, unit: "%", defaultValue: LOAD_DEFAULT3.efficiency, min: 10, max: 100, tooltip: `Efficiency of the drive or converter between the battery and additional load ${n}`, group: `Load ${n}` }
+  ])
+];
+var LOAD_TYPES3 = [
+  { id: "load", label: "Load", symbol: "load", values: [LOAD_DEFAULT3.current, LOAD_DEFAULT3.duty, LOAD_DEFAULT3.efficiency] },
+  { id: "dc-motor", label: "DC motor", symbol: "motor", values: [0.5, 50, 85] },
+  { id: "servo", label: "Servo", symbol: "motor", values: [0.25, 30, 80] },
+  { id: "stepper", label: "Stepper", symbol: "motor", values: [1, 50, 80] },
+  { id: "controller", label: "Controller", symbol: "load", values: [0.1, 100, 90] },
+  { id: "lights", label: "LED lights", symbol: "load", values: [0.2, 100, 95] }
+];
 var batteryRuntimeMotor = {
   slug: "battery-runtime-motor",
   title: "Battery Runtime (Motor Load)",
@@ -25606,20 +26854,79 @@ var batteryRuntimeMotor = {
     ] },
     { key: "motorCurrentA", label: "Motor Current (avg)", symbol: "I_avg", unit: "A", defaultValue: 0.5, min: 1e-3 },
     { key: "efficiency", label: "Drive Efficiency", symbol: "η", unit: "%", defaultValue: 85, min: 10, max: 100, tooltip: "Motor driver + motor combined efficiency" },
-    { key: "depthOfDischarge", label: "Depth of Discharge", symbol: "DoD", unit: "%", defaultValue: 80, min: 1, max: 100 }
+    { key: "depthOfDischarge", label: "Depth of Discharge", symbol: "DoD", unit: "%", defaultValue: 80, min: 1, max: 100 },
+    { key: "motorDuty", label: "Motor Duty Cycle", symbol: "D_m", unit: "%", defaultValue: 100, min: 1, max: 100, tooltip: "Share of the time the motor runs at its average current. 100% = continuous." },
+    ...loadInputs3
   ],
   outputs: [
     { key: "runtimeHours", label: "Runtime", symbol: "t", unit: "h", precision: 2, primary: true },
     { key: "runtimeMinutes", label: "Runtime", symbol: "t", unit: "min", precision: 0 },
     { key: "usableCapacityMah", label: "Usable Capacity", symbol: "C_use", unit: "mAh", precision: 0 },
-    { key: "energyWh", label: "Battery Energy (est.)", symbol: "E", unit: "Wh", precision: 2 }
+    { key: "energyWh", label: "Battery Energy (est.)", symbol: "E", unit: "Wh", precision: 2 },
+    { key: "batteryCurrent", label: "Battery Current", symbol: "I_draw", unit: "A", precision: 3, tooltip: "Average current drawn from the battery: each load’s current × duty cycle ÷ its efficiency, summed" }
   ],
   calculate: calculateBatteryRuntimeMotor,
+  examples: [
+    {
+      id: "robot-car-2s-lipo",
+      label: "Two-motor robot car with a controller board on a 2S 2200 mAh LiPo",
+      values: { batteryCapacityMah: 2200, batteryVoltage: 7.4, depthOfDischarge: 80, motorCurrentA: 0.6, motorDuty: 40, efficiency: 85, numLoads: 2, load1Current: 0.6, load1Duty: 40, load1Efficiency: 85, load2Current: 0.34, load2Duty: 100, load2Efficiency: 90 }
+    },
+    {
+      id: "rc-crawler-2s-lipo",
+      label: "RC crawler: drive motor, steering servo and receiver on a 2S 3000 mAh LiPo",
+      values: { batteryCapacityMah: 3e3, batteryVoltage: 7.4, depthOfDischarge: 80, motorCurrentA: 2, motorDuty: 60, efficiency: 85, numLoads: 2, load1Current: 0.3, load1Duty: 30, load1Efficiency: 80, load2Current: 0.05, load2Duty: 100, load2Efficiency: 90 }
+    },
+    {
+      id: "cordless-drill-18v",
+      label: "18 V cordless drill drilling continuously on a 2 Ah pack",
+      values: { batteryCapacityMah: 2e3, batteryVoltage: 18, depthOfDischarge: 80, motorCurrentA: 6, motorDuty: 100, efficiency: 80 }
+    }
+  ],
+  chain: {
+    title: "Load budget",
+    caption: "Loads on the battery · current in A, duty and efficiency in %, runtime in h",
+    row: "load",
+    columns: [
+      { label: "Current", key: "load{n}Current" },
+      { label: "Duty", key: "load{n}Duty" },
+      { label: "Efficiency", key: "load{n}Efficiency" }
+    ],
+    // The motor comes first and is never cut, so its neutral values are never applied.
+    fixed: [{ id: "motor", label: "Motor", symbol: "motor", keys: ["motorCurrentA", "motorDuty", "efficiency"], neutral: [0, 0, 100] }],
+    list: { count: "numLoads", types: LOAD_TYPES3 },
+    running: [
+      { output: "batteryCurrent", label: "Σ I" },
+      { output: "runtimeHours", label: "Runtime" }
+    ],
+    share: { output: "batteryCurrent", label: "Current share", mode: "diff" },
+    totals: ["runtimeHours", "batteryCurrent", "usableCapacityMah", "energyWh"],
+    heroNote: "runtimeMinutes",
+    diagram: { start: "Batt", end: "Σ", link: "batteryCurrent" },
+    // The load drawing the most current from the battery, and its duty cycle halved.
+    limit: ({ rows, running, inputs }) => {
+      if (rows.length < 2) return null;
+      let worst = -1;
+      let worstStep = 0;
+      rows.forEach((_, r) => {
+        const step = running[r].batteryCurrent - (r === 0 ? 0 : running[r - 1].batteryCurrent);
+        if (Number.isFinite(step) && step > worstStep) {
+          worst = r;
+          worstStep = step;
+        }
+      });
+      if (worst < 0) return null;
+      const key = rows[worst].keys[1];
+      const value = Math.max(inputs[key] / 2, batteryRuntimeMotor.inputs.find((i) => i.key === key)?.min ?? 0);
+      return value < inputs[key] ? { row: worst, output: "runtimeHours", change: { [key]: value } } : null;
+    }
+  },
   formula: {
-    primary: "t = C_usable / I_draw,  C_usable = C × DoD",
+    primary: "t = C_usable / I_draw,  C_usable = C × DoD,  I_draw = Σ I_k × D_k / η_k",
     variables: [
       { symbol: "C", description: "Battery capacity", unit: "mAh" },
-      { symbol: "DoD", description: "Depth of discharge", unit: "%" }
+      { symbol: "DoD", description: "Depth of discharge", unit: "%" },
+      { symbol: "I_k, D_k, η_k", description: "Current, duty cycle and drive efficiency of the motor and each additional load", unit: "A, %, %" }
     ]
   },
   visualization: { type: "none" },
@@ -25866,7 +27173,7 @@ var pidTuning = {
 
 // src/lib/calculators/sensor/ntc-thermistor.ts
 function calculateNtcThermistor(inputs) {
-  const { resistance, beta, T0, R0 } = inputs;
+  const { resistance, beta, T0: T02, R0 } = inputs;
   const fixedResistor = inputs.fixedResistor ?? 1e4;
   const adcRef = inputs.adcRef ?? 3.3;
   const adcBits = inputs.adcBits ?? 12;
@@ -25877,7 +27184,7 @@ function calculateNtcThermistor(inputs) {
   if (fixedResistor <= 0 || adcRef <= 0 || adcBits < 1) {
     return { values: { temperature: 0, temperatureK: 0 }, errors: ["The fixed resistor, ADC reference and ADC bits must be positive"] };
   }
-  const T0_K = T0 + 273.15;
+  const T0_K = T02 + 273.15;
   const temperatureK = 1 / (1 / T0_K + 1 / beta * Math.log(resistance / R0));
   const temperature = temperatureK - 273.15;
   const dividerVoltage = adcRef * (ntcPosition === 1 ? fixedResistor : resistance) / (resistance + fixedResistor);
@@ -28275,15 +29582,39 @@ var pressureBridgeOutput = {
 };
 
 // src/lib/calculators/sensor/sensor-accuracy-budget.ts
+var MAX_ERROR_TERMS = 6;
+function extraTerms(inputs) {
+  const count = Math.max(0, Math.min(MAX_ERROR_TERMS, Math.round(inputs.errorTerms ?? 0)));
+  let sumSquares = 0;
+  let sum = 0;
+  for (let n = 1; n <= count; n++) {
+    const e = inputs[`term${n}Error`] ?? 0;
+    sumSquares += e ** 2;
+    sum += e;
+  }
+  return { sumSquares, sum };
+}
 function calculateSensorAccuracyBudget(inputs) {
   const { offsetError, gainError, nonlinearity, resolution, tempDrift, tempRange } = inputs;
+  const extra = extraTerms(inputs);
   const tempError = tempDrift * tempRange;
   const totalRss = Math.sqrt(
-    offsetError ** 2 + gainError ** 2 + nonlinearity ** 2 + resolution ** 2 + tempError ** 2
+    offsetError ** 2 + gainError ** 2 + nonlinearity ** 2 + resolution ** 2 + tempError ** 2 + extra.sumSquares
   );
-  const totalWorstCase = offsetError + gainError + nonlinearity + resolution + tempError;
+  const totalWorstCase = offsetError + gainError + nonlinearity + resolution + tempError + extra.sum;
   return { values: { tempError, totalRss, totalWorstCase } };
 }
+var termInput2 = (n) => ({
+  key: `term${n}Error`,
+  label: `Term ${n} Error`,
+  symbol: `e_${n}`,
+  unit: "% FS",
+  defaultValue: 0,
+  min: 0,
+  max: 100,
+  tooltip: "A further error, such as hysteresis, repeatability, long-term stability or the ADC reference",
+  group: `Term ${n}`
+});
 var sensorAccuracyBudget = {
   slug: "sensor-accuracy-budget",
   title: "Sensor Accuracy Budget",
@@ -28340,7 +29671,18 @@ var sensorAccuracyBudget = {
       unit: "°C",
       defaultValue: 40,
       min: 0
-    }
+    },
+    {
+      key: "errorTerms",
+      label: "Extra Error Terms",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: MAX_ERROR_TERMS,
+      step: 1,
+      tooltip: `How many further error terms the budget includes (0–${MAX_ERROR_TERMS})`
+    },
+    ...Array.from({ length: MAX_ERROR_TERMS }, (_, i) => termInput2(i + 1))
   ],
   outputs: [
     { key: "tempError", label: "Temperature Error", symbol: "e_temp", unit: "% FS", precision: 3 },
@@ -28348,6 +29690,75 @@ var sensorAccuracyBudget = {
     { key: "totalWorstCase", label: "Total Accuracy (Worst Case)", symbol: "e_WC", unit: "% FS", precision: 3 }
   ],
   calculate: calculateSensorAccuracyBudget,
+  examples: [
+    {
+      id: "pressure-transmitter-industrial",
+      label: "Industrial pressure transmitter over −20 to +60 °C, with hysteresis and a year’s drift",
+      values: { offsetError: 0.05, gainError: 0.1, nonlinearity: 0.05, resolution: 0.01, tempDrift: 2e-3, tempRange: 80, errorTerms: 2, term1Error: 0.03, term2Error: 0.1 }
+    },
+    {
+      id: "load-cell-bridge-amplifier",
+      label: "Load cell and bridge amplifier over a 25 °C swing, with creep",
+      values: { offsetError: 0.02, gainError: 0.03, nonlinearity: 0.02, resolution: 2e-3, tempDrift: 15e-4, tempRange: 25, errorTerms: 1, term1Error: 0.024 }
+    },
+    {
+      id: "mems-accelerometer-automotive",
+      label: "MEMS accelerometer over −40 to +85 °C",
+      values: { offsetError: 1, gainError: 1, nonlinearity: 0.5, resolution: 0.02, tempDrift: 5e-3, tempRange: 125 }
+    }
+  ],
+  chain: {
+    title: "Error budget",
+    caption: "Independent terms · RSS and worst case",
+    row: "error term",
+    columns: [
+      { label: "Error", key: "term{n}Error" },
+      { label: "Drift" }
+    ],
+    fixed: [
+      { id: "offset", label: "Offset", symbol: "block", keys: ["offsetError", null], neutral: [0, null] },
+      { id: "gain", label: "Gain", symbol: "block", keys: ["gainError", null], neutral: [0, null] },
+      { id: "nonlinearity", label: "Nonlinearity", symbol: "block", keys: ["nonlinearity", null], neutral: [0, null] },
+      { id: "resolution", label: "Resolution", symbol: "block", keys: ["resolution", null], neutral: [0, null] },
+      { id: "temperature", label: "Temperature", symbol: "block", keys: [null, "tempDrift"], neutral: [null, 0] }
+    ],
+    list: {
+      count: "errorTerms",
+      types: [
+        { id: "error", label: "Error term", symbol: "block", values: [0.05, 0] },
+        { id: "hysteresis", label: "Hysteresis", symbol: "block", values: [0.05, 0] },
+        { id: "repeatability", label: "Repeatability", symbol: "block", values: [0.05, 0] },
+        { id: "stability", label: "Long-term drift", symbol: "block", values: [0.1, 0] },
+        { id: "reference", label: "ADC reference", symbol: "source", values: [0.05, 0] }
+      ]
+    },
+    running: [
+      { output: "totalRss", label: "Σ RSS" },
+      { output: "totalWorstCase", label: "Σ Worst case" }
+    ],
+    share: { output: "totalRss", label: "RSS share", mode: "rss" },
+    totals: ["totalRss", "totalWorstCase", "tempError"],
+    diagram: { start: "In", end: "Out", link: "totalRss" },
+    // The term that adds most to the RSS (its square), and a part with half that
+    // error there: half the drift for the temperature term.
+    limit: ({ rows, running, inputs }) => {
+      if (rows.length < 2) return null;
+      let worst = -1;
+      let worstStep = 0;
+      rows.forEach((_, r) => {
+        const after = running[r].totalRss;
+        const before = r === 0 ? 0 : running[r - 1].totalRss;
+        const step = after * after - before * before;
+        if (Number.isFinite(step) && step > worstStep) {
+          worst = r;
+          worstStep = step;
+        }
+      });
+      if (worst < 0) return null;
+      const key = rows[worst].keys.find((k) => k !== null);
+      return inputs[key] > 0 ? { row: worst, output: "totalRss", change: { [key]: inputs[key] / 2 } } : null;
+    }
+  },
   formula: {
     primary: "e_RSS = √(e₁² + e₂² + ... + eₙ²)",
     variables: [
@@ -28364,7 +29775,7 @@ var sensorAccuracyBudget = {
 function calculateOpticalSensorRange(inputs) {
   const { emitterPower, detectorSensitivity, targetReflectivity, safetyFactor } = inputs;
   if (safetyFactor <= 0) {
-    return { values: { maxRange: 0, normalizedRange: 0 }, errors: ["Safety factor must be positive"] };
+    return { values: {}, errors: ["Safety factor must be positive"] };
   }
   const reflFraction = targetReflectivity / 100;
   const normalizedRange = Math.sqrt(emitterPower * detectorSensitivity * reflFraction);
@@ -28405,10 +29816,11 @@ var opticalSensorRange = {
       defaultValue: 90,
       min: 0.1,
       max: 100,
+      // Banner Engineering, Handbook of Photoelectric Sensing, Table A-2 (relative to the Kodak 90 % white card).
       presets: [
-        { label: "White paper (90%)", values: { targetReflectivity: 90 } },
-        { label: "Gray plastic (40%)", values: { targetReflectivity: 40 } },
-        { label: "Black rubber (5%)", values: { targetReflectivity: 5 } }
+        { label: "Kodak white test card (90%)", values: { targetReflectivity: 90 } },
+        { label: "Newspaper (55%)", values: { targetReflectivity: 55 } },
+        { label: "Black neoprene (4%)", values: { targetReflectivity: 4 } }
       ]
     },
     {
@@ -28425,6 +29837,59 @@ var opticalSensorRange = {
     { key: "normalizedRange", label: "Nominal Detection Factor", symbol: "D_nom", unit: "", precision: 3 }
   ],
   calculate: calculateOpticalSensorRange,
+  // Target materials (site-redesign W6, C6). Reflectivity relative to the Kodak 90 % white test card:
+  // Banner Engineering, Handbook of Photoelectric Sensing, Table A-2 (P/N 03190), for every material at
+  // or below 100 % (its shiny metals read 105-400 %, beyond this input's range, and are left out); the
+  // Kodak grey card's 18 % from Vishay application note 80107 (Kodak publication Q-13); the 6 % black
+  // target from SICK's W9 data sheet (WTB9-3P2261, "6 % remission"). Glossy materials are Banner's
+  // starred ones: the figure is the maximum, with the beam perpendicular to the surface.
+  catalog: {
+    title: "Target materials",
+    item: "target",
+    items: [
+      ["kodak-white-card", "Kodak white test card", 90, "Test card", false],
+      ["kodak-grey-card", "Kodak grey card", 18, "Test card", false],
+      ["black-target-6", "Black test target", 6, "Test card", false],
+      ["white-paper", "White paper", 80, "Paper", false],
+      ["masking-tape", "Masking tape", 75, "Paper", false],
+      ["kraft-cardboard", "Kraft paper, cardboard", 70, "Paper", false],
+      ["newspaper", "Newspaper (with print)", 55, "Paper", false],
+      ["tissue-2-ply", "Tissue paper, 2 ply", 47, "Paper", false],
+      ["tissue-1-ply", "Tissue paper, 1 ply", 35, "Paper", false],
+      ["pine-lumber", "Dimension lumber (pine, dry, clean)", 75, "Wood", false],
+      ["wood-pallet", "Rough wood pallet (clean)", 20, "Wood", false],
+      ["white-plastic", "Opaque white plastic", 87, "Plastic", true],
+      ["brown-bottle", "Translucent brown plastic bottle", 60, "Plastic", true],
+      ["clear-bottle", "Clear plastic bottle", 40, "Plastic", true],
+      ["black-nylon", "Opaque black plastic (nylon)", 14, "Plastic", true],
+      ["beer-foam", "Beer foam", 70, "Other", false],
+      ["black-neoprene", "Black neoprene", 4, "Rubber", false],
+      ["carpet-backing", "Black foam carpet backing", 2, "Rubber", false],
+      ["tire-wall", "Black rubber tire wall", 1.5, "Rubber", false]
+    ].map(([id, label, r, kind, glossy]) => ({
+      id,
+      label,
+      values: { targetReflectivity: r },
+      attributes: { reflectivity: r, kind, glossy, dark: r < 20 }
+    })),
+    attributes: [
+      { id: "reflectivity", label: "Reflectivity", unit: "%" },
+      { id: "kind", label: "Material" }
+    ],
+    filters: [
+      { id: "paper", label: "Paper and card", attribute: "kind", equals: "Paper" },
+      { id: "plastic", label: "Plastic", attribute: "kind", equals: "Plastic" },
+      { id: "glossy", label: "Glossy", attribute: "glossy", equals: true },
+      { id: "dark", label: "Dark (under 20 %)", attribute: "dark", equals: true }
+    ],
+    columns: [
+      { output: "maxRange", label: "Relative detection factor", bar: true },
+      { output: "normalizedRange", label: "Nominal detection factor" }
+    ],
+    detail: ["maxRange", "normalizedRange"],
+    chart: { x: "emitterPower", y: "maxRange", range: [0.1, 1e3], scale: "log" },
+    source: "Reflectivity relative to the Kodak 90 % white card: Banner Engineering, Handbook of Photoelectric Sensing, Table A-2; Kodak grey card per Vishay note 80107; 6 % black per SICK W9 data sheet"
+  },
   formula: {
     primary: "D_rel = √(P_e × R_d × (R_t/100)) / SF  [dimensionless relative factor]",
     variables: [
@@ -28610,14 +30075,33 @@ var lvdtSensitivity = {
 };
 
 // src/lib/calculators/sensor/loop-transmitter-4-20ma.ts
+var MAX_LOOP_ELEMENTS = 6;
+function extraResistance(inputs) {
+  const count = Math.max(0, Math.min(MAX_LOOP_ELEMENTS, Math.round(inputs.loopElements ?? 0)));
+  let sum = 0;
+  for (let n = 1; n <= count; n++) sum += inputs[`element${n}Resistance`] ?? 0;
+  return sum;
+}
 function calculateLoopTransmitter4to20ma(inputs) {
   const { loopCurrent, loopResistance, supplyVoltage, sensorRangeMin, sensorRangeMax } = inputs;
-  const voltageAtLoad = loopCurrent * 1e-3 * loopResistance;
+  const totalLoopResistance = loopResistance + extraResistance(inputs);
+  const voltageAtLoad = loopCurrent * 1e-3 * totalLoopResistance;
   const availableVoltage = supplyVoltage - voltageAtLoad;
   const sensorValue = sensorRangeMin + (sensorRangeMax - sensorRangeMin) * ((loopCurrent - 4) / 16);
   const maxLoopResistance = supplyVoltage > 12 ? (supplyVoltage - 12) / 0.02 : 0;
-  return { values: { voltageAtLoad, availableVoltage, sensorValue, maxLoopResistance } };
+  return { values: { voltageAtLoad, availableVoltage, sensorValue, maxLoopResistance, totalLoopResistance } };
 }
+var elementInput = (n) => ({
+  key: `element${n}Resistance`,
+  label: `Element ${n} Resistance`,
+  symbol: `R_${n}`,
+  unit: "Ω",
+  defaultValue: 0,
+  min: 0,
+  max: 1e4,
+  tooltip: "A further resistance in series in the loop: the cable pair, an intrinsic-safety barrier, a loop-powered indicator or a HART resistor",
+  group: `Element ${n}`
+});
 var loopTransmitter420ma = {
   slug: "4-20ma-transmitter",
   title: "4–20 mA Loop Transmitter",
@@ -28672,15 +30156,90 @@ var loopTransmitter420ma = {
       unit: "",
       defaultValue: 100,
       min: -99999
-    }
+    },
+    {
+      key: "loopElements",
+      label: "Extra Loop Elements",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: MAX_LOOP_ELEMENTS,
+      step: 1,
+      tooltip: `How many further resistances sit in series in the loop (0–${MAX_LOOP_ELEMENTS})`
+    },
+    ...Array.from({ length: MAX_LOOP_ELEMENTS }, (_, i) => elementInput(i + 1))
   ],
   outputs: [
     { key: "sensorValue", label: "Sensor Value", symbol: "X", unit: "eng units", precision: 2, primary: true },
-    { key: "voltageAtLoad", label: "Voltage at Load", symbol: "V_load", unit: "V", precision: 2 },
-    { key: "availableVoltage", label: "Transmitter Voltage", symbol: "V_tx", unit: "V", precision: 2 },
-    { key: "maxLoopResistance", label: "Max Loop Resistance", symbol: "R_max", unit: "Ω", precision: 0 }
+    // The chain's Σ columns carry no unit, so these are never re-prefixed.
+    { key: "voltageAtLoad", label: "Voltage at Load", symbol: "V_load", unit: "V", precision: 2, display: { unit: "V" } },
+    { key: "availableVoltage", label: "Transmitter Voltage", symbol: "V_tx", unit: "V", precision: 2, display: { unit: "V" } },
+    { key: "maxLoopResistance", label: "Max Loop Resistance", symbol: "R_max", unit: "Ω", precision: 0 },
+    { key: "totalLoopResistance", label: "Total Loop Resistance", symbol: "R_total", unit: "Ω", precision: 1, display: { unit: "Ω" }, tooltip: "The loop resistance and every further element in series" }
   ],
   calculate: calculateLoopTransmitter4to20ma,
+  examples: [
+    {
+      id: "zener-barrier-full-scale",
+      label: "Pressure transmitter at full scale through a zener barrier and its cable",
+      values: { supplyVoltage: 24, loopCurrent: 20, loopResistance: 250, loopElements: 2, element1Resistance: 300, element2Resistance: 35 }
+    },
+    {
+      id: "long-cable-indicator",
+      label: "Long cable run with a loop-powered indicator, at full scale",
+      values: { supplyVoltage: 24, loopCurrent: 20, loopResistance: 250, loopElements: 2, element1Resistance: 70, element2Resistance: 125 }
+    },
+    {
+      id: "battery-loop-mid-scale",
+      label: "Battery-powered loop at mid-scale with a 0–10 bar sensor",
+      values: { supplyVoltage: 12, loopCurrent: 12, loopResistance: 250, sensorRangeMin: 0, sensorRangeMax: 10 }
+    }
+  ],
+  chain: {
+    title: "Loop voltage budget",
+    caption: "Supply around the loop at the loop current",
+    row: "element",
+    columns: [{ label: "Resistance", key: "element{n}Resistance" }],
+    fixed: [
+      { id: "sense", label: "Sense resistor", symbol: "resistor", keys: ["loopResistance"], neutral: [0] }
+    ],
+    list: {
+      count: "loopElements",
+      types: [
+        { id: "element", label: "Loop element", symbol: "resistor", values: [100] },
+        { id: "cable", label: "Cable", symbol: "cable", values: [35] },
+        { id: "barrier", label: "Zener barrier", symbol: "block", values: [300] },
+        { id: "indicator", label: "Loop indicator", symbol: "load", values: [125] },
+        { id: "hart", label: "HART resistor", symbol: "resistor", values: [250] }
+      ]
+    },
+    running: [
+      { output: "totalLoopResistance", label: "Σ R" },
+      { output: "voltageAtLoad", label: "Σ Drop" },
+      { output: "availableVoltage", label: "V at transmitter" }
+    ],
+    share: { output: "totalLoopResistance", label: "Share of drop", mode: "diff" },
+    totals: ["sensorValue", "availableVoltage", "voltageAtLoad", "totalLoopResistance", "maxLoopResistance"],
+    diagram: { start: "Vs", end: "Tx", link: "availableVoltage" },
+    // The largest element added to the loop, and one with half its resistance: a
+    // heavier cable pair, a barrier or indicator with a lower drop. The sense
+    // resistor sets the receiver's scaling (250 Ω for 1–5 V and HART), so it is never the change to try.
+    limit: ({ rows, inputs }) => {
+      let worst = -1;
+      let worstValue = 0;
+      rows.forEach((row, r) => {
+        if (row.kind !== "list") return;
+        const v = row.values[0] ?? NaN;
+        if (Number.isFinite(v) && v > worstValue) {
+          worst = r;
+          worstValue = v;
+        }
+      });
+      if (worst < 0) return null;
+      const key = rows[worst].keys[0];
+      return { row: worst, output: "availableVoltage", change: { [key]: inputs[key] / 2 } };
+    }
+  },
   formula: {
     primary: "I = 4 + 16 × (X − X_min)/(X_max − X_min) mA",
     variables: [
@@ -29235,6 +30794,20 @@ var awgWire = {
     }
   ],
   calculate: calculateAwgWire,
+  catalog: {
+    title: "AWG sizes",
+    item: "gauge",
+    // Every gauge the input takes; gauge 0 is 1/0 ("one-aught", 0.3249 in).
+    items: Array.from({ length: 41 }, (_, g) => ({ id: g === 0 ? "awg-1-0" : `awg-${g}`, label: g === 0 ? "1/0 AWG" : `${g} AWG`, values: { awg: g } })),
+    columns: [
+      { output: "diameterMm", label: "Diameter" },
+      { output: "areaMm2", label: "Area" },
+      { output: "resistance20C", label: "Resistance", bar: true },
+      { output: "currentCapacity", label: "Current capacity" }
+    ],
+    detail: ["diameterMm", "areaMm2", "resistance20C", "currentCapacity"],
+    source: "AWG diameter 0.005 in × 92^((36 − AWG)/39) (ASTM B258); copper at 20 °C, 1/58 Ω·mm²/m (IEC 60028)"
+  },
   formula: {
     primary: "d(in) = 0.005 × 92^((36−AWG)/39)",
     latex: "d_{in} = 0.005 \\times 92^{\\frac{36-AWG}{39}}",
@@ -29348,6 +30921,28 @@ var capacitorCode = {
     }
   ],
   calculate: calculateCapacitorCode,
+  catalog: {
+    title: "Common codes",
+    item: "code",
+    items: [10, 15, 22, 33, 47, 68].flatMap((sig) => [0, 1, 2, 3, 4, 5, 6].map((m) => {
+      const pf = sig * 10 ** m;
+      const text3 = pf >= 1e6 ? `${pf / 1e6} µF` : pf >= 1e3 ? `${pf / 1e3} nF` : `${pf} pF`;
+      return { id: `code-${sig}${m}`, label: `${sig}${m} · ${text3}`, values: { code: sig * 10 + m }, attributes: { range: pf >= 1e6 ? "µF" : pf >= 1e3 ? "nF" : "pF" } };
+    })),
+    attributes: [{ id: "range", label: "Range" }],
+    filters: [
+      { id: "pf", label: "pF", attribute: "range", equals: "pF" },
+      { id: "nf", label: "nF", attribute: "range", equals: "nF" },
+      { id: "uf", label: "µF", attribute: "range", equals: "µF" }
+    ],
+    columns: [
+      { output: "picofarads", label: "pF" },
+      { output: "nanofarads", label: "nF" },
+      { output: "microfarads", label: "µF" }
+    ],
+    detail: ["picofarads", "nanofarads", "microfarads"],
+    source: "Three-digit capacitor code of EIA-198 / IEC 60062: two significant figures and a power of ten in pF; the codes shown are the E6 values 10, 15, 22, 33, 47 and 68"
+  },
   formula: {
     primary: "C(pF) = (d1 × 10 + d2) × 10^d3, except d3 = 8 → × 0.01 and d3 = 9 → × 0.1",
     latex: "C(pF) = (d_1 \\times 10 + d_2) \\times m, \\quad m = \\begin{cases} 10^{d_3} & d_3 \\le 7 \\\\ 0.01 & d_3 = 8 \\\\ 0.1 & d_3 = 9 \\end{cases}",
@@ -30300,9 +31895,11 @@ function calculateJunctionTemperature(inputs) {
   if (pd < 0) {
     return { values: { thetaJA: 0, tj: 0, tc: 0, ts: 0, margin: 0 }, errors: ["Power dissipation must be non-negative"] };
   }
-  const thetaJA = thetaJC + thetaCS + thetaSA;
+  const layers = layersTheta(inputs);
+  if (layers.error) return { values: {}, errors: [layers.error] };
+  const thetaJA = thetaJC + thetaCS + layers.sum + thetaSA;
   const tj = ta + pd * thetaJA;
-  const tc = ta + pd * (thetaCS + thetaSA);
+  const tc = ta + pd * (thetaCS + layers.sum + thetaSA);
   const ts = ta + pd * thetaSA;
   const tjMax = 125;
   const margin = tjMax - tj;
@@ -30397,7 +31994,8 @@ var junctionTemperature = {
         { label: "Large heatsink (~5)", values: { thetaSA: 5 } },
         { label: "Forced air (~2)", values: { thetaSA: 2 } }
       ]
-    }
+    },
+    ...layerInputs()
   ],
   outputs: [
     {
@@ -30406,7 +32004,7 @@ var junctionTemperature = {
       symbol: "θ_JA",
       unit: "°C/W",
       precision: 2,
-      tooltip: "Total junction-to-ambient thermal resistance: θJA = θJC + θCS + θSA"
+      tooltip: "Total junction-to-ambient thermal resistance: θJA = θJC + θCS + Σθ_L + θSA"
     },
     {
       key: "tj",
@@ -30454,15 +32052,55 @@ var junctionTemperature = {
     }
   ],
   calculate: calculateJunctionTemperature,
+  examples: [
+    {
+      id: "mosfet-forced-air",
+      label: "MOSFET at 25 W on a forced-air heatsink",
+      values: { pd: 25, ta: 40, thetaJC: 0.8, thetaCS: 0.3, thetaSA: 2 }
+    },
+    {
+      id: "dpak-regulator-vias",
+      label: "D²PAK regulator cooled through PCB thermal vias",
+      values: { pd: 1.5, ta: 50, thetaJC: 2, thetaCS: 0.2, numLayers: 1, layer1Theta: 10, thetaSA: 20 }
+    },
+    {
+      id: "to220-mica-small-heatsink",
+      label: "TO-220 on an insulating pad and a small heatsink",
+      values: { pd: 5, ta: 25, thetaJC: 2, thetaCS: 0.5, numLayers: 1, layer1Theta: 1, thetaSA: 20 }
+    }
+  ],
+  // Rows from ambient up to the junction, so each row's running value is the
+  // temperature at its hot side and the last is the junction's.
+  chain: {
+    title: "Thermal stack",
+    caption: "From ambient up to the junction · θ in °C/W, temperatures in °C",
+    row: "layer",
+    columns: [{ label: "θ", key: "layer{n}Theta" }],
+    fixed: [
+      { id: "sa", label: "Heatsink", symbol: "heatsink", keys: ["thetaSA"], neutral: [0] },
+      { id: "cs", label: "Interface", symbol: "resistor", keys: ["thetaCS"], neutral: [0] },
+      { id: "jc", label: "Package", symbol: "resistor", keys: ["thetaJC"], neutral: [0] }
+    ],
+    list: { count: "numLayers", after: 1, types: LAYER_TYPES, typeOf: layerTypeOf },
+    running: [
+      { output: "thetaJA", label: "Σ θ" },
+      { output: "tj", label: "T" }
+    ],
+    share: { output: "thetaJA", label: "θ share", mode: "diff" },
+    totals: ["tj", "tc", "ts", "thetaJA", "margin"],
+    diagram: { start: "TA", end: "TJ", link: "tj" },
+    limit: halveLargestTheta("tj", (key) => junctionTemperature.inputs.find((i) => i.key === key)?.min ?? 0)
+  },
   formula: {
-    primary: "T_J = T_A + P_D × (θ_JC + θ_CS + θ_SA)",
-    latex: "T_J = T_A + P_D \\cdot (\\theta_{JC} + \\theta_{CS} + \\theta_{SA})",
+    primary: "T_J = T_A + P_D × (θ_JC + θ_CS + Σθ_L + θ_SA)",
+    latex: "T_J = T_A + P_D \\cdot (\\theta_{JC} + \\theta_{CS} + \\textstyle\\sum \\theta_L + \\theta_{SA})",
     variables: [
       { symbol: "T_J", description: "Junction temperature", unit: "°C" },
       { symbol: "T_A", description: "Ambient temperature", unit: "°C" },
       { symbol: "P_D", description: "Power dissipation", unit: "W" },
       { symbol: "θ_JC", description: "Junction-to-case thermal resistance", unit: "°C/W" },
       { symbol: "θ_CS", description: "Case-to-heatsink thermal resistance", unit: "°C/W" },
+      { symbol: "Σθ_L", description: "Extra layers between case and heatsink (pad, spreader, board), in series", unit: "°C/W" },
       { symbol: "θ_SA", description: "Heatsink-to-ambient thermal resistance", unit: "°C/W" }
     ]
   },
@@ -30477,15 +32115,21 @@ function calculateHeatsinkSelection(inputs) {
   if (pd <= 0) {
     return { values: { thetaSARequired: 0, tjActual: 0, deltaTJ: 0 }, errors: ["Power dissipation must be positive"] };
   }
-  const thetaSARequired = (tjMax - ta) / pd - thetaJC - thetaCS;
-  const thetaJA = thetaJC + thetaCS + Math.max(thetaSARequired, 0);
+  const layers = layersTheta(inputs);
+  if (layers.error) return { values: {}, errors: [layers.error] };
+  const thetaSARequired = (tjMax - ta) / pd - thetaJC - thetaCS - layers.sum;
+  const thetaJS = thetaJC + thetaCS + layers.sum;
+  const thetaJA = thetaJC + thetaCS + layers.sum + Math.max(thetaSARequired, 0);
   const tjActual = ta + pd * thetaJA;
   const deltaTJ = tjMax - tjActual;
+  const heatsinkTemp = tjActual - pd * thetaJS;
   return {
     values: {
       thetaSARequired,
       tjActual,
-      deltaTJ
+      deltaTJ,
+      thetaJS,
+      heatsinkTemp
     },
     warnings: thetaSARequired <= 0 ? ["Required θSA is negative — this device cannot be cooled sufficiently by a heatsink with these parameters."] : void 0
   };
@@ -30558,7 +32202,8 @@ var heatsinkSelection = {
       defaultValue: 0.5,
       min: 0,
       tooltip: "Case-to-heatsink thermal resistance (thermal interface material)"
-    }
+    },
+    ...layerInputs()
   ],
   outputs: [
     {
@@ -30591,19 +32236,76 @@ var heatsinkSelection = {
       unit: "°C",
       precision: 1,
       tooltip: "Temperature margin below maximum junction temperature"
+    },
+    {
+      key: "thetaJS",
+      label: "Junction-to-Heatsink θ",
+      symbol: "θ_JS",
+      unit: "°C/W",
+      precision: 2,
+      tooltip: "The stack between the junction and the heatsink: θ_JC + θ_CS + the extra layers"
+    },
+    {
+      key: "heatsinkTemp",
+      label: "Heatsink Temperature",
+      symbol: "T_S",
+      unit: "°C",
+      precision: 1,
+      tooltip: "Temperature of the heatsink where the device mounts, with the exactly required heatsink: T_J − P_D·θ_JS"
     }
   ],
   calculate: calculateHeatsinkSelection,
+  examples: [
+    {
+      id: "to220-regulator-insulated",
+      label: "TO-220 linear regulator at 5 W on an insulating pad in a 40 °C enclosure",
+      values: { pd: 5, ta: 40, tjMax: 125, thetaJC: 3, thetaCS: 0.5, numLayers: 1, layer1Theta: 1 }
+    },
+    {
+      id: "class-ab-output-transistor",
+      label: "Class-AB output transistor at 30 W, rated 150 °C",
+      values: { pd: 30, ta: 35, tjMax: 150, thetaJC: 0.7, thetaCS: 0.2, numLayers: 1, layer1Theta: 0.5 }
+    },
+    {
+      id: "module-on-copper-spreader",
+      label: "Power module on a copper spreader, greased on both faces",
+      values: { pd: 15, ta: 45, tjMax: 125, thetaJC: 1.2, thetaCS: 0.15, numLayers: 2, layer1Theta: 0.1, layer2Theta: 0.2 }
+    }
+  ],
+  // Rows from the junction, held at T_J(max), down to the heatsink: each
+  // row's running values are the temperature at its cold side and the θ_SA
+  // the heatsink may still have, the last being the answer.
+  chain: {
+    title: "Thermal stack",
+    caption: "From the junction at T_J(max) down to the heatsink · θ in °C/W, temperatures in °C",
+    row: "layer",
+    columns: [{ label: "θ", key: "layer{n}Theta" }],
+    fixed: [
+      { id: "jc", label: "Package", symbol: "resistor", keys: ["thetaJC"], neutral: [0] },
+      { id: "cs", label: "Interface", symbol: "resistor", keys: ["thetaCS"], neutral: [0] }
+    ],
+    list: { count: "numLayers", types: LAYER_TYPES, typeOf: layerTypeOf },
+    running: [
+      { output: "thetaJS", label: "Σ θ" },
+      { output: "heatsinkTemp", label: "T" },
+      { output: "thetaSARequired", label: "θSA left" }
+    ],
+    share: { output: "thetaJS", label: "θ share", mode: "diff" },
+    totals: ["thetaSARequired", "tjActual", "heatsinkTemp", "deltaTJ"],
+    diagram: { start: "TJ", end: "Sink", link: "heatsinkTemp" },
+    limit: halveLargestTheta("thetaSARequired", (key) => heatsinkSelection.inputs.find((i) => i.key === key)?.min ?? 0)
+  },
   formula: {
-    primary: "θ_SA = (T_J(max) − T_A) / P_D − θ_JC − θ_CS",
-    latex: "\\theta_{SA} = \\frac{T_{J(max)} - T_A}{P_D} - \\theta_{JC} - \\theta_{CS}",
+    primary: "θ_SA = (T_J(max) − T_A) / P_D − θ_JC − θ_CS − Σθ_L",
+    latex: "\\theta_{SA} = \\frac{T_{J(max)} - T_A}{P_D} - \\theta_{JC} - \\theta_{CS} - \\textstyle\\sum \\theta_L",
     variables: [
       { symbol: "θ_SA", description: "Required heatsink thermal resistance", unit: "°C/W" },
       { symbol: "T_J(max)", description: "Maximum junction temperature", unit: "°C" },
       { symbol: "T_A", description: "Ambient temperature", unit: "°C" },
       { symbol: "P_D", description: "Power dissipation", unit: "W" },
       { symbol: "θ_JC", description: "Junction-to-case thermal resistance", unit: "°C/W" },
-      { symbol: "θ_CS", description: "Case-to-heatsink thermal resistance", unit: "°C/W" }
+      { symbol: "θ_CS", description: "Case-to-heatsink thermal resistance", unit: "°C/W" },
+      { symbol: "Σθ_L", description: "Extra layers between case and heatsink (pad, spreader, board), in series", unit: "°C/W" }
     ]
   },
   visualization: { type: "none" },
@@ -31955,9 +33657,9 @@ var balunTransformer = {
 
 // src/lib/calculators/rf/link-margin.ts
 var C06 = 299792458;
-var MAX_EXTRA_LOSSES2 = 4;
-function extraLossSum2(inputs) {
-  const count = Math.max(0, Math.min(MAX_EXTRA_LOSSES2, Math.round(inputs.extraLossCount ?? 0)));
+var MAX_EXTRA_LOSSES3 = 4;
+function extraLossSum3(inputs) {
+  const count = Math.max(0, Math.min(MAX_EXTRA_LOSSES3, Math.round(inputs.extraLossCount ?? 0)));
   let sum = 0;
   for (let n = 1; n <= count; n++) sum += inputs[`extraLoss${n}`] ?? 0;
   return sum;
@@ -31970,7 +33672,7 @@ function calculateLinkMargin(inputs) {
   const d_m = distance * 1e3;
   const f_Hz = frequency * 1e9;
   const fspl = 20 * Math.log10(d_m) + 20 * Math.log10(f_Hz) + 20 * Math.log10(4 * Math.PI / C06);
-  const receivedPower = txPower + txGain + rxGain - fspl - cableLoss - extraLossSum2(inputs);
+  const receivedPower = txPower + txGain + rxGain - fspl - cableLoss - extraLossSum3(inputs);
   const linkMargin2 = receivedPower - sensitivity;
   const maxRange = distance * Math.pow(10, linkMargin2 / 20);
   return {
@@ -32079,7 +33781,7 @@ var linkMargin = {
       min: 0,
       tooltip: "Total cable and connector losses on TX and RX sides combined"
     },
-    { key: "extraLossCount", label: "Extra Loss Terms", unit: "", defaultValue: 0, min: 0, max: MAX_EXTRA_LOSSES2, step: 1, tooltip: "How many extra loss terms the budget includes, such as polarisation mismatch, body loss or foliage" },
+    { key: "extraLossCount", label: "Extra Loss Terms", unit: "", defaultValue: 0, min: 0, max: MAX_EXTRA_LOSSES3, step: 1, tooltip: "How many extra loss terms the budget includes, such as polarisation mismatch, body loss or foliage" },
     { key: "extraLoss1", label: "Extra Loss 1", symbol: "L_1", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
     { key: "extraLoss2", label: "Extra Loss 2", symbol: "L_2", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
     { key: "extraLoss3", label: "Extra Loss 3", symbol: "L_3", unit: "dB", defaultValue: 0, min: 0, max: 50, tooltip: "An extra loss in the path, such as polarisation mismatch, body loss, foliage or a wall" },
@@ -32154,7 +33856,7 @@ var linkMargin = {
     ]
   },
   target: { output: "linkMargin", input: "targetMargin", sense: "min", failAt: 0 },
-  terms: { count: "extraLossCount", keys: ["extraLoss{n}"], maxRows: MAX_EXTRA_LOSSES2, label: "loss term" },
+  terms: { count: "extraLossCount", keys: ["extraLoss{n}"], maxRows: MAX_EXTRA_LOSSES3, label: "loss term" },
   examples: [
     { id: "zigbee-indoor", label: "Zigbee 2.4 GHz indoor, 50 m", values: { txPower: 8, txGain: 2, rxGain: 2, distance: 0.05, frequency: 2.44, sensitivity: -100, cableLoss: 0, extraLossCount: 1, extraLoss1: 20 } },
     { id: "lorawan-868-rural", label: "LoRaWAN 868 MHz rural, 8 km", values: { txPower: 14, txGain: 2.15, rxGain: 6, distance: 8, frequency: 0.868, sensitivity: -137, cableLoss: 1, extraLossCount: 1, extraLoss1: 15 } },
@@ -34184,6 +35886,39 @@ var ethernetCable = {
     }
   ],
   calculate: calculateEthernetCable,
+  // C6 Catalog & compare (waves/W6.md, task 10.5). The items are the cable
+  // categories `cableType` offers. Bandwidth is each category's specified
+  // frequency range, the same table the insertion-loss warning reads
+  // (ANSI/TIA-568.2-D: Category 5e to 100 MHz, 6 to 250, 6A to 500, 8 to 2000).
+  // Shielding: TIA-568.2-D specifies Categories 5e, 6 and 6A as unshielded or
+  // screened twisted pair, and Category 8 as screened only (ISO/IEC 11801-1
+  // Class I, F/UTP or U/FTP). No chart: length is the only continuous
+  // condition, and the loss is a straight line in it.
+  catalog: {
+    title: "Cable categories",
+    item: "category",
+    items: [1, 2, 3, 4].map((ct) => ({
+      id: ["cat5e", "cat6", "cat6a", "cat8"][ct - 1],
+      label: ["Cat5e", "Cat6", "Cat6a", "Cat8"][ct - 1],
+      values: { cableType: ct },
+      attributes: {
+        bandwidth: IL_COEFFICIENTS[ct].fMaxMhz,
+        shielding: ct === 4 ? "Screened only" : "UTP or screened"
+      }
+    })),
+    attributes: [
+      { id: "bandwidth", label: "Bandwidth", unit: "MHz" },
+      { id: "shielding", label: "Shielding" }
+    ],
+    filters: [{ id: "utp", label: "UTP", attribute: "shielding", equals: "UTP or screened" }],
+    columns: [
+      { output: "attenuation", label: "Attenuation", bar: true },
+      { output: "maxLength", label: "Max length" },
+      { output: "headroom", label: "Headroom" }
+    ],
+    detail: ["attenuation", "maxLength", "headroom", "passOrFail"],
+    source: "Insertion loss: ANSI/TIA-568-C.2 Table 27 limit at the PHY signalling frequency (Category 8: draft d0.7); reach: IEEE 802.3 and TIA-568.2-D"
+  },
   formula: {
     primary: "Att = (L/100)·(a·√f + b·f + c/√f)",
     latex: "Att = \\frac{L}{100}\\left(a\\sqrt{f} + b\\,f + \\frac{c}{\\sqrt{f}}\\right)",
@@ -36084,13 +37819,33 @@ var chassisResonance = {
 };
 
 // src/lib/calculators/emc/emi-margin-budget.ts
+var MAX_MARGIN_TERMS = 6;
+function extraAllowance(inputs) {
+  const count = Math.max(0, Math.min(MAX_MARGIN_TERMS, Math.round(inputs.marginTerms ?? 0)));
+  let sum = 0;
+  for (let n = 1; n <= count; n++) sum += inputs[`term${n}Allowance`] ?? 0;
+  return sum;
+}
 function calculateEmiMarginBudget(inputs) {
   const { measuredLevel, limitLevel, measurementUncertainty, safetyMargin } = inputs;
+  const extra = extraAllowance(inputs);
   const rawMargin = limitLevel - measuredLevel;
-  const adjustedMargin = rawMargin - measurementUncertainty - safetyMargin;
+  const adjustedMargin = rawMargin - measurementUncertainty - safetyMargin - extra;
   const requiredReduction = adjustedMargin < 0 ? Math.abs(adjustedMargin) : 0;
-  return { values: { rawMargin, adjustedMargin, requiredReduction } };
+  const totalAllowance = measurementUncertainty + safetyMargin + extra;
+  return { values: { rawMargin, adjustedMargin, requiredReduction, totalAllowance } };
 }
+var termInput3 = (n) => ({
+  key: `term${n}Allowance`,
+  label: `Term ${n} Allowance`,
+  symbol: `A_${n}`,
+  unit: "dB",
+  defaultValue: 0,
+  min: 0,
+  max: 40,
+  tooltip: "A further allowance held back from the margin, such as unit-to-unit spread, cable layout or the correlation between a pre-compliance set-up and the accredited site",
+  group: `Term ${n}`
+});
 var emiMarginBudget = {
   slug: "emi-margin-budget",
   title: "EMI Margin Budget",
@@ -36103,19 +37858,94 @@ var emiMarginBudget = {
     { key: "measuredLevel", label: "Measured Emission Level", symbol: "E_meas", unit: "dBμV/m", defaultValue: 30, min: -100 },
     { key: "limitLevel", label: "Regulatory Limit", symbol: "E_limit", unit: "dBμV/m", defaultValue: 40, min: -100, tooltip: "CISPR 22 Class B radiated: 40 dBμV/m (30–230 MHz) at 3m" },
     { key: "measurementUncertainty", label: "Measurement Uncertainty", symbol: "U", unit: "dB", defaultValue: 6, min: 0, tooltip: "Typically 6 dB for pre-compliance setups" },
-    { key: "safetyMargin", label: "Design Safety Margin", symbol: "SM", unit: "dB", defaultValue: 6, min: 0 }
+    { key: "safetyMargin", label: "Design Safety Margin", symbol: "SM", unit: "dB", defaultValue: 6, min: 0 },
+    {
+      key: "marginTerms",
+      label: "Extra Margin Terms",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: MAX_MARGIN_TERMS,
+      step: 1,
+      tooltip: `How many further allowances the budget holds back (0–${MAX_MARGIN_TERMS})`
+    },
+    ...Array.from({ length: MAX_MARGIN_TERMS }, (_, i) => termInput3(i + 1))
   ],
   outputs: [
     { key: "rawMargin", label: "Raw Margin", symbol: "M_raw", unit: "dB", precision: 1, signed: "explicit" },
     { key: "adjustedMargin", label: "Adjusted Margin", symbol: "M_adj", unit: "dB", precision: 1, thresholds: { good: { min: 0 } }, primary: true, signed: "explicit" },
-    { key: "requiredReduction", label: "Reduction Required", symbol: "ΔE", unit: "dB", precision: 1 }
+    { key: "requiredReduction", label: "Reduction Required", symbol: "ΔE", unit: "dB", precision: 1 },
+    { key: "totalAllowance", label: "Total Allowance", symbol: "ΣA", unit: "dB", precision: 1, tooltip: "Measurement uncertainty, safety margin and every further allowance, added" }
   ],
   calculate: calculateEmiMarginBudget,
+  examples: [
+    {
+      id: "cispr32-class-b-precompliance",
+      label: "Pre-compliance scan against CISPR 32 Class B at 3 m",
+      values: { measuredLevel: 34, limitLevel: 40, measurementUncertainty: 6, safetyMargin: 3, marginTerms: 1, term1Allowance: 3 }
+    },
+    {
+      id: "cispr32-class-a-accredited",
+      label: "Accredited-lab result against CISPR 32 Class A at 10 m, above 230 MHz",
+      values: { measuredLevel: 38, limitLevel: 47, measurementUncertainty: 5, safetyMargin: 3 }
+    },
+    {
+      id: "fcc-part15-class-b-above-960",
+      label: "FCC Part 15 Class B at 3 m, above 960 MHz, with production spread and cable layout",
+      values: { measuredLevel: 40, limitLevel: 54, measurementUncertainty: 6, safetyMargin: 3, marginTerms: 2, term1Allowance: 3, term2Allowance: 3 }
+    }
+  ],
+  chain: {
+    title: "Margin budget",
+    caption: "Limit minus the measured level, less each allowance",
+    row: "allowance",
+    columns: [{ label: "Allowance", key: "term{n}Allowance" }],
+    fixed: [
+      { id: "uncertainty", label: "Uncertainty", symbol: "block", keys: ["measurementUncertainty"], neutral: [0] },
+      { id: "safety", label: "Safety margin", symbol: "block", keys: ["safetyMargin"], neutral: [0] }
+    ],
+    list: {
+      count: "marginTerms",
+      types: [
+        { id: "allowance", label: "Allowance", symbol: "block", values: [3] },
+        { id: "spread", label: "Unit-to-unit", symbol: "block", values: [3] },
+        { id: "cables", label: "Cable layout", symbol: "cable", values: [3] },
+        { id: "correlation", label: "Site correlation", symbol: "block", values: [4] },
+        { id: "ageing", label: "Temp & ageing", symbol: "block", values: [2] }
+      ]
+    },
+    running: [
+      { output: "totalAllowance", label: "Σ Allowance" },
+      { output: "adjustedMargin", label: "Margin" }
+    ],
+    share: { output: "totalAllowance", label: "Share", mode: "diff" },
+    totals: ["adjustedMargin", "rawMargin", "totalAllowance", "requiredReduction"],
+    diagram: { start: "Raw", end: "Net", link: "adjustedMargin" },
+    // The largest allowance that is measured rather than chosen, and half of it:
+    // a calibrated set-up for the uncertainty, a tighter build for a spread. The
+    // safety margin is a policy, not a measurement, so it is never the change to try.
+    limit: ({ rows, inputs }) => {
+      let worst = -1;
+      let worstValue = 0;
+      rows.forEach((row, r) => {
+        if (row.id === "safety") return;
+        const v = row.values[0] ?? NaN;
+        if (Number.isFinite(v) && v > worstValue) {
+          worst = r;
+          worstValue = v;
+        }
+      });
+      if (worst < 0) return null;
+      const key = rows[worst].keys[0];
+      return { row: worst, output: "adjustedMargin", change: { [key]: inputs[key] / 2 } };
+    }
+  },
   formula: {
-    primary: "M_adj = (E_limit − E_meas) − U − SM",
+    primary: "M_adj = (E_limit − E_meas) − U − SM − ΣA_n",
     variables: [
       { symbol: "U", description: "Measurement uncertainty", unit: "dB" },
-      { symbol: "SM", description: "Safety margin", unit: "dB" }
+      { symbol: "SM", description: "Safety margin", unit: "dB" },
+      { symbol: "A_n", description: "Further allowance n", unit: "dB" }
     ]
   },
   visualization: { type: "none" },
@@ -38540,19 +40370,44 @@ var dopplerShift = {
 };
 
 // src/lib/calculators/audio/rt60-reverberation.ts
+var MAX_SURFACES = 8;
+var SURFACE_DEFAULT = { area: 10, alpha: 0.3 };
 function calculateRT60(inputs) {
   const { length, width, height, avgAbsorption } = inputs;
   if (length <= 0 || width <= 0 || height <= 0) {
     return { values: {}, errors: ["Room dimensions must be positive"] };
   }
-  if (avgAbsorption <= 0 || avgAbsorption >= 1) {
+  const numSurfaces = Math.round(inputs.numSurfaces ?? 0);
+  if (!(numSurfaces >= 0 && numSurfaces <= MAX_SURFACES)) {
+    return { values: {}, errors: [`Number of listed surfaces must be between 0 and ${MAX_SURFACES}`] };
+  }
+  if (avgAbsorption < 0 || avgAbsorption >= 1 || avgAbsorption === 0 && numSurfaces === 0) {
     return { values: {}, errors: ["Average absorption coefficient must be between 0 and 1"] };
   }
   const volume = length * width * height;
   const surfaceArea = 2 * (length * width + length * height + width * height);
-  const totalAbsorption = surfaceArea * avgAbsorption;
+  let listedArea = 0;
+  let listedAbsorption = 0;
+  for (let k = 1; k <= numSurfaces; k++) {
+    const area = inputs[`surface${k}Area`] ?? SURFACE_DEFAULT.area;
+    const alpha = inputs[`surface${k}Alpha`] ?? SURFACE_DEFAULT.alpha;
+    if (!(area >= 0) || !(alpha >= 0 && alpha < 1)) {
+      return { values: {}, errors: ["Surface areas must be zero or more, and absorption coefficients at least 0 and below 1"] };
+    }
+    listedArea += area;
+    listedAbsorption += area * alpha;
+  }
+  if (listedArea > surfaceArea) {
+    return { values: {}, errors: ["The listed surfaces exceed the room’s surface area"] };
+  }
+  const otherArea = surfaceArea - listedArea;
+  const totalAbsorption = listedAbsorption + otherArea * avgAbsorption;
+  if (!(totalAbsorption > 0)) {
+    return { values: {}, errors: ["Total absorption must be greater than zero"] };
+  }
+  const meanAbsorption = numSurfaces === 0 ? avgAbsorption : totalAbsorption / surfaceArea;
   const rt60Sabine = 0.161 * volume / totalAbsorption;
-  const rt60Eyring = 0.161 * volume / (-surfaceArea * Math.log(1 - avgAbsorption));
+  const rt60Eyring = 0.161 * volume / (-surfaceArea * Math.log(1 - meanAbsorption));
   const schroederFreq = 2e3 * Math.sqrt(rt60Sabine / volume);
   const criticalDistance = 0.057 * Math.sqrt(volume / rt60Sabine);
   const optimalSpeech = 0.32 * Math.log10(volume) + 0.03;
@@ -38567,10 +40422,59 @@ function calculateRT60(inputs) {
       schroederFreq,
       criticalDistance,
       optimalSpeech,
-      optimalMusic
+      optimalMusic,
+      otherArea,
+      meanAbsorption
     }
   };
 }
+var SUBSCRIPT7 = "₀₁₂₃₄₅₆₇₈₉";
+var sub6 = (k) => String(k).split("").map((d) => SUBSCRIPT7[Number(d)]).join("");
+var surfaceInputs = [
+  {
+    key: "numSurfaces",
+    label: "Listed Surfaces",
+    symbol: "N",
+    unit: "",
+    defaultValue: 0,
+    min: 0,
+    max: MAX_SURFACES,
+    step: 1,
+    tooltip: `Surfaces with their own absorption, such as a carpet, panels or curtains; the rest of the room keeps the average coefficient (0–${MAX_SURFACES})`,
+    presets: [
+      { label: "None", values: { numSurfaces: 0 } },
+      { label: "1 surface", values: { numSurfaces: 1 } },
+      { label: "2 surfaces", values: { numSurfaces: 2 } },
+      { label: "3 surfaces", values: { numSurfaces: 3 } }
+    ]
+  },
+  ...Array.from({ length: MAX_SURFACES }, (_, i) => i + 1).flatMap((n) => [
+    { key: `surface${n}Area`, label: `Surface ${n} Area`, symbol: `S${sub6(n)}`, unit: "m²", defaultValue: SURFACE_DEFAULT.area, min: 0, max: 1e4, step: 0.1, tooltip: `Area of listed surface ${n}, part of the room's surface`, group: `Surface ${n}` },
+    { key: `surface${n}Alpha`, label: `Surface ${n} Absorption Coefficient`, symbol: `α${sub6(n)}`, unit: "", defaultValue: SURFACE_DEFAULT.alpha, min: 0, max: 0.99, step: 0.01, tooltip: `Absorption coefficient of listed surface ${n} at mid frequencies (500 Hz–1 kHz)`, group: `Surface ${n}` }
+  ])
+];
+var SURFACE_TYPES = [
+  { id: "carpet", label: "Carpet", symbol: "block", values: [24, 0.3] },
+  { id: "panel", label: "Acoustic panel", symbol: "block", values: [3, 0.8] },
+  { id: "curtain", label: "Heavy curtain", symbol: "block", values: [6, 0.5] },
+  { id: "wood", label: "Wood floor", symbol: "block", values: [24, 0.1] },
+  { id: "plaster", label: "Plasterboard", symbol: "block", values: [20, 0.05] },
+  { id: "concrete", label: "Concrete", symbol: "block", values: [24, 0.02] }
+];
+function surfaceTypeOf([, alpha]) {
+  let best = SURFACE_TYPES[0].id;
+  let bestDistance = Infinity;
+  const x = Math.log(Math.max(alpha, 1e-3));
+  for (const t of SURFACE_TYPES) {
+    const d = Math.abs(x - Math.log(t.values[1]));
+    if (d < bestDistance) {
+      best = t.id;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+var TREATMENT = { concrete: 0.3, wood: 0.3, plaster: 0.8 };
 var rt60Reverberation = {
   slug: "rt60-reverberation",
   title: "RT60 Reverberation Time Calculator",
@@ -38584,7 +40488,8 @@ var rt60Reverberation = {
     { key: "length", label: "Room Length", symbol: "L", unit: "m", defaultValue: 6, min: 1, max: 100, step: 0.1 },
     { key: "width", label: "Room Width", symbol: "W", unit: "m", defaultValue: 4, min: 1, max: 100, step: 0.1 },
     { key: "height", label: "Room Height", symbol: "H", unit: "m", defaultValue: 3, min: 1.5, max: 30, step: 0.1 },
-    { key: "avgAbsorption", label: "Avg. Absorption Coefficient", symbol: "ᾱ", unit: "", defaultValue: 0.2, min: 0.01, max: 0.99, step: 0.01, tooltip: "Bare concrete ~0.03, carpet ~0.3, acoustic panels ~0.8" }
+    { key: "avgAbsorption", label: "Avg. Absorption Coefficient", symbol: "ᾱ", unit: "", defaultValue: 0.2, min: 0.01, max: 0.99, step: 0.01, tooltip: "Bare concrete ~0.03, carpet ~0.3, acoustic panels ~0.8. With surfaces listed, the coefficient of the rest of the room." },
+    ...surfaceInputs
   ],
   outputs: [
     { key: "rt60Sabine", label: "RT60 (Sabine)", symbol: "T₆₀", unit: "s", precision: 2, primary: true },
@@ -38595,17 +40500,78 @@ var rt60Reverberation = {
     { key: "volume", label: "Room Volume", symbol: "V", unit: "m³", precision: 1 },
     { key: "surfaceArea", label: "Surface Area", symbol: "S", unit: "m²", precision: 1 },
     { key: "optimalSpeech", label: "Optimal RT60 (Speech)", symbol: "T_speech", unit: "s", precision: 2 },
-    { key: "optimalMusic", label: "Optimal RT60 (Music)", symbol: "T_music", unit: "s", precision: 2 }
+    { key: "optimalMusic", label: "Optimal RT60 (Music)", symbol: "T_music", unit: "s", precision: 2 },
+    { key: "otherArea", label: "Other Surface Area", symbol: "S_other", unit: "m²", precision: 1, tooltip: "The room’s surface not listed, at the average absorption coefficient" },
+    { key: "meanAbsorption", label: "Mean Absorption Coefficient", symbol: "ᾱ_mean", unit: "", precision: 3, tooltip: "Total absorption over the room’s surface, A/S: the coefficient the Eyring equation takes" }
   ],
   calculate: calculateRT60,
+  examples: [
+    {
+      id: "home-studio",
+      label: "Home studio: carpet, acoustic panels and plasterboard walls",
+      values: { length: 4.5, width: 3.5, height: 2.5, avgAbsorption: 0.05, numSurfaces: 3, surface1Area: 15.75, surface1Alpha: 0.3, surface2Area: 6, surface2Alpha: 0.8, surface3Area: 34, surface3Alpha: 0.05 }
+    },
+    {
+      id: "classroom",
+      label: "Classroom with an acoustic tile ceiling and a wood floor",
+      values: { length: 9, width: 7, height: 3, avgAbsorption: 0.05, numSurfaces: 2, surface1Area: 63, surface1Alpha: 0.7, surface2Area: 63, surface2Alpha: 0.1 }
+    },
+    {
+      id: "untreated-meeting-room",
+      label: "Meeting room before treatment: tile floor and plasterboard walls",
+      values: { length: 8, width: 6, height: 3, avgAbsorption: 0.05, numSurfaces: 2, surface1Area: 48, surface1Alpha: 0.02, surface2Area: 84, surface2Alpha: 0.05 }
+    }
+  ],
+  // Listed surfaces first, then the rest of the room at the average
+  // coefficient: each row's running values are the absorption so far and the
+  // RT60 it alone would give, and each share is the row's own absorption.
+  chain: {
+    title: "Absorbing surfaces",
+    caption: "Area in m², α at mid frequencies, A in m² (metric sabins)",
+    row: "surface",
+    columns: [
+      { label: "Area", key: "surface{n}Area" },
+      { label: "α", key: "surface{n}Alpha" }
+    ],
+    fixed: [{ id: "other", label: "Other surfaces", symbol: "block", keys: [null, "avgAbsorption"], neutral: [null, 0] }],
+    list: { count: "numSurfaces", after: 0, types: SURFACE_TYPES, typeOf: surfaceTypeOf },
+    running: [
+      { output: "totalAbsorption", label: "Σ A" },
+      { output: "rt60Sabine", label: "T₆₀" }
+    ],
+    share: { output: "totalAbsorption", label: "Absorption share", mode: "diff" },
+    totals: ["rt60Sabine", "rt60Eyring", "totalAbsorption", "criticalDistance", "schroederFreq"],
+    diagram: { start: "Room", end: "Σ", link: "totalAbsorption" },
+    // Only a room too live for speech has a limit: the listed untreated
+    // surface reflecting the most, S·(1 − α), and its usual treatment.
+    limit: ({ rows, values }) => {
+      if (rows.length < 2 || !(values.rt60Sabine > values.optimalSpeech)) return null;
+      let worst = -1;
+      let worstReflected = 0;
+      rows.forEach((row, r) => {
+        const to = TREATMENT[row.id];
+        const [area, alpha] = row.values;
+        if (row.kind !== "list" || to === void 0 || area === null || alpha === null || !(alpha < to)) return;
+        const reflected = area * (1 - alpha);
+        if (reflected > worstReflected) {
+          worst = r;
+          worstReflected = reflected;
+        }
+      });
+      if (worst < 0) return null;
+      return { row: worst, output: "rt60Sabine", change: { [rows[worst].keys[1]]: TREATMENT[rows[worst].id] } };
+    }
+  },
   formula: {
-    primary: "T₆₀ = 0.161 × V / A",
-    latex: "T_{60} = \\frac{0.161 \\cdot V}{S \\cdot \\bar{\\alpha}}",
+    primary: "T₆₀ = 0.161 × V / A,  A = Σ S_i α_i + S_other × ᾱ",
+    latex: "T_{60} = \\frac{0.161 \\cdot V}{A},\\quad A = \\textstyle\\sum S_i \\alpha_i + S_{other} \\cdot \\bar{\\alpha}",
     variables: [
       { symbol: "V", description: "Room volume", unit: "m³" },
       { symbol: "S", description: "Total surface area", unit: "m²" },
       { symbol: "ᾱ", description: "Average absorption coefficient (0–1)", unit: "" },
-      { symbol: "A", description: "Total absorption (S × ᾱ)", unit: "sabins (m²)" }
+      { symbol: "A", description: "Total absorption (S × ᾱ)", unit: "sabins (m²)" },
+      { symbol: "S_i, α_i", description: "Area and absorption coefficient of each listed surface", unit: "m², —" },
+      { symbol: "S_other", description: "The room’s surface not listed, at ᾱ", unit: "m²" }
     ]
   },
   visualization: { type: "none" },
@@ -38786,6 +40752,37 @@ var voltageDrop = {
     { key: "maxLengthFor3Pct", label: "Max Length for 3% Drop", symbol: "d_max", unit: "m", precision: 1 }
   ],
   calculate: calculateVoltageDrop,
+  catalog: {
+    title: "Wire sizes",
+    item: "wire",
+    items: [
+      ...[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24].map((g) => ({
+        id: g === 0 ? "awg-1-0" : `awg-${g}`,
+        label: g === 0 ? "1/0 AWG" : `${g} AWG`,
+        values: { wireGauge: g, conductorType: 0 },
+        attributes: { material: "Copper" }
+      })),
+      ...[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24].map((g) => ({
+        id: g === 0 ? "awg-1-0-aluminium" : `awg-${g}-aluminium`,
+        label: g === 0 ? "1/0 AWG aluminium" : `${g} AWG aluminium`,
+        values: { wireGauge: g, conductorType: 1 },
+        attributes: { material: "Aluminium" }
+      }))
+    ],
+    attributes: [{ id: "material", label: "Conductor" }],
+    filters: [
+      { id: "copper", label: "Copper", attribute: "material", equals: "Copper" },
+      { id: "aluminium", label: "Aluminium", attribute: "material", equals: "Aluminium" }
+    ],
+    columns: [
+      { output: "voltageDrop", label: "Drop" },
+      { output: "voltageDropPercent", label: "Drop", bar: true },
+      { output: "powerLoss", label: "Power lost" }
+    ],
+    detail: ["voltageDrop", "voltageDropPercent", "voltageAtLoad", "maxLengthFor3Pct"],
+    chart: { x: "cableLength", y: "voltageDropPercent", range: [1, 200], scale: "linear" },
+    source: "Copper resistance per km at 20 °C for each AWG size (the table in this calculator); aluminium taken as 1.61 times copper; round-trip run"
+  },
   formula: {
     primary: "V_drop = I × 2 × d × R_km / 1000",
     latex: "V_{drop} = I \\cdot \\frac{2 \\cdot d \\cdot R_{/km}}{1000}",
@@ -43042,8 +45039,8 @@ var effectiveDielectricConstant = {
     { key: "fillingFactor", label: "Filling Factor", symbol: "q", unit: "" },
     { key: "z0Ohm", label: "Characteristic Impedance", symbol: "Z₀", unit: "Ω" },
     { key: "velocityPercentC", label: "Propagation Velocity", symbol: "vₚ", unit: "% of c" },
-    { key: "propDelayPsPerMm", label: "Propagation Delay", symbol: "tₚd", unit: "ps/mm" },
-    { key: "propDelayPsPerInch", label: "Propagation Delay", symbol: "tₚd", unit: "ps/inch" },
+    { key: "propDelayPsPerMm", label: "Propagation Delay", symbol: "t_{pd}", unit: "ps/mm" },
+    { key: "propDelayPsPerInch", label: "Propagation Delay", symbol: "t_{pd}", unit: "ps/inch" },
     { key: "wavelengthMm", label: "Guided Wavelength", symbol: "λg", unit: "mm" },
     { key: "quarterWaveMm", label: "Quarter Wavelength", symbol: "λg/4", unit: "mm" }
   ],
