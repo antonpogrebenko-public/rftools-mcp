@@ -40683,6 +40683,11 @@ var AWG_RESISTANCE = {
   22: 52.96,
   24: 84.22
 };
+var ALUMINIUM_FACTOR = 0.028264 / (COPPER_RESISTIVITY_20C * 1e6);
+function awgCopperOhmPerKm(gauge) {
+  const dM = 127e-6 * Math.pow(92, (36 - gauge) / 39);
+  return COPPER_RESISTIVITY_20C / (Math.PI / 4 * dM * dM) * 1e3;
+}
 function calculateVoltageDrop(inputs) {
   const { voltage, current, wireGauge: wireGauge2, cableLength, conductorType } = inputs;
   if (voltage <= 0) {
@@ -40694,8 +40699,8 @@ function calculateVoltageDrop(inputs) {
   if (cableLength <= 0) {
     return { values: {}, errors: ["Cable length must be positive"] };
   }
-  const resistancePerKm = AWG_RESISTANCE[wireGauge2] ?? 5.211;
-  const materialFactor = conductorType === 1 ? 1.61 : 1;
+  const resistancePerKm = AWG_RESISTANCE[wireGauge2] ?? awgCopperOhmPerKm(wireGauge2);
+  const materialFactor = conductorType === 1 ? ALUMINIUM_FACTOR : 1;
   const actualResistancePerKm = resistancePerKm * materialFactor;
   const totalResistance = 2 * cableLength * actualResistancePerKm / 1e3;
   const voltageDrop2 = current * totalResistance;
@@ -40781,7 +40786,7 @@ var voltageDrop = {
     ],
     detail: ["voltageDrop", "voltageDropPercent", "voltageAtLoad", "maxLengthFor3Pct"],
     chart: { x: "cableLength", y: "voltageDropPercent", range: [1, 200], scale: "linear" },
-    source: "Copper resistance per km at 20 °C for each AWG size (the table in this calculator); aluminium taken as 1.61 times copper; round-trip run"
+    source: "Copper at 20 °C, IEC 60028 (1/58 Ω·mm²/m), over each size’s ASTM B258 area; aluminium IEC 60889 (0.028264 Ω·mm²/m); round-trip run"
   },
   formula: {
     primary: "V_drop = I × 2 × d × R_km / 1000",
