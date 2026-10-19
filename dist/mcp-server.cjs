@@ -2177,6 +2177,52 @@ var ismCoexistence = {
   }
 };
 
+// src/lib/e-series.ts
+var E12_BASE = [1, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2];
+var E24_BASE = [1, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.7, 3, 3.3, 3.6, 3.9, 4.3, 4.7, 5.1, 5.6, 6.2, 6.8, 7.5, 8.2, 9.1];
+var E48_BASE = [1, 1.05, 1.1, 1.15, 1.21, 1.27, 1.33, 1.4, 1.47, 1.54, 1.62, 1.69, 1.78, 1.87, 1.96, 2.05, 2.15, 2.26, 2.37, 2.49, 2.61, 2.74, 2.87, 3.01, 3.16, 3.32, 3.48, 3.65, 3.83, 4.02, 4.22, 4.42, 4.64, 4.87, 5.11, 5.36, 5.62, 5.9, 6.19, 6.49, 6.81, 7.15, 7.5, 7.87, 8.25, 8.66, 9.09, 9.53];
+var E96_BASE = [1, 1.02, 1.05, 1.07, 1.1, 1.13, 1.15, 1.18, 1.21, 1.24, 1.27, 1.3, 1.33, 1.37, 1.4, 1.43, 1.47, 1.5, 1.54, 1.58, 1.62, 1.65, 1.69, 1.74, 1.78, 1.82, 1.87, 1.91, 1.96, 2, 2.05, 2.1, 2.15, 2.21, 2.26, 2.32, 2.37, 2.43, 2.49, 2.55, 2.61, 2.67, 2.74, 2.8, 2.87, 2.94, 3.01, 3.09, 3.16, 3.24, 3.32, 3.4, 3.48, 3.57, 3.65, 3.74, 3.83, 3.92, 4.02, 4.12, 4.22, 4.32, 4.42, 4.53, 4.64, 4.75, 4.87, 4.99, 5.11, 5.23, 5.36, 5.49, 5.62, 5.76, 5.9, 6.04, 6.19, 6.34, 6.49, 6.65, 6.81, 6.98, 7.15, 7.32, 7.5, 7.68, 7.87, 8.06, 8.25, 8.45, 8.66, 8.87, 9.09, 9.31, 9.53, 9.76];
+var SERIES_MAP = {
+  E12: E12_BASE,
+  E24: E24_BASE,
+  E48: E48_BASE,
+  E96: E96_BASE
+};
+function snapToESeries(value, series2) {
+  if (value <= 0) return { snapped: 0, error: 0 };
+  const base = SERIES_MAP[series2];
+  const exponent = Math.floor(Math.log10(value));
+  const mantissa = value / Math.pow(10, exponent);
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < base.length; i++) {
+    const dist = Math.abs(mantissa - base[i]);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+  const distToNext = Math.abs(mantissa - 10);
+  let snapped;
+  if (distToNext < bestDist) {
+    snapped = Math.pow(10, exponent + 1);
+  } else {
+    snapped = base[bestIdx] * Math.pow(10, exponent);
+  }
+  snapped = Number(snapped.toPrecision(12));
+  const error = (snapped - value) / value * 100;
+  return { snapped, error };
+}
+function seriesName(series2) {
+  const name = `E${Math.round(series2)}`;
+  return name in SERIES_MAP ? name : null;
+}
+function roundToSeries(value, series2) {
+  const name = seriesName(series2);
+  if (!name || !(value > 0) || !Number.isFinite(value)) return value;
+  return snapToESeries(value, name).snapped;
+}
+
 // src/lib/export/packages.ts
 var DERATING = 2;
 var RESISTOR_TIERS = [
@@ -2245,26 +2291,129 @@ function diodePackage(averageA) {
   return DIODE_TIERS.find((t) => need <= t.ratingA)?.pkg ?? DIODE_OVER_RATED;
 }
 
+// src/lib/synthesis/ladder.ts
+var series = (part, v) => ({ at: "series", part, ...v });
+var shunt = (part, v) => ({ at: "shunt", part, ...v });
+function immittance(e, w) {
+  const r = e.r ?? 0;
+  const l = e.l ?? 0;
+  const c2 = e.c ?? 0;
+  if (e.at === "series") {
+    if (e.part === "R") return [r, 0];
+    if (e.part === "L") return [0, w * l];
+    if (e.part === "C") return [0, -1 / (w * c2)];
+    return [0, w * l - 1 / (w * c2)];
+  }
+  if (e.part === "R") return [1 / r, 0];
+  if (e.part === "L") return [0, -1 / (w * l)];
+  if (e.part === "C") return [0, w * c2];
+  return [0, w * c2 - 1 / (w * l)];
+}
+function transducerGain(elements, f, rs, rl) {
+  const w = 2 * Math.PI * f;
+  let ar = 1, ai = 0, br = 0, bi = 0, cr = 0, ci = 0, dr = 1, di = 0;
+  for (const e of elements) {
+    const [zr, zi] = immittance(e, w);
+    if (e.at === "series") {
+      const nbr = br + (ar * zr - ai * zi);
+      const nbi = bi + (ar * zi + ai * zr);
+      const ndr = dr + (cr * zr - ci * zi);
+      const ndi = di + (cr * zi + ci * zr);
+      br = nbr;
+      bi = nbi;
+      dr = ndr;
+      di = ndi;
+    } else {
+      const nar = ar + (br * zr - bi * zi);
+      const nai = ai + (br * zi + bi * zr);
+      const ncr = cr + (dr * zr - di * zi);
+      const nci = ci + (dr * zi + di * zr);
+      ar = nar;
+      ai = nai;
+      cr = ncr;
+      ci = nci;
+    }
+  }
+  const re = ar * rl + br + cr * rs * rl + dr * rs;
+  const im = ai * rl + bi + ci * rs * rl + di * rs;
+  return 4 * rs * rl / (re * re + im * im);
+}
+function logSpace(lo, hi, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(lo * Math.pow(hi / lo, i / (n - 1)));
+  return out;
+}
+var SCAN_POINTS = 801;
+var SCAN_SPAN = 1e4;
+function bisectHalf(elements, a, b, rs, rl) {
+  let inside = a;
+  let outside = b;
+  for (let i = 0; i < 60; i++) {
+    const m = Math.sqrt(inside * outside);
+    if (transducerGain(elements, m, rs, rl) >= 0.5) inside = m;
+    else outside = m;
+  }
+  return Math.sqrt(inside * outside);
+}
+function halfPowerEdges(elements, f0, rs, rl) {
+  const fs = logSpace(f0 / SCAN_SPAN, f0 * SCAN_SPAN, SCAN_POINTS);
+  const g = fs.map((f) => transducerGain(elements, f, rs, rl));
+  let peak = 0;
+  for (let i = 1; i < g.length; i++) if (g[i] > g[peak]) peak = i;
+  if (!(g[peak] >= 0.5)) return { lower: 0, upper: 0 };
+  let upper = 0;
+  for (let i = peak; i < g.length - 1; i++) {
+    if (g[i + 1] < 0.5) {
+      upper = bisectHalf(elements, fs[i], fs[i + 1], rs, rl);
+      break;
+    }
+  }
+  let lower = 0;
+  for (let i = peak; i > 0; i--) {
+    if (g[i - 1] < 0.5) {
+      lower = bisectHalf(elements, fs[i], fs[i - 1], rs, rl);
+      break;
+    }
+  }
+  return { lower, upper };
+}
+function worstLossDb(elements, lo, hi, rs, rl, n = 201) {
+  let least = Infinity;
+  for (const f of logSpace(lo, hi, n)) least = Math.min(least, transducerGain(elements, f, rs, rl));
+  return -10 * Math.log10(least);
+}
+
 // src/lib/calculators/rf/attenuator-designer.ts
 var E24 = [10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56, 62, 68, 75, 82, 91];
 var DECADES = [1, 10, 100, 1e3, 1e4, 1e5];
+var E24_VALUES = [...E24.map((v) => v / 100), ...E24.map((v) => v / 10), ...DECADES.flatMap((dec) => E24.map((v) => v * dec))];
 function nearestE24(value) {
   let nearest = value;
   let minErr = Infinity;
-  for (const dec of DECADES) {
-    for (const v of E24) {
-      const candidate = v * dec;
-      const err = Math.abs(candidate - value) / value;
-      if (err < minErr) {
-        minErr = err;
-        nearest = candidate;
-      }
+  for (const candidate of E24_VALUES) {
+    const err = Math.abs(candidate - value) / value;
+    if (err < minErr) {
+      minErr = err;
+      nearest = candidate;
     }
   }
   return nearest;
 }
+function attenuatorRounded(value, eSeries) {
+  return Math.round(eSeries) === 24 ? nearestE24(value) : roundToSeries(value, eSeries);
+}
+function piPadResponse(r1, r2, z0) {
+  const ladder = [shunt("R", { r: r1 }), series("R", { r: r2 }), shunt("R", { r: r1 })];
+  const rOut = r1 * z0 / (r1 + z0);
+  const rSeries = r2 + rOut;
+  return {
+    attenuation: -10 * Math.log10(transducerGain(ladder, 1, z0, z0)),
+    inputImpedance: r1 * rSeries / (r1 + rSeries)
+  };
+}
+var ohms = (v) => `${+v.toPrecision(6)} Ω`;
 function calculateAttenuatorDesigner(inputs) {
-  const { attenuation, impedance: Z0 } = inputs;
+  const { attenuation, impedance: Z0, eSeries = 24 } = inputs;
   if (attenuation <= 0) {
     return { values: {}, errors: ["Attenuation must be greater than 0 dB"] };
   }
@@ -2279,16 +2428,21 @@ function calculateAttenuatorDesigner(inputs) {
   const piR2 = Z0 * (K * K - 1) / (2 * K);
   const tR1 = Z0 * (K - 1) / (K + 1);
   const tR2 = Z0 * 2 * K / (K * K - 1);
+  const piR1Nearest = attenuatorRounded(piR1, eSeries);
+  const piR2Nearest = attenuatorRounded(piR2, eSeries);
+  const built = piPadResponse(piR1Nearest, piR2Nearest, Z0);
   return {
     values: {
       piR1,
       piR2,
-      piR1Nearest: nearestE24(piR1),
-      piR2Nearest: nearestE24(piR2),
+      piR1Nearest,
+      piR2Nearest,
       tR1,
       tR2,
-      tR1Nearest: nearestE24(tR1),
-      tR2Nearest: nearestE24(tR2)
+      tR1Nearest: attenuatorRounded(tR1, eSeries),
+      tR2Nearest: attenuatorRounded(tR2, eSeries),
+      piAttenuationBuilt: built.attenuation,
+      piInputImpedanceBuilt: built.inputImpedance
     }
   };
 }
@@ -2332,6 +2486,31 @@ var attenuatorDesigner = {
         { label: "50 Ω", values: { impedance: 50 } },
         { label: "75 Ω", values: { impedance: 75 } }
       ]
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 24,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
     }
   ],
   outputs: [
@@ -2347,12 +2526,12 @@ var attenuatorDesigner = {
     },
     {
       key: "piR1Nearest",
-      label: "Pi Shunt Resistor (E24)",
-      symbol: "R1π E24",
+      label: "Pi Shunt Resistor (rounded)",
+      symbol: "R1π,E",
       unit: "Ω",
-      precision: 0,
+      precision: 3,
       format: "standard",
-      tooltip: "Pi topology: nearest E24 standard value for shunt resistors"
+      tooltip: "Pi topology: the shunt resistors rounded to the part series (E24 by default; the exact value with ideal values)"
     },
     {
       key: "piR2",
@@ -2365,12 +2544,12 @@ var attenuatorDesigner = {
     },
     {
       key: "piR2Nearest",
-      label: "Pi Series Resistor (E24)",
-      symbol: "R2π E24",
+      label: "Pi Series Resistor (rounded)",
+      symbol: "R2π,E",
       unit: "Ω",
-      precision: 0,
+      precision: 3,
       format: "standard",
-      tooltip: "Pi topology: nearest E24 standard value for series resistor"
+      tooltip: "Pi topology: the series resistor rounded to the part series (E24 by default; the exact value with ideal values)"
     },
     {
       key: "tR1",
@@ -2383,12 +2562,12 @@ var attenuatorDesigner = {
     },
     {
       key: "tR1Nearest",
-      label: "T Series Resistor (E24)",
-      symbol: "R1T E24",
+      label: "T Series Resistor (rounded)",
+      symbol: "R1T,E",
       unit: "Ω",
-      precision: 0,
+      precision: 3,
       format: "standard",
-      tooltip: "T topology: nearest E24 standard value for series resistors"
+      tooltip: "T topology: the series resistors rounded to the part series (E24 by default; the exact value with ideal values)"
     },
     {
       key: "tR2",
@@ -2401,12 +2580,28 @@ var attenuatorDesigner = {
     },
     {
       key: "tR2Nearest",
-      label: "T Shunt Resistor (E24)",
-      symbol: "R2T E24",
+      label: "T Shunt Resistor (rounded)",
+      symbol: "R2T,E",
       unit: "Ω",
-      precision: 0,
+      precision: 3,
       format: "standard",
-      tooltip: "T topology: nearest E24 standard value for shunt resistor"
+      tooltip: "T topology: the shunt resistor rounded to the part series (E24 by default; the exact value with ideal values)"
+    },
+    {
+      key: "piAttenuationBuilt",
+      label: "Pi Pad Attenuation as Built",
+      symbol: "A_{π}",
+      unit: "dB",
+      precision: 3,
+      tooltip: "The attenuation of the Pi pad the rounded resistors build, between Z₀ at its input and Z₀ at its output (the transducer loss of shunt R1, series R2, shunt R1)"
+    },
+    {
+      key: "piInputImpedanceBuilt",
+      label: "Pi Pad Input Impedance as Built",
+      symbol: "Z_{in}",
+      unit: "Ω",
+      precision: 3,
+      tooltip: "The impedance the rounded Pi pad presents at its input with Z₀ on its output, R1 ∥ (R2 + R1 ∥ Z₀); Z₀ with ideal values"
     }
   ],
   calculate: calculateAttenuatorDesigner,
@@ -2422,11 +2617,32 @@ var attenuatorDesigner = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["vswr-return-loss", "db-converter", "rf-link-budget", "wilkinson-power-divider"],
-  // Pi topology only — one row per physical component so KiCad sees shunt→series→shunt
+  examples: [
+    { id: "pad-6db-50-e24", label: "6 dB pad in 50 Ω, E24 resistors", values: { attenuation: 6, impedance: 50, eSeries: 24 } },
+    { id: "pad-10db-75-e96", label: "10 dB pad for a 75 Ω video line, E96 resistors", values: { attenuation: 10, impedance: 75, eSeries: 96 } },
+    { id: "pad-20db-50-e48", label: "20 dB pad ahead of a spectrum analyser, E48 resistors", values: { attenuation: 20, impedance: 50, eSeries: 48 } },
+    { id: "pad-3db-50-e12", label: "3 dB matching pad in 50 Ω, E12 resistors", values: { attenuation: 3, impedance: 50, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): the Pi pad the export carries, R1 and R3 the same
+  // shunt value; each part's exact value and its rounded one in one
+  // evaluation (piR1 and piR1Nearest). The T pad's values stay other results.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "piR1", rounded: "piR1Nearest", position: "shunt" },
+      { ref: "R2", kind: "R", key: "piR2", rounded: "piR2Nearest", position: "series" },
+      { ref: "R3", kind: "R", key: "piR1", rounded: "piR1Nearest", position: "shunt" }
+    ],
+    schematic: { kind: "rows", source: { label: "Z₀", value: "impedance" }, load: { label: "Z₀", value: "impedance" } },
+    // A resistive pad is flat with frequency: its response is two numbers, no curve.
+    response: { outputs: ["piAttenuationBuilt", "piInputImpedanceBuilt"] }
+  },
+  // Pi topology only — one row per physical component so KiCad sees shunt→series→shunt.
+  // The rounded resistors (E24 by default), written to six significant figures.
   exportComponents: (_inputs, outputs) => [
-    { qty: 1, description: "R1 (shunt)", value: `${outputs.piR1Nearest} Ω`, package: resistorPackage(), componentType: "R", placement: "shunt" },
-    { qty: 1, description: "R2 (series)", value: `${outputs.piR2Nearest} Ω`, package: resistorPackage(), componentType: "R", placement: "series" },
-    { qty: 1, description: "R3 (shunt)", value: `${outputs.piR1Nearest} Ω`, package: resistorPackage(), componentType: "R", placement: "shunt" }
+    { qty: 1, description: "R1 (shunt)", value: ohms(outputs.piR1Nearest), package: resistorPackage(), componentType: "R", placement: "shunt" },
+    { qty: 1, description: "R2 (series)", value: ohms(outputs.piR2Nearest), package: resistorPackage(), componentType: "R", placement: "series" },
+    { qty: 1, description: "R3 (shunt)", value: ohms(outputs.piR1Nearest), package: resistorPackage(), componentType: "R", placement: "shunt" }
   ],
   schematicSections: (_inputs, outputs) => [
     {
@@ -5144,7 +5360,9 @@ var stackupBuilder = {
 
 // src/lib/calculators/power/voltage-divider.ts
 function calculateVoltageDivider(inputs) {
-  const { vin, r1, r2 } = inputs;
+  const { vin, eSeries = 0 } = inputs;
+  const r1 = roundToSeries(inputs.r1, eSeries);
+  const r2 = roundToSeries(inputs.r2, eSeries);
   if (r1 + r2 === 0) return { values: {}, errors: ["R1 + R2 must be > 0"] };
   const vout = vin * r2 / (r1 + r2);
   const current = vin / (r1 + r2);
@@ -5211,6 +5429,24 @@ var voltageDivider = {
         { label: "kΩ", factor: 1e3 },
         { label: "MΩ", factor: 1e6 }
       ]
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -5260,7 +5496,7 @@ var voltageDivider = {
   ],
   calculate: calculateVoltageDivider,
   exportComponents: (inputs, outputs) => {
-    const fmtR = (ohm) => ohm >= 1e6 ? `${+(ohm / 1e6).toPrecision(3)} MΩ` : ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} kΩ` : `${ohm} Ω`;
+    const fmtR = (ohm) => ohm >= 1e6 ? `${+(ohm / 1e6).toPrecision(3)} MΩ` : ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} kΩ` : `${+ohm.toPrecision(12)} Ω`;
     return [
       { qty: 1, description: "R1 (top)", value: fmtR(inputs.r1), package: resistorPackage(outputs?.powerR1), componentType: "R", placement: "series" },
       { qty: 1, description: "R2 (bottom)", value: fmtR(inputs.r2), package: resistorPackage(outputs?.powerR2), componentType: "R", placement: "shunt" }
@@ -5285,6 +5521,24 @@ var voltageDivider = {
     ]
   },
   visualization: { type: "circuit-schematic", svgId: "voltage-divider" },
+  examples: [
+    { id: "rail-12v-to-adc-3v3-e24", label: "12 V rail into a 3.3 V ADC, E24", values: { vin: 12, r1: 26400, r2: 1e4, eSeries: 24 } },
+    { id: "logic-5v-to-3v3-e96", label: "5 V logic to a 3.3 V input, E96", values: { vin: 5, r1: 1e4, r2: 19400, eSeries: 96 } },
+    { id: "sense-24v-to-2v5-e12", label: "24 V sense into a 2.5 V ADC, E12", values: { vin: 24, r1: 1e5, r2: 11630, eSeries: 12 } },
+    { id: "mid-supply-bias", label: "Mid-supply bias from 9 V, ideal values", values: { vin: 9, r1: 47e3, r2: 47e3, eSeries: 0 } }
+  ],
+  // C5 (waves/W7.md): the reader's resistors, rounded by `eSeries` in
+  // calculate(); the export's rows are R1 in the line and R2 to ground.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "r1", position: "top" },
+      { ref: "R2", kind: "R", key: "r2", position: "bottom" }
+    ],
+    schematic: { kind: "rows", source: { label: "V_in", value: "vin" } },
+    targets: [{ output: "vout", solveFor: ["r2", "r1"] }],
+    response: { outputs: ["vout", "ratio", "current"] }
+  },
   relatedCalculators: ["ohms-law", "led-resistor"],
   relatedBlogPosts: ["accelerometer-sensitivity", "audio-transformer", "bjt-bias-point"],
   verificationData: [
@@ -5298,28 +5552,30 @@ var voltageDivider = {
 };
 
 // src/lib/calculators/power/led-resistor.ts
+function nearestE242(rExact) {
+  const e24 = [10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56, 62, 68, 75, 82, 91];
+  const decades = [1, 10, 100, 1e3, 1e4, 1e5];
+  const values = [...e24.map((v) => v / 100), ...e24.map((v) => v / 10), ...decades.flatMap((dec) => e24.map((v) => v * dec))];
+  let nearest = rExact;
+  let minErr = Infinity;
+  for (const val of values) {
+    const err = Math.abs(val - rExact) / rExact;
+    if (err < minErr) {
+      minErr = err;
+      nearest = val;
+    }
+  }
+  return nearest;
+}
 function calculateLEDResistor(inputs) {
-  const { vSupply, vForward, iForward } = inputs;
+  const { vSupply, vForward, iForward, eSeries = 24 } = inputs;
   const vDrop = vSupply - vForward;
   if (vDrop <= 0) {
     return { values: {}, errors: ["Supply voltage must be greater than LED forward voltage"] };
   }
   const rExact = vDrop / (iForward / 1e3);
   const power = vDrop * (iForward / 1e3);
-  const e24 = [10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56, 62, 68, 75, 82, 91];
-  const decades = [1, 10, 100, 1e3, 1e4, 1e5];
-  let nearest = rExact;
-  let minErr = Infinity;
-  for (const dec of decades) {
-    for (const v of e24) {
-      const val = v * dec;
-      const err = Math.abs(val - rExact) / rExact;
-      if (err < minErr) {
-        minErr = err;
-        nearest = val;
-      }
-    }
-  }
+  const nearest = Math.round(eSeries) === 24 ? nearestE242(rExact) : roundToSeries(rExact, eSeries);
   const iActual = vDrop / nearest * 1e3;
   const pNearest = vDrop * (iActual / 1e3);
   return {
@@ -5388,14 +5644,32 @@ var ledResistor = {
         { label: "20 mA (standard)", values: { iForward: 20 } },
         { label: "50 mA (high brightness)", values: { iForward: 50 } }
       ]
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 24,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
     { key: "rExact", label: "Exact Resistance", unit: "Ω", precision: 2, primary: true },
-    { key: "rNearest", label: "Nearest E24", unit: "Ω", precision: 0 },
-    { key: "iActual", label: "Actual Current", unit: "mA", precision: 2 },
+    { key: "rNearest", label: "Nearest Series Value", unit: "Ω", precision: 0, tooltip: "The exact resistance rounded to the nearest value of the part series (E24 unless another is chosen); the exact value with ideal values" },
+    { key: "iActual", label: "Actual Current", unit: "mA", precision: 2, tooltip: "The LED current through the series value" },
     { key: "power", label: "Power (exact R)", unit: "W", precision: 4, format: "engineering" },
-    { key: "pNearest", label: "Power (E24 R)", unit: "W", precision: 4, format: "engineering" }
+    { key: "pNearest", label: "Power (series R)", unit: "W", precision: 4, format: "engineering", tooltip: "The power the series value dissipates" }
   ],
   calculate: calculateLEDResistor,
   formula: {
@@ -5407,11 +5681,28 @@ var ledResistor = {
     ]
   },
   visualization: { type: "circuit-schematic", svgId: "led-resistor" },
+  examples: [
+    { id: "red-indicator-5v-e24", label: "Red indicator at 10 mA from 5 V, E24", values: { vSupply: 5, vForward: 1.9, iForward: 10, eSeries: 24 } },
+    { id: "white-led-12v-e12", label: "White LED at 20 mA from 12 V, E12", values: { vSupply: 12, vForward: 3.2, iForward: 20, eSeries: 12 } },
+    { id: "green-low-power-3v3-e96", label: "Green low-power indicator at 2 mA from 3.3 V, E96", values: { vSupply: 3.3, vForward: 2.1, iForward: 2, eSeries: 96 } }
+  ],
+  // C5 (waves/W7.md): the resistor, exact in rExact and fitted in rNearest
+  // (rounded by `eSeries`); the export carries it, the LED is drawn after it.
+  synthesis: {
+    series: "eSeries",
+    parts: [{ ref: "R1", kind: "R", key: "rExact", rounded: "rNearest", position: "series" }],
+    schematic: {
+      kind: "rows",
+      source: { label: "V_s", value: "vSupply" },
+      extra: (i, _v, fmt5) => [{ description: "D1", value: fmt5(i.vForward, "V"), componentType: "LED", placement: "branch", branch: "led", returnNet: "GND" }]
+    },
+    response: { outputs: ["iActual", "pNearest"] }
+  },
   relatedCalculators: ["voltage-divider", "ohms-law"],
   relatedBlogPosts: ["ohms-law", "transistor-switch"],
   exportComponents: (_inputs, outputs) => {
     const r = outputs?.rNearest ?? 0;
-    const fmtR = (ohm) => ohm >= 1e6 ? `${+(ohm / 1e6).toPrecision(3)} MΩ` : ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} kΩ` : `${ohm} Ω`;
+    const fmtR = (ohm) => ohm >= 1e6 ? `${+(ohm / 1e6).toPrecision(3)} MΩ` : ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} kΩ` : `${+ohm.toPrecision(12)} Ω`;
     return [
       { qty: 1, description: "R (current limiting)", value: fmtR(r), package: resistorPackage(outputs?.pNearest), componentType: "R", placement: "series" }
     ];
@@ -5426,11 +5717,57 @@ var ledResistor = {
   ]
 };
 
+// src/lib/calculators/power/converter-parts.ts
+var E12 = [1, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2];
+function e12AtOrAbove(value) {
+  if (!(value > 0) || !Number.isFinite(value)) return value;
+  const exponent = Math.floor(Math.log10(value));
+  for (let e = exponent; e <= exponent + 1; e++) {
+    for (const b of E12) {
+      const v = b * Math.pow(10, e);
+      if (v >= value * (1 - 1e-9)) return v;
+    }
+  }
+  return value;
+}
+var MOSFET_VDS = [12, 20, 25, 30, 40, 60, 80, 100, 150, 200, 250, 300, 400, 500, 600, 650, 800, 900, 1e3, 1200, 1500, 1700];
+var CAPACITOR_V = [2.5, 4, 6.3, 10, 16, 25, 35, 50, 63, 80, 100, 160, 200, 250, 400, 450, 630, 1e3];
+var VOLTAGE_DERATING = 1.5;
+function ratingAtOrAbove(needed, ladder) {
+  for (const r of ladder) if (r >= needed * (1 - 1e-9)) return r;
+  return needed;
+}
+function corners(nominal, min, max) {
+  const lo = min > 0 ? min : nominal;
+  const hi = max > 0 ? max : nominal;
+  return [.../* @__PURE__ */ new Set([lo, nominal, hi])];
+}
+function worstOver(points, f) {
+  let best = { value: -Infinity, at: NaN };
+  for (const v of points) {
+    const y = f(v);
+    if (y > best.value) best = { value: y, at: v };
+  }
+  return best;
+}
+
 // src/lib/calculators/power/buck-converter.ts
+var sig3 = (v) => String(Number(v.toPrecision(3)));
+var LOSS_DEFAULTS = { rdsOnHigh: 12, rdsOnLow: 6, tSwitch: 20, qg: 23, vGate: 5, tDead: 20, vBody: 0.7, dcr: 20, coreLoss: 50, esrOut: 3, esrIn: 3, coutEach: 22 };
 function calculateBuckConverter(inputs) {
-  const { vin, vout, iout, fsw, deltaIL, deltaVout } = inputs;
+  const { vin, vout, iout, fsw, deltaIL, deltaVout, deltaVin = 1, vinMin = 0, vinMax = 0 } = inputs;
+  const p = { ...LOSS_DEFAULTS, ...Object.fromEntries(Object.keys(LOSS_DEFAULTS).filter((k) => inputs[k] !== void 0).map((k) => [k, inputs[k]])) };
   if (vout >= vin) {
     return { values: {}, errors: ["Output voltage must be less than input voltage"] };
+  }
+  if (vinMin > 0 && vinMin > vin) {
+    return { values: {}, errors: ["Minimum input voltage must not be above the nominal input voltage"] };
+  }
+  if (vinMax > 0 && vinMax < vin) {
+    return { values: {}, errors: ["Maximum input voltage must not be below the nominal input voltage"] };
+  }
+  if (vinMin > 0 && vout >= vinMin) {
+    return { values: {}, errors: ["Output voltage must be less than the minimum input voltage"] };
   }
   const D = vout / vin;
   const fsw_Hz = fsw * 1e3;
@@ -5440,17 +5777,85 @@ function calculateBuckConverter(inputs) {
   const deltaVout_V = deltaVout / 100 * vout;
   const Cout_min = deltaIL_A / (8 * fsw_Hz * deltaVout_V);
   const coutUF = Cout_min * 1e6;
-  const Cin_min = iout * D * (1 - D) / (fsw_Hz * deltaVout_V);
+  const Cin_min = iout * D * (1 - D) / (fsw_Hz * (deltaVin / 100) * vin);
   const cinUF = Cin_min * 1e6;
   const ilPeak = iout + deltaIL_A / 2;
   const dutyCycle = D * 100;
+  const vins = corners(vin, vinMin, vinMax);
+  const lo = vins[0];
+  const hi = vins[vins.length - 1];
+  const duty = (v) => vout / v;
+  const inductorMinWorstUH = (hi - vout) * duty(hi) / (fsw_Hz * deltaIL_A) * 1e6;
+  const inductorChosenUH = e12AtOrAbove(inductorMinWorstUH);
+  const L = inductorChosenUH * 1e-6;
+  const ripple = (v) => (v - vout) * duty(v) / (fsw_Hz * L);
+  const ilRms2 = (v) => iout * iout + ripple(v) * ripple(v) / 12;
+  const rippleWorst = worstOver(vins, ripple);
+  const peakWorst = worstOver(vins, (v) => iout + ripple(v) / 2);
+  const coutMinWorstUF = rippleWorst.value / (8 * fsw_Hz * deltaVout_V) * 1e6;
+  const coutCount = Math.max(1, Math.ceil(coutMinWorstUF / p.coutEach - 1e-9));
+  const coutTotal = coutCount * p.coutEach * 1e-6;
+  const outRipple = (v) => ripple(v) / (8 * fsw_Hz * coutTotal) + ripple(v) * (p.esrOut / 1e3) / coutCount;
+  const outRippleWorst = worstOver(vins, outRipple);
+  const cinRms = worstOver(vins, (v) => iout * Math.sqrt(duty(v) * (1 - duty(v))));
+  const cinMin = worstOver(vins, (v) => iout * duty(v) * (1 - duty(v)) / (fsw_Hz * (deltaVin / 100) * v) * 1e6);
+  const q1Rms = worstOver(vins, (v) => Math.sqrt(duty(v) * ilRms2(v)));
+  const q2Rms = worstOver(vins, (v) => Math.sqrt((1 - duty(v)) * ilRms2(v)));
+  const rippleNom = ripple(vin);
+  const rms2 = ilRms2(vin);
+  const pDcr = rms2 * p.dcr / 1e3;
+  const pCore = p.coreLoss / 1e3;
+  const pHsConduction = D * rms2 * p.rdsOnHigh / 1e3;
+  const pLsConduction = (1 - D) * rms2 * p.rdsOnLow / 1e3;
+  const pHsSwitching = 0.5 * vin * iout * p.tSwitch * 1e-9 * fsw_Hz;
+  const pGateDrive = p.qg * 1e-9 * p.vGate * fsw_Hz;
+  const pDeadTime = p.vBody * iout * 2 * p.tDead * 1e-9 * fsw_Hz;
+  const pCapEsr = rippleNom * rippleNom / 12 * (p.esrOut / 1e3) / coutCount + iout * iout * D * (1 - D) * (p.esrIn / 1e3);
+  const pTotal = pDcr + pCore + pHsConduction + pLsConduction + pHsSwitching + pGateDrive + pDeadTime + pCapEsr;
+  const outputPower = vout * iout;
   return {
     values: {
       dutyCycle,
       inductorUH,
       coutUF,
       cinUF,
-      ilPeak
+      ilPeak,
+      dutyMin: duty(hi) * 100,
+      dutyMax: duty(lo) * 100,
+      inductorMinWorstUH,
+      inductorChosenUH,
+      rippleNomA: rippleNom,
+      rippleWorstA: rippleWorst.value,
+      rippleWorstVin: rippleWorst.at,
+      ilPeakWorst: peakWorst.value,
+      ilPeakWorstVin: peakWorst.at,
+      coutCount,
+      coutTotalUF: coutCount * p.coutEach,
+      outputRippleMV: outRippleWorst.value * 1e3,
+      outputRippleVin: outRippleWorst.at,
+      outputRipplePct: outRippleWorst.value / vout * 100,
+      cinMinWorstUF: cinMin.value,
+      cinMinWorstVin: cinMin.at,
+      cinRmsA: cinRms.value,
+      cinRmsVin: cinRms.at,
+      q1RmsA: q1Rms.value,
+      q1RmsVin: q1Rms.at,
+      q2RmsA: q2Rms.value,
+      q2RmsVin: q2Rms.at,
+      vdsRating: ratingAtOrAbove(VOLTAGE_DERATING * hi, MOSFET_VDS),
+      cinVoltageRating: ratingAtOrAbove(VOLTAGE_DERATING * hi, CAPACITOR_V),
+      coutVoltageRating: ratingAtOrAbove(VOLTAGE_DERATING * vout, CAPACITOR_V),
+      lossDcr: pDcr,
+      lossCore: pCore,
+      lossHsConduction: pHsConduction,
+      lossLsConduction: pLsConduction,
+      lossHsSwitching: pHsSwitching,
+      lossGateDrive: pGateDrive,
+      lossDeadTime: pDeadTime,
+      lossCapEsr: pCapEsr,
+      lossTotal: pTotal,
+      outputPower,
+      efficiency: outputPower / (outputPower + pTotal) * 100
     }
   };
 }
@@ -5528,7 +5933,61 @@ var buckConverter = {
       min: 0.1,
       max: 10,
       tooltip: "Output voltage ripple as % of Vout. Typical: 0.5-2%."
-    }
+    },
+    {
+      key: "deltaVin",
+      label: "Input Voltage Ripple",
+      symbol: "ΔV_{in}",
+      unit: "%",
+      defaultValue: 1,
+      min: 0.1,
+      max: 10,
+      tooltip: "Input voltage ripple as % of Vin, which the input capacitor holds. Typical: 0.5-2%."
+    },
+    {
+      key: "vinMin",
+      label: "Minimum Input Voltage",
+      symbol: "V_{in,min}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      max: 100,
+      tooltip: "The lowest input the converter must work from; 0 for the nominal. The parts are sized and the stresses taken over the range.",
+      group: "Operating envelope"
+    },
+    {
+      key: "vinMax",
+      label: "Maximum Input Voltage",
+      symbol: "V_{in,max}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      max: 100,
+      tooltip: "The highest input the converter must work from; 0 for the nominal.",
+      group: "Operating envelope"
+    },
+    {
+      key: "coutEach",
+      label: "Output Capacitor (each)",
+      symbol: "C_{out,each}",
+      unit: "μF",
+      defaultValue: 22,
+      min: 0.1,
+      max: 1e4,
+      tooltip: "One output capacitor; the bank is as many in parallel as the ripple target needs at the worst ripple current.",
+      group: "Operating envelope"
+    },
+    { key: "rdsOnHigh", label: "High-Side R_DS(on)", symbol: "R_{DS(on),H}", unit: "mΩ", defaultValue: 12, min: 0.1, max: 1e4, group: "Loss model", tooltip: "The high-side FET's on-resistance at its operating temperature." },
+    { key: "rdsOnLow", label: "Low-Side R_DS(on)", symbol: "R_{DS(on),L}", unit: "mΩ", defaultValue: 6, min: 0.1, max: 1e4, group: "Loss model", tooltip: "The low-side (synchronous) FET's on-resistance at its operating temperature." },
+    { key: "tSwitch", label: "Switching Edges (t_r + t_f)", symbol: "t_{r+f}", unit: "ns", defaultValue: 20, min: 0, max: 1e4, group: "Loss model", tooltip: "The high side's rise and fall times added: the switching loss is ½·V_in·I_out·(t_r + t_f)·f_sw." },
+    { key: "qg", label: "Total Gate Charge", symbol: "Q_{g}", unit: "nC", defaultValue: 23, min: 0, max: 1e4, group: "Loss model", tooltip: "Both FETs' gate charge at the drive voltage: the gate drive takes Q_g·V_g·f_sw." },
+    { key: "vGate", label: "Gate Drive Voltage", symbol: "V_{g}", unit: "V", defaultValue: 5, min: 1, max: 20, group: "Loss model" },
+    { key: "tDead", label: "Dead Time (each edge)", symbol: "t_{d}", unit: "ns", defaultValue: 20, min: 0, max: 1e3, group: "Loss model", tooltip: "The time both FETs are off at each edge, when the low side's body diode carries the current." },
+    { key: "vBody", label: "Body Diode Forward Voltage", symbol: "V_{F}", unit: "V", defaultValue: 0.7, min: 0, max: 2, group: "Loss model" },
+    { key: "dcr", label: "Inductor DCR", symbol: "DCR", unit: "mΩ", defaultValue: 20, min: 0, max: 1e5, group: "Loss model", tooltip: "The inductor's winding resistance." },
+    { key: "coreLoss", label: "Inductor Core Loss", symbol: "P_{core}", unit: "mW", defaultValue: 50, min: 0, max: 1e5, group: "Loss model", tooltip: "From the inductor's datasheet at this ripple and frequency." },
+    { key: "esrOut", label: "Output Capacitor ESR (each)", symbol: "ESR_{out}", unit: "mΩ", defaultValue: 3, min: 0, max: 1e5, group: "Loss model" },
+    { key: "esrIn", label: "Input Capacitor ESR", symbol: "ESR_{in}", unit: "mΩ", defaultValue: 3, min: 0, max: 1e5, group: "Loss model" }
   ],
   outputs: [
     {
@@ -5570,6 +6029,52 @@ var buckConverter = {
       symbol: "IL_peak",
       unit: "A",
       precision: 3
+    },
+    // C11 (waves/W7.md): the envelope's results, each where it is largest and the input it occurs at.
+    { key: "dutyMin", label: "Minimum Duty Cycle", symbol: "D_{min}", unit: "%", precision: 2, tooltip: "At the maximum input voltage" },
+    { key: "dutyMax", label: "Maximum Duty Cycle", symbol: "D_{max}", unit: "%", precision: 2, tooltip: "At the minimum input voltage" },
+    { key: "inductorMinWorstUH", label: "Minimum Inductance over the Input Range", symbol: "L_{min}", unit: "μH", precision: 3, tooltip: "For the ripple target where the ripple is largest, at the maximum input voltage" },
+    { key: "inductorChosenUH", label: "Chosen Inductor", symbol: "L_{1}", unit: "μH", precision: 3, tooltip: "The E12 value at or above the minimum inductance; every current below is the chosen part's" },
+    { key: "rippleNomA", label: "Inductor Ripple", symbol: "ΔI_{L}", unit: "A", precision: 3, tooltip: "Peak to peak, at the nominal input, with the chosen inductor" },
+    { key: "rippleWorstA", label: "Inductor Ripple, Worst Case", symbol: "ΔI_{L,max}", unit: "A", precision: 3 },
+    { key: "rippleWorstVin", label: "Input at the Worst Ripple", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "ilPeakWorst", label: "Inductor Peak Current, Worst Case", symbol: "I_{L,pk}", unit: "A", precision: 3, tooltip: "The inductor's saturation current must be at least this" },
+    { key: "ilPeakWorstVin", label: "Input at the Worst Peak", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "coutCount", label: "Output Capacitors", symbol: "n_{out}", unit: "", precision: 0, display: { integer: true }, tooltip: "How many of the chosen output capacitor, in parallel" },
+    { key: "coutTotalUF", label: "Output Capacitance (bank)", symbol: "C_{out}", unit: "μF", precision: 3 },
+    { key: "outputRippleMV", label: "Output Ripple, Worst Case", symbol: "ΔV_{out}", unit: "mV", precision: 3, tooltip: "Peak to peak: the bank's charge ripple plus its ESR ripple, added (an upper bound)" },
+    { key: "outputRippleVin", label: "Input at the Worst Output Ripple", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "outputRipplePct", label: "Output Ripple, % of Vout", unit: "%", precision: 3 },
+    { key: "cinMinWorstUF", label: "Minimum Input Capacitance over the Input Range", symbol: "C_{in,min}", unit: "μF", precision: 3 },
+    { key: "cinMinWorstVin", label: "Input at the Largest Input Capacitance", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "cinRmsA", label: "Input Capacitor RMS Current, Worst Case", symbol: "I_{Cin,rms}", unit: "A", precision: 3 },
+    { key: "cinRmsVin", label: "Input at the Worst Input RMS Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "q1RmsA", label: "High-Side FET RMS Current, Worst Case", symbol: "I_{Q1,rms}", unit: "A", precision: 3 },
+    { key: "q1RmsVin", label: "Input at the Worst High-Side Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "q2RmsA", label: "Low-Side FET RMS Current, Worst Case", symbol: "I_{Q2,rms}", unit: "A", precision: 3 },
+    { key: "q2RmsVin", label: "Input at the Worst Low-Side Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "vdsRating", label: "FET Drain-Source Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the maximum input" },
+    { key: "cinVoltageRating", label: "Input Capacitor Voltage Rating", symbol: "V_{Cin}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the maximum input" },
+    { key: "coutVoltageRating", label: "Output Capacitor Voltage Rating", symbol: "V_{Cout}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the output" },
+    // C11: the losses at the nominal input and load, and the efficiency.
+    { key: "lossDcr", label: "Inductor DCR Loss", symbol: "P_{DCR}", unit: "W", precision: 4 },
+    { key: "lossCore", label: "Inductor Core Loss", symbol: "P_{core}", unit: "W", precision: 4 },
+    { key: "lossHsConduction", label: "High-Side Conduction Loss", symbol: "P_{cond,H}", unit: "W", precision: 4 },
+    { key: "lossLsConduction", label: "Low-Side Conduction Loss", symbol: "P_{cond,L}", unit: "W", precision: 4 },
+    { key: "lossHsSwitching", label: "High-Side Switching Loss", symbol: "P_{sw}", unit: "W", precision: 4 },
+    { key: "lossGateDrive", label: "Gate Drive Loss", symbol: "P_{gate}", unit: "W", precision: 4 },
+    { key: "lossDeadTime", label: "Dead-Time Loss", symbol: "P_{dead}", unit: "W", precision: 4 },
+    { key: "lossCapEsr", label: "Capacitor ESR Loss", symbol: "P_{ESR}", unit: "W", precision: 4 },
+    { key: "lossTotal", label: "Total Loss", symbol: "P_{loss}", unit: "W", precision: 4 },
+    { key: "outputPower", label: "Output Power", symbol: "P_{out}", unit: "W", precision: 3 },
+    {
+      key: "efficiency",
+      label: "Efficiency",
+      symbol: "η",
+      unit: "%",
+      precision: 2,
+      tooltip: "At the nominal input and load, from the loss model",
+      thresholds: { good: { min: 90 }, warning: { min: 80, max: 90 }, danger: { min: 80 } }
     }
   ],
   calculate: calculateBuckConverter,
@@ -5585,6 +6090,77 @@ var buckConverter = {
     reference: 'Erickson & Maksimovic, "Fundamentals of Power Electronics" 3rd ed.'
   },
   visualization: { type: "none" },
+  examples: [
+    { id: "pol-12v-to-3v3", label: "12 V ± 10 % to 3.3 V at 3 A, 500 kHz", values: { vin: 12, vinMin: 10.8, vinMax: 13.2, vout: 3.3, iout: 3, fsw: 500, deltaIL: 30, deltaVout: 0.2, deltaVin: 0.5 } },
+    { id: "automotive-12v-to-5v", label: "Automotive 9–16 V to 5 V at 2 A, 400 kHz", values: { vin: 13.5, vinMin: 9, vinMax: 16, vout: 5, iout: 2, fsw: 400, deltaIL: 30, deltaVout: 0.5, deltaVin: 1 } },
+    { id: "telecom-48v-to-12v", label: "36–60 V to 12 V at 5 A, 250 kHz", values: { vin: 48, vinMin: 36, vinMax: 60, vout: 12, iout: 5, fsw: 250, deltaIL: 30, deltaVout: 0.5, deltaVin: 1, rdsOnHigh: 8, rdsOnLow: 8, tSwitch: 30, qg: 40, vGate: 10, dcr: 10, coreLoss: 150, esrOut: 5, esrIn: 5, coutEach: 47 } }
+  ],
+  // C11 (waves/W7.md): the input range, the results at their worst corners, the parts and their stresses.
+  envelope: {
+    ranges: [{ input: "vin", min: "vinMin", max: "vinMax" }],
+    results: [
+      { output: "dutyCycle", note: { range: ["dutyMin", "dutyMax"] } },
+      { output: "ilPeakWorst", note: { corner: { input: "vin", at: "ilPeakWorstVin" } } },
+      { output: "rippleNomA", note: { worst: "rippleWorstA", input: "vin", at: "rippleWorstVin" } },
+      { output: "outputRippleMV", note: { corner: { input: "vin", at: "outputRippleVin" } } }
+    ],
+    parts: [
+      { ref: "L1", role: "inductor", value: { key: "inductorChosenUH", calc: "inductorMinWorstUH" }, stresses: [{ symbol: "I_{sat}", sense: "min", key: "ilPeakWorst", at: { input: "vin", key: "ilPeakWorstVin" } }, { symbol: "DCR", sense: "max", key: "dcr" }] },
+      { ref: "C_{out}", role: "output-capacitor", value: { key: "coutEach", count: "coutCount" }, stresses: [{ symbol: "V", sense: "min", key: "coutVoltageRating" }, { symbol: "ESR", sense: "max", key: "esrOut" }] },
+      { ref: "C_{in}", role: "input-capacitor", value: { key: "cinMinWorstUF", atLeast: true }, stresses: [{ symbol: "I_{rms}", sense: "min", key: "cinRmsA", at: { input: "vin", key: "cinRmsVin" } }, { symbol: "V", sense: "min", key: "cinVoltageRating" }] },
+      { ref: "Q1", role: "high-side", value: { key: "rdsOnHigh" }, stresses: [{ symbol: "V_{DS}", sense: "min", key: "vdsRating" }, { symbol: "I_{rms}", sense: "min", key: "q1RmsA", at: { input: "vin", key: "q1RmsVin" } }] },
+      { ref: "Q2", role: "low-side", value: { key: "rdsOnLow" }, stresses: [{ symbol: "V_{DS}", sense: "min", key: "vdsRating" }, { symbol: "I_{rms}", sense: "min", key: "q2RmsA", at: { input: "vin", key: "q2RmsVin" } }] }
+    ],
+    // Ideal switching at the nominal input: the switch node at V_in for D·T, the inductor current a triangle about I_out.
+    waveforms: {
+      periods: 2.5,
+      traces: (i, v) => {
+        const T = 1 / (i.fsw * 1e3);
+        const ton = v.dutyCycle / 100 * T;
+        const lo = i.iout - v.rippleNomA / 2;
+        const hi = i.iout + v.rippleNomA / 2;
+        const end = 2.5 * T;
+        const il = (t) => {
+          const ph = t - Math.floor(t / T) * T;
+          return ph < ton ? lo + (hi - lo) * ph / ton : hi - (hi - lo) * (ph - ton) / (T - ton);
+        };
+        const edges = [0, T, 2 * T].flatMap((t0) => [t0, t0 + ton]).filter((t) => t < end);
+        const sw = edges.flatMap((t) => {
+          const ph = t - Math.floor(t / T) * T;
+          return ph === 0 ? [[t, 0], [t, i.vin]] : [[t, i.vin], [t, 0]];
+        }).slice(1);
+        sw.unshift([0, i.vin]);
+        sw.push([end, end - 2 * T < ton ? i.vin : 0]);
+        return [
+          { id: "sw", symbol: "V_{SW}", unit: "V", points: sw, spans: [{ symbol: "t_{on}", axis: "x", from: 0, to: ton }] },
+          { id: "il", symbol: "I_{L}", unit: "A", points: [...edges.map((t) => [t, il(t)]), [end, il(end)]], spans: [{ symbol: "ΔI_{L}", axis: "y", from: lo, to: hi }] }
+        ];
+      }
+    },
+    bom: (i, v) => [
+      { qty: 1, description: "L1 (power inductor, shielded)", value: `${sig3(v.inductorChosenUH)} µH, Isat ≥ ${sig3(v.ilPeakWorst)} A, DCR ≤ ${sig3(i.dcr)} mΩ`, package: inductorPackage(v.inductorChosenUH * 1e-6, { currentA: v.ilPeakWorst }) },
+      { qty: v.coutCount, description: "C_out (output capacitor, X7R)", value: `${sig3(i.coutEach)} µF, ≥ ${v.coutVoltageRating} V, ESR ≤ ${sig3(i.esrOut)} mΩ`, package: capacitorPackage(i.coutEach * 1e-6, { workingVolts: i.vout }) },
+      { qty: 1, description: "C_in (input capacitor, X7R)", value: `≥ ${sig3(v.cinMinWorstUF)} µF, ≥ ${v.cinVoltageRating} V, Irms ≥ ${sig3(v.cinRmsA)} A`, package: capacitorPackage(v.cinMinWorstUF * 1e-6, { workingVolts: v.cinVoltageRating / 1.5 }) },
+      { qty: 1, description: "Q1 (high-side N-channel MOSFET)", value: `RDS(on) ≤ ${sig3(i.rdsOnHigh)} mΩ, VDS ≥ ${v.vdsRating} V, Irms ≥ ${sig3(v.q1RmsA)} A`, package: "" },
+      { qty: 1, description: "Q2 (low-side N-channel MOSFET)", value: `RDS(on) ≤ ${sig3(i.rdsOnLow)} mΩ, VDS ≥ ${v.vdsRating} V, Irms ≥ ${sig3(v.q2RmsA)} A`, package: "" }
+    ]
+  },
+  lossModel: {
+    inputs: ["rdsOnHigh", "rdsOnLow", "tSwitch", "qg", "vGate", "tDead", "vBody", "dcr", "coreLoss", "esrOut", "esrIn"],
+    efficiency: "efficiency",
+    total: "lossTotal",
+    outputPower: "outputPower",
+    losses: [
+      { output: "lossDcr", lever: "dcr" },
+      { output: "lossHsSwitching", lever: "edges" },
+      { output: "lossGateDrive", lever: "gate-charge" },
+      { output: "lossCore", lever: "core" },
+      { output: "lossDeadTime", lever: "dead-time" },
+      { output: "lossLsConduction", lever: "rdson-low" },
+      { output: "lossHsConduction", lever: "rdson-high" },
+      { output: "lossCapEsr", lever: "esr" }
+    ]
+  },
   relatedCalculators: ["ldo-thermal", "voltage-divider", "rc-snubber"],
   relatedTools: ["smps-control-loop", "magnetics-optimizer"],
   relatedBlogPosts: ["buck-converter-design-guide", "magnetics-optimizer-transformer-design", "smps-control-loop-stability-buck-converter"],
@@ -6099,42 +6675,6 @@ var batteryLife = {
   ]
 };
 
-// src/lib/e-series.ts
-var E12_BASE = [1, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2];
-var E24_BASE = [1, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.7, 3, 3.3, 3.6, 3.9, 4.3, 4.7, 5.1, 5.6, 6.2, 6.8, 7.5, 8.2, 9.1];
-var E48_BASE = [1, 1.05, 1.1, 1.15, 1.21, 1.27, 1.33, 1.4, 1.47, 1.54, 1.62, 1.69, 1.78, 1.87, 1.96, 2.05, 2.15, 2.26, 2.37, 2.49, 2.61, 2.74, 2.87, 3.01, 3.16, 3.32, 3.48, 3.65, 3.83, 4.02, 4.22, 4.42, 4.64, 4.87, 5.11, 5.36, 5.62, 5.9, 6.19, 6.49, 6.81, 7.15, 7.5, 7.87, 8.25, 8.66, 9.09, 9.53];
-var E96_BASE = [1, 1.02, 1.05, 1.07, 1.1, 1.13, 1.15, 1.18, 1.21, 1.24, 1.27, 1.3, 1.33, 1.37, 1.4, 1.43, 1.47, 1.5, 1.54, 1.58, 1.62, 1.65, 1.69, 1.74, 1.78, 1.82, 1.87, 1.91, 1.96, 2, 2.05, 2.1, 2.15, 2.21, 2.26, 2.32, 2.37, 2.43, 2.49, 2.55, 2.61, 2.67, 2.74, 2.8, 2.87, 2.94, 3.01, 3.09, 3.16, 3.24, 3.32, 3.4, 3.48, 3.57, 3.65, 3.74, 3.83, 3.92, 4.02, 4.12, 4.22, 4.32, 4.42, 4.53, 4.64, 4.75, 4.87, 4.99, 5.11, 5.23, 5.36, 5.49, 5.62, 5.76, 5.9, 6.04, 6.19, 6.34, 6.49, 6.65, 6.81, 6.98, 7.15, 7.32, 7.5, 7.68, 7.87, 8.06, 8.25, 8.45, 8.66, 8.87, 9.09, 9.31, 9.53, 9.76];
-var SERIES_MAP = {
-  E12: E12_BASE,
-  E24: E24_BASE,
-  E48: E48_BASE,
-  E96: E96_BASE
-};
-function snapToESeries(value, series) {
-  if (value <= 0) return { snapped: 0, error: 0 };
-  const base = SERIES_MAP[series];
-  const exponent = Math.floor(Math.log10(value));
-  const mantissa = value / Math.pow(10, exponent);
-  let bestIdx = 0;
-  let bestDist = Infinity;
-  for (let i = 0; i < base.length; i++) {
-    const dist = Math.abs(mantissa - base[i]);
-    if (dist < bestDist) {
-      bestDist = dist;
-      bestIdx = i;
-    }
-  }
-  const distToNext = Math.abs(mantissa - 10);
-  let snapped;
-  if (distToNext < bestDist) {
-    snapped = Math.pow(10, exponent + 1);
-  } else {
-    snapped = base[bestIdx] * Math.pow(10, exponent);
-  }
-  const error = (snapped - value) / value * 100;
-  return { snapped, error };
-}
-
 // src/lib/calculators/signal/filter-designer.ts
 function butterworthG(n) {
   return Array.from({ length: n }, (_, i) => 2 * Math.sin((2 * i + 1) * Math.PI / (2 * n)));
@@ -6197,6 +6737,44 @@ function ladderValues(g, filterType, omega, z0, q) {
   });
   return { C: C10, L, bpL, bpC };
 }
+function filterLadder(filterType, order, values) {
+  const out = [];
+  for (let k = 0; k < order; k++) {
+    const m = Math.floor(k / 2);
+    const odd = k % 2 === 0;
+    const c2 = (values[C_KEYS[m]] ?? 0) * 1e-9;
+    const l = (values[L_KEYS[m]] ?? 0) * 1e-6;
+    if (filterType === 1) out.push(odd ? series("C", { c: c2 }) : shunt("L", { l }));
+    else if (filterType === 2) {
+      out.push(odd ? shunt("LC", { c: c2, l: (values[BP_L_KEYS[m]] ?? 0) * 1e-6 }) : series("LC", { l, c: (values[BP_C_KEYS[m]] ?? 0) * 1e-9 }));
+    } else out.push(odd ? shunt("C", { c: c2 }) : series("L", { l }));
+  }
+  return out;
+}
+function loadFor(isChebyshev, order, filterType, z0) {
+  if (!isChebyshev || order % 2 !== 0) return z0;
+  const gl = chebyshevEvenLoadG(CHEBYSHEV_RIPPLE_DB);
+  return filterType === 1 ? gl * z0 : z0 / gl;
+}
+function prototypeFrequency(filterType, fc, q, omega) {
+  if (filterType === 1) return fc / omega;
+  if (filterType === 2) {
+    const h = omega / (2 * q);
+    return fc * (h + Math.sqrt(h * h + 1));
+  }
+  return fc * omega;
+}
+function builtResponse(ladder, filterType, fc, q, rs, rl) {
+  const edges = halfPowerEdges(ladder, fc, rs, rl);
+  const pb = prototypeFrequency(filterType, fc, q, 0.8);
+  const [lo, hi] = filterType === 1 ? [pb, 100 * fc] : filterType === 2 ? [fc * fc / pb, pb] : [fc / 100, pb];
+  const stop = prototypeFrequency(filterType, fc, q, 2);
+  return {
+    edges,
+    passbandLoss: worstLossDb(ladder, lo, hi, rs, rl),
+    stopband: -10 * Math.log10(transducerGain(ladder, stop, rs, rl))
+  };
+}
 function calculateFilterDesigner(inputs) {
   const { responseType = 0, filterType, fc, order, impedance, qFactor: qFactor2, eSeries = 0 } = inputs;
   if (fc <= 0) {
@@ -6228,6 +6806,9 @@ function calculateFilterDesigner(inputs) {
     fLow_Hz = fc - bandwidth_Hz / 2;
     fHigh_Hz = fc + bandwidth_Hz / 2;
   }
+  const rl = loadFor(isChebyshev, clampedOrder, type, impedance);
+  const q = qFactor2 > 0 ? qFactor2 : 1;
+  const idealParts = { ...Object.fromEntries(C_KEYS.map((k, i) => [k, C10[i]])), ...Object.fromEntries(L_KEYS.map((k, i) => [k, L[i]])), ...Object.fromEntries(BP_L_KEYS.map((k, i) => [k, bpL[i]])), ...Object.fromEntries(BP_C_KEYS.map((k, i) => [k, bpC[i]])) };
   let maxComponentError = 0;
   let fcShiftPercent = 0;
   const eSeriesName = `E${Math.round(eSeries)}`;
@@ -6242,7 +6823,6 @@ function calculateFilterDesigner(inputs) {
     for (const arr of [C10, L, bpL, bpC]) {
       for (let i = 0; i < arr.length; i++) arr[i] = snapValue(arr[i]);
     }
-    fcShiftPercent = maxComponentError * 0.5;
   }
   const values = {};
   C_KEYS.forEach((k, i) => {
@@ -6257,6 +6837,12 @@ function calculateFilterDesigner(inputs) {
   BP_C_KEYS.forEach((k, i) => {
     values[k] = bpC[i];
   });
+  const built = builtResponse(filterLadder(type, clampedOrder, values), type, fc, q, impedance, rl);
+  const edgeOf = (e) => type === 1 ? e.lower : type === 2 ? Math.sqrt(e.lower * e.upper) : e.upper;
+  if (maxComponentError > 0) {
+    const ideal = edgeOf(halfPowerEdges(filterLadder(type, clampedOrder, idealParts), fc, impedance, rl));
+    if (ideal > 0) fcShiftPercent = (edgeOf(built.edges) / ideal - 1) * 100;
+  }
   const warnings = isChebyshev && clampedOrder % 2 === 0 ? [chebyshevLoadWarning(clampedOrder, type, impedance)] : [];
   return {
     ...warnings.length ? { warnings } : {},
@@ -6287,7 +6873,13 @@ function calculateFilterDesigner(inputs) {
       fLow_Hz,
       fHigh_Hz,
       maxComponentError,
-      fcShiftPercent
+      fcShiftPercent,
+      loadImpedance: rl,
+      cutoffBuilt_Hz: type === 2 ? 0 : edgeOf(built.edges),
+      fLowBuilt_Hz: type === 2 ? built.edges.lower : 0,
+      fHighBuilt_Hz: type === 2 ? built.edges.upper : 0,
+      passbandLoss_dB: built.passbandLoss,
+      stopbandBuilt_dB: built.stopband
     }
   };
 }
@@ -6338,8 +6930,8 @@ var filterDesigner = {
       unit: "Hz",
       defaultValue: 1e3,
       min: 1,
-      max: 1e7,
-      tooltip: "Filter cutoff frequency (-3dB point)",
+      max: 1e9,
+      tooltip: "The design frequency: the −3 dB point of a Butterworth, the edge of the 0.5 dB ripple band of a Chebyshev, the centre of a band-pass",
       presets: [
         { label: "100 Hz", values: { fc: 100 } },
         { label: "1 kHz", values: { fc: 1e3 } },
@@ -6380,14 +6972,14 @@ var filterDesigner = {
     },
     {
       key: "eSeries",
-      label: "E-Series Snapping",
+      label: "Part Series",
       symbol: "E",
       unit: "",
       defaultValue: 0,
       min: 0,
       max: 96,
       step: 1,
-      tooltip: "Snaps component values to the nearest standard value.",
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
       options: [
         { value: 0, label: "Ideal values" },
         { value: 12, label: "E12 (10%)" },
@@ -6621,11 +7213,63 @@ var filterDesigner = {
     },
     {
       key: "fcShiftPercent",
-      label: "Est. Cutoff Shift",
+      label: "Cutoff Shift",
       symbol: "Δf_c",
       unit: "%",
-      precision: 1,
-      tooltip: "Estimated shift in -3dB frequency due to component rounding"
+      precision: 2,
+      signed: "explicit",
+      tooltip: "How far rounding the parts moved the built ladder's −3 dB frequency (a band-pass: the centre of its −3 dB band) from the ideal ladder's"
+    },
+    {
+      key: "loadImpedance",
+      label: "Load Impedance",
+      symbol: "R_{L}",
+      unit: "Ω",
+      precision: 2,
+      tooltip: "The load the ladder is designed for: Z₀, except an even-order Chebyshev, which needs Z₀/g_{N+1} (g_{N+1}·Z₀ for high-pass)"
+    },
+    {
+      key: "cutoffBuilt_Hz",
+      label: "Cutoff as Built (−3 dB)",
+      symbol: "f_{−3dB}",
+      unit: "Hz",
+      precision: 4,
+      display: { sig: 6 },
+      tooltip: "The −3 dB frequency of the ladder these part values build, between Z₀ and its load (low- and high-pass; 0 for band-pass)"
+    },
+    {
+      key: "fLowBuilt_Hz",
+      label: "Lower −3 dB Frequency as Built",
+      symbol: "f_{L,b}",
+      unit: "Hz",
+      precision: 4,
+      display: { sig: 6 },
+      tooltip: "Band-pass only: the lower −3 dB frequency of the ladder these part values build"
+    },
+    {
+      key: "fHighBuilt_Hz",
+      label: "Upper −3 dB Frequency as Built",
+      symbol: "f_{H,b}",
+      unit: "Hz",
+      precision: 4,
+      display: { sig: 6 },
+      tooltip: "Band-pass only: the upper −3 dB frequency of the ladder these part values build"
+    },
+    {
+      key: "passbandLoss_dB",
+      label: "Worst Passband Loss",
+      symbol: "IL_{max}",
+      unit: "dB",
+      precision: 3,
+      tooltip: "The largest loss of the built ladder in its passband: up to 0.8·f_c (low-pass), above 1.25·f_c (high-pass), or across the middle 80 % of the band (band-pass)"
+    },
+    {
+      key: "stopbandBuilt_dB",
+      label: "Stopband Loss as Built",
+      symbol: "A_{b}",
+      unit: "dB",
+      precision: 2,
+      tooltip: "The built ladder's loss where the prototype reaches twice its cutoff: at 2·f_c (low-pass), f_c/2 (high-pass) or the matching point above a band-pass's centre. Equal to the attenuation at 2×fc with ideal parts"
     }
   ],
   calculate: calculateFilterDesigner,
@@ -6658,6 +7302,77 @@ var filterDesigner = {
     reference: "Williams & Taylor, Electronic Filter Design Handbook 4th ed.; Zverev, Handbook of Filter Synthesis"
   },
   visualization: { type: "bode-plot", freqRange: [1, 1e7] },
+  examples: [
+    { id: "vhf-low-pass-e24", label: "100 MHz low-pass, 5th-order Butterworth, E24", values: { responseType: 0, filterType: 0, fc: 1e8, order: 5, impedance: 50, eSeries: 24 } },
+    { id: "audio-low-pass-e12", label: "20 kHz audio low-pass, 3rd-order Butterworth, 600 Ω, E12", values: { responseType: 0, filterType: 0, fc: 2e4, order: 3, impedance: 600, eSeries: 12 } },
+    { id: "hf-high-pass-chebyshev", label: "3 MHz high-pass, 5th-order Chebyshev, E24", values: { responseType: 1, filterType: 1, fc: 3e6, order: 5, impedance: 50, eSeries: 24 } },
+    { id: "band-pass-10m", label: "28.5 MHz band-pass, 3rd-order Butterworth, Q 10, E48", values: { responseType: 0, filterType: 2, fc: 285e5, order: 3, impedance: 50, qFactor: 10, eSeries: 48 } }
+  ],
+  // C5 (waves/W7.md): element k counted from the source, its value in the
+  // output the export reads, rounded by `eSeries`; a band-pass element is a
+  // resonator of two parts, in the export's order.
+  synthesis: {
+    series: "eSeries",
+    parts: Array.from({ length: 10 }, (_, k) => {
+      const e = k + 1;
+      const m = Math.floor(k / 2);
+      const inOrder = (i) => Math.round(Math.min(10, Math.max(1, i.order ?? 1))) >= e;
+      const type = (i) => Math.round(i.filterType ?? 0);
+      if (e % 2 === 1) {
+        return [
+          { ref: `C${e}`, kind: "C", key: C_KEYS[m], position: (i) => type(i) === 1 ? "series" : type(i) === 2 ? "shunt-resonator" : "shunt", when: inOrder },
+          { ref: `L${e}`, kind: "L", key: BP_L_KEYS[m], position: () => "shunt-resonator", when: (i) => type(i) === 2 && inOrder(i) }
+        ];
+      }
+      return [
+        { ref: `L${e}`, kind: "L", key: L_KEYS[m], position: (i) => type(i) === 1 ? "shunt" : type(i) === 2 ? "series-resonator" : "series", when: inOrder },
+        { ref: `C${e}`, kind: "C", key: BP_C_KEYS[m], position: () => "series-resonator", when: (i) => type(i) === 2 && inOrder(i) }
+      ];
+    }).flat(),
+    partColumn: {
+      label: "gₖ",
+      value: (ref, i) => {
+        const order = Math.round(Math.min(10, Math.max(1, i.order ?? 1)));
+        return (Math.round(i.responseType ?? 0) === 1 ? CHEBYSHEV_05_G : BUTTERWORTH_G)[order]?.[Number(ref.slice(1)) - 1];
+      }
+    },
+    schematic: { kind: "rows", source: { label: "Z₀", value: "impedance" }, load: { label: "R_L", value: "loadImpedance" } },
+    response: {
+      outputs: [
+        { output: "cutoffBuilt_Hz", when: (i) => Math.round(i.filterType ?? 0) !== 2 },
+        { output: "fLowBuilt_Hz", when: (i) => Math.round(i.filterType ?? 0) === 2 },
+        { output: "fHighBuilt_Hz", when: (i) => Math.round(i.filterType ?? 0) === 2 },
+        "passbandLoss_dB",
+        "stopbandBuilt_dB"
+      ],
+      curve: {
+        x: { label: "Frequency", unit: "Hz", scale: "log", range: (i) => [i.fc / 10, i.fc * 10] },
+        y: { label: "S21", unit: "dB", range: [-60, 3] },
+        points: (i, v, xs) => {
+          const ladder = filterLadder(Math.round(i.filterType ?? 0), Math.round(Math.min(10, Math.max(1, i.order ?? 1))), v);
+          return xs.map((f) => 10 * Math.log10(transducerGain(ladder, f, i.impedance, v.loadImpedance)));
+        },
+        level: { value: -10 * Math.log10(2), label: "−3 dB" },
+        marks: [
+          (i, v) => Math.round(i.filterType ?? 0) === 2 ? v.fHighBuilt_Hz : v.cutoffBuilt_Hz,
+          (i) => prototypeFrequency(Math.round(i.filterType ?? 0), i.fc, (i.qFactor ?? 1) > 0 ? i.qFactor : 1, 2)
+        ],
+        detail: {
+          label: "Passband detail",
+          x: (i) => {
+            const t = Math.round(i.filterType ?? 0);
+            if (t === 1) return [i.fc / 1.2, i.fc * 2];
+            if (t === 2) {
+              const hi = prototypeFrequency(2, i.fc, (i.qFactor ?? 1) > 0 ? i.qFactor : 1, 1.3);
+              return [i.fc * i.fc / hi, hi];
+            }
+            return [i.fc / 2, i.fc * 1.2];
+          },
+          y: [-3.5, 0.25]
+        }
+      }
+    }
+  },
   relatedCalculators: ["rc-time-constant", "sampling-nyquist", "lc-resonance"],
   relatedBlogPosts: ["filter-design-butterworth-chebyshev", "opamp-bandwidth", "rf-filter-tolerance-analysis"],
   relatedTools: ["filter-monte-carlo"],
@@ -6696,8 +7411,8 @@ var filterDesigner = {
         }
         continue;
       }
-      const shunt = e % 2 === 1 === (type === 0);
-      const placement = shunt ? "shunt" : "series";
+      const shunt2 = e % 2 === 1 === (type === 0);
+      const placement = shunt2 ? "shunt" : "series";
       if (e % 2 === 1) {
         if (c2) rows.push({ qty: 1, description: `C${e}`, value: nF(c2), package: cPkg(c2), componentType: "C", placement });
       } else if (l) {
@@ -6714,12 +7429,8 @@ var filterDesigner = {
     const cKeys = ["C1_nF", "C3_nF", "C5_nF", "C7_nF", "C9_nF"];
     const lKeys = ["L1_uH", "L4_uH", "L6_uH", "L8_uH", "L10_uH"];
     const elements = [];
-    if (filterType === 2) {
-      const lVal = outputs.L1_uH;
-      const cVal = outputs.C1_nF;
-      elements.push({ type: "L", placement: "series", label: `L ${lVal?.toPrecision(4) ?? "?"}µH` });
-      elements.push({ type: "C", placement: "series", label: `C ${cVal?.toPrecision(4) ?? "?"}nF` });
-    } else {
+    if (filterType === 2) return [];
+    {
       for (let k = 0; k < order; k++) {
         const cIdx = Math.floor(k / 2);
         const lIdx = Math.floor(k / 2);
@@ -7986,14 +8697,14 @@ var resistorColorCode = {
     title: "E12 values",
     item: "resistor",
     items: (() => {
-      const E12 = [10, 12, 15, 18, 22, 27, 33, 39, 47, 56, 68, 82];
+      const E122 = [10, 12, 15, 18, 22, 27, 33, 39, 47, 56, 68, 82];
       const out = [];
-      const fmt5 = (ohms) => {
-        const [v, u] = ohms >= 1e6 ? [ohms / 1e6, "MΩ"] : ohms >= 1e3 ? [ohms / 1e3, "kΩ"] : [ohms, "Ω"];
+      const fmt5 = (ohms2) => {
+        const [v, u] = ohms2 >= 1e6 ? [ohms2 / 1e6, "MΩ"] : ohms2 >= 1e3 ? [ohms2 / 1e3, "kΩ"] : [ohms2, "Ω"];
         return { text: `${Number(v.toPrecision(3))} ${u}`, id: `${Number(v.toPrecision(3))}`.replace(".", u === "MΩ" ? "m" : u === "kΩ" ? "k" : "r") + (Number.isInteger(Number(v.toPrecision(3))) ? u === "MΩ" ? "m" : u === "kΩ" ? "k" : "r" : "") };
       };
       for (let mult = 0; mult <= 5; mult++) {
-        for (const e of E12) {
+        for (const e of E122) {
           if (mult === 5 && e > 10) break;
           const b1 = Math.floor(e / 10), b2 = e % 10;
           const f = fmt5(e * 10 ** mult);
@@ -8596,7 +9307,9 @@ var lcResonance = {
 
 // src/lib/calculators/general/opamp-gain.ts
 function calculateOpampGain(inputs) {
-  const { configuration, r1, r2, gbwProduct, supplyVoltage } = inputs;
+  const { configuration, gbwProduct, supplyVoltage, eSeries = 0 } = inputs;
+  const r1 = roundToSeries(inputs.r1, eSeries);
+  const r2 = roundToSeries(inputs.r2, eSeries);
   if (r1 <= 0) {
     return { values: {}, errors: ["R1 (feedback resistor) must be greater than 0"] };
   }
@@ -8705,6 +9418,24 @@ var opampGain = {
       min: 1.8,
       max: 60,
       tooltip: "Total supply: ±15V → enter 30V"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -8777,6 +9508,40 @@ var opampGain = {
     reference: "Horowitz & Hill, The Art of Electronics, 3rd ed.; Kester, ADI MT-033 (noise gain)"
   },
   visualization: { type: "none" },
+  examples: [
+    { id: "non-inverting-x10-e24", label: "Non-inverting gain of 10 on a TL071, E24", values: { configuration: 1, r1: 9, r2: 1, gbwProduct: 3, supplyVoltage: 30, eSeries: 24 } },
+    { id: "inverting-x2-5-e96", label: "Inverting gain of −2.5 on an NE5534, E96", values: { configuration: 0, r1: 25, r2: 10, gbwProduct: 10, supplyVoltage: 30, eSeries: 96 } },
+    { id: "differential-x20-e48", label: "Differential gain of 20 for current sensing, E48", values: { configuration: 2, r1: 50, r2: 2.5, gbwProduct: 10, supplyVoltage: 5, eSeries: 48 } }
+  ],
+  // C5 (waves/W7.md): the reader's resistors, rounded by `eSeries` in
+  // calculate(); drawn by configuration. The closed-loop response is the
+  // single pole calculate() places at GBW over the noise gain.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "r1", position: "feedback" },
+      { ref: "R2", kind: "R", key: "r2", position: (i) => Math.round(i.configuration ?? 1) === 1 ? "bottom" : "input" }
+    ],
+    schematic: { kind: "opamp", roles: { rf: "R1", rg: "R2" }, variant: { input: "configuration", byValue: { 0: "inverting", 1: "non-inverting", 2: "differential" } } },
+    targets: [{ output: "gain", solveFor: ["r1", "r2"] }],
+    response: {
+      outputs: ["gain", "gainDb", "f3db_kHz"],
+      curve: {
+        x: {
+          label: "Frequency",
+          unit: "Hz",
+          scale: "log",
+          range: (i) => {
+            const f3 = i.gbwProduct * 1e6 / (1 + i.r1 / i.r2);
+            return [f3 / 100, f3 * 100];
+          }
+        },
+        y: { label: "Closed-loop gain", unit: "dB" },
+        points: (_i, v, xs) => xs.map((f) => v.gainDb - 10 * Math.log10(1 + (f / (v.f3db_kHz * 1e3)) ** 2)),
+        marks: [(_i, v) => v.f3db_kHz * 1e3]
+      }
+    }
+  },
   relatedCalculators: ["filter-designer", "rc-time-constant", "ohms-law", "series-parallel-resistor"],
   relatedBlogPosts: ["filter-design-butterworth-chebyshev", "opamp-bandwidth", "pid-tuning"],
   verificationData: [
@@ -11624,8 +12389,23 @@ var waveguideCutoff = {
 };
 
 // src/lib/calculators/general/zener-diode.ts
+function nearestE243(seriesResistor) {
+  const e24 = [10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56, 62, 68, 75, 82, 91];
+  const multipliers = [1, 10, 100, 1e3, 1e4];
+  const values = [...e24.map((v) => v / 100), ...e24.map((v) => v / 10), ...multipliers.flatMap((mult) => e24.map((v) => v * mult))];
+  let bestValue = values[0];
+  let bestDiff = Math.abs(seriesResistor - bestValue);
+  for (const candidate of values) {
+    const diff = Math.abs(seriesResistor - candidate);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestValue = candidate;
+    }
+  }
+  return bestValue;
+}
 function calculateZenerDiode(inputs) {
-  const { inputVoltage, zenerVoltage, loadCurrent, zenerCurrentMin, zenerPowerMax } = inputs;
+  const { inputVoltage, zenerVoltage, loadCurrent, zenerCurrentMin, zenerPowerMax, eSeries = 24 } = inputs;
   const errors = [];
   const warnings = [];
   if (inputVoltage <= zenerVoltage) {
@@ -11636,21 +12416,9 @@ function calculateZenerDiode(inputs) {
   const seriesResistor = (inputVoltage - zenerVoltage) / (totalCurrent / 1e3);
   const zenerCurrent = zenerCurrentMin;
   const zenerPower = zenerVoltage * zenerCurrent;
-  const e24 = [10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56, 62, 68, 75, 82, 91];
-  const multipliers = [1, 10, 100, 1e3, 1e4];
-  let bestValue = e24[0] * multipliers[0];
-  let bestDiff = Math.abs(seriesResistor - bestValue);
-  for (const mult of multipliers) {
-    for (const base of e24) {
-      const candidate = base * mult;
-      const diff = Math.abs(seriesResistor - candidate);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        bestValue = candidate;
-      }
-    }
-  }
-  const e24Resistor = bestValue;
+  const e24Resistor = Math.round(eSeries) === 24 ? nearestE243(seriesResistor) : roundToSeries(seriesResistor, eSeries);
+  const zenerCurrentBuilt = (inputVoltage - zenerVoltage) / e24Resistor * 1e3 - loadCurrent;
+  const zenerPowerBuilt = zenerVoltage * Math.max(zenerCurrentBuilt, 0);
   if (zenerPower > zenerPowerMax) {
     warnings.push("Exceeds zener power rating — use higher wattage zener");
   }
@@ -11660,7 +12428,9 @@ function calculateZenerDiode(inputs) {
       zenerCurrent,
       zenerPower,
       totalCurrent,
-      e24Resistor
+      e24Resistor,
+      zenerCurrentBuilt,
+      zenerPowerBuilt
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -11730,6 +12500,24 @@ var zenerDiode = {
       defaultValue: 500,
       min: 10,
       tooltip: "Maximum zener power rating"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 24,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -11764,10 +12552,28 @@ var zenerDiode = {
     },
     {
       key: "e24Resistor",
-      label: "Nearest E24 Resistor",
-      symbol: "E24",
+      label: "Nearest Series Resistor",
+      symbol: "R_S,std",
       unit: "Ω",
-      precision: 0
+      precision: 0,
+      tooltip: "The series resistor rounded to the nearest value of the part series (E24 unless another is chosen); the exact value with ideal values"
+    },
+    {
+      key: "zenerCurrentBuilt",
+      label: "Zener Current as Built",
+      symbol: "I_Z,b",
+      unit: "mA",
+      precision: 2,
+      signed: "explicit",
+      tooltip: "The zener current at full load through the series resistor fitted: (V_in − V_Z)/R − I_L. Below zero the zener is off and the output falls below V_Z"
+    },
+    {
+      key: "zenerPowerBuilt",
+      label: "Zener Power as Built",
+      symbol: "P_Z,b",
+      unit: "mW",
+      precision: 1,
+      tooltip: "The zener dissipation at full load through the series resistor fitted, V_Z × I_Z (zero when the zener is off)"
     }
   ],
   calculate: calculateZenerDiode,
@@ -11783,6 +12589,39 @@ var zenerDiode = {
     ]
   },
   visualization: { type: "none" },
+  examples: [
+    { id: "reference-5v1-from-12v-e24", label: "5.1 V rail at 20 mA from 12 V, E24", values: { inputVoltage: 12, zenerVoltage: 5.1, loadCurrent: 20, zenerCurrentMin: 5, zenerPowerMax: 500, eSeries: 24 } },
+    { id: "bias-3v3-from-5v-e12", label: "3.3 V bias at 5 mA from 5 V, E12", values: { inputVoltage: 5, zenerVoltage: 3.3, loadCurrent: 5, zenerCurrentMin: 2, zenerPowerMax: 300, eSeries: 12 } },
+    { id: "clamp-12v-from-24v-e96", label: "12 V supply at 30 mA from 24 V, E96", values: { inputVoltage: 24, zenerVoltage: 12, loadCurrent: 30, zenerCurrentMin: 5, zenerPowerMax: 1e3, eSeries: 96 } }
+  ],
+  // C5 (waves/W7.md): the series resistor, exact in seriesResistor and
+  // fitted in e24Resistor (rounded by `eSeries`); the export carries it, the
+  // zener and the load are drawn after it.
+  synthesis: {
+    series: "eSeries",
+    parts: [{ ref: "R1", kind: "R", key: "seriesResistor", rounded: "e24Resistor", position: "series" }],
+    schematic: {
+      kind: "rows",
+      source: { label: "V_in", value: "inputVoltage" },
+      extra: (i, _v, fmt5) => [
+        { description: "D1", value: fmt5(i.zenerVoltage, "V"), componentType: "Z", placement: "branch", branch: "zener", returnNet: "GND" },
+        { description: "R_L", value: fmt5(i.loadCurrent, "mA"), componentType: "R", placement: "branch", branch: "load", returnNet: "GND" }
+      ]
+    },
+    response: { outputs: ["zenerCurrentBuilt", "zenerPowerBuilt"] }
+  },
+  // The series resistor fitted (KiCad's diode placement cannot draw a
+  // zener's cathode toward the node, so the export carries the resistor
+  // alone, as led-resistor's does), sized by what it dissipates while the
+  // zener regulates, (V_in − V_Z)²/R.
+  exportComponents: (inputs, outputs) => {
+    const r = outputs?.e24Resistor ?? 0;
+    const fmtR = (ohm) => ohm >= 1e6 ? `${+(ohm / 1e6).toPrecision(3)} MΩ` : ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} kΩ` : `${+ohm.toPrecision(12)} Ω`;
+    const vR = (inputs.inputVoltage ?? 0) - (inputs.zenerVoltage ?? 0);
+    return [
+      { qty: 1, description: "R1 (series)", value: fmtR(r), package: resistorPackage(r > 0 ? vR * vR / r : void 0), componentType: "R", placement: "series" }
+    ];
+  },
   relatedCalculators: ["voltage-divider", "led-resistor", "ldo-thermal"]
 };
 
@@ -11918,18 +12757,37 @@ var inductorEnergy = {
 };
 
 // src/lib/calculators/power/boost-converter.ts
+var sig32 = (v) => String(Number(v.toPrecision(3)));
+var LOSS_DEFAULTS2 = { rdsOn: 25, tSwitch: 20, qg: 10, vGate: 5, vDiode: 0.45, qrr: 0, dcr: 50, coreLoss: 20, esrOut: 5, coutEach: 10 };
 function calculateBoostConverter(inputs) {
-  const { inputVoltage, outputVoltage, outputCurrent, switchFreq, ripplePct, efficiency } = inputs;
+  const { inputVoltage, outputVoltage, outputCurrent, switchFreq, ripplePct, efficiency, inputVoltageMin = 0, inputVoltageMax = 0 } = inputs;
+  const p = { ...LOSS_DEFAULTS2, ...Object.fromEntries(Object.keys(LOSS_DEFAULTS2).filter((k) => inputs[k] !== void 0).map((k) => [k, inputs[k]])) };
   const errors = [];
   const warnings = [];
   const eta = efficiency / 100;
-  const dutyCycle_raw = 1 - inputVoltage / (outputVoltage * eta);
-  if (dutyCycle_raw <= 0) {
+  const dutyCycle_raw = 1 - eta * inputVoltage / outputVoltage;
+  if (outputVoltage <= inputVoltage || dutyCycle_raw <= 0) {
     errors.push("Output voltage must be greater than input voltage");
     return { values: {}, errors };
   }
+  if (inputVoltageMin > 0 && inputVoltageMin > inputVoltage) {
+    return { values: {}, errors: ["Minimum input voltage must not be above the nominal input voltage"] };
+  }
+  if (inputVoltageMax > 0 && inputVoltageMax < inputVoltage) {
+    return { values: {}, errors: ["Maximum input voltage must not be below the nominal input voltage"] };
+  }
+  const duty = (v) => 1 - eta * v / outputVoltage;
+  const iL = (v) => outputCurrent * outputVoltage / (v * eta);
+  const vins = corners(inputVoltage, inputVoltageMin, inputVoltageMax);
+  const lo = vins[0];
+  const hi = vins[vins.length - 1];
+  if (outputVoltage <= hi || duty(hi) <= 0) {
+    return { values: {}, errors: ["Output voltage must be greater than the maximum input voltage"] };
+  }
   if (dutyCycle_raw >= 0.95) {
     warnings.push("Duty cycle >95% — not practical, consider different topology");
+  } else if (duty(lo) >= 0.95) {
+    warnings.push("Duty cycle >95% at the minimum input voltage — not practical, consider different topology");
   }
   const dutyCycle = dutyCycle_raw * 100;
   const inputCurrent = outputCurrent * outputVoltage / (inputVoltage * eta);
@@ -11938,13 +12796,84 @@ function calculateBoostConverter(inputs) {
   const inductorValue = inputVoltage * dutyCycle_raw / (deltaIL * switchFreq * 1e3) * 1e6;
   const outputCapacitor = outputCurrent * dutyCycle_raw / (0.05 * outputVoltage * switchFreq * 1e3) * 1e6;
   const peakCurrent = inductorCurrent + deltaIL / 2;
+  const fsw = switchFreq * 1e3;
+  const lNeeded = (v) => v * duty(v) / (iL(v) * (ripplePct / 100) * switchFreq * 1e3) * 1e6;
+  const vSizing = 2 / 3 * outputVoltage / eta;
+  const sizing = vSizing > lo && vSizing < hi ? [...vins, vSizing] : vins;
+  const inductorMinWorstUH = worstOver(sizing, lNeeded).value;
+  const inductorChosenUH = e12AtOrAbove(inductorMinWorstUH);
+  const L = inductorChosenUH * 1e-6;
+  const ripple = (v) => v * duty(v) / (fsw * L);
+  const peak = (v) => iL(v) + ripple(v) / 2;
+  const rms2 = (v) => iL(v) * iL(v) + ripple(v) * ripple(v) / 12;
+  const coutRms2 = (v) => (1 - duty(v)) * (duty(v) * iL(v) * iL(v) + ripple(v) * ripple(v) / 12);
+  const rippleWorst = worstOver(vins, ripple);
+  const vRipple = outputVoltage / (2 * eta);
+  if (vRipple > lo && vRipple < hi && ripple(vRipple) > rippleWorst.value) {
+    warnings.push(`The inductor ripple is largest inside the input range: ${sig32(ripple(vRipple))} A at ${sig32(vRipple)} V in (V_out/(2·η)), where the corners give at most ${sig32(rippleWorst.value)} A`);
+  }
+  const peakWorst = worstOver(vins, peak);
+  const inputWorst = worstOver(vins, iL);
+  const q1Rms = worstOver(vins, (v) => Math.sqrt(duty(v) * rms2(v)));
+  const coutRms = worstOver(vins, (v) => Math.sqrt(coutRms2(v)));
+  const coutMinWorstUF = worstOver(vins, (v) => outputCurrent * duty(v) / (0.05 * outputVoltage * switchFreq * 1e3) * 1e6).value;
+  const coutCount = Math.max(1, Math.ceil(coutMinWorstUF / p.coutEach - 1e-9));
+  const coutTotal = coutCount * p.coutEach * 1e-6;
+  const outRipple = (v) => outputCurrent * duty(v) / (fsw * coutTotal) + peak(v) * (p.esrOut / 1e3) / coutCount;
+  const outRippleWorst = worstOver(vins, outRipple);
+  const rippleNom = ripple(inputVoltage);
+  const rms2Nom = rms2(inputVoltage);
+  const lossSwConduction = dutyCycle_raw * rms2Nom * p.rdsOn / 1e3;
+  const lossSwSwitching = 0.5 * outputVoltage * inductorCurrent * p.tSwitch * 1e-9 * fsw;
+  const lossGateDrive = p.qg * 1e-9 * p.vGate * fsw;
+  const lossDiode = p.vDiode * outputCurrent;
+  const lossRecovery = p.qrr * 1e-9 * outputVoltage * fsw;
+  const lossDcr = rms2Nom * p.dcr / 1e3;
+  const lossCore = p.coreLoss / 1e3;
+  const lossCapEsr = coutRms2(inputVoltage) * (p.esrOut / 1e3) / coutCount;
+  const lossTotal = lossSwConduction + lossSwSwitching + lossGateDrive + lossDiode + lossRecovery + lossDcr + lossCore + lossCapEsr;
+  const outputPower = outputVoltage * outputCurrent;
   return {
     values: {
       dutyCycle,
       inductorCurrent,
       inductorValue,
       outputCapacitor,
-      peakCurrent
+      peakCurrent,
+      dutyMin: duty(hi) * 100,
+      dutyMax: duty(lo) * 100,
+      inductorMinWorstUH,
+      inductorChosenUH,
+      rippleNomA: rippleNom,
+      rippleWorstA: rippleWorst.value,
+      rippleWorstVin: rippleWorst.at,
+      ilPeakWorst: peakWorst.value,
+      ilPeakWorstVin: peakWorst.at,
+      inputCurrentWorst: inputWorst.value,
+      inputCurrentWorstVin: inputWorst.at,
+      q1RmsA: q1Rms.value,
+      q1RmsVin: q1Rms.at,
+      coutMinWorstUF,
+      coutCount,
+      coutTotalUF: coutCount * p.coutEach,
+      coutRmsA: coutRms.value,
+      coutRmsVin: coutRms.at,
+      outputRippleMV: outRippleWorst.value * 1e3,
+      outputRippleVin: outRippleWorst.at,
+      outputRipplePct: outRippleWorst.value / outputVoltage * 100,
+      vdsRating: ratingAtOrAbove(VOLTAGE_DERATING * outputVoltage, MOSFET_VDS),
+      coutVoltageRating: ratingAtOrAbove(VOLTAGE_DERATING * outputVoltage, CAPACITOR_V),
+      lossSwConduction,
+      lossSwSwitching,
+      lossGateDrive,
+      lossDiode,
+      lossRecovery,
+      lossDcr,
+      lossCore,
+      lossCapEsr,
+      lossTotal,
+      outputPower,
+      efficiencyLossModel: outputPower / (outputPower + lossTotal) * 100
     },
     warnings: warnings.length > 0 ? warnings : void 0
   };
@@ -12017,7 +12946,47 @@ var boostConverter = {
       defaultValue: 88,
       min: 50,
       max: 99
-    }
+    },
+    {
+      key: "inputVoltageMin",
+      label: "Minimum Input Voltage",
+      symbol: "V_{in,min}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The lowest input the converter must work from; 0 for the nominal. The parts are sized and the stresses taken over the range.",
+      group: "Operating envelope"
+    },
+    {
+      key: "inputVoltageMax",
+      label: "Maximum Input Voltage",
+      symbol: "V_{in,max}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The highest input the converter must work from; 0 for the nominal. It must stay below the output.",
+      group: "Operating envelope"
+    },
+    {
+      key: "coutEach",
+      label: "Output Capacitor (each)",
+      symbol: "C_{out,each}",
+      unit: "μF",
+      defaultValue: 10,
+      min: 0.1,
+      max: 1e4,
+      tooltip: "One output capacitor; the bank is as many in parallel as the 5 % ripple target needs at the worst corner.",
+      group: "Operating envelope"
+    },
+    { key: "rdsOn", label: "Switch R_DS(on)", symbol: "R_{DS(on)}", unit: "mΩ", defaultValue: 25, min: 0.1, max: 1e4, group: "Loss model", tooltip: "The switch FET's on-resistance at its operating temperature." },
+    { key: "tSwitch", label: "Switching Edges (t_r + t_f)", symbol: "t_{r+f}", unit: "ns", defaultValue: 20, min: 0, max: 1e4, group: "Loss model", tooltip: "The switch's rise and fall times added: the switching loss is ½·V_out·I_L·(t_r + t_f)·f_sw." },
+    { key: "qg", label: "Total Gate Charge", symbol: "Q_{g}", unit: "nC", defaultValue: 10, min: 0, max: 1e4, group: "Loss model", tooltip: "The switch's gate charge at the drive voltage: the gate drive takes Q_g·V_g·f_sw." },
+    { key: "vGate", label: "Gate Drive Voltage", symbol: "V_{g}", unit: "V", defaultValue: 5, min: 1, max: 20, group: "Loss model" },
+    { key: "vDiode", label: "Rectifier Forward Voltage", symbol: "V_{F}", unit: "V", defaultValue: 0.45, min: 0, max: 3, group: "Loss model", tooltip: "The rectifier diode's forward voltage at the load current: it dissipates V_F·I_out." },
+    { key: "qrr", label: "Rectifier Recovery Charge", symbol: "Q_{rr}", unit: "nC", defaultValue: 0, min: 0, max: 1e4, group: "Loss model", tooltip: "The rectifier's reverse-recovery charge (a Schottky's is its capacitive charge, near 0): the switch takes Q_rr·V_out·f_sw at each turn-on." },
+    { key: "dcr", label: "Inductor DCR", symbol: "DCR", unit: "mΩ", defaultValue: 50, min: 0, max: 1e5, group: "Loss model", tooltip: "The inductor's winding resistance." },
+    { key: "coreLoss", label: "Inductor Core Loss", symbol: "P_{core}", unit: "mW", defaultValue: 20, min: 0, max: 1e5, group: "Loss model", tooltip: "From the inductor's datasheet at this ripple and frequency." },
+    { key: "esrOut", label: "Output Capacitor ESR (each)", symbol: "ESR_{out}", unit: "mΩ", defaultValue: 5, min: 0, max: 1e5, group: "Loss model" }
   ],
   outputs: [
     {
@@ -12059,11 +13028,55 @@ var boostConverter = {
       symbol: "I_peak",
       unit: "A",
       precision: 3
+    },
+    // C11 (waves/W7.md): the envelope's results, each where it is largest and the input it occurs at.
+    { key: "dutyMin", label: "Minimum Duty Cycle", symbol: "D_{min}", unit: "%", precision: 2, tooltip: "At the maximum input voltage" },
+    { key: "dutyMax", label: "Maximum Duty Cycle", symbol: "D_{max}", unit: "%", precision: 2, tooltip: "At the minimum input voltage" },
+    { key: "inductorMinWorstUH", label: "Minimum Inductance over the Input Range", symbol: "L_{min}", unit: "μH", precision: 3, tooltip: "For the ripple target where it needs the most inductance: at ⅔·V_out/η when the range spans it, otherwise at an end" },
+    { key: "inductorChosenUH", label: "Chosen Inductor", symbol: "L_{1}", unit: "μH", precision: 3, tooltip: "The E12 value at or above the minimum inductance; every current below is the chosen part's" },
+    { key: "rippleNomA", label: "Inductor Ripple", symbol: "ΔI_{L}", unit: "A", precision: 3, tooltip: "Peak to peak, at the nominal input, with the chosen inductor" },
+    { key: "rippleWorstA", label: "Inductor Ripple, Worst Case", symbol: "ΔI_{L,max}", unit: "A", precision: 3, tooltip: "The largest at the corners of the input range; the ripple itself peaks at V_out/(2·η), and a warning gives it when the range spans that" },
+    { key: "rippleWorstVin", label: "Input at the Worst Ripple", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "ilPeakWorst", label: "Inductor Peak Current, Worst Case", symbol: "I_{L,pk}", unit: "A", precision: 3, tooltip: "The peak the inductor, the switch and the rectifier carry; the inductor's saturation current must be at least this" },
+    { key: "ilPeakWorstVin", label: "Input at the Worst Peak", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "inputCurrentWorst", label: "Input Current, Worst Case", symbol: "I_{in,max}", unit: "A", precision: 3, tooltip: "The average inductor (input) current, largest at the minimum input" },
+    { key: "inputCurrentWorstVin", label: "Input at the Worst Input Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "q1RmsA", label: "Switch RMS Current, Worst Case", symbol: "I_{Q1,rms}", unit: "A", precision: 3 },
+    { key: "q1RmsVin", label: "Input at the Worst Switch Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "coutMinWorstUF", label: "Minimum Output Capacitance over the Input Range", symbol: "C_{out,min}", unit: "μF", precision: 3, tooltip: "For today's 5 % ripple target at the worst corner, the minimum input" },
+    { key: "coutCount", label: "Output Capacitors", symbol: "n_{out}", unit: "", precision: 0, display: { integer: true }, tooltip: "How many of the chosen output capacitor, in parallel" },
+    { key: "coutTotalUF", label: "Output Capacitance (bank)", symbol: "C_{out}", unit: "μF", precision: 3 },
+    { key: "coutRmsA", label: "Output Capacitor RMS Current, Worst Case", symbol: "I_{Cout,rms}", unit: "A", precision: 3, tooltip: "The AC part of the rectifier current, shared by the bank" },
+    { key: "coutRmsVin", label: "Input at the Worst Output Capacitor Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "outputRippleMV", label: "Output Ripple, Worst Case", symbol: "ΔV_{out}", unit: "mV", precision: 3, tooltip: "Peak to peak: the bank's charge ripple plus its ESR step at the peak current, added (an upper bound)" },
+    { key: "outputRippleVin", label: "Input at the Worst Output Ripple", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "outputRipplePct", label: "Output Ripple, % of Vout", unit: "%", precision: 3 },
+    { key: "vdsRating", label: "Switch and Rectifier Voltage Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the output, which the switch blocks when off and the rectifier when the switch is on" },
+    { key: "coutVoltageRating", label: "Output Capacitor Voltage Rating", symbol: "V_{Cout}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the output" },
+    // C11: the loss model at the nominal input and load, a separate estimate from the efficiency input.
+    { key: "lossSwConduction", label: "Switch Conduction Loss", symbol: "P_{cond}", unit: "W", precision: 4 },
+    { key: "lossSwSwitching", label: "Switch Switching Loss", symbol: "P_{sw}", unit: "W", precision: 4 },
+    { key: "lossGateDrive", label: "Gate Drive Loss", symbol: "P_{gate}", unit: "W", precision: 4 },
+    { key: "lossDiode", label: "Rectifier Conduction Loss", symbol: "P_{D}", unit: "W", precision: 4 },
+    { key: "lossRecovery", label: "Rectifier Recovery Loss", symbol: "P_{rr}", unit: "W", precision: 4 },
+    { key: "lossDcr", label: "Inductor DCR Loss", symbol: "P_{DCR}", unit: "W", precision: 4 },
+    { key: "lossCore", label: "Inductor Core Loss", symbol: "P_{core}", unit: "W", precision: 4 },
+    { key: "lossCapEsr", label: "Output Capacitor ESR Loss", symbol: "P_{ESR}", unit: "W", precision: 4 },
+    { key: "lossTotal", label: "Total Loss", symbol: "P_{loss}", unit: "W", precision: 4 },
+    { key: "outputPower", label: "Output Power", symbol: "P_{out}", unit: "W", precision: 3 },
+    {
+      key: "efficiencyLossModel",
+      label: "Efficiency (loss model)",
+      symbol: "η_{loss}",
+      unit: "%",
+      precision: 2,
+      tooltip: "At the nominal input and load, from the loss model. The currents are sized with the estimated efficiency input; set it to this value and they follow the loss model",
+      thresholds: { good: { min: 90 }, warning: { min: 80, max: 90 }, danger: { min: 80 } }
     }
   ],
   calculate: calculateBoostConverter,
   formula: {
-    primary: "D = 1 - V_in/(V_out×η), L = V_in×D/(ΔI_L×f_sw)",
+    primary: "D = 1 - η×V_in/V_out, L = V_in×D/(ΔI_L×f_sw)",
     variables: [
       { symbol: "D", description: "Duty cycle", unit: "" },
       { symbol: "V_in", description: "Input voltage", unit: "V" },
@@ -12072,9 +13085,79 @@ var boostConverter = {
       { symbol: "f_sw", description: "Switching frequency", unit: "Hz" },
       { symbol: "ΔI_L", description: "Inductor current ripple", unit: "A" }
     ],
-    reference: 'Erickson & Maksimovic, "Fundamentals of Power Electronics" 3rd ed.'
+    reference: `TI SLVA372D, Basic Calculation of a Boost Converter's Power Stage, eq. 1; Erickson & Maksimovic, "Fundamentals of Power Electronics" 3rd ed.`
   },
   visualization: { type: "none" },
+  examples: [
+    { id: "usb-5v-to-12v", label: "USB 4.5–5.5 V to 12 V at 0.5 A, 500 kHz", values: { inputVoltage: 5, inputVoltageMin: 4.5, inputVoltageMax: 5.5, outputVoltage: 12, outputCurrent: 0.5, switchFreq: 500, ripplePct: 30, efficiency: 88 } },
+    { id: "li-ion-to-5v", label: "One Li-ion cell, 3.0–4.2 V, to 5 V at 1 A, 1 MHz", values: { inputVoltage: 3.7, inputVoltageMin: 3, inputVoltageMax: 4.2, outputVoltage: 5, outputCurrent: 1, switchFreq: 1e3, ripplePct: 40, efficiency: 90, rdsOn: 20, qg: 5, dcr: 30, coreLoss: 30, coutEach: 22 } },
+    { id: "automotive-12v-to-24v", label: "Automotive 9–16 V to 24 V at 1 A, 250 kHz", values: { inputVoltage: 13.5, inputVoltageMin: 9, inputVoltageMax: 16, outputVoltage: 24, outputCurrent: 1, switchFreq: 250, ripplePct: 30, efficiency: 92, rdsOn: 15, tSwitch: 30, qg: 20, vGate: 10, vDiode: 0.55, dcr: 40, coreLoss: 100, esrOut: 5, coutEach: 10 } }
+  ],
+  // C11 (waves/W7.md): the input range, the results at their worst corners, the parts and their stresses.
+  envelope: {
+    ranges: [{ input: "inputVoltage", min: "inputVoltageMin", max: "inputVoltageMax" }],
+    results: [
+      { output: "dutyCycle", note: { range: ["dutyMin", "dutyMax"] } },
+      { output: "ilPeakWorst", note: { corner: { input: "inputVoltage", at: "ilPeakWorstVin" } } },
+      { output: "inductorCurrent", note: { worst: "inputCurrentWorst", input: "inputVoltage", at: "inputCurrentWorstVin" } },
+      { output: "rippleNomA", note: { worst: "rippleWorstA", input: "inputVoltage", at: "rippleWorstVin" } },
+      { output: "outputRippleMV", note: { corner: { input: "inputVoltage", at: "outputRippleVin" } } }
+    ],
+    parts: [
+      { ref: "L1", role: "inductor", value: { key: "inductorChosenUH", calc: "inductorMinWorstUH" }, stresses: [{ symbol: "I_{sat}", sense: "min", key: "ilPeakWorst", at: { input: "inputVoltage", key: "ilPeakWorstVin" } }, { symbol: "DCR", sense: "max", key: "dcr" }] },
+      { ref: "Q1", role: "switch", value: { key: "rdsOn" }, stresses: [{ symbol: "V_{DS}", sense: "min", key: "vdsRating" }, { symbol: "I_{rms}", sense: "min", key: "q1RmsA", at: { input: "inputVoltage", key: "q1RmsVin" } }] },
+      { ref: "D1", role: "diode", value: { key: "vDiode" }, stresses: [{ symbol: "V_{R}", sense: "min", key: "vdsRating" }, { symbol: "I_{F(AV)}", sense: "min", key: "outputCurrent" }, { symbol: "I_{pk}", sense: "min", key: "ilPeakWorst", at: { input: "inputVoltage", key: "ilPeakWorstVin" } }] },
+      { ref: "C_{out}", role: "output-capacitor", value: { key: "coutEach", count: "coutCount" }, stresses: [{ symbol: "V", sense: "min", key: "coutVoltageRating" }, { symbol: "I_{rms}", sense: "min", key: "coutRmsA", at: { input: "inputVoltage", key: "coutRmsVin" } }, { symbol: "ESR", sense: "max", key: "esrOut" }] }
+    ],
+    // Ideal switching at the nominal input: the switch node at 0 for D·T and at V_out after, the inductor current a triangle about I_L.
+    waveforms: {
+      periods: 2.5,
+      traces: (i, v) => {
+        const T = 1 / (i.switchFreq * 1e3);
+        const ton = v.dutyCycle / 100 * T;
+        const lo = v.inductorCurrent - v.rippleNomA / 2;
+        const hi = v.inductorCurrent + v.rippleNomA / 2;
+        const end = 2.5 * T;
+        const il = (t) => {
+          const ph = t - Math.floor(t / T) * T;
+          return ph < ton ? lo + (hi - lo) * ph / ton : hi - (hi - lo) * (ph - ton) / (T - ton);
+        };
+        const edges = [0, T, 2 * T].flatMap((t0) => [t0, t0 + ton]).filter((t) => t < end);
+        const sw = [[0, 0]];
+        for (const t of edges.slice(1)) {
+          const turnOff = t - Math.floor(t / T) * T > 0;
+          sw.push(turnOff ? [t, 0] : [t, i.outputVoltage], turnOff ? [t, i.outputVoltage] : [t, 0]);
+        }
+        sw.push([end, end - 2 * T < ton ? 0 : i.outputVoltage]);
+        return [
+          { id: "sw", symbol: "V_{SW}", unit: "V", points: sw, spans: [{ symbol: "t_{on}", axis: "x", from: 0, to: ton }] },
+          { id: "il", symbol: "I_{L}", unit: "A", points: [...edges.map((t) => [t, il(t)]), [end, il(end)]], spans: [{ symbol: "ΔI_{L}", axis: "y", from: lo, to: hi }] }
+        ];
+      }
+    },
+    bom: (i, v) => [
+      { qty: 1, description: "L1 (power inductor, shielded)", value: `${sig32(v.inductorChosenUH)} µH, Isat ≥ ${sig32(v.ilPeakWorst)} A, DCR ≤ ${sig32(i.dcr)} mΩ`, package: inductorPackage(v.inductorChosenUH * 1e-6, { currentA: v.ilPeakWorst }) },
+      { qty: 1, description: "Q1 (N-channel MOSFET)", value: `RDS(on) ≤ ${sig32(i.rdsOn)} mΩ, VDS ≥ ${v.vdsRating} V, Irms ≥ ${sig32(v.q1RmsA)} A`, package: "" },
+      { qty: 1, description: "D1 (rectifier diode)", value: `VF ≤ ${sig32(i.vDiode)} V, VR ≥ ${v.vdsRating} V, IF(AV) ≥ ${sig32(i.outputCurrent)} A, IFRM ≥ ${sig32(v.ilPeakWorst)} A`, package: diodePackage(i.outputCurrent) },
+      { qty: v.coutCount, description: "C_out (output capacitor, X7R)", value: `${sig32(i.coutEach)} µF, ≥ ${v.coutVoltageRating} V, ESR ≤ ${sig32(i.esrOut)} mΩ, Irms ≥ ${sig32(v.coutRmsA)} A in all`, package: capacitorPackage(i.coutEach * 1e-6, { workingVolts: i.outputVoltage }) }
+    ]
+  },
+  lossModel: {
+    inputs: ["rdsOn", "tSwitch", "qg", "vGate", "vDiode", "qrr", "dcr", "coreLoss", "esrOut"],
+    efficiency: "efficiencyLossModel",
+    total: "lossTotal",
+    outputPower: "outputPower",
+    losses: [
+      { output: "lossDiode", lever: "diode" },
+      { output: "lossSwSwitching", lever: "edges" },
+      { output: "lossSwConduction", lever: "rdson" },
+      { output: "lossDcr", lever: "dcr" },
+      { output: "lossGateDrive", lever: "gate-charge" },
+      { output: "lossCore", lever: "core" },
+      { output: "lossRecovery", lever: "reverse-recovery" },
+      { output: "lossCapEsr", lever: "esr" }
+    ]
+  },
   relatedCalculators: ["buck-converter", "ldo-thermal", "voltage-divider", "rc-snubber"],
   relatedTools: ["smps-control-loop"],
   relatedBlogPosts: ["switching-regulator-ripple"]
@@ -17261,8 +18344,44 @@ function wilkinsonValidity(zMin, zMax) {
   ];
 }
 var WILKINSON_VALIDITY = wilkinsonValidity(20, 150);
+function wilkinsonIsolationDb(z0, k, r, rIdeal) {
+  const z22 = z0 * Math.sqrt(k * (1 + k * k));
+  const z32 = z0 * Math.sqrt((1 + k * k) / (k * k * k));
+  const g1 = 1 / z0;
+  const g2 = 1 / (z0 * k);
+  const g3 = k / z0;
+  const g = 1 / r;
+  const bracket = (rIdeal - r) / (r * rIdeal * z0);
+  const det = g1 * (g * g2 + g * g3 + g2 * g3) + (g + g3) / (z22 * z22) + 2 * g / (z22 * z32) + (g + g2) / (z32 * z32);
+  const s32 = 2 * Math.sqrt(g2 * g3) * Math.abs(bracket) / det;
+  return s32 === 0 ? Infinity : -20 * Math.log10(s32);
+}
+function wilkinsonS32Db(z0, k, r, fRatio) {
+  if (fRatio === 1) return -wilkinsonIsolationDb(z0, k, r, z0 * (k + 1 / k));
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
+  const sub7 = (a, b) => [a[0] - b[0], a[1] - b[1]];
+  const mul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
+  const y2 = 1 / (z0 * Math.sqrt(k * (1 + k * k)));
+  const y3 = 1 / (z0 * Math.sqrt((1 + k * k) / (k * k * k)));
+  const g2 = 1 / (z0 * k);
+  const g3 = k / z0;
+  const g = 1 / r;
+  const theta = Math.PI / 2 * fRatio;
+  const cot = Math.cos(theta) / Math.sin(theta);
+  const csc = 1 / Math.sin(theta);
+  const y11 = [1 / z0, -(y2 + y3) * cot];
+  const y12 = [0, y2 * csc];
+  const y13 = [0, y3 * csc];
+  const y22 = [g + g2, -y2 * cot];
+  const y33 = [g + g3, -y3 * cot];
+  const y23 = [-g, 0];
+  const det = add(sub7(mul(y11, sub7(mul(y22, y33), mul(y23, y23))), mul(y12, sub7(mul(y12, y33), mul(y23, y13)))), mul(y13, sub7(mul(y12, y23), mul(y22, y13))));
+  const cof = add(mul([g, 0], y11), mul(y12, y13));
+  const s32 = 2 * Math.sqrt(g2 * g3) * Math.hypot(cof[0], cof[1]) / Math.hypot(det[0], det[1]);
+  return 20 * Math.log10(s32);
+}
 function calculateWilkinson(inputs) {
-  const { z0, powerRatio, frequency, effPermittivity, zMin, zMax } = inputs;
+  const { z0, powerRatio, frequency, effPermittivity, zMin, zMax, eSeries = 0 } = inputs;
   if (!(z0 > 0)) return { values: {}, errors: ["System impedance must be greater than 0"] };
   if (!(powerRatio > 0)) return { values: {}, errors: ["The power ratio P₃/P₂ must be greater than 0"] };
   if (!(frequency > 0)) return { values: {}, errors: ["Frequency must be greater than 0"] };
@@ -17273,7 +18392,9 @@ function calculateWilkinson(inputs) {
   const K = Math.sqrt(powerRatio);
   const arm3Impedance = z0 * Math.sqrt((1 + K * K) / (K * K * K));
   const arm2Impedance = z0 * Math.sqrt(K * (1 + K * K));
-  const isolationResistor = z0 * (K + 1 / K);
+  const isolationIdeal = z0 * (K + 1 / K);
+  const isolationResistor = roundToSeries(isolationIdeal, eSeries);
+  const isolationBuilt = wilkinsonIsolationDb(z0, K, isolationResistor, isolationIdeal);
   const port2Load = z0 * K;
   const port3Load = z0 / K;
   const port2Transformer = z0 * Math.sqrt(K);
@@ -17298,7 +18419,8 @@ function calculateWilkinson(inputs) {
       port3Transformer,
       port2Share,
       port3Share,
-      quarterWaveLength
+      quarterWaveLength,
+      isolationBuilt
     },
     warnings
   };
@@ -17391,19 +18513,52 @@ var wilkinsonPowerDivider = {
       min: 2,
       step: 1,
       tooltip: "Highest characteristic impedance your board process can make (narrowest practical line)"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
     }
   ],
   outputs: [
     { key: "arm2Impedance", label: "Arm Line to Port 2 (Z₀₂)", symbol: "Z_{02}", unit: "Ω", precision: 2, primary: true },
     { key: "arm3Impedance", label: "Arm Line to Port 3 (Z₀₃)", symbol: "Z_{03}", unit: "Ω", precision: 2 },
-    { key: "isolationResistor", label: "Isolation Resistor (R)", symbol: "R", unit: "Ω", precision: 2 },
+    { key: "isolationResistor", label: "Isolation Resistor (R)", symbol: "R", unit: "Ω", precision: 2, tooltip: "Z₀(K + 1/K), rounded to the part series when one is chosen" },
     { key: "port2Load", label: "Port 2 Termination (R₂ = Z₀K)", symbol: "R_2", unit: "Ω", precision: 2 },
     { key: "port3Load", label: "Port 3 Termination (R₃ = Z₀/K)", symbol: "R_3", unit: "Ω", precision: 2 },
     { key: "port2Transformer", label: "Port 2 Quarter-Wave Transformer to Z₀", symbol: "Z_{T2}", unit: "Ω", precision: 2 },
     { key: "port3Transformer", label: "Port 3 Quarter-Wave Transformer to Z₀", symbol: "Z_{T3}", unit: "Ω", precision: 2 },
     { key: "port2Share", label: "Power to Port 2", symbol: "P_2/P_{in}", unit: "dB", precision: 2 },
     { key: "port3Share", label: "Power to Port 3", symbol: "P_3/P_{in}", unit: "dB", precision: 2 },
-    { key: "quarterWaveLength", label: "Quarter-Wave Line Length", symbol: "λ/4", unit: "mm", precision: 2 }
+    { key: "quarterWaveLength", label: "Quarter-Wave Line Length", symbol: "λ/4", unit: "mm", precision: 2 },
+    {
+      key: "isolationBuilt",
+      label: "Port 2–3 Isolation at f₀ as Built",
+      symbol: "I_{23}",
+      unit: "dB",
+      precision: 2,
+      tooltip: "Isolation between the two output arms at the centre frequency with the isolation resistor as rounded, from the nodal solution of Pozar Fig. 7.11 with the arms in R₂ and R₃; infinite (perfect) with the exact resistor"
+    }
   ],
   calculate: calculateWilkinson,
   formula: {
@@ -17429,6 +18584,37 @@ var wilkinsonPowerDivider = {
   visualization: { type: "none" },
   relatedCalculators: ["directional-coupler", "microstrip-impedance", "attenuator-designer", "balun-transformer", "vswr-return-loss"],
   relatedTools: ["sparam-pipeline"],
+  examples: [
+    { id: "equal-2g4-fr4-e24", label: "2.4 GHz equal split on FR-4, E24 resistor", values: { z0: 50, powerRatio: 1, frequency: 2.4, effPermittivity: 3.3, eSeries: 24 } },
+    { id: "unequal-2to1-e24", label: "2:1 split at 2.4 GHz (P₃/P₂ = 1/2), E24 resistor", values: { z0: 50, powerRatio: 0.5, frequency: 2.4, effPermittivity: 3.3, eSeries: 24 } },
+    { id: "unequal-3to1-e96", label: "3:1 split at 5.8 GHz on RO4350B (P₃/P₂ = 1/3), E96 resistor", values: { z0: 50, powerRatio: 1 / 3, frequency: 5.8, effPermittivity: 2.75, eSeries: 96 } },
+    { id: "catv-75-e12", label: "75 Ω equal split at 600 MHz, E12 resistor", values: { z0: 75, powerRatio: 1, frequency: 0.6, effPermittivity: 3.3, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): the two quarter-wave arms (lines, which no series
+  // rounds) and the isolation resistor, rounded by `eSeries`. Its effect is
+  // the port 2–3 isolation, perfect at f₀ with the exact resistor; the
+  // `isolationBuilt` output states it at f₀ and the curve across the band.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "TL1", kind: "TL", key: "arm2Impedance", position: "line" },
+      { ref: "TL2", kind: "TL", key: "arm3Impedance", position: "line" },
+      { ref: "R1", kind: "R", key: "isolationResistor", position: "isolation" }
+    ],
+    schematic: { kind: "wilkinson", roles: { arm2: "TL1", arm3: "TL2", isolation: "R1" } },
+    // The isolation at f₀ is infinite with the exact resistor, so it is an
+    // output beside the card rather than a readout compared with the ideal.
+    response: {
+      outputs: [],
+      curve: {
+        x: { label: "Frequency", unit: "GHz", scale: "linear", range: (i) => [0.5 * i.frequency, 1.5 * i.frequency] },
+        y: { label: "S₃₂", unit: "dB", range: [-60, 0] },
+        points: (i, v, xs) => xs.map((f) => wilkinsonS32Db(i.z0, Math.sqrt(i.powerRatio), v.isolationResistor, f / i.frequency)),
+        level: { value: -20, label: "−20 dB" },
+        marks: [(i) => i.frequency]
+      }
+    }
+  },
   validity: WILKINSON_VALIDITY,
   assumptions: [
     {
@@ -17442,13 +18628,13 @@ var wilkinsonPowerDivider = {
   ],
   verificationData: [
     {
-      inputs: { z0: 50, powerRatio: 1, frequency: 2.4, effPermittivity: 3.3, zMin: 20, zMax: 150 },
+      inputs: { z0: 50, powerRatio: 1, frequency: 2.4, effPermittivity: 3.3, zMin: 20, zMax: 150, eSeries: 0 },
       expectedOutputs: { arm2Impedance: 70.7, arm3Impedance: 70.7, isolationResistor: 100, port2Load: 50, port3Load: 50 },
       tolerance: 2e-4,
       source: "Pozar, Microwave Engineering, 4th ed. (2012), §7.3, Example 7.2, p. 331: equal split in a 50 Ω system, Z = √2·Z₀ = 70.7 Ω and R = 2Z₀ = 100 Ω (printed to 3 figures; √2 × 50 = 70.711)"
     },
     {
-      inputs: { z0: 50, powerRatio: 1 / 3, frequency: 2.4, effPermittivity: 3.3, zMin: 20, zMax: 150 },
+      inputs: { z0: 50, powerRatio: 1 / 3, frequency: 2.4, effPermittivity: 3.3, zMin: 20, zMax: 150, eSeries: 0 },
       expectedOutputs: {
         arm3Impedance: 131.6074013,
         arm2Impedance: 43.86913377,
@@ -17460,7 +18646,7 @@ var wilkinsonPowerDivider = {
       source: "Pozar, Microwave Engineering, 4th ed. (2012), §7.3, Eqs. (7.37a)–(7.37c), p. 332, for Problem 7.10 (P₃/P₂ = 1/3, 50 Ω); the book prints no answer, so these are the equations evaluated"
     },
     {
-      inputs: { z0: 50, powerRatio: 3, frequency: 2.4, effPermittivity: 3.3, zMin: 20, zMax: 150 },
+      inputs: { z0: 50, powerRatio: 3, frequency: 2.4, effPermittivity: 3.3, zMin: 20, zMax: 150, eSeries: 0 },
       expectedOutputs: {
         arm2Impedance: 131.6074013,
         arm3Impedance: 43.86913377,
@@ -17472,7 +18658,7 @@ var wilkinsonPowerDivider = {
       source: "Pozar, Microwave Engineering, 4th ed. (2012), Eqs. (7.37a)–(7.37c), symmetry: P₃/P₂ = 3 is Problem 7.10 with ports 2 and 3 exchanged, so the arms and terminations swap and R is unchanged"
     },
     {
-      inputs: { z0: 50, powerRatio: 1, frequency: 2.99792458, effPermittivity: 1, zMin: 20, zMax: 150 },
+      inputs: { z0: 50, powerRatio: 1, frequency: 2.99792458, effPermittivity: 1, zMin: 20, zMax: 150, eSeries: 0 },
       expectedOutputs: { quarterWaveLength: 25 },
       tolerance: 1e-12,
       source: "Pozar, Microwave Engineering, 4th ed. (2012), §7.3, Fig. 7.8: every line is λ/4 at f₀; exact: at 2.99792458 GHz in air λ/4 = 25 mm"
@@ -17507,6 +18693,12 @@ function directionalCouplerValidity(couplingLimit) {
   ];
 }
 var DIRECTIONAL_COUPLER_VALIDITY = directionalCouplerValidity(8);
+function coupledPortDb(c2, fRatio) {
+  const theta = Math.PI / 2 * fRatio;
+  const s = Math.sin(theta);
+  const co = Math.cos(theta);
+  return 10 * Math.log10(c2 * c2 * s * s / ((1 - c2 * c2) * co * co + s * s));
+}
 function calculateDirectionalCoupler(inputs) {
   const { coupling, z0, frequency, effPermittivity, directivity, couplingLimit } = inputs;
   if (!(coupling > 0)) return { values: {}, errors: ["Coupling must be greater than 0 dB"] };
@@ -17650,6 +18842,31 @@ var directionalCoupler = {
     reference: "Pozar, Microwave Engineering, 4th ed. (2012), §7.1, Eqs. (7.20)–(7.21), and §7.6, Eqs. (7.85)–(7.87)"
   },
   visualization: { type: "none" },
+  examples: [
+    { id: "monitor-20db-3ghz-stripline", label: "20 dB monitor coupler at 3 GHz in 50 Ω stripline (Pozar Example 7.7)", values: { coupling: 20, z0: 50, frequency: 3, effPermittivity: 2.2 } },
+    { id: "sampler-30db-900mhz", label: "30 dB sampling coupler at 900 MHz on FR-4", values: { coupling: 30, z0: 50, frequency: 0.9, effPermittivity: 3.3, directivity: 20 } },
+    { id: "coupler-10db-2g45", label: "10 dB coupler at 2.45 GHz in stripline on PTFE", values: { coupling: 10, z0: 50, frequency: 2.45, effPermittivity: 2.1 } }
+  ],
+  // C5 (waves/W7.md): one coupled section, its parts the two mode impedances
+  // and the length. Lines are not lumped parts, so no series rounds them and
+  // the ideal and built designs are one.
+  synthesis: {
+    parts: [
+      { ref: "Z₀e", kind: "TL", key: "evenModeImpedance", position: "even-mode" },
+      { ref: "Z₀o", kind: "TL", key: "oddModeImpedance", position: "odd-mode" },
+      { ref: "ℓ", kind: "TL", key: "coupledLength", position: "length" }
+    ],
+    schematic: { kind: "coupler", roles: { even: "Z₀e", odd: "Z₀o", length: "ℓ" } },
+    response: {
+      outputs: ["couplingFactor", "throughLoss", "isolation"],
+      curve: {
+        x: { label: "Frequency", unit: "GHz", scale: "linear", range: (i) => [0.2 * i.frequency, 1.8 * i.frequency] },
+        y: { label: "Coupled port", unit: "dB" },
+        points: (i, v, xs) => xs.map((f) => coupledPortDb(v.couplingFactor, f / i.frequency)),
+        marks: [(i) => i.frequency]
+      }
+    }
+  },
   relatedCalculators: ["wilkinson-power-divider", "return-loss-error", "edge-coupled-embedded", "microstrip-impedance", "vswr-return-loss"],
   relatedTools: ["sparam-pipeline"],
   validity: DIRECTIONAL_COUPLER_VALIDITY,
@@ -20423,7 +21640,7 @@ function rcSnubberValidity(minOnTimeNs) {
 }
 var RC_SNUBBER_VALIDITY = rcSnubberValidity(100);
 function calculateRcSnubber(inputs) {
-  const { ringFrequency, addedCapacitance, ringFrequencyAdded, capacitorMultiple, switchVoltage, switchingFrequency, minOnTime } = inputs;
+  const { ringFrequency, addedCapacitance, ringFrequencyAdded, capacitorMultiple, switchVoltage, switchingFrequency, minOnTime, eSeries = 0 } = inputs;
   if (!(ringFrequency > 0)) return { values: {}, errors: ["The ring frequency must be greater than 0"] };
   if (!(addedCapacitance > 0)) return { values: {}, errors: ["The added test capacitance must be greater than 0"] };
   if (!(ringFrequencyAdded > 0)) return { values: {}, errors: ["The ring frequency with the capacitor added must be greater than 0"] };
@@ -20442,8 +21659,8 @@ function calculateRcSnubber(inputs) {
   const cp = parasiticCapacitance * 1e-12;
   const lp = 1 / ((2 * Math.PI * ringFrequency * 1e6) ** 2 * cp);
   const characteristicImpedance = Math.sqrt(lp / cp);
-  const snubberResistance = characteristicImpedance;
-  const snubberCapacitance = capacitorMultiple * parasiticCapacitance;
+  const snubberResistance = roundToSeries(characteristicImpedance, eSeries);
+  const snubberCapacitance = roundToSeries(capacitorMultiple * parasiticCapacitance, eSeries);
   const resistorPower = snubberCapacitance * 1e-12 * switchVoltage ** 2 * switchingFrequency * 1e3;
   const timeConstant = snubberResistance * snubberCapacitance * 1e-3;
   const warnings = checkValidity(rcSnubberValidity(minOnTime), { capacitorMultiple, timeConstant });
@@ -20561,11 +21778,36 @@ var rcSnubber = {
       min: 1e-3,
       step: 10,
       tooltip: "Shortest time the switch stays on; the snubber capacitor discharges through the resistor and the switch during it"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
     }
   ],
   outputs: [
-    { key: "snubberResistance", label: "Snubber Resistor (R = Z₀)", symbol: "R_s", unit: "Ω", precision: 2, primary: true },
-    { key: "snubberCapacitance", label: "Snubber Capacitor", symbol: "C_s", unit: "pF", precision: 1 },
+    { key: "snubberResistance", label: "Snubber Resistor (R = Z₀)", symbol: "R_s", unit: "Ω", precision: 2, primary: true, tooltip: "The loop's characteristic impedance, rounded to the part series when one is chosen" },
+    { key: "snubberCapacitance", label: "Snubber Capacitor", symbol: "C_s", unit: "pF", precision: 1, tooltip: "n times the parasitic capacitance, rounded to the part series when one is chosen" },
     { key: "resistorPower", label: "Resistor Power (C_s·V²·f_sw)", symbol: "P", unit: "W", precision: 4 },
     { key: "parasiticCapacitance", label: "Parasitic Capacitance", symbol: "C_p", unit: "pF", precision: 2 },
     { key: "parasiticInductance", label: "Parasitic Inductance", symbol: "L_p", unit: "nH", precision: 2 },
@@ -20597,6 +21839,23 @@ var rcSnubber = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["rcd-clamp-snubber", "mosfet-power-dissipation", "buck-converter", "boost-converter", "flyback-converter", "lc-resonance"],
+  examples: [
+    { id: "buck-48v-500khz-e24", label: "48 V buck switch node at 500 kHz, ringing at 100 MHz, E24 parts", values: { ringFrequency: 100, addedCapacitance: 100, ringFrequencyAdded: 50, capacitorMultiple: 4, switchVoltage: 48, switchingFrequency: 500, minOnTime: 100, eSeries: 24 } },
+    { id: "todd-400v-100khz-e12", label: "Todd's 400 V, 100 kHz example (330 pF and 2 µH ringing at 6.2 MHz), E12 parts", values: { ringFrequency: 6.2, addedCapacitance: 1e3, ringFrequencyAdded: 3.1, capacitorMultiple: 3, switchVoltage: 400, switchingFrequency: 100, minOnTime: 1e3, eSeries: 12 } },
+    { id: "gan-12v-1mhz-e96", label: "12 V GaN half-bridge at 1 MHz, ringing at 250 MHz, E96 parts", values: { ringFrequency: 250, addedCapacitance: 220, ringFrequencyAdded: 130, capacitorMultiple: 3, switchVoltage: 12, switchingFrequency: 1e3, minOnTime: 50, eSeries: 96 } }
+  ],
+  // C5 (waves/W7.md): R and C in series across the switch, the export's one
+  // branch from SW to GND, both rounded by `eSeries`; the response is what
+  // the rounded parts dissipate and how fast they discharge.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "snubberResistance", position: "snubber" },
+      { ref: "C1", kind: "C", key: "snubberCapacitance", position: "snubber" }
+    ],
+    schematic: { kind: "rows" },
+    response: { outputs: ["resistorPower", "timeConstant"] }
+  },
   exportComponents: (inputs, outputs) => {
     const r = outputs?.snubberResistance;
     const c2 = outputs?.snubberCapacitance;
@@ -20643,7 +21902,7 @@ var rcSnubber = {
   ],
   verificationData: [
     {
-      inputs: { ringFrequency: 100, addedCapacitance: 100, ringFrequencyAdded: 50, capacitorMultiple: 4, switchVoltage: 48, switchingFrequency: 500, minOnTime: 100 },
+      inputs: { ringFrequency: 100, addedCapacitance: 100, ringFrequencyAdded: 50, capacitorMultiple: 4, switchVoltage: 48, switchingFrequency: 500, minOnTime: 100, eSeries: 0 },
       expectedOutputs: {
         parasiticCapacitance: 100 / 3,
         parasiticInductance: 75.99088773,
@@ -20656,7 +21915,7 @@ var rcSnubber = {
       source: `${TODD}, p. 2-4: halving the ring frequency makes the circuit capacitance four times the original, so the added capacitance is exactly three times C_p; and p. 2-5, P = f·C·V², at 4·C_p, 48 V and 500 kHz`
     },
     {
-      inputs: { ringFrequency: 6.2, addedCapacitance: 1e3, ringFrequencyAdded: 3.1, capacitorMultiple: 3, switchVoltage: 400, switchingFrequency: 100, minOnTime: 1e3 },
+      inputs: { ringFrequency: 6.2, addedCapacitance: 1e3, ringFrequencyAdded: 3.1, capacitorMultiple: 3, switchVoltage: 400, switchingFrequency: 100, minOnTime: 1e3, eSeries: 0 },
       expectedOutputs: {
         parasiticCapacitance: 330,
         parasiticInductance: 2e3,
@@ -20669,7 +21928,7 @@ var rcSnubber = {
       source: `${TODD}, examples on pp. 2-4 and 2-5: 2 µH and 330 pF ring at 6.2 MHz with a 78 Ω characteristic impedance, 1000 pF added brings it to 3.1 MHz, and a 1000 pF snubber at 400 V and 100 kHz dissipates 16.0 W. The book rounds the frequencies to two figures, so C_p, L_p and Z₀ agree to 1.3%; the power is exact`
     },
     {
-      inputs: { ringFrequency: 30, addedCapacitance: 800, ringFrequencyAdded: 10, capacitorMultiple: 3, switchVoltage: 100, switchingFrequency: 100, minOnTime: 1e3 },
+      inputs: { ringFrequency: 30, addedCapacitance: 800, ringFrequencyAdded: 10, capacitorMultiple: 3, switchVoltage: 100, switchingFrequency: 100, minOnTime: 1e3, eSeries: 0 },
       expectedOutputs: { parasiticCapacitance: 100, parasiticInductance: 281.4477323, characteristicImpedance: 53.0516477, snubberCapacitance: 300, resistorPower: 0.3 },
       tolerance: 1e-9,
       source: `${SEVERNS}, p. 10: L_p from the ring period with and without a known test capacitor. For periods T₁ and T₂ the two resonances give exactly L_p = (T₂² − T₁²)/(4π²·C_add) = 281.4477 nH at 30 MHz, 10 MHz and 800 pF, the identity this page's C_p = C_add/8 and L_p = 1/((2πf₀)²C_p) reduce to`
@@ -20709,7 +21968,7 @@ var RCD_CLAMP_SNUBBER_VALIDITY = [
   }
 ];
 function calculateRcdClampSnubber(inputs) {
-  const { leakageInductance, peakCurrent, switchingFrequency, reflectedVoltage, clampVoltage, ripple, maxInputVoltage } = inputs;
+  const { leakageInductance, peakCurrent, switchingFrequency, reflectedVoltage, clampVoltage, ripple, maxInputVoltage, eSeries = 0 } = inputs;
   if (!(leakageInductance > 0)) return { values: {}, errors: ["The leakage inductance must be greater than 0"] };
   if (!(peakCurrent > 0)) return { values: {}, errors: ["The peak primary current must be greater than 0"] };
   if (!(switchingFrequency > 0)) return { values: {}, errors: ["The switching frequency must be greater than 0"] };
@@ -20733,19 +21992,34 @@ function calculateRcdClampSnubber(inputs) {
   const ts = l * peakCurrent / (clampVoltage - reflectedVoltage);
   const peakDrainVoltage = maxInputVoltage + clampVoltage;
   const warnings = checkValidity(RCD_CLAMP_SNUBBER_VALIDITY, { ripple, conductionShare: ts * fs * 100 });
+  const clampResistance = roundToSeries(r / 1e3, eSeries);
+  const clampCapacitance = roundToSeries(c2 * 1e9, eSeries);
+  const built = seriesName(eSeries) ? rcdClampBuilt(leakagePower, reflectedVoltage, clampResistance * 1e3, clampCapacitance * 1e-9, fs) : { clampVoltage, rippleVoltage, clampPower };
   return {
     values: {
       clampPower,
-      clampResistance: r / 1e3,
-      clampCapacitance: c2 * 1e9,
+      clampResistance,
+      clampCapacitance,
       peakDrainVoltage,
       diodeReverseVoltage: peakDrainVoltage,
       leakagePower,
       lossFactor,
       diodeConductionTime: ts * 1e9,
-      rippleVoltage
+      rippleVoltage,
+      clampVoltageBuilt: built.clampVoltage,
+      rippleVoltageBuilt: built.rippleVoltage,
+      clampPowerBuilt: built.clampPower,
+      peakDrainVoltageBuilt: maxInputVoltage + built.clampVoltage
     },
     warnings
+  };
+}
+function rcdClampBuilt(leakagePower, reflectedVoltage, r, c2, fs) {
+  const clampVoltage = (reflectedVoltage + Math.sqrt(reflectedVoltage * reflectedVoltage + 4 * r * leakagePower)) / 2;
+  return {
+    clampVoltage,
+    rippleVoltage: clampVoltage / (r * c2 * fs),
+    clampPower: clampVoltage * clampVoltage / r
   };
 }
 function fmt2(value, units) {
@@ -20845,18 +22119,75 @@ var rcdClampSnubber = {
       min: 0,
       step: 1,
       tooltip: "Highest DC input voltage (for an off-line converter, the rectified peak of the highest mains voltage)"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
     }
   ],
   outputs: [
     { key: "clampPower", label: "Clamp Power", symbol: "P_{sn}", unit: "W", precision: 3, primary: true },
-    { key: "clampResistance", label: "Clamp Resistor", symbol: "R_{sn}", unit: "kΩ", precision: 3 },
-    { key: "clampCapacitance", label: "Clamp Capacitor", symbol: "C_{sn}", unit: "nF", precision: 2 },
+    { key: "clampResistance", label: "Clamp Resistor", symbol: "R_{sn}", unit: "kΩ", precision: 3, tooltip: "V_sn²/P_sn, rounded to the part series when one is chosen" },
+    { key: "clampCapacitance", label: "Clamp Capacitor", symbol: "C_{sn}", unit: "nF", precision: 2, tooltip: "V_sn/(ΔV_sn·R_sn·f_s), rounded to the part series when one is chosen" },
     { key: "peakDrainVoltage", label: "Peak Drain Voltage (V_in,max + V_sn)", symbol: "V_{ds,pk}", unit: "V", precision: 1 },
     { key: "diodeReverseVoltage", label: "Diode Reverse Voltage (minimum rating)", symbol: "V_{RRM}", unit: "V", precision: 1 },
     { key: "leakagePower", label: "Leakage-Energy Loss Alone (½·L·I²·f)", symbol: "P_{lk}", unit: "W", precision: 3 },
     { key: "lossFactor", label: "Reflected-Voltage Factor V_sn/(V_sn − nV_o)", symbol: "k", unit: "", precision: 3 },
     { key: "diodeConductionTime", label: "Diode Conduction Time", symbol: "t_s", unit: "ns", precision: 1 },
-    { key: "rippleVoltage", label: "Clamp Ripple Voltage", symbol: "ΔV_{sn}", unit: "V", precision: 2 }
+    { key: "rippleVoltage", label: "Clamp Ripple Voltage", symbol: "ΔV_{sn}", unit: "V", precision: 2 },
+    {
+      key: "clampVoltageBuilt",
+      label: "Clamp Voltage as Built",
+      symbol: "V_{sn,b}",
+      unit: "V",
+      precision: 2,
+      tooltip: "The voltage the clamp settles to with the resistor as rounded: the energy balance V·(V − nV_o) = R·½·L·I²·f, the clamp voltage entered with the exact resistor"
+    },
+    {
+      key: "rippleVoltageBuilt",
+      label: "Clamp Ripple as Built",
+      symbol: "ΔV_{sn,b}",
+      unit: "V",
+      precision: 3,
+      tooltip: "The ripple the rounded capacitor and resistor give at that clamp voltage, V/(R·C·f_s) (AN-4147 Eq. 5)"
+    },
+    {
+      key: "clampPowerBuilt",
+      label: "Clamp Resistor Power as Built",
+      symbol: "P_{sn,b}",
+      unit: "W",
+      precision: 3,
+      tooltip: "What the rounded resistor dissipates at the clamp voltage it settles to, V²/R; the export sizes the resistor from it"
+    },
+    {
+      key: "peakDrainVoltageBuilt",
+      label: "Peak Drain Voltage as Built",
+      symbol: "V_{ds,pk,b}",
+      unit: "V",
+      precision: 1,
+      tooltip: "V_in,max plus the clamp voltage the rounded resistor gives"
+    }
   ],
   calculate: calculateRcdClampSnubber,
   formula: {
@@ -20876,12 +22207,30 @@ var rcdClampSnubber = {
       "The clamp absorbs V_sn·I_pk·t_s/2 per cycle: P_sn = ½·L_lk·I_pk²·f_s·V_sn/(V_sn − nV_o) (Eq. 3)",
       "The resistor dissipates V_sn²/R_sn, so R_sn = V_sn²/P_sn (Eq. 4)",
       "The ripple is ΔV_sn = V_sn/(C_sn·R_sn·f_s), so C_sn = V_sn/(ΔV_sn·R_sn·f_s) (Eq. 5)",
-      "The capacitor holds V_sn above the input rail: the drain peaks at V_in,max + V_sn, and the diode blocks the same while the switch is on"
+      "The capacitor holds V_sn above the input rail: the drain peaks at V_in,max + V_sn, and the diode blocks the same while the switch is on",
+      "With a rounded resistor R the clamp settles where V²/R equals ½·L_lk·I_pk²·f_s·V/(V − nV_o): V = (nV_o + √((nV_o)² + 4·R·½·L_lk·I_pk²·f_s))/2, and the ripple is V/(R·C·f_s)"
     ],
     reference: "Koo, Design Guidelines for RCD Snubber of Flyback Converters, Fairchild AN-4147, Rev. 1.1.0 (2006), Eqs. (2)–(5)"
   },
   visualization: { type: "none" },
   relatedCalculators: ["flyback-converter", "rc-snubber", "transformer-turns-ratio", "mosfet-power-dissipation"],
+  examples: [
+    { id: "telecom-48v-100khz-e24", label: "36–72 V telecom flyback at 100 kHz, E24 parts", values: { leakageInductance: 1, peakCurrent: 5, switchingFrequency: 100, reflectedVoltage: 40, clampVoltage: 80, ripple: 5, maxInputVoltage: 72, eSeries: 24 } },
+    { id: "an4147-adapter-e12", label: "AN-4147's FSDM311 adapter (150 µH leakage, 67 kHz), E12 parts", values: { leakageInductance: 150, peakCurrent: 0.4, switchingFrequency: 67, reflectedVoltage: 75, clampVoltage: 150, ripple: 10, maxInputVoltage: 375, eSeries: 12 } },
+    { id: "offline-65w-e96", label: "65 W off-line flyback at 65 kHz (650 V MOSFET), E96 parts", values: { leakageInductance: 8, peakCurrent: 2.2, switchingFrequency: 65, reflectedVoltage: 100, clampVoltage: 150, ripple: 5, maxInputVoltage: 375, eSeries: 96 } }
+  ],
+  // C5 (waves/W7.md): the clamp branch from DRAIN to VIN. The diode is drawn
+  // but is no part (no series rounds it); R and C, side by side, are rounded
+  // by `eSeries`, and the response is the clamp they settle to.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "clampResistance", position: "clamp" },
+      { ref: "C1", kind: "C", key: "clampCapacitance", position: "clamp" }
+    ],
+    schematic: { kind: "rows" },
+    response: { outputs: ["clampVoltageBuilt", "rippleVoltageBuilt", "clampPowerBuilt", "peakDrainVoltageBuilt"] }
+  },
   exportComponents: (inputs, outputs) => {
     const r = outputs?.clampResistance;
     const c2 = outputs?.clampCapacitance;
@@ -20902,7 +22251,8 @@ var rcdClampSnubber = {
         qty: 1,
         description: "R (clamp resistor)",
         value: fmt2(r * 1e3, [[1e6, "MΩ"], [1e3, "kΩ"], [1, "Ω"]]),
-        package: resistorPackage(outputs.clampPower),
+        // Sized for what the resistor as rounded dissipates (the design's power with exact parts).
+        package: resistorPackage(outputs.clampPowerBuilt ?? outputs.clampPower),
         componentType: "R",
         ...branch,
         parallelGroup: "rc"
@@ -20935,19 +22285,19 @@ var rcdClampSnubber = {
   ],
   verificationData: [
     {
-      inputs: { leakageInductance: 150, peakCurrent: 0.4, switchingFrequency: 67, reflectedVoltage: 75, clampVoltage: 150, ripple: 10, maxInputVoltage: 375 },
+      inputs: { leakageInductance: 150, peakCurrent: 0.4, switchingFrequency: 67, reflectedVoltage: 75, clampVoltage: 150, ripple: 10, maxInputVoltage: 375, eSeries: 0 },
       expectedOutputs: { clampResistance: 14, clampPower: 1.6, clampCapacitance: 10.66, peakDrainVoltage: 524, diodeConductionTime: 800 },
       tolerance: 6e-3,
       source: `${KOO}, design example, Eqs. (9)–(11), p. 4: an FSDM311 adapter at 67 kHz with 150 µH leakage, 0.4 A peak and nV_o = 75 V clamped at 150 V gives 14 kΩ and 1.6 W; Eq. (11) at 10% ripple gives 10.66 nF, which the note rounds to 10 nF; at 375 V DC input (p. 4) the measured steady-state stress is 524 V (Figure 7), against V_in + V_sn = 525 V; t_s = 800 ns by Eq. (2)`
     },
     {
-      inputs: { leakageInductance: 1, peakCurrent: 5, switchingFrequency: 100, reflectedVoltage: 40, clampVoltage: 80, ripple: 5, maxInputVoltage: 72 },
+      inputs: { leakageInductance: 1, peakCurrent: 5, switchingFrequency: 100, reflectedVoltage: 40, clampVoltage: 80, ripple: 5, maxInputVoltage: 72, eSeries: 0 },
       expectedOutputs: { clampPower: 2.5, clampResistance: 2.56, clampCapacitance: 78.125, peakDrainVoltage: 152, diodeReverseVoltage: 152, leakagePower: 1.25, lossFactor: 2 },
       tolerance: 1e-9,
       source: `${KOO}, Eqs. (3)–(5), pp. 2–3, evaluated exactly: a clamp at twice the reflected voltage doubles the leakage energy, ½ × 1 µH × (5 A)² × 100 kHz × 2 = 2.5 W, R = 80²/2.5 = 2.56 kΩ and C = 80/(4 V × 2.56 kΩ × 100 kHz) = 78.125 nF`
     },
     {
-      inputs: { leakageInductance: 1, peakCurrent: 5, switchingFrequency: 100, reflectedVoltage: 40, clampVoltage: 1e6, ripple: 5, maxInputVoltage: 72 },
+      inputs: { leakageInductance: 1, peakCurrent: 5, switchingFrequency: 100, reflectedVoltage: 40, clampVoltage: 1e6, ripple: 5, maxInputVoltage: 72, eSeries: 0 },
       expectedOutputs: { clampPower: 1.25, leakagePower: 1.25, lossFactor: 1 },
       tolerance: 1e-4,
       source: `Limit of ${KOO}, Eq. (3), p. 2: as V_sn grows the factor V_sn/(V_sn − nV_o) tends to 1 and the clamp dissipates the leakage energy alone, ½·L·I²·f, as Todd, Snubber Circuits, Unitrode (1993), TI SLUP100, p. 2-7, states for the clamp-mode RCD snubber`
@@ -21490,16 +22840,18 @@ var usbTermination = {
 
 // src/lib/calculators/protocol/rs485-termination.ts
 function calculateRs485Termination(inputs) {
-  const { baudRate, cableLength, supplyVoltage } = inputs;
-  const terminationResistor = 120;
+  const { baudRate, cableLength, supplyVoltage, eSeries = 0 } = inputs;
+  const terminationResistor = roundToSeries(120, eSeries);
   const R_LOAD = 60;
   const V_DIFF_MIN = 0.2;
   const maxBias = (supplyVoltage * R_LOAD / V_DIFF_MIN - R_LOAD) / 2;
-  const biasResistor = maxBias * 0.75;
+  const biasResistor = roundToSeries(maxBias * 0.75, eSeries);
   const maxBaudRate = Math.min(1e4, 1e5 / Math.max(cableLength, 0.1));
   const baudRateUtilisation = baudRate / maxBaudRate * 100;
   const propagationDelay = cableLength / 2e8 * 1e9;
-  const loadCurrent = supplyVoltage / (2 * Math.max(biasResistor, 1) + 60) * 1e3;
+  const busLoad = terminationResistor / 2;
+  const loadCurrent = supplyVoltage / (2 * Math.max(biasResistor, 1) + busLoad) * 1e3;
+  const failsafeVoltage = loadCurrent * busLoad;
   return {
     values: {
       terminationResistor,
@@ -21507,7 +22859,8 @@ function calculateRs485Termination(inputs) {
       maxBaudRate,
       propagationDelay,
       loadCurrent,
-      baudRateUtilisation
+      baudRateUtilisation,
+      failsafeVoltage
     }
   };
 }
@@ -21566,6 +22919,31 @@ var rs485Termination = {
       min: 3,
       max: 5.5,
       tooltip: "Logic supply voltage for the RS-485 transceivers"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
     }
   ],
   // The node count changed no output: a unit-load check against TIA/EIA-485-A's
@@ -21580,7 +22958,7 @@ var rs485Termination = {
       symbol: "R_term",
       unit: "Ω",
       precision: 0,
-      tooltip: "Match to cable characteristic impedance (~120Ω for twisted pair)"
+      tooltip: "Match to cable characteristic impedance (~120Ω for twisted pair); 121 Ω in E48 and E96"
     },
     {
       key: "biasResistor",
@@ -21588,7 +22966,7 @@ var rs485Termination = {
       symbol: "R_bias",
       unit: "Ω",
       precision: 0,
-      tooltip: "Failsafe bias resistors to maintain idle state differential voltage > 200 mV"
+      tooltip: "Failsafe bias resistors to maintain idle state differential voltage > 200 mV; rounded to the part series when one is chosen"
     },
     {
       key: "maxBaudRate",
@@ -21630,6 +23008,18 @@ var rs485Termination = {
         good: { min: 0, max: 100 },
         danger: { max: 100 }
       }
+    },
+    {
+      key: "failsafeVoltage",
+      label: "Idle Bus Differential Voltage",
+      symbol: "V_{AB,idle}",
+      unit: "mV",
+      precision: 1,
+      tooltip: "The A–B voltage the bias resistors hold on the idle bus across the two terminators in parallel, Vcc·(R_term/2)/(2·R_bias + R_term/2); TIA-485-A receivers need at least 200 mV to read it as a defined state (TI SLLA272C)",
+      thresholds: {
+        good: { min: 200 },
+        danger: { min: 200 }
+      }
     }
   ],
   calculate: calculateRs485Termination,
@@ -21645,11 +23035,30 @@ var rs485Termination = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["usb-termination", "can-bus-timing", "uart-baud-rate"],
+  examples: [
+    { id: "modbus-5v-500m-e24", label: "Modbus RTU at 19.2 kbps over 500 m, 5 V transceivers, E24 resistors", values: { baudRate: 19.2, cableLength: 500, supplyVoltage: 5, eSeries: 24 } },
+    { id: "dmx512-5v-e12", label: "DMX512 at 250 kbps over 300 m, 5 V, E12 resistors", values: { baudRate: 250, cableLength: 300, supplyVoltage: 5, eSeries: 12 } },
+    { id: "sensor-bus-3v3-e96", label: "3.3 V sensor bus at 115.2 kbps over 200 m, E96 resistors", values: { baudRate: 115.2, cableLength: 200, supplyVoltage: 3.3, eSeries: 96 } }
+  ],
+  // C5 (waves/W7.md): the export's three resistors, in its order: the
+  // terminator across A and B, then the bias from VCC to A and from B to GND
+  // (one value, two parts), each rounded by `eSeries`. The response is the
+  // bias current and the idle bus voltage the rounded resistors give.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "RT", kind: "R", key: "terminationResistor", position: "termination" },
+      { ref: "RB1", kind: "R", key: "biasResistor", position: "pull-up" },
+      { ref: "RB2", kind: "R", key: "biasResistor", position: "pull-down" }
+    ],
+    schematic: { kind: "rows" },
+    response: { outputs: ["loadCurrent", "failsafeVoltage"] }
+  },
   exportComponents: (inputs, outputs) => {
     const fmtR = (ohm) => ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} kΩ` : `${+ohm.toPrecision(3)} Ω`;
     const rb = fmtR(outputs?.biasResistor ?? 0);
     const vcc = inputs.supplyVoltage;
-    const pkg = (ohms) => resistorPackage(ohms ? vcc * vcc / ohms : void 0);
+    const pkg = (ohms2) => resistorPackage(ohms2 ? vcc * vcc / ohms2 : void 0);
     return [
       { qty: 1, description: "R (line termination)", value: fmtR(outputs?.terminationResistor ?? 120), package: pkg(outputs?.terminationResistor ?? 120), componentType: "R", placement: "branch", branch: "term", fromNet: "A", returnNet: "B" },
       { qty: 1, description: "R (bias, VCC to A)", value: rb, package: pkg(outputs?.biasResistor), componentType: "R", placement: "branch", branch: "bias-a", fromNet: "A", returnNet: "VCC" },
@@ -21783,26 +23192,112 @@ var pwmDutyCycle = {
 };
 
 // src/lib/calculators/power/mosfet-power-dissipation.ts
+var sig33 = (v) => String(Number(v.toPrecision(3)));
+var LOSS_DEFAULTS3 = { rdsonTempco: 0, qg: 20, vGate: 10, coss: 0 };
+function ambientCorners(nominal, min, max) {
+  const lo = min !== 0 ? min : nominal;
+  const hi = max !== 0 ? max : nominal;
+  return [.../* @__PURE__ */ new Set([lo, nominal, hi])];
+}
+function worstOver2(as, bs, f) {
+  let best = { value: -Infinity, a: NaN, b: NaN };
+  for (const a of as) {
+    for (const b of bs) {
+      const y = f(a, b);
+      if (y > best.value) best = { value: y, a, b };
+    }
+  }
+  return best;
+}
 function calculateMosfetPowerDissipation(inputs) {
   const { drainCurrent, rdson, vds, frequency, riseTime, fallTime, rthJA, tAmbient } = inputs;
+  const { drainCurrentMin = 0, drainCurrentMax = 0, tAmbientMin = 0, tAmbientMax = 0 } = inputs;
+  const p = { ...LOSS_DEFAULTS3, ...Object.fromEntries(Object.keys(LOSS_DEFAULTS3).filter((k) => inputs[k] !== void 0).map((k) => [k, inputs[k]])) };
+  if (drainCurrentMin > 0 && drainCurrentMin > drainCurrent) {
+    return { values: {}, errors: ["Minimum drain current must not be above the nominal drain current"] };
+  }
+  if (drainCurrentMax > 0 && drainCurrentMax < drainCurrent) {
+    return { values: {}, errors: ["Maximum drain current must not be below the nominal drain current"] };
+  }
+  if (tAmbientMin !== 0 && tAmbientMin > tAmbient) {
+    return { values: {}, errors: ["Minimum ambient temperature must not be above the nominal ambient temperature"] };
+  }
+  if (tAmbientMax !== 0 && tAmbientMax < tAmbient) {
+    return { values: {}, errors: ["Maximum ambient temperature must not be below the nominal ambient temperature"] };
+  }
   const rdson_Ohm = rdson / 1e3;
   const freq_Hz = frequency * 1e3;
   const trise_s = riseTime * 1e-9;
   const tfall_s = fallTime * 1e-9;
-  const conductionLoss = drainCurrent * drainCurrent * rdson_Ohm * 1e3;
+  const alpha = p.rdsonTempco / 100;
+  const cossLoss = 0.5 * p.coss * 1e-12 * vds * vds * freq_Hz * 1e3;
+  const gateDrive = p.qg * 1e-9 * p.vGate * freq_Hz;
+  const point = (I, ta) => {
+    const switching = 0.5 * vds * I * (trise_s + tfall_s) * freq_Hz * 1e3;
+    const cold = I * I * rdson_Ohm * 1e3;
+    const feedback = alpha * rthJA * cold / 1e3;
+    if (!(feedback < 1)) return { feedback, runaway: true };
+    const tjSolved = ta + rthJA * (switching + cossLoss + cold * (1 + alpha * (ta - 25))) / 1e3 / (1 - feedback);
+    const conduction = I * I * (rdson_Ohm * (1 + alpha * (tjSolved - 25))) * 1e3;
+    const total = conduction + switching + cossLoss;
+    const junction = ta + total / 1e3 * rthJA;
+    const inputPower = vds * I * 1e3;
+    const efficiency = Math.max(0, (inputPower - total) / Math.max(inputPower, 1e-3) * 100);
+    const lossW = total / 1e3 + gateDrive;
+    const delivered = Math.max(0, vds * I - lossW);
+    const efficiencyLossModel = delivered + lossW > 0 ? 100 * delivered / (delivered + lossW) : 0;
+    return { feedback, runaway: false, switching, conduction, total, junction, efficiency, lossW, delivered, efficiencyLossModel };
+  };
+  const warnings = [];
+  const runawayWarning = (I, ta, feedback) => `No steady state at ${I} A and ${ta} °C: α·R_θJA·R_DS(on)·I_D² = ${Math.round(feedback * 100) / 100} ≥ 1, so the conduction loss grows with the junction temperature faster than the thermal path removes it (thermal runaway).`;
+  const nominal = point(drainCurrent, tAmbient);
   const switchingLoss = 0.5 * vds * drainCurrent * (trise_s + tfall_s) * freq_Hz * 1e3;
-  const totalLoss = conductionLoss + switchingLoss;
-  const junctionTemp = tAmbient + totalLoss / 1e3 * rthJA;
-  const inputPower = vds * drainCurrent * 1e3;
-  const efficiency = Math.max(0, (inputPower - totalLoss) / Math.max(inputPower, 1e-3) * 100);
+  if (nominal.runaway) warnings.push(runawayWarning(drainCurrent, tAmbient, nominal.feedback));
+  const nom = nominal.runaway ? { conduction: NaN, total: NaN, junction: NaN, efficiency: NaN, lossW: NaN, delivered: NaN, efficiencyLossModel: NaN } : nominal;
+  const currents = corners(drainCurrent, drainCurrentMin, drainCurrentMax);
+  const ambients = ambientCorners(tAmbient, tAmbientMin, tAmbientMax);
+  const runawayAt = currents.flatMap((I) => ambients.map((ta) => ({ I, ta, pt: point(I, ta) }))).find((x) => x.pt.runaway);
+  if (runawayAt && !nominal.runaway) warnings.push(runawayWarning(runawayAt.I, runawayAt.ta, runawayAt.pt.feedback));
+  const worst = (f) => {
+    if (runawayAt) return { value: NaN, a: runawayAt.I, b: runawayAt.ta };
+    return worstOver2(currents, ambients, (I, ta) => f(point(I, ta)));
+  };
+  const tjWorst = worst((pt) => pt.junction);
+  const tjCoolest = worst((pt) => -pt.junction);
+  const lossWorst = worst((pt) => pt.total);
+  const effWorst = worst((pt) => -pt.efficiencyLossModel);
+  const lossConduction = nom.conduction / 1e3;
+  const lossSwitching = switchingLoss / 1e3;
+  const lossOutputCap = cossLoss / 1e3;
+  const lossTotal = lossConduction + lossSwitching + lossOutputCap + gateDrive;
   return {
     values: {
-      conductionLoss,
+      conductionLoss: nom.conduction,
       switchingLoss,
-      totalLoss,
-      junctionTemp,
-      efficiency
-    }
+      totalLoss: nom.total,
+      junctionTemp: nom.junction,
+      efficiency: nom.efficiency,
+      // C11 (waves/W7.md): the envelope's worst cases and the corners they occur at.
+      junctionTempWorst: tjWorst.value,
+      junctionTempWorstCurrent: tjWorst.a,
+      junctionTempWorstAmbient: tjWorst.b,
+      junctionTempCoolest: -tjCoolest.value,
+      totalLossWorst: lossWorst.value,
+      totalLossWorstCurrent: lossWorst.a,
+      efficiencyWorst: -effWorst.value,
+      efficiencyWorstCurrent: effWorst.a,
+      drainCurrentWorst: currents[currents.length - 1],
+      vdsRating: ratingAtOrAbove(VOLTAGE_DERATING * vds, MOSFET_VDS),
+      // C11: the loss model at the nominal current and ambient, W.
+      lossConduction,
+      lossSwitching,
+      lossOutputCap,
+      lossGateDrive: gateDrive,
+      lossTotal,
+      outputPower: nom.delivered,
+      efficiencyLossModel: nom.efficiencyLossModel
+    },
+    warnings
   };
 }
 var mosfetPowerDissipation = {
@@ -21902,7 +23397,63 @@ var mosfetPowerDissipation = {
       min: -40,
       max: 85,
       tooltip: "Operating ambient temperature"
-    }
+    },
+    {
+      key: "drainCurrentMin",
+      label: "Minimum Drain Current",
+      symbol: "I_{D,min}",
+      unit: "A",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The lowest RMS drain current in service; 0 for the nominal.",
+      group: "Operating envelope"
+    },
+    {
+      key: "drainCurrentMax",
+      label: "Maximum Drain Current",
+      symbol: "I_{D,max}",
+      unit: "A",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The highest RMS drain current in service; 0 for the nominal. The junction temperature is taken at the highest current and ambient.",
+      group: "Operating envelope"
+    },
+    {
+      key: "tAmbientMin",
+      label: "Minimum Ambient Temperature",
+      symbol: "T_{A,min}",
+      unit: "°C",
+      defaultValue: 0,
+      min: -40,
+      max: 150,
+      tooltip: "The coldest ambient in service, which may be below 0 °C; 0 for the nominal.",
+      group: "Operating envelope"
+    },
+    {
+      key: "tAmbientMax",
+      label: "Maximum Ambient Temperature",
+      symbol: "T_{A,max}",
+      unit: "°C",
+      defaultValue: 0,
+      min: -40,
+      max: 150,
+      tooltip: "The hottest ambient in service; 0 for the nominal.",
+      group: "Operating envelope"
+    },
+    {
+      key: "rdsonTempco",
+      label: "R_DS(on) Temperature Coefficient",
+      symbol: "α",
+      unit: "%/°C",
+      defaultValue: 0,
+      min: 0,
+      max: 2,
+      group: "Loss model",
+      tooltip: "R_DS(on) rises as R_DS(on)·(1 + α·(T_j − 25 °C)), typically by 0.35 to 0.5 %/°C (M. Keagy, Electronic Design, 2002). With α above 0, R_DS(on) is the 25 °C value and the junction temperature is solved with it; 0 takes R_DS(on) as given at every temperature."
+    },
+    { key: "qg", label: "Total Gate Charge", symbol: "Q_{g}", unit: "nC", defaultValue: 20, min: 0, max: 1e4, group: "Loss model", tooltip: "At the gate drive voltage: the driver delivers Q_g·V_g·f_sw, which it dissipates, so it is not in the junction temperature." },
+    { key: "vGate", label: "Gate Drive Voltage", symbol: "V_{g}", unit: "V", defaultValue: 10, min: 1, max: 20, group: "Loss model" },
+    { key: "coss", label: "Output Capacitance (energy-related)", symbol: "C_{oss}", unit: "pF", defaultValue: 0, min: 0, max: 1e5, group: "Loss model", tooltip: "Its energy ½·C_oss·V_DS² is lost in the channel at each hard turn-on (IR AN-1070); give the datasheet's energy-related C_o(er) where it has one. 0 leaves it out." }
   ],
   outputs: [
     {
@@ -21955,6 +23506,33 @@ var mosfetPowerDissipation = {
         warning: { min: 85 },
         danger: { min: 85 }
       }
+    },
+    // C11 (waves/W7.md): the envelope's worst cases, each with the corner it occurs at.
+    { key: "junctionTempWorst", label: "Junction Temperature, Worst Case", symbol: "T_{j,max}", unit: "°C", precision: 1, tooltip: "At the corner of the current and ambient ranges where it is highest", thresholds: { good: { max: 100 }, warning: { max: 125 }, danger: { max: 125 } } },
+    { key: "junctionTempWorstCurrent", label: "Drain Current at the Hottest Junction", symbol: "I_{D}", unit: "A", precision: 3 },
+    { key: "junctionTempWorstAmbient", label: "Ambient at the Hottest Junction", symbol: "T_{A}", unit: "°C", precision: 1 },
+    { key: "junctionTempCoolest", label: "Junction Temperature, Coolest Corner", symbol: "T_{j,min}", unit: "°C", precision: 1, tooltip: "At the lowest current and ambient: with the worst case, the junction's swing over the envelope" },
+    { key: "totalLossWorst", label: "Total Power Loss, Worst Case", symbol: "P_{total,max}", unit: "mW", precision: 2 },
+    { key: "totalLossWorstCurrent", label: "Drain Current at the Worst Loss", symbol: "I_{D}", unit: "A", precision: 3 },
+    { key: "efficiencyWorst", label: "Efficiency with Gate Drive, Worst Case", symbol: "η_{min}", unit: "%", precision: 2, thresholds: { good: { min: 95 }, warning: { min: 85 }, danger: { min: 85 } } },
+    { key: "efficiencyWorstCurrent", label: "Drain Current at the Worst Efficiency", symbol: "I_{D}", unit: "A", precision: 3 },
+    { key: "drainCurrentWorst", label: "Highest Drain Current", symbol: "I_{D,max}", unit: "A", precision: 3, tooltip: "The MOSFET's continuous drain current rating must be at least this, at its operating temperature" },
+    { key: "vdsRating", label: "MOSFET Drain-Source Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the drain-source voltage" },
+    // C11: the loss model at the nominal current and ambient, W.
+    { key: "lossConduction", label: "Conduction Loss at T_j", symbol: "P_{cond}", unit: "W", precision: 4, tooltip: "I_D²·R_DS(on) at the junction temperature" },
+    { key: "lossSwitching", label: "Switching-Edge Loss", symbol: "P_{sw}", unit: "W", precision: 4, tooltip: "½·V_DS·I_D·(t_r + t_f)·f_sw" },
+    { key: "lossOutputCap", label: "Output-Capacitance Loss", symbol: "P_{oss}", unit: "W", precision: 4, tooltip: "½·C_oss·V_DS²·f_sw, lost at each hard turn-on" },
+    { key: "lossGateDrive", label: "Gate-Drive Loss", symbol: "P_{gate}", unit: "W", precision: 4, tooltip: "Q_g·V_g·f_sw, dissipated in the gate driver" },
+    { key: "lossTotal", label: "Total Loss with Gate Drive", symbol: "P_{loss}", unit: "W", precision: 4, tooltip: "The MOSFET's loss and its gate drive" },
+    { key: "outputPower", label: "Power In less Losses", symbol: "P_{out}", unit: "W", precision: 3, tooltip: "V_DS·I_D, the power the MOSFET efficiency is taken against, less the losses" },
+    {
+      key: "efficiencyLossModel",
+      label: "Efficiency with Gate Drive",
+      symbol: "η",
+      unit: "%",
+      precision: 2,
+      tooltip: "1 − (MOSFET loss + gate drive)/(V_DS·I_D), at the nominal current and ambient",
+      thresholds: { good: { min: 95 }, warning: { min: 85 }, danger: { min: 85 } }
     }
   ],
   calculate: calculateMosfetPowerDissipation,
@@ -21967,9 +23545,96 @@ var mosfetPowerDissipation = {
       { symbol: "f_sw", description: "Switching frequency", unit: "Hz" },
       { symbol: "t_r", description: "Rise time", unit: "s" },
       { symbol: "t_f", description: "Fall time", unit: "s" }
-    ]
+    ],
+    reference: "International Rectifier AN-1070 (J. Cerezo), P_CONDUCTION, P_SWITCHING and P_GATE; Infineon, D. Graovac, M. Pürschel and A. Kiep, MOSFET Power Losses Calculation Using the Data-Sheet Parameters (2006); M. Keagy, Calculate Dissipation for MOSFETs in High-Power Supplies (Electronic Design, 2002)"
   },
   visualization: { type: "none" },
+  assumptions: [
+    {
+      code: "one-current-for-both-losses",
+      text: "The drain current is the RMS current for the conduction loss and the current switched at each edge for the switching loss, which holds for a current that is flat while the MOSFET conducts at a duty cycle near 100 %."
+    },
+    {
+      code: "linear-rdson-temperature",
+      text: "With a temperature coefficient α, R_DS(on) is the 25 °C value and rises as R_DS(on)·(1 + α·(T_j − 25 °C)) (M. Keagy, Electronic Design, 2002); the junction temperature is the steady state of T_j = T_A + R_θJA·P(T_j), absent where α·R_θJA·R_DS(on)·I_D² ≥ 1 (thermal runaway)."
+    },
+    {
+      code: "gate-drive-in-the-driver",
+      text: "The gate drive Q_g·V_g·f_sw is dissipated in the driver and the gate resistance, so it is in the loss model's total and efficiency and not in the junction temperature; the output capacitance's ½·C_oss·V_DS²·f_sw is lost in the channel and is in both (IR AN-1070)."
+    },
+    {
+      code: "waveforms-at-half-duty",
+      text: "The calculator takes no duty cycle, so the waveforms are drawn at 50 % duty, with each switching edge split equally between the current and the voltage transition, the linear approximation whose energy is ½·V_DS·I_D·t (Infineon, Graovac et al., 2006)."
+    }
+  ],
+  examples: [
+    { id: "buck-high-side", label: "12 V buck high side, 4–6 A, 300 kHz, 25–85 °C", values: { drainCurrent: 5, drainCurrentMin: 4, drainCurrentMax: 6, rdson: 8, vds: 12, frequency: 300, riseTime: 8, fallTime: 6, rthJA: 45, tAmbient: 40, tAmbientMin: 25, tAmbientMax: 85, rdsonTempco: 0.4, qg: 15, vGate: 5, coss: 400 } },
+    { id: "motor-bridge-48v", label: "48 V motor bridge FET, 10–20 A at 20 kHz, −40 to 70 °C, on a heatsink", values: { drainCurrent: 15, drainCurrentMin: 10, drainCurrentMax: 20, rdson: 4, vds: 48, frequency: 20, riseTime: 50, fallTime: 50, rthJA: 15, tAmbient: 40, tAmbientMin: -40, tAmbientMax: 70, rdsonTempco: 0.5, qg: 90, vGate: 12, coss: 1200 } },
+    { id: "sot23-pwm-switch", label: "SOT-23 low-side PWM switch, 1–1.5 A at 20 kHz, up to 85 °C", values: { drainCurrent: 1, drainCurrentMax: 1.5, rdson: 50, vds: 5, frequency: 20, riseTime: 15, fallTime: 15, rthJA: 150, tAmbient: 25, tAmbientMax: 85, rdsonTempco: 0.35, qg: 5, vGate: 4.5, coss: 100 } }
+  ],
+  // C11 (waves/W7.md): the current and ambient ranges, the worst cases and their corners, the MOSFET's stresses.
+  envelope: {
+    ranges: [
+      { input: "drainCurrent", min: "drainCurrentMin", max: "drainCurrentMax" },
+      { input: "tAmbient", min: "tAmbientMin", max: "tAmbientMax" }
+    ],
+    results: [
+      { output: "junctionTemp", note: { worst: "junctionTempWorst", input: "drainCurrent", at: "junctionTempWorstCurrent", and: { input: "tAmbient", at: "junctionTempWorstAmbient" } } },
+      { output: "totalLoss", note: { worst: "totalLossWorst", input: "drainCurrent", at: "totalLossWorstCurrent" } },
+      { output: "efficiencyWorst", note: { corner: { input: "drainCurrent", at: "efficiencyWorstCurrent" } } }
+    ],
+    parts: [
+      {
+        ref: "Q1",
+        role: "switch",
+        value: { key: "rdson" },
+        stresses: [
+          { symbol: "V_{DS}", sense: "min", key: "vdsRating" },
+          { symbol: "I_{D}", sense: "min", key: "drainCurrentWorst" },
+          { symbol: "T_{j}", sense: "min", key: "junctionTempWorst", at: { input: "tAmbient", key: "junctionTempWorstAmbient" } },
+          { symbol: "R_{θJA}", sense: "max", key: "rthJA" }
+        ]
+      }
+    ],
+    // The drain voltage and current over two periods at the nominal current, drawn at 50 % duty
+    // (the calculator takes none), each edge split between the current and the voltage transition.
+    waveforms: {
+      periods: 2,
+      traces: (i) => {
+        const T = 1 / (i.frequency * 1e3);
+        const ton = T / 2;
+        const tr = Math.min(i.riseTime * 1e-9, ton);
+        const tf = Math.min(i.fallTime * 1e-9, T - ton);
+        const vd = [];
+        const id = [];
+        for (const t0 of [0, T]) {
+          vd.push([t0, i.vds], [t0 + tr / 2, i.vds], [t0 + tr, 0], [t0 + ton, 0], [t0 + ton + tf / 2, i.vds], [t0 + ton + tf, i.vds]);
+          id.push([t0, 0], [t0 + tr / 2, i.drainCurrent], [t0 + tr, i.drainCurrent], [t0 + ton, i.drainCurrent], [t0 + ton + tf / 2, i.drainCurrent], [t0 + ton + tf, 0]);
+        }
+        vd.push([2 * T, i.vds]);
+        id.push([2 * T, 0]);
+        return [
+          { id: "vds", symbol: "V_{DS}", unit: "V", points: vd, spans: [{ symbol: "t_{r}", axis: "x", from: 0, to: tr }] },
+          { id: "id", symbol: "I_{D}", unit: "A", points: id, spans: [{ symbol: "t_{f}", axis: "x", from: ton, to: ton + tf }] }
+        ];
+      }
+    },
+    bom: (i, v) => [
+      { qty: 1, description: "Q1 (N-channel MOSFET)", value: `RDS(on) ≤ ${sig33(i.rdson)} mΩ, VDS ≥ ${v.vdsRating} V, ID ≥ ${sig33(v.drainCurrentWorst)} A, Tj(max) ≥ ${sig33(v.junctionTempWorst)} °C`, package: "" }
+    ]
+  },
+  lossModel: {
+    inputs: ["rdsonTempco", "qg", "vGate", "coss"],
+    efficiency: "efficiencyLossModel",
+    total: "lossTotal",
+    outputPower: "outputPower",
+    losses: [
+      { output: "lossConduction", lever: "rdson" },
+      { output: "lossSwitching", lever: "edges" },
+      { output: "lossOutputCap", lever: "output-capacitance" },
+      { output: "lossGateDrive", lever: "gate-charge" }
+    ]
+  },
   relatedCalculators: ["buck-converter", "mosfet-operating-point", "linear-regulator-dropout", "rc-snubber", "rcd-clamp-snubber"],
   relatedBlogPosts: ["buck-converter-design-guide", "class-d-efficiency", "led-resistor"]
 };
@@ -22563,8 +24228,23 @@ var inrushCurrentLimiter = {
 };
 
 // src/lib/calculators/power/charge-pump-voltage.ts
+var sig34 = (v) => String(Number(v.toPrecision(3)));
+var LOSS_DEFAULTS4 = { switchResistance: 1, esr: 10 };
 function calculateChargePump(inputs) {
-  const { inputVoltage, stages, pumpCurrent, frequency, capacitance } = inputs;
+  const { inputVoltage, stages, pumpCurrent, frequency, capacitance, inputVoltageMin = 0, inputVoltageMax = 0, pumpCurrentMin = 0, pumpCurrentMax = 0 } = inputs;
+  const p = { ...LOSS_DEFAULTS4, ...Object.fromEntries(Object.keys(LOSS_DEFAULTS4).filter((k) => inputs[k] !== void 0).map((k) => [k, inputs[k]])) };
+  if (inputVoltageMin > 0 && inputVoltageMin > inputVoltage) {
+    return { values: {}, errors: ["Minimum input voltage must not be above the nominal input voltage"] };
+  }
+  if (inputVoltageMax > 0 && inputVoltageMax < inputVoltage) {
+    return { values: {}, errors: ["Maximum input voltage must not be below the nominal input voltage"] };
+  }
+  if (pumpCurrentMin > 0 && pumpCurrentMin > pumpCurrent) {
+    return { values: {}, errors: ["Minimum output current must not be above the nominal output current"] };
+  }
+  if (pumpCurrentMax > 0 && pumpCurrentMax < pumpCurrent) {
+    return { values: {}, errors: ["Maximum output current must not be below the nominal output current"] };
+  }
   const safeFreq = Math.max(frequency, 1e-3);
   const safeCap = Math.max(capacitance, 1e-4);
   const safeStages = Math.max(Math.round(stages), 1);
@@ -22579,12 +24259,58 @@ function calculateChargePump(inputs) {
     100,
     loadedVoltage * pumpCurrent / Math.max(inputVoltage * pumpCurrent * (safeStages + 1), 1e-3) * 100
   ));
+  const vins = corners(inputVoltage, inputVoltageMin, inputVoltageMax);
+  const loads = corners(pumpCurrent, pumpCurrentMin, pumpCurrentMax);
+  const vLo = vins[0];
+  const vHi = vins[vins.length - 1];
+  const iLo = loads[0];
+  const iHi = loads[loads.length - 1];
+  const loaded = (v, mA) => Math.max(0, v * (safeStages + 1) - mA / 1e3 / (freq_Hz * cap_F) * safeStages);
+  const ocWorst = worstOver(vins, (v) => v * (safeStages + 1));
+  const rippleWorst = worstOver(loads, (mA) => mA / 1e3 / (freq_Hz * cap_F) * 1e3);
+  const switchRms = worstOver(loads, (mA) => Math.SQRT2 * mA);
+  const inputCurrent = worstOver(loads, (mA) => (safeStages + 1) * mA);
+  const switchCount = 3 * safeStages + 1;
+  const chargeSharingResistance = safeStages / (freq_Hz * cap_F);
+  const switchResistanceTotal = 2 * switchCount * p.switchResistance;
+  const esrResistanceTotal = (4 * safeStages + 1) * (p.esr / 1e3);
+  const outputResistance = chargeSharingResistance + switchResistanceTotal + esrResistanceTotal;
+  const lossChargeSharing = current_A * current_A * chargeSharingResistance;
+  const lossSwitches = current_A * current_A * switchResistanceTotal;
+  const lossCapEsr = current_A * current_A * esrResistanceTotal;
+  const lossTotal = lossChargeSharing + lossSwitches + lossCapEsr;
+  const loadedVoltageWithLosses = Math.max(0, openCircuitVoltage - current_A * outputResistance);
+  const outputPower = loadedVoltageWithLosses * current_A;
   return {
     values: {
       openCircuitVoltage,
       loadedVoltage,
       outputRipple,
-      efficiency
+      efficiency,
+      loadedVoltageMin: loaded(vLo, iHi),
+      loadedVoltageMax: loaded(vHi, iLo),
+      openCircuitVoltageMax: ocWorst.value,
+      openCircuitVoltageVin: ocWorst.at,
+      outputRippleWorst: rippleWorst.value,
+      outputRippleWorstI: rippleWorst.at,
+      inputCurrentMA: inputCurrent.value,
+      inputCurrentI: inputCurrent.at,
+      pumpCapCount: safeStages,
+      pumpCapVoltageRating: ratingAtOrAbove(VOLTAGE_DERATING * safeStages * vHi, CAPACITOR_V),
+      outputCapVoltageRating: ratingAtOrAbove(VOLTAGE_DERATING * (safeStages + 1) * vHi, CAPACITOR_V),
+      switchCount,
+      switchVoltageRating: ratingAtOrAbove(VOLTAGE_DERATING * (safeStages > 1 ? 2 : 1) * vHi, MOSFET_VDS),
+      switchRmsMA: switchRms.value,
+      switchRmsI: switchRms.at,
+      chargeSharingResistance,
+      outputResistance,
+      loadedVoltageWithLosses,
+      lossChargeSharing,
+      lossSwitches,
+      lossCapEsr,
+      lossTotal,
+      outputPower,
+      efficiencyLossModel: outputPower + lossTotal > 0 ? outputPower / (outputPower + lossTotal) * 100 : 0
     }
   };
 }
@@ -22653,7 +24379,49 @@ var chargePumpVoltage = {
       defaultValue: 1,
       min: 1e-3,
       tooltip: "Capacitance of each pump capacitor stage"
-    }
+    },
+    {
+      key: "inputVoltageMin",
+      label: "Minimum Input Voltage",
+      symbol: "V_{in,min}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The lowest input the pump must work from; 0 for the nominal. The lowest output is taken there.",
+      group: "Operating envelope"
+    },
+    {
+      key: "inputVoltageMax",
+      label: "Maximum Input Voltage",
+      symbol: "V_{in,max}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The highest input the pump must work from; 0 for the nominal. The parts' voltage ratings are taken there.",
+      group: "Operating envelope"
+    },
+    {
+      key: "pumpCurrentMin",
+      label: "Minimum Output Current",
+      symbol: "I_{out,min}",
+      unit: "mA",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The lightest load; 0 for the nominal. The highest output is taken there.",
+      group: "Operating envelope"
+    },
+    {
+      key: "pumpCurrentMax",
+      label: "Maximum Output Current",
+      symbol: "I_{out,max}",
+      unit: "mA",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The heaviest load; 0 for the nominal. The ripple and the switch current are taken there.",
+      group: "Operating envelope"
+    },
+    { key: "switchResistance", label: "Switch On-Resistance (each)", symbol: "R_{on}", unit: "Ω", defaultValue: 1, min: 0, max: 1e5, group: "Loss model", tooltip: "Each of the 3N + 1 switches (N + 1 transfer switches and a pair driving each pump capacitor) carries the output charge once a period and adds 2·R_on to the output resistance." },
+    { key: "esr", label: "Capacitor ESR (each)", symbol: "ESR", unit: "mΩ", defaultValue: 10, min: 0, max: 1e5, group: "Loss model", tooltip: "Each pump capacitor adds 4·ESR to the output resistance, the output capacitor 1·ESR." }
   ],
   outputs: [
     {
@@ -22694,6 +24462,40 @@ var chargePumpVoltage = {
         warning: { min: 60 },
         danger: { min: 60 }
       }
+    },
+    // C11 (waves/W7.md): today's model at the corners of the input voltage and the load current.
+    { key: "loadedVoltageMin", label: "Lowest Loaded Output Voltage", symbol: "V_{out,min}", unit: "V", precision: 3, tooltip: "At the minimum input and the maximum load" },
+    { key: "loadedVoltageMax", label: "Highest Loaded Output Voltage", symbol: "V_{out,max}", unit: "V", precision: 3, tooltip: "At the maximum input and the minimum load" },
+    { key: "openCircuitVoltageMax", label: "Open Circuit Voltage, Worst Case", symbol: "V_{oc,max}", unit: "V", precision: 3, tooltip: "At the maximum input: what the output capacitor and the load must stand with no load" },
+    { key: "openCircuitVoltageVin", label: "Input at the Highest Open Circuit Voltage", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "outputRippleWorst", label: "Output Ripple, Worst Case", symbol: "ΔV_{max}", unit: "mV", precision: 2 },
+    { key: "outputRippleWorstI", label: "Load at the Worst Ripple", symbol: "I_{out}", unit: "mA", precision: 3 },
+    { key: "inputCurrentMA", label: "Input Current, Worst Case", symbol: "I_{in}", unit: "mA", precision: 3, tooltip: "The average input current, (N + 1) times the load" },
+    { key: "inputCurrentI", label: "Load at the Worst Input Current", symbol: "I_{out}", unit: "mA", precision: 3 },
+    { key: "pumpCapCount", label: "Pump Capacitors", symbol: "N", unit: "", precision: 0, display: { integer: true } },
+    { key: "pumpCapVoltageRating", label: "Pump Capacitor Voltage Rating", symbol: "V_{C}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times what the last pump capacitor holds, N·V_in at the maximum input" },
+    { key: "outputCapVoltageRating", label: "Output Capacitor Voltage Rating", symbol: "V_{Cout}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the open circuit voltage at the maximum input" },
+    { key: "switchCount", label: "Switches", symbol: "n_{sw}", unit: "", precision: 0, display: { integer: true }, tooltip: "N + 1 transfer switches and a pair driving each pump capacitor" },
+    { key: "switchVoltageRating", label: "Switch Voltage Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times what a switch blocks at the maximum input: 2·V_in between inner stages, V_in in a doubler" },
+    { key: "switchRmsMA", label: "Switch RMS Current, Worst Case", symbol: "I_{sw,rms}", unit: "mA", precision: 3, tooltip: "√2 times the load: twice the load for half of each period, in the fast-switching limit" },
+    { key: "switchRmsI", label: "Load at the Worst Switch Current", symbol: "I_{out}", unit: "mA", precision: 3 },
+    // C11: the loss model at the nominal input and load.
+    { key: "chargeSharingResistance", label: "Charge-Sharing Resistance", symbol: "R_{SSL}", unit: "Ω", precision: 3, tooltip: "N/(f·C), the output resistance today's model uses" },
+    { key: "outputResistance", label: "Output Resistance with Losses", symbol: "R_{out}", unit: "Ω", precision: 3, tooltip: "The charge-sharing resistance plus the switches' and the capacitors' ESR, added (an upper bound)" },
+    { key: "loadedVoltageWithLosses", label: "Loaded Output Voltage with Losses", symbol: "V_{out,loss}", unit: "V", precision: 3 },
+    { key: "lossChargeSharing", label: "Charge-Sharing Loss", symbol: "P_{SSL}", unit: "W", precision: 4 },
+    { key: "lossSwitches", label: "Switch Conduction Loss", symbol: "P_{sw}", unit: "W", precision: 4 },
+    { key: "lossCapEsr", label: "Capacitor ESR Loss", symbol: "P_{ESR}", unit: "W", precision: 4 },
+    { key: "lossTotal", label: "Total Loss", symbol: "P_{loss}", unit: "W", precision: 4 },
+    { key: "outputPower", label: "Output Power", symbol: "P_{out}", unit: "W", precision: 4 },
+    {
+      key: "efficiencyLossModel",
+      label: "Efficiency (loss model)",
+      symbol: "η_{loss}",
+      unit: "%",
+      precision: 1,
+      tooltip: "At the nominal input and load, with the switches' resistance and the capacitors' ESR; with both at 0 it is today's efficiency",
+      thresholds: { good: { min: 80 }, warning: { min: 60 }, danger: { min: 60 } }
     }
   ],
   calculate: calculateChargePump,
@@ -22705,15 +24507,99 @@ var chargePumpVoltage = {
       { symbol: "I_out", description: "Output current", unit: "A" },
       { symbol: "f", description: "Switching frequency", unit: "Hz" },
       { symbol: "C", description: "Pump capacitance", unit: "F" }
-    ]
+    ],
+    reference: "Dickson, IEEE JSSC 11(3), 1976; Seeman & Sanders, IEEE TPEL 23(2), 2008"
   },
   visualization: { type: "none" },
+  examples: [
+    { id: "gate-drive-tripler", label: "Gate-drive tripler from 3.3 V ± 10 %, 1–10 mA, 500 kHz", values: { inputVoltage: 3.3, inputVoltageMin: 2.97, inputVoltageMax: 3.63, stages: 2, pumpCurrent: 5, pumpCurrentMin: 1, pumpCurrentMax: 10, frequency: 500, capacitance: 1, switchResistance: 2 } },
+    { id: "doubler-5v", label: "Doubler from 5 V ± 5 %, 5–30 mA, 100 kHz", values: { inputVoltage: 5, inputVoltageMin: 4.75, inputVoltageMax: 5.25, stages: 1, pumpCurrent: 20, pumpCurrentMin: 5, pumpCurrentMax: 30, frequency: 100, capacitance: 10, switchResistance: 1, esr: 5 } },
+    { id: "bias-4x", label: "Four-times bias supply from 3.0–3.6 V, 0.5–2 mA, 1 MHz", values: { inputVoltage: 3.3, inputVoltageMin: 3, inputVoltageMax: 3.6, stages: 3, pumpCurrent: 1, pumpCurrentMin: 0.5, pumpCurrentMax: 2, frequency: 1e3, capacitance: 0.1, switchResistance: 5, esr: 20 } }
+  ],
+  // C11 (waves/W7.md): the input voltage and the load as ranges, the results at their worst corners, the parts and their stresses.
+  envelope: {
+    ranges: [
+      { input: "inputVoltage", min: "inputVoltageMin", max: "inputVoltageMax" },
+      { input: "pumpCurrent", min: "pumpCurrentMin", max: "pumpCurrentMax" }
+    ],
+    results: [
+      { output: "loadedVoltage", note: { range: ["loadedVoltageMin", "loadedVoltageMax"] } },
+      { output: "outputRipple", note: { worst: "outputRippleWorst", input: "pumpCurrent", at: "outputRippleWorstI" } },
+      { output: "openCircuitVoltage", note: { worst: "openCircuitVoltageMax", input: "inputVoltage", at: "openCircuitVoltageVin" } }
+    ],
+    parts: [
+      { ref: "C_{1…N}", role: "flying-capacitor", value: { key: "capacitance", count: "pumpCapCount" }, stresses: [{ symbol: "V", sense: "min", key: "pumpCapVoltageRating" }, { symbol: "ESR", sense: "max", key: "esr" }] },
+      { ref: "C_{out}", role: "output-capacitor", value: { key: "capacitance" }, stresses: [{ symbol: "V", sense: "min", key: "outputCapVoltageRating" }, { symbol: "ESR", sense: "max", key: "esr" }] },
+      { ref: "S", role: "switch", value: { key: "switchResistance", count: "switchCount" }, stresses: [{ symbol: "V_{DS}", sense: "min", key: "switchVoltageRating" }, { symbol: "I_{rms}", sense: "min", key: "switchRmsMA", at: { input: "pumpCurrent", key: "switchRmsI" } }] }
+    ],
+    // Ideal switching (the slow-switching limit) at the nominal point: the first pump capacitor fills to V_in in one phase and
+    // gives the output charge I/f to the next stage in the other; the output steps up by I/(f·C) once a period and falls with the load.
+    waveforms: {
+      periods: 2.5,
+      traces: (i, v) => {
+        const T = 1 / (Math.max(i.frequency, 1e-3) * 1e3);
+        const end = 2.5 * T;
+        const dv = v.outputRipple / 1e3;
+        const c1 = [];
+        for (let k = 0; k < 5; k++) {
+          const t0 = k * T / 2;
+          const level = k % 2 === 0 ? i.inputVoltage : i.inputVoltage - dv;
+          if (k > 0) c1.push([t0, c1[c1.length - 1][1]]);
+          c1.push([t0, level]);
+        }
+        c1.push([end, i.inputVoltage]);
+        const top = v.loadedVoltage + dv / 2;
+        const out = [];
+        for (let k = 0; k < 3; k++) {
+          const t0 = k * T;
+          out.push([t0, top]);
+          if (t0 + T <= end) out.push([t0 + T, top - dv]);
+          else out.push([end, top - dv * (end - t0) / T]);
+        }
+        return [
+          { id: "vc1", symbol: "V_{C1}", unit: "V", points: c1, spans: [{ symbol: "ΔV", axis: "y", from: i.inputVoltage - dv, to: i.inputVoltage }] },
+          { id: "vout", symbol: "V_{out}", unit: "V", points: out, spans: [{ symbol: "ΔV_{out}", axis: "y", from: top - dv, to: top }] }
+        ];
+      }
+    },
+    bom: (i, v) => [
+      { qty: v.pumpCapCount, description: "C1…CN (pump capacitors, X7R)", value: `${sig34(i.capacitance)} µF, ≥ ${v.pumpCapVoltageRating} V, ESR ≤ ${sig34(i.esr)} mΩ`, package: capacitorPackage(i.capacitance * 1e-6, { workingVolts: v.pumpCapVoltageRating / 1.5 }) },
+      { qty: 1, description: "C_out (output capacitor, X7R)", value: `${sig34(i.capacitance)} µF, ≥ ${v.outputCapVoltageRating} V, ESR ≤ ${sig34(i.esr)} mΩ`, package: capacitorPackage(i.capacitance * 1e-6, { workingVolts: v.outputCapVoltageRating / 1.5 }) },
+      { qty: v.switchCount, description: "S (switches: N + 1 transfer and two per pump capacitor, or a charge-pump IC that holds them)", value: `Ron ≤ ${sig34(i.switchResistance)} Ω, VDS ≥ ${v.switchVoltageRating} V, Irms ≥ ${sig34(v.switchRmsMA)} mA`, package: "" }
+    ]
+  },
+  lossModel: {
+    inputs: ["switchResistance", "esr"],
+    efficiency: "efficiencyLossModel",
+    total: "lossTotal",
+    outputPower: "outputPower",
+    losses: [
+      { output: "lossChargeSharing", lever: "capacitor" },
+      { output: "lossSwitches", lever: "switch-resistance" },
+      { output: "lossCapEsr", lever: "esr" }
+    ]
+  },
   relatedCalculators: ["pwm-duty-cycle", "switching-regulator-ripple", "boost-converter"]
 };
 
 // src/lib/calculators/power/switching-regulator-ripple.ts
+var sig35 = (v) => String(Number(v.toPrecision(3)));
+var LOSS_DEFAULTS5 = { rdsOnHigh: 12, rdsOnLow: 6, tSwitch: 20, qg: 23, vGate: 5, tDead: 20, vBody: 0.7, dcr: 20, coreLoss: 50 };
 function calculateSwitchingRegulatorRipple(inputs) {
-  const { inductance, capacitance, esr, inputVoltage, outputVoltage, frequency } = inputs;
+  const { inductance, capacitance, esr, inputVoltage, outputVoltage, frequency, outputCurrent = 2, inputVoltageMin = 0, inputVoltageMax = 0 } = inputs;
+  const p = { ...LOSS_DEFAULTS5, ...Object.fromEntries(Object.keys(LOSS_DEFAULTS5).filter((k) => inputs[k] !== void 0).map((k) => [k, inputs[k]])) };
+  if (outputVoltage >= inputVoltage) {
+    return { values: {}, errors: ["Output voltage must be less than input voltage"] };
+  }
+  if (inputVoltageMin > 0 && inputVoltageMin > inputVoltage) {
+    return { values: {}, errors: ["Minimum input voltage must not be above the nominal input voltage"] };
+  }
+  if (inputVoltageMax > 0 && inputVoltageMax < inputVoltage) {
+    return { values: {}, errors: ["Maximum input voltage must not be below the nominal input voltage"] };
+  }
+  if (inputVoltageMin > 0 && outputVoltage >= inputVoltageMin) {
+    return { values: {}, errors: ["Output voltage must be less than the minimum input voltage"] };
+  }
   const safeFreq = Math.max(frequency, 1e-3);
   const safeL = Math.max(inductance, 1e-3);
   const safeCap = Math.max(capacitance, 1e-3);
@@ -22726,13 +24612,70 @@ function calculateSwitchingRegulatorRipple(inputs) {
   const capacitorRipple = inductorRippleCurrent / (8 * freq_Hz * C_F) * 1e3;
   const inductorRipple = inductorRippleCurrent * esr_Ohm * 1e3;
   const peakToPeakRipple = Math.sqrt(capacitorRipple * capacitorRipple + inductorRipple * inductorRipple);
+  const duty = (v) => Math.min(99, Math.max(1, outputVoltage / Math.max(v, 1e-3) * 100));
+  const ripple = (v) => (v - outputVoltage) * (duty(v) / 100) / (L_H * freq_Hz);
+  const outRipple = (v) => {
+    const c2 = ripple(v) / (8 * freq_Hz * C_F) * 1e3;
+    const e = ripple(v) * esr_Ohm * 1e3;
+    return Math.sqrt(c2 * c2 + e * e);
+  };
+  const rms2 = (v) => outputCurrent * outputCurrent + ripple(v) * ripple(v) / 12;
+  const vins = corners(inputVoltage, inputVoltageMin, inputVoltageMax);
+  const lo = vins[0];
+  const hi = vins[vins.length - 1];
+  const rippleWorst = worstOver(vins, ripple);
+  const peakWorst = worstOver(vins, (v) => outputCurrent + ripple(v) / 2);
+  const outRippleWorst = worstOver(vins, outRipple);
+  const coutRms = worstOver(vins, (v) => Math.abs(ripple(v)) / Math.sqrt(12));
+  const q1Rms = worstOver(vins, (v) => Math.sqrt(duty(v) / 100 * rms2(v)));
+  const q2Rms = worstOver(vins, (v) => Math.sqrt((1 - duty(v) / 100) * rms2(v)));
+  const D = dutyCycle / 100;
+  const fsw = freq_Hz;
+  const rms2Nom = rms2(inputVoltage);
+  const lossDcr = rms2Nom * p.dcr / 1e3;
+  const lossCore = p.coreLoss / 1e3;
+  const lossHsConduction = D * rms2Nom * p.rdsOnHigh / 1e3;
+  const lossLsConduction = (1 - D) * rms2Nom * p.rdsOnLow / 1e3;
+  const lossHsSwitching = 0.5 * inputVoltage * outputCurrent * p.tSwitch * 1e-9 * fsw;
+  const lossGateDrive = p.qg * 1e-9 * p.vGate * fsw;
+  const lossDeadTime = p.vBody * outputCurrent * 2 * p.tDead * 1e-9 * fsw;
+  const lossCapEsr = inductorRippleCurrent * inductorRippleCurrent / 12 * esr_Ohm;
+  const lossTotal = lossDcr + lossCore + lossHsConduction + lossLsConduction + lossHsSwitching + lossGateDrive + lossDeadTime + lossCapEsr;
+  const outputPower = outputVoltage * outputCurrent;
   return {
     values: {
       dutyCycle,
       inductorRippleCurrent,
       capacitorRipple,
       inductorRipple,
-      peakToPeakRipple
+      peakToPeakRipple,
+      dutyMin: duty(hi),
+      dutyMax: duty(lo),
+      inductorRippleWorst: rippleWorst.value,
+      inductorRippleWorstVin: rippleWorst.at,
+      ilPeakWorst: peakWorst.value,
+      ilPeakWorstVin: peakWorst.at,
+      rippleWorstMV: outRippleWorst.value,
+      rippleWorstVin: outRippleWorst.at,
+      coutRmsA: coutRms.value,
+      coutRmsVin: coutRms.at,
+      q1RmsA: q1Rms.value,
+      q1RmsVin: q1Rms.at,
+      q2RmsA: q2Rms.value,
+      q2RmsVin: q2Rms.at,
+      vdsRating: ratingAtOrAbove(VOLTAGE_DERATING * hi, MOSFET_VDS),
+      coutVoltageRating: ratingAtOrAbove(VOLTAGE_DERATING * outputVoltage, CAPACITOR_V),
+      lossDcr,
+      lossCore,
+      lossHsConduction,
+      lossLsConduction,
+      lossHsSwitching,
+      lossGateDrive,
+      lossDeadTime,
+      lossCapEsr,
+      lossTotal,
+      outputPower,
+      efficiency: outputPower / (outputPower + lossTotal) * 100
     }
   };
 }
@@ -22802,7 +24745,46 @@ var switchingRegulatorRipple = {
       defaultValue: 20,
       min: 0.1,
       tooltip: "Equivalent series resistance of the output capacitor"
-    }
+    },
+    {
+      key: "outputCurrent",
+      label: "Output Current",
+      symbol: "I_{out}",
+      unit: "A",
+      defaultValue: 2,
+      min: 0.01,
+      max: 100,
+      tooltip: "The load current: it sets the inductor's peak, the switches' RMS currents and the losses, not the ripple."
+    },
+    {
+      key: "inputVoltageMin",
+      label: "Minimum Input Voltage",
+      symbol: "V_{in,min}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The lowest input the regulator must work from; 0 for the nominal.",
+      group: "Operating envelope"
+    },
+    {
+      key: "inputVoltageMax",
+      label: "Maximum Input Voltage",
+      symbol: "V_{in,max}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      tooltip: "The highest input the regulator must work from; 0 for the nominal. The ripple is largest there.",
+      group: "Operating envelope"
+    },
+    { key: "rdsOnHigh", label: "High-Side R_DS(on)", symbol: "R_{DS(on),H}", unit: "mΩ", defaultValue: 12, min: 0.1, max: 1e4, group: "Loss model", tooltip: "The high-side FET's on-resistance at its operating temperature." },
+    { key: "rdsOnLow", label: "Low-Side R_DS(on)", symbol: "R_{DS(on),L}", unit: "mΩ", defaultValue: 6, min: 0.1, max: 1e4, group: "Loss model", tooltip: "The low-side (synchronous) FET's on-resistance at its operating temperature." },
+    { key: "tSwitch", label: "Switching Edges (t_r + t_f)", symbol: "t_{r+f}", unit: "ns", defaultValue: 20, min: 0, max: 1e4, group: "Loss model", tooltip: "The high side's rise and fall times added: the switching loss is ½·V_in·I_out·(t_r + t_f)·f_sw." },
+    { key: "qg", label: "Total Gate Charge", symbol: "Q_{g}", unit: "nC", defaultValue: 23, min: 0, max: 1e4, group: "Loss model", tooltip: "Both FETs' gate charge at the drive voltage: the gate drive takes Q_g·V_g·f_sw." },
+    { key: "vGate", label: "Gate Drive Voltage", symbol: "V_{g}", unit: "V", defaultValue: 5, min: 1, max: 20, group: "Loss model" },
+    { key: "tDead", label: "Dead Time (each edge)", symbol: "t_{d}", unit: "ns", defaultValue: 20, min: 0, max: 1e3, group: "Loss model", tooltip: "The time both FETs are off at each edge, when the low side's body diode carries the current." },
+    { key: "vBody", label: "Body Diode Forward Voltage", symbol: "V_{F}", unit: "V", defaultValue: 0.7, min: 0, max: 2, group: "Loss model" },
+    { key: "dcr", label: "Inductor DCR", symbol: "DCR", unit: "mΩ", defaultValue: 20, min: 0, max: 1e5, group: "Loss model", tooltip: "The inductor's winding resistance." },
+    { key: "coreLoss", label: "Inductor Core Loss", symbol: "P_{core}", unit: "mW", defaultValue: 50, min: 0, max: 1e5, group: "Loss model", tooltip: "From the inductor's datasheet at this ripple and frequency." }
   ],
   outputs: [
     {
@@ -22845,6 +24827,43 @@ var switchingRegulatorRipple = {
         warning: { max: 50 },
         danger: { max: 50 }
       }
+    },
+    // C11 (waves/W7.md): today's model at the corners of the input range, each where it is largest.
+    { key: "dutyMin", label: "Minimum Duty Cycle", symbol: "D_{min}", unit: "%", precision: 2, tooltip: "At the maximum input voltage" },
+    { key: "dutyMax", label: "Maximum Duty Cycle", symbol: "D_{max}", unit: "%", precision: 2, tooltip: "At the minimum input voltage" },
+    { key: "inductorRippleWorst", label: "Inductor Ripple Current, Worst Case", symbol: "ΔI_{L,max}", unit: "A", precision: 4 },
+    { key: "inductorRippleWorstVin", label: "Input at the Worst Inductor Ripple", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "ilPeakWorst", label: "Inductor Peak Current, Worst Case", symbol: "I_{L,pk}", unit: "A", precision: 3, tooltip: "The load plus half the ripple; the inductor's saturation current must be at least this" },
+    { key: "ilPeakWorstVin", label: "Input at the Worst Peak", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "rippleWorstMV", label: "Total Ripple, Worst Case", symbol: "ΔV_{out,max}", unit: "mV", precision: 2 },
+    { key: "rippleWorstVin", label: "Input at the Worst Ripple", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "coutRmsA", label: "Output Capacitor RMS Current, Worst Case", symbol: "I_{Cout,rms}", unit: "A", precision: 3, tooltip: "ΔI_L/√12, the inductor ripple the capacitor carries" },
+    { key: "coutRmsVin", label: "Input at the Worst Capacitor Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "q1RmsA", label: "High-Side FET RMS Current, Worst Case", symbol: "I_{Q1,rms}", unit: "A", precision: 3 },
+    { key: "q1RmsVin", label: "Input at the Worst High-Side Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "q2RmsA", label: "Low-Side FET RMS Current, Worst Case", symbol: "I_{Q2,rms}", unit: "A", precision: 3 },
+    { key: "q2RmsVin", label: "Input at the Worst Low-Side Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "vdsRating", label: "FET Drain-Source Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the maximum input" },
+    { key: "coutVoltageRating", label: "Output Capacitor Voltage Rating", symbol: "V_{Cout}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the output" },
+    // C11: the losses at the nominal input and load, and the efficiency.
+    { key: "lossDcr", label: "Inductor DCR Loss", symbol: "P_{DCR}", unit: "W", precision: 4 },
+    { key: "lossCore", label: "Inductor Core Loss", symbol: "P_{core}", unit: "W", precision: 4 },
+    { key: "lossHsConduction", label: "High-Side Conduction Loss", symbol: "P_{cond,H}", unit: "W", precision: 4 },
+    { key: "lossLsConduction", label: "Low-Side Conduction Loss", symbol: "P_{cond,L}", unit: "W", precision: 4 },
+    { key: "lossHsSwitching", label: "High-Side Switching Loss", symbol: "P_{sw}", unit: "W", precision: 4 },
+    { key: "lossGateDrive", label: "Gate Drive Loss", symbol: "P_{gate}", unit: "W", precision: 4 },
+    { key: "lossDeadTime", label: "Dead-Time Loss", symbol: "P_{dead}", unit: "W", precision: 4 },
+    { key: "lossCapEsr", label: "Output Capacitor ESR Loss", symbol: "P_{ESR}", unit: "W", precision: 4 },
+    { key: "lossTotal", label: "Total Loss", symbol: "P_{loss}", unit: "W", precision: 4 },
+    { key: "outputPower", label: "Output Power", symbol: "P_{out}", unit: "W", precision: 3 },
+    {
+      key: "efficiency",
+      label: "Efficiency",
+      symbol: "η",
+      unit: "%",
+      precision: 2,
+      tooltip: "At the nominal input and load, from the loss model",
+      thresholds: { good: { min: 90 }, warning: { min: 80, max: 90 }, danger: { min: 80 } }
     }
   ],
   calculate: calculateSwitchingRegulatorRipple,
@@ -22859,6 +24878,75 @@ var switchingRegulatorRipple = {
     ]
   },
   visualization: { type: "none" },
+  examples: [
+    { id: "12v-to-5v-2a", label: "12 V ± 10 % to 5 V at 2 A, 500 kHz, 10 µH and 100 µF polymer", values: { inputVoltage: 12, inputVoltageMin: 10.8, inputVoltageMax: 13.2, outputVoltage: 5, frequency: 500, inductance: 10, capacitance: 100, esr: 20, outputCurrent: 2 } },
+    { id: "24v-to-3v3-3a", label: "18–30 V to 3.3 V at 3 A, 400 kHz, 10 µH and 47 µF ceramic", values: { inputVoltage: 24, inputVoltageMin: 18, inputVoltageMax: 30, outputVoltage: 3.3, frequency: 400, inductance: 10, capacitance: 47, esr: 5, outputCurrent: 3, rdsOnHigh: 20, rdsOnLow: 8, qg: 15, dcr: 15, coreLoss: 80 } },
+    { id: "5v-to-1v2-6a", label: "5 V ± 10 % to 1.2 V at 6 A, 1 MHz, 0.47 µH and 220 µF polymer", values: { inputVoltage: 5, inputVoltageMin: 4.5, inputVoltageMax: 5.5, outputVoltage: 1.2, frequency: 1e3, inductance: 0.47, capacitance: 220, esr: 3, outputCurrent: 6, rdsOnHigh: 8, rdsOnLow: 4, tSwitch: 10, qg: 12, dcr: 3, coreLoss: 60 } }
+  ],
+  // C11 (waves/W7.md): the input range, the results at their worst corners, the parts and their stresses.
+  envelope: {
+    ranges: [{ input: "inputVoltage", min: "inputVoltageMin", max: "inputVoltageMax" }],
+    results: [
+      { output: "dutyCycle", note: { range: ["dutyMin", "dutyMax"] } },
+      { output: "peakToPeakRipple", note: { worst: "rippleWorstMV", input: "inputVoltage", at: "rippleWorstVin" } },
+      { output: "inductorRippleCurrent", note: { worst: "inductorRippleWorst", input: "inputVoltage", at: "inductorRippleWorstVin" } },
+      { output: "ilPeakWorst", note: { corner: { input: "inputVoltage", at: "ilPeakWorstVin" } } }
+    ],
+    parts: [
+      { ref: "L1", role: "inductor", value: { key: "inductance" }, stresses: [{ symbol: "I_{sat}", sense: "min", key: "ilPeakWorst", at: { input: "inputVoltage", key: "ilPeakWorstVin" } }, { symbol: "DCR", sense: "max", key: "dcr" }] },
+      { ref: "C_{out}", role: "output-capacitor", value: { key: "capacitance" }, stresses: [{ symbol: "V", sense: "min", key: "coutVoltageRating" }, { symbol: "I_{rms}", sense: "min", key: "coutRmsA", at: { input: "inputVoltage", key: "coutRmsVin" } }, { symbol: "ESR", sense: "max", key: "esr" }] },
+      { ref: "Q1", role: "high-side", value: { key: "rdsOnHigh" }, stresses: [{ symbol: "V_{DS}", sense: "min", key: "vdsRating" }, { symbol: "I_{rms}", sense: "min", key: "q1RmsA", at: { input: "inputVoltage", key: "q1RmsVin" } }] },
+      { ref: "Q2", role: "low-side", value: { key: "rdsOnLow" }, stresses: [{ symbol: "V_{DS}", sense: "min", key: "vdsRating" }, { symbol: "I_{rms}", sense: "min", key: "q2RmsA", at: { input: "inputVoltage", key: "q2RmsVin" } }] }
+    ],
+    // Ideal switching at the nominal input: the switch node at V_in for D·T, the inductor current a triangle about I_out.
+    waveforms: {
+      periods: 2.5,
+      traces: (i, v) => {
+        const T = 1 / (Math.max(i.frequency, 1e-3) * 1e3);
+        const ton = v.dutyCycle / 100 * T;
+        const lo = i.outputCurrent - v.inductorRippleCurrent / 2;
+        const hi = i.outputCurrent + v.inductorRippleCurrent / 2;
+        const end = 2.5 * T;
+        const il = (t) => {
+          const ph = t - Math.floor(t / T) * T;
+          return ph < ton ? lo + (hi - lo) * ph / ton : hi - (hi - lo) * (ph - ton) / (T - ton);
+        };
+        const edges = [0, T, 2 * T].flatMap((t0) => [t0, t0 + ton]).filter((t) => t < end);
+        const sw = edges.flatMap((t) => {
+          const ph = t - Math.floor(t / T) * T;
+          return ph === 0 ? [[t, 0], [t, i.inputVoltage]] : [[t, i.inputVoltage], [t, 0]];
+        }).slice(1);
+        sw.unshift([0, i.inputVoltage]);
+        sw.push([end, end - 2 * T < ton ? i.inputVoltage : 0]);
+        return [
+          { id: "sw", symbol: "V_{SW}", unit: "V", points: sw, spans: [{ symbol: "t_{on}", axis: "x", from: 0, to: ton }] },
+          { id: "il", symbol: "I_{L}", unit: "A", points: [...edges.map((t) => [t, il(t)]), [end, il(end)]], spans: [{ symbol: "ΔI_{L}", axis: "y", from: lo, to: hi }] }
+        ];
+      }
+    },
+    bom: (i, v) => [
+      { qty: 1, description: "L1 (power inductor, shielded)", value: `${sig35(i.inductance)} µH, Isat ≥ ${sig35(v.ilPeakWorst)} A, DCR ≤ ${sig35(i.dcr)} mΩ`, package: inductorPackage(i.inductance * 1e-6, { currentA: v.ilPeakWorst }) },
+      { qty: 1, description: "C_out (output capacitor)", value: `${sig35(i.capacitance)} µF, ≥ ${v.coutVoltageRating} V, ESR ≤ ${sig35(i.esr)} mΩ, Irms ≥ ${sig35(v.coutRmsA)} A`, package: capacitorPackage(i.capacitance * 1e-6, { workingVolts: i.outputVoltage, polarized: true }) },
+      { qty: 1, description: "Q1 (high-side N-channel MOSFET)", value: `RDS(on) ≤ ${sig35(i.rdsOnHigh)} mΩ, VDS ≥ ${v.vdsRating} V, Irms ≥ ${sig35(v.q1RmsA)} A`, package: "" },
+      { qty: 1, description: "Q2 (low-side N-channel MOSFET)", value: `RDS(on) ≤ ${sig35(i.rdsOnLow)} mΩ, VDS ≥ ${v.vdsRating} V, Irms ≥ ${sig35(v.q2RmsA)} A`, package: "" }
+    ]
+  },
+  lossModel: {
+    inputs: ["rdsOnHigh", "rdsOnLow", "tSwitch", "qg", "vGate", "tDead", "vBody", "dcr", "coreLoss"],
+    efficiency: "efficiency",
+    total: "lossTotal",
+    outputPower: "outputPower",
+    losses: [
+      { output: "lossDcr", lever: "dcr" },
+      { output: "lossHsSwitching", lever: "edges" },
+      { output: "lossGateDrive", lever: "gate-charge" },
+      { output: "lossCore", lever: "core" },
+      { output: "lossDeadTime", lever: "dead-time" },
+      { output: "lossLsConduction", lever: "rdson-low" },
+      { output: "lossHsConduction", lever: "rdson-high" },
+      { output: "lossCapEsr", lever: "esr" }
+    ]
+  },
   relatedCalculators: ["buck-converter", "decoupling-capacitor", "mosfet-power-dissipation"],
   relatedBlogPosts: ["power-supply-ripple-filter"]
 };
@@ -24192,7 +26280,9 @@ var mosfetOperatingPoint = {
 
 // src/lib/calculators/general/comparator-hysteresis.ts
 function calculateComparatorHysteresis(inputs) {
-  const { vref, supplyVoltage, r1, r2, hystPercent } = inputs;
+  const { vref, supplyVoltage, hystPercent, eSeries = 0 } = inputs;
+  const r1 = roundToSeries(inputs.r1, eSeries);
+  const r2 = roundToSeries(inputs.r2, eSeries);
   const divisor = Math.max(r1 + r2, 1e-3);
   const vTrip_high = vref * (r2 / divisor) + supplyVoltage * (r1 / divisor);
   const vTrip_low = vref * (r2 / divisor);
@@ -24251,6 +26341,7 @@ var comparatorHysteresis = {
       unit: "kΩ",
       defaultValue: 10,
       min: 1e-3,
+      max: 1e4,
       tooltip: "Resistor from the reference voltage to the non-inverting input (with a divider, its Thevenin resistance)"
     },
     {
@@ -24260,6 +26351,7 @@ var comparatorHysteresis = {
       unit: "kΩ",
       defaultValue: 100,
       min: 1e-3,
+      max: 1e4,
       tooltip: "Feedback resistor from the comparator output to the non-inverting input; with R1 it sets the hysteresis"
     },
     {
@@ -24272,6 +26364,24 @@ var comparatorHysteresis = {
       max: 50,
       step: 0.5,
       tooltip: "Desired hysteresis as percentage of supply voltage (for design calculation)"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -24325,7 +26435,24 @@ var comparatorHysteresis = {
     reference: "TI SNOA997A, Inverting comparator with hysteresis circuit"
   },
   visualization: { type: "none" },
-  relatedCalculators: ["opamp-gain", "bjt-bias-point", "voltage-divider"]
+  relatedCalculators: ["opamp-gain", "bjt-bias-point", "voltage-divider"],
+  examples: [
+    { id: "mid-rail-100mv-e24", label: "100 mV band about 1.65 V on 3.3 V, E24", values: { vref: 1.65, supplyVoltage: 3.3, r1: 3.125, r2: 100, hystPercent: 3, eSeries: 24 } },
+    { id: "reference-2v5-1pct-e96", label: "1 % band on a 2.5 V reference at 5 V, E96", values: { vref: 2.5, supplyVoltage: 5, r1: 10.101, r2: 1e3, hystPercent: 1, eSeries: 96 } },
+    { id: "wide-band-12v-e12", label: "1 V band on 12 V with a 6 V reference, E12", values: { vref: 6, supplyVoltage: 12, r1: 9.09, r2: 100, hystPercent: 8.3, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): the reader's resistors, rounded by `eSeries` in
+  // calculate(); R1 from the reference to the + input, R2 the feedback.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "r1", position: "reference" },
+      { ref: "R2", kind: "R", key: "r2", position: "feedback" }
+    ],
+    schematic: { kind: "comparator", roles: { input: "R1", feedback: "R2" } },
+    targets: [{ output: "hysteresis", solveFor: ["r1"] }],
+    response: { outputs: ["vTrip_high", "vTrip_low", "hysteresis"] }
+  }
 };
 
 // src/lib/calculators/general/555-timer.ts
@@ -24495,14 +26622,14 @@ var timer555 = {
 
 // src/lib/calculators/general/transistor-switch.ts
 function calculateTransistorSwitch(inputs) {
-  const { vcc, loadResistor, inputVoltage, beta, vbe, vce_sat, overdriveFactor } = inputs;
+  const { vcc, loadResistor, inputVoltage, beta, vbe, vce_sat, overdriveFactor, eSeries = 0 } = inputs;
   const safeLoadR = Math.max(loadResistor, 1e-3);
   const safeBeta = Math.max(beta, 1);
   const loadCurrent = (vcc - vce_sat) / safeLoadR * 1e3;
   const ib_required = loadCurrent / safeBeta * 1e3;
   const ib_design_A = ib_required * overdriveFactor * 1e-6;
   const vDrive = Math.max(inputVoltage - vbe, 0);
-  const rb = vDrive / Math.max(ib_design_A, 1e-12) / 1e3;
+  const rb = roundToSeries(vDrive / Math.max(ib_design_A, 1e-12) / 1e3, eSeries);
   const rb_Ohm = rb * 1e3;
   const ib_actual = vDrive / Math.max(rb_Ohm, 1e-3) * 1e6;
   const powerDissipation = loadCurrent / 1e3 * vce_sat * 1e3;
@@ -24597,6 +26724,24 @@ var transistorSwitch = {
       min: 1,
       max: 20,
       tooltip: "Factor by which base current exceeds minimum required (typically 5-10×)"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -24620,7 +26765,8 @@ var transistorSwitch = {
       label: "Base Resistor",
       symbol: "R_B",
       unit: "kΩ",
-      precision: 3
+      precision: 3,
+      tooltip: "The base resistor for the overdrive chosen; with a part series, the nearest value of the series"
     },
     {
       key: "ib_actual",
@@ -24661,27 +26807,62 @@ var transistorSwitch = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["bjt-bias-point", "mosfet-operating-point", "led-resistor"],
+  examples: [
+    { id: "relay-12v-from-3v3-e24", label: "12 V relay coil (400 Ω) from a 3.3 V GPIO, E24", values: { vcc: 12, loadResistor: 400, inputVoltage: 3.3, beta: 100, vbe: 0.7, vce_sat: 0.2, overdriveFactor: 5, eSeries: 24 } },
+    { id: "led-strip-5v-e12", label: "100 mA LED load from 5 V logic, E12", values: { vcc: 5, loadResistor: 48, inputVoltage: 5, beta: 50, vbe: 0.75, vce_sat: 0.2, overdriveFactor: 10, eSeries: 12 } },
+    { id: "buzzer-3v3-e96", label: "3.3 V buzzer (150 Ω) from 1.8 V logic, E96", values: { vcc: 3.3, loadResistor: 150, inputVoltage: 1.8, beta: 120, vbe: 0.65, vce_sat: 0.1, overdriveFactor: 4, eSeries: 96 } }
+  ],
+  // C5 (waves/W7.md): R_B computed for the overdrive chosen, rounded by
+  // `eSeries` in calculate(); the load is drawn and labelled, not a part.
+  synthesis: {
+    series: "eSeries",
+    parts: [{ ref: "R1", kind: "R", key: "rb", position: "base" }],
+    schematic: {
+      kind: "bjt-switch",
+      roles: { rb: "R1" },
+      others: (i, _v, fmt5) => ({ load: { ref: "R_L", value: fmt5(i.loadResistor, "Ω") } })
+    },
+    response: { outputs: ["ib_actual", "powerDissipation", "switchingState"] }
+  },
   relatedBlogPosts: ["bjt-bias-point", "current-mirror"]
 };
 
 // src/lib/calculators/general/current-mirror.ts
+function widlarOutput(iRef, rE, vtV, start) {
+  let x = Math.log(start);
+  const lnRef = Math.log(iRef);
+  for (let k = 0; k < 100; k++) {
+    const e = Math.exp(x);
+    const step = (vtV * (lnRef - x) - rE * e) / (vtV + rE * e);
+    x += step;
+    if (Math.abs(step) < 1e-15) break;
+  }
+  return Math.exp(x);
+}
 function calculateCurrentMirror(inputs) {
-  const { refCurrent, ratio, vcc, beta, vt } = inputs;
+  const { refCurrent, ratio, vcc, beta, vt, eSeries = 0 } = inputs;
   const safeRef = Math.max(refCurrent, 1e-3);
   const safeRatio = Math.max(ratio, 1e-3);
   const safeBeta = Math.max(beta, 1);
   const safeVcc = Math.max(vcc, 0.1);
   const idealOutput = safeRef * safeRatio;
-  const actualCurrent = safeRef * safeRatio * safeBeta / Math.max(safeBeta + 2, 1);
-  const error = (idealOutput - actualCurrent) / Math.max(idealOutput, 1e-3) * 100;
-  const refResistor = (safeVcc - 0.7) / (safeRef / 1e3) / 1e3;
-  const powerRef = safeRef / 1e3 * safeVcc * 1e3;
-  let widlarResistor = 0;
+  const refResistorExact = (safeVcc - 0.7) / (safeRef / 1e3) / 1e3;
+  let widlarExact = 0;
   if (safeRatio < 1 && safeRatio > 0) {
     const outputCurrentMa = safeRef * safeRatio;
     const vt_V = vt / 1e3;
-    widlarResistor = vt_V * Math.log(safeRef / Math.max(outputCurrentMa, 1e-4)) / Math.max(outputCurrentMa / 1e3, 1e-9) / 1e3;
+    widlarExact = vt_V * Math.log(safeRef / Math.max(outputCurrentMa, 1e-4)) / Math.max(outputCurrentMa / 1e3, 1e-9) / 1e3;
   }
+  const refResistor = roundToSeries(refResistorExact, eSeries);
+  const widlarResistor = roundToSeries(widlarExact, eSeries);
+  const iRef = refResistor === refResistorExact ? safeRef : (safeVcc - 0.7) / refResistor;
+  let mirrored = idealOutput;
+  if (refResistor !== refResistorExact || widlarResistor !== widlarExact) {
+    mirrored = widlarExact > 0 ? widlarOutput(iRef, widlarResistor, vt / 1e3, Math.min(idealOutput, iRef)) : iRef * safeRatio;
+  }
+  const actualCurrent = mirrored * safeBeta / Math.max(safeBeta + 2, 1);
+  const error = (idealOutput - actualCurrent) / Math.max(idealOutput, 1e-3) * 100;
+  const powerRef = iRef / 1e3 * safeVcc * 1e3;
   return {
     values: {
       outputCurrent: actualCurrent,
@@ -24758,6 +26939,24 @@ var currentMirror = {
       min: 10,
       max: 50,
       tooltip: "Thermal voltage kT/q ≈ 26 mV at room temperature"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -24767,14 +26966,16 @@ var currentMirror = {
       label: "Output Current (with β error)",
       symbol: "I_out",
       unit: "mA",
-      precision: 4
+      precision: 4,
+      tooltip: "The mirrored current less the β error; with a part series, the current the rounded resistors set"
     },
     {
       key: "refResistor",
       label: "Reference Resistor",
       symbol: "R_ref",
       unit: "kΩ",
-      precision: 3
+      precision: 3,
+      tooltip: "Sets I_ref from V_CC with V_BE = 0.7 V; with a part series, the nearest value of the series"
     },
     {
       key: "powerRef",
@@ -24786,7 +26987,8 @@ var currentMirror = {
     {
       key: "error",
       signed: "explicit",
-      label: "β Error",
+      label: "Output Current Error",
+      tooltip: "How far the output current falls short of N × I_ref, in percent (negative: above it): the β error, and with a part series the rounded resistors' error too",
       symbol: "ε_β",
       unit: "%",
       precision: 2,
@@ -24802,7 +27004,7 @@ var currentMirror = {
       symbol: "R_W",
       unit: "kΩ",
       precision: 3,
-      tooltip: "Widlar emitter resistor value — only applicable when mirror ratio < 1"
+      tooltip: "Widlar emitter resistor value — only applicable when mirror ratio < 1; with a part series, the nearest value of the series"
     }
   ],
   calculate: calculateCurrentMirror,
@@ -24818,6 +27020,23 @@ var currentMirror = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["bjt-bias-point", "transistor-switch", "opamp-gain"],
+  examples: [
+    { id: "bias-1ma-12v-e24", label: "1 mA bias mirror from 12 V, E24", values: { refCurrent: 1, ratio: 1, vcc: 12, beta: 100, vt: 26, eSeries: 24 } },
+    { id: "widlar-10ua-e96", label: "10 µA Widlar source from 1 mA, E96", values: { refCurrent: 1, ratio: 0.01, vcc: 5, beta: 100, vt: 26, eSeries: 96 } },
+    { id: "double-1ma-3v3-e12", label: "1 mA output at twice 0.5 mA from 3.3 V, E12", values: { refCurrent: 0.5, ratio: 2, vcc: 3.3, beta: 150, vt: 26, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): the reference resistor, and the Widlar emitter
+  // resistor where the ratio is below 1, both rounded by `eSeries` in
+  // calculate(); drawn as the two-transistor mirror.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "refResistor", position: "reference" },
+      { ref: "R2", kind: "R", key: "widlarResistor", position: "emitter", when: (i) => Math.max(i.ratio ?? 2, 1e-3) < 1 }
+    ],
+    schematic: { kind: "current-mirror", roles: { rref: "R1", re: "R2" } },
+    response: { outputs: ["outputCurrent", "error", "powerRef"] }
+  },
   relatedBlogPosts: ["bjt-bias-point"]
 };
 
@@ -26985,14 +29204,106 @@ var motorWindingResistance = {
 };
 
 // src/lib/calculators/motor/h-bridge-selection.ts
+var sig36 = (v) => String(Number(v.toPrecision(3)));
+var LOSS_DEFAULTS6 = { dutyCycle: 75, tSwitch: 100, tDead: 100, vBody: 1, qg: 30, vGate: 10 };
+function worstOver22(as, bs, f) {
+  let best = { value: -Infinity, a: NaN, b: NaN };
+  for (const a of as) {
+    for (const b of bs) {
+      const y = f(a, b);
+      if (y > best.value) best = { value: y, a, b };
+    }
+  }
+  return best;
+}
 function calculateHBridgeSelection(inputs) {
   const { motorCurrent, motorVoltage, inrushMultiplier, pwmFrequency, mosfetRdson } = inputs;
+  const { motorCurrentMin = 0, motorCurrentMax = 0, motorVoltageMin = 0, motorVoltageMax = 0 } = inputs;
+  const p = { ...LOSS_DEFAULTS6, ...Object.fromEntries(Object.keys(LOSS_DEFAULTS6).filter((k) => inputs[k] !== void 0).map((k) => [k, inputs[k]])) };
+  if (motorCurrentMin > 0 && motorCurrentMin > motorCurrent) {
+    return { values: {}, errors: ["Minimum motor current must not be above the nominal motor current"] };
+  }
+  if (motorCurrentMax > 0 && motorCurrentMax < motorCurrent) {
+    return { values: {}, errors: ["Maximum motor current must not be below the nominal motor current"] };
+  }
+  if (motorVoltageMin > 0 && motorVoltageMin > motorVoltage) {
+    return { values: {}, errors: ["Minimum supply voltage must not be above the nominal supply voltage"] };
+  }
+  if (motorVoltageMax > 0 && motorVoltageMax < motorVoltage) {
+    return { values: {}, errors: ["Maximum supply voltage must not be below the nominal supply voltage"] };
+  }
   const peakCurrent = motorCurrent * inrushMultiplier;
   const conductionLoss = motorCurrent * motorCurrent * mosfetRdson;
-  const switchingLoss = motorVoltage * motorCurrent * 5e-8 * pwmFrequency;
+  const switchingLoss = 0.5 * motorVoltage * motorCurrent * (p.tSwitch * 1e-9) * pwmFrequency;
   const totalLoss = 2 * conductionLoss + switchingLoss;
   const mosfetCurrentRating = peakCurrent * 1.5;
-  return { values: { peakCurrent, conductionLoss, switchingLoss, totalLoss, mosfetCurrentRating } };
+  const at = (V, I) => {
+    const conduction = 2 * I * I * mosfetRdson;
+    const switching = 0.5 * V * I * (p.tSwitch * 1e-9) * pwmFrequency;
+    const deadTime = p.vBody * I * 2 * p.tDead * 1e-9 * pwmFrequency;
+    const gateDrive = 2 * p.qg * 1e-9 * p.vGate * pwmFrequency;
+    const total = conduction + switching + deadTime + gateDrive;
+    const supply = V * I * (p.dutyCycle / 100);
+    const delivered = Math.max(0, supply - total);
+    const efficiency = delivered + total > 0 ? 100 * delivered / (delivered + total) : 0;
+    return { conduction, switching, deadTime, gateDrive, total, delivered, efficiency, bridge: conduction + switching };
+  };
+  const nom = at(motorVoltage, motorCurrent);
+  const lossTotal = nom.conduction + switchingLoss + nom.deadTime + nom.gateDrive;
+  const outputPower = Math.max(0, motorVoltage * motorCurrent * (p.dutyCycle / 100) - lossTotal);
+  const volts = corners(motorVoltage, motorVoltageMin, motorVoltageMax);
+  const amps = corners(motorCurrent, motorCurrentMin, motorCurrentMax);
+  const iHi = amps[amps.length - 1];
+  const vHi = volts[volts.length - 1];
+  const bridgeWorst = worstOver22(volts, amps, (V, I) => at(V, I).bridge);
+  const effWorst = worstOver22(volts, amps, (V, I) => -at(V, I).efficiency);
+  return {
+    values: {
+      peakCurrent,
+      conductionLoss,
+      switchingLoss,
+      totalLoss,
+      mosfetCurrentRating,
+      // C11 (waves/W7.md): the envelope's worst cases and the corners they occur at.
+      peakCurrentWorst: iHi * inrushMultiplier,
+      peakCurrentWorstCurrent: iHi,
+      mosfetCurrentRatingWorst: iHi * inrushMultiplier * 1.5,
+      vdsRating: ratingAtOrAbove(VOLTAGE_DERATING * vHi, MOSFET_VDS),
+      vdsRatingVoltage: vHi,
+      totalLossWorst: bridgeWorst.value,
+      totalLossWorstVoltage: bridgeWorst.a,
+      totalLossWorstCurrent: bridgeWorst.b,
+      efficiencyWorst: -effWorst.value,
+      efficiencyWorstVoltage: effWorst.a,
+      efficiencyWorstCurrent: effWorst.b,
+      // C11: the loss model at the nominal supply and current, W.
+      lossConduction: nom.conduction,
+      lossDeadTime: nom.deadTime,
+      lossGateDrive: nom.gateDrive,
+      lossTotal,
+      outputPower,
+      efficiencyLossModel: outputPower + lossTotal > 0 ? 100 * outputPower / (outputPower + lossTotal) : 0
+    }
+  };
+}
+function bridgeTraces(V, I, dutyPct, fHz, periods) {
+  const T = 1 / fHz;
+  const ton = Math.min(1, Math.max(0, dutyPct / 100)) * T;
+  const end = periods * T;
+  const out = [];
+  for (let k = 0; k * T < end; k++) {
+    const t0 = k * T;
+    out.push([t0, 0], [t0, V]);
+    if (t0 + ton < end) out.push([t0 + ton, V], [t0 + ton, 0]);
+  }
+  out.push([end, end - Math.floor(end / T - 1e-12) * T < ton ? V : 0]);
+  const flat = [];
+  for (let k = 0; k * T < end; k++) flat.push([k * T, I]);
+  flat.push([end, I]);
+  return [
+    { id: "vout", symbol: "V_{AB}", unit: "V", points: out, spans: [{ symbol: "t_{on}", axis: "x", from: 0, to: ton }] },
+    { id: "imotor", symbol: "I_{M}", unit: "A", points: flat }
+  ];
 }
 var hBridgeSelection = {
   slug: "h-bridge-selection",
@@ -27018,14 +29329,51 @@ var hBridgeSelection = {
         { label: "50 kHz", values: { pwmFrequency: 5e4 } }
       ]
     },
-    { key: "mosfetRdson", label: "MOSFET RDS(on)", symbol: "R_DS", unit: "Ω", defaultValue: 0.01, min: 1e-3, step: 1e-3 }
+    { key: "mosfetRdson", label: "MOSFET RDS(on)", symbol: "R_DS", unit: "Ω", defaultValue: 0.01, min: 1e-3, step: 1e-3 },
+    { key: "dutyCycle", label: "PWM Duty Cycle", symbol: "D", unit: "%", defaultValue: 75, min: 0, max: 100, tooltip: "The share of each period the supply drives the motor: the supply delivers V·I·D (sign-magnitude PWM, TI SLVA504A)." },
+    { key: "motorCurrentMin", label: "Minimum Motor Current", symbol: "I_{min}", unit: "A", defaultValue: 0, min: 0, tooltip: "The lowest running current in service; 0 for the nominal.", group: "Operating envelope" },
+    { key: "motorCurrentMax", label: "Maximum Motor Current", symbol: "I_{max}", unit: "A", defaultValue: 0, min: 0, tooltip: "The highest running current in service; 0 for the nominal. The peak current and the FETs' rating are taken at it.", group: "Operating envelope" },
+    { key: "motorVoltageMin", label: "Minimum Supply Voltage", symbol: "V_{m,min}", unit: "V", defaultValue: 0, min: 0, tooltip: "The lowest supply in service; 0 for the nominal.", group: "Operating envelope" },
+    { key: "motorVoltageMax", label: "Maximum Supply Voltage", symbol: "V_{m,max}", unit: "V", defaultValue: 0, min: 0, tooltip: "The highest supply in service; 0 for the nominal. The FETs' drain-source rating is taken at it.", group: "Operating envelope" },
+    { key: "tSwitch", label: "Switching Edges (t_r + t_f)", symbol: "t_{r}+t_{f}", unit: "ns", defaultValue: 100, min: 0, max: 1e5, group: "Loss model", tooltip: "The hard-switched FET's rise and fall times added: ½·V·I·(t_r + t_f)·f (TI SLVA504A eq. 2)." },
+    { key: "tDead", label: "Dead Time (each edge)", symbol: "t_{d}", unit: "ns", defaultValue: 100, min: 0, max: 1e5, group: "Loss model", tooltip: "The time both FETs of a half bridge are off at each edge, when the recirculating FET's body diode carries the current (TI SLVA504A eq. 3)." },
+    { key: "vBody", label: "Body Diode Forward Voltage", symbol: "V_{F}", unit: "V", defaultValue: 1, min: 0, max: 5, group: "Loss model" },
+    { key: "qg", label: "Total Gate Charge", symbol: "Q_{g}", unit: "nC", defaultValue: 30, min: 0, max: 1e4, group: "Loss model", tooltip: "Per FET, at the gate drive voltage: the two FETs that switch each period draw 2·Q_g·V_g·f from the driver (IR AN-1070)." },
+    { key: "vGate", label: "Gate Drive Voltage", symbol: "V_{g}", unit: "V", defaultValue: 10, min: 1, max: 20, group: "Loss model" }
   ],
   outputs: [
     { key: "peakCurrent", label: "Peak Current", symbol: "I_peak", unit: "A", precision: 1 },
     { key: "mosfetCurrentRating", label: "Min. MOSFET Current Rating", symbol: "I_DS_min", unit: "A", precision: 1, primary: true },
     { key: "conductionLoss", label: "Conduction Loss (per FET)", symbol: "P_cond", unit: "W", precision: 3 },
     { key: "switchingLoss", label: "Switching Loss (per FET)", symbol: "P_sw", unit: "W", precision: 3 },
-    { key: "totalLoss", label: "Total Bridge Loss (est.)", symbol: "P_total", unit: "W", precision: 2 }
+    { key: "totalLoss", label: "Total Bridge Loss (est.)", symbol: "P_total", unit: "W", precision: 2 },
+    // C11 (waves/W7.md): the envelope's worst cases, each with the corner it occurs at.
+    { key: "peakCurrentWorst", label: "Peak Current, Worst Case", symbol: "I_{peak,max}", unit: "A", precision: 2, tooltip: "The inrush multiplier times the highest motor current" },
+    { key: "peakCurrentWorstCurrent", label: "Motor Current at the Worst Peak", symbol: "I", unit: "A", precision: 3 },
+    { key: "mosfetCurrentRatingWorst", label: "Min. MOSFET Current Rating, Worst Case", symbol: "I_{DS,min}", unit: "A", precision: 2, tooltip: "1.5 times the worst-case peak current" },
+    { key: "vdsRating", label: "MOSFET Drain-Source Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the highest supply" },
+    { key: "vdsRatingVoltage", label: "Supply at the Drain-Source Rating", symbol: "V_{m}", unit: "V", precision: 3 },
+    { key: "totalLossWorst", label: "Total Bridge Loss, Worst Case", symbol: "P_{total,max}", unit: "W", precision: 3, tooltip: "2·I²·R_DS(on) + ½·V·I·(t_r + t_f)·f where it is largest" },
+    { key: "totalLossWorstVoltage", label: "Supply at the Worst Bridge Loss", symbol: "V_{m}", unit: "V", precision: 3 },
+    { key: "totalLossWorstCurrent", label: "Motor Current at the Worst Bridge Loss", symbol: "I", unit: "A", precision: 3 },
+    { key: "efficiencyWorst", label: "Efficiency, Worst Case", symbol: "η_{min}", unit: "%", precision: 2, thresholds: { good: { min: 95 }, warning: { min: 85, max: 95 }, danger: { min: 85 } } },
+    { key: "efficiencyWorstVoltage", label: "Supply at the Worst Efficiency", symbol: "V_{m}", unit: "V", precision: 3 },
+    { key: "efficiencyWorstCurrent", label: "Motor Current at the Worst Efficiency", symbol: "I", unit: "A", precision: 3 },
+    // C11: the loss model at the nominal supply and current, W.
+    { key: "lossConduction", label: "Conduction Loss (two FETs)", symbol: "P_{cond}", unit: "W", precision: 4, tooltip: "2·I²·R_DS(on): two FETs carry the motor current at any instant" },
+    { key: "lossDeadTime", label: "Dead-Time Loss", symbol: "P_{dead}", unit: "W", precision: 4, tooltip: "V_F·I·2·t_d·f, the body diode through the two dead times (TI SLVA504A eq. 3)" },
+    { key: "lossGateDrive", label: "Gate-Drive Loss", symbol: "P_{gate}", unit: "W", precision: 4, tooltip: "2·Q_g·V_g·f, dissipated in the gate driver (IR AN-1070)" },
+    { key: "lossTotal", label: "Total Loss with Dead Time and Gate Drive", symbol: "P_{loss}", unit: "W", precision: 4 },
+    { key: "outputPower", label: "Power to the Motor", symbol: "P_{out}", unit: "W", precision: 3, tooltip: "V·I·D from the supply, less the losses" },
+    {
+      key: "efficiencyLossModel",
+      label: "Efficiency",
+      symbol: "η",
+      unit: "%",
+      precision: 2,
+      tooltip: "1 − (bridge loss + dead time + gate drive)/(V·I·D), at the nominal supply and current",
+      thresholds: { good: { min: 95 }, warning: { min: 85, max: 95 }, danger: { min: 85 } }
+    }
   ],
   calculate: calculateHBridgeSelection,
   formula: {
@@ -27036,19 +29384,116 @@ var hBridgeSelection = {
     ],
     derivation: [
       "Two FETs conduct at any time (one high side, one low side): 2·P_cond",
-      "Sign-magnitude PWM hard-switches one FET per period: 1·P_sw, with P_sw ≈ V·I·t_sw·f and t_sw ≈ 50 ns"
+      "Sign-magnitude PWM hard-switches one FET per period: 1·P_sw, with P_sw = ½·V·I·(t_r + t_f)·f, t_r + t_f = 100 ns (50 ns each way) unless given",
+      "The loss model adds the dead time V_F·I·2·t_d·f (SLVA504A eq. 3) and the gate drive 2·Q_g·V_g·f (IR AN-1070), against the supply power V·I·D"
     ],
-    reference: "TI SLVA504, Calculating Motor Driver Power Dissipation"
+    reference: "TI SLVA504A, Calculating Power Dissipation for a H-Bridge or Half Bridge Driver (A. Gopalan, 2012, revised 2021), Table 1-1 and eqs. 2-3; International Rectifier AN-1070 (J. Cerezo), P_GATE"
   },
   visualization: { type: "none" },
+  assumptions: [
+    {
+      code: "sign-magnitude-synchronous",
+      text: "An H-bridge driven by sign-magnitude PWM with synchronous recirculation: two FETs carry the motor current at any instant, one is hard-switched each period, and the supply delivers V·I·D (TI SLVA504A, Table 1-1)."
+    },
+    {
+      code: "dead-time-body-diode",
+      text: "Through each dead time the recirculating FET's body diode carries the current, V_F·I·2·t_d·f (TI SLVA504A eq. 3); its edges across V_F (eq. 4) and reverse recovery are left out, as SLVA504A leaves them."
+    },
+    {
+      code: "gate-drive-in-the-driver",
+      text: "The two FETs that switch each period draw 2·Q_g·V_g·f from the gate driver (IR AN-1070), counted in the loss model's total and efficiency, not in the bridge loss."
+    },
+    {
+      code: "average-motor-current",
+      text: "No motor inductance is modelled, so the motor current is drawn at its average, without ripple."
+    }
+  ],
+  examples: [
+    { id: "automotive-12v", label: "Automotive 9–16 V motor, 1–5 A at 20 kHz", values: { motorVoltage: 13.5, motorVoltageMin: 9, motorVoltageMax: 16, motorCurrent: 3, motorCurrentMin: 1, motorCurrentMax: 5, inrushMultiplier: 6, pwmFrequency: 2e4, mosfetRdson: 8e-3, dutyCycle: 75, tSwitch: 200, tDead: 200, vBody: 0.8, qg: 40, vGate: 10 } },
+    { id: "robot-joint-24v", label: "24 V robot joint, 20–28 V, 4–10 A at 25 kHz", values: { motorVoltage: 24, motorVoltageMin: 20, motorVoltageMax: 28, motorCurrent: 6, motorCurrentMin: 4, motorCurrentMax: 10, inrushMultiplier: 4, pwmFrequency: 25e3, mosfetRdson: 5e-3, dutyCycle: 60, tSwitch: 80, tDead: 100, vBody: 0.9, qg: 60, vGate: 12 } },
+    { id: "ebike-48v", label: "48 V e-bike hub, 40–54.6 V, 10–20 A at 16 kHz", values: { motorVoltage: 48, motorVoltageMin: 40, motorVoltageMax: 54.6, motorCurrent: 15, motorCurrentMin: 10, motorCurrentMax: 20, inrushMultiplier: 3, pwmFrequency: 16e3, mosfetRdson: 4e-3, dutyCycle: 80, tSwitch: 150, tDead: 300, vBody: 0.9, qg: 120, vGate: 12 } }
+  ],
+  // C11 (waves/W7.md): the supply and current ranges, the worst cases and their corners, the four FETs' stresses.
+  envelope: {
+    ranges: [
+      { input: "motorVoltage", min: "motorVoltageMin", max: "motorVoltageMax" },
+      { input: "motorCurrent", min: "motorCurrentMin", max: "motorCurrentMax" }
+    ],
+    results: [
+      { output: "mosfetCurrentRating", note: { worst: "mosfetCurrentRatingWorst", input: "motorCurrent", at: "peakCurrentWorstCurrent" } },
+      { output: "peakCurrent", note: { worst: "peakCurrentWorst", input: "motorCurrent", at: "peakCurrentWorstCurrent" } },
+      { output: "totalLoss", note: { worst: "totalLossWorst", input: "motorVoltage", at: "totalLossWorstVoltage", and: { input: "motorCurrent", at: "totalLossWorstCurrent" } } },
+      { output: "efficiencyWorst", note: { corner: { input: "motorVoltage", at: "efficiencyWorstVoltage", and: { input: "motorCurrent", at: "efficiencyWorstCurrent" } } } },
+      { output: "vdsRating", note: { corner: { input: "motorVoltage", at: "vdsRatingVoltage" } } }
+    ],
+    parts: [
+      {
+        ref: "Q1–Q4",
+        role: "bridge",
+        value: { key: "mosfetRdson" },
+        stresses: [
+          { symbol: "V_{DS}", sense: "min", key: "vdsRating", at: { input: "motorVoltage", key: "vdsRatingVoltage" } },
+          { symbol: "I_{D}", sense: "min", key: "mosfetCurrentRatingWorst", at: { input: "motorCurrent", key: "peakCurrentWorstCurrent" } },
+          { symbol: "Q_{g}", sense: "max", key: "qg" }
+        ]
+      }
+    ],
+    // Sign-magnitude PWM at the nominal supply: the bridge's output at V_m for D·T and 0 V while the
+    // current recirculates; the motor current at its average.
+    waveforms: {
+      periods: 2.5,
+      traces: (i) => bridgeTraces(i.motorVoltage, i.motorCurrent, i.dutyCycle, i.pwmFrequency, 2.5)
+    },
+    bom: (i, v) => [
+      { qty: 4, description: "Q1–Q4 (N-channel MOSFET, H-bridge)", value: `RDS(on) ≤ ${sig36(i.mosfetRdson * 1e3)} mΩ, VDS ≥ ${v.vdsRating} V, ID ≥ ${sig36(v.mosfetCurrentRatingWorst)} A, Qg ≤ ${sig36(i.qg)} nC`, package: "" }
+    ]
+  },
+  lossModel: {
+    inputs: ["mosfetRdson", "tSwitch", "tDead", "vBody", "qg", "vGate"],
+    efficiency: "efficiencyLossModel",
+    total: "lossTotal",
+    outputPower: "outputPower",
+    losses: [
+      { output: "lossConduction", lever: "rdson" },
+      { output: "switchingLoss", lever: "edges" },
+      { output: "lossDeadTime", lever: "dead-time" },
+      { output: "lossGateDrive", lever: "gate-charge" }
+    ]
+  },
   relatedCalculators: ["motor-driver-power", "motor-inrush-current", "mosfet-power-dissipation"],
   relatedBlogPosts: ["dc-motor-control-pwm-drivers"]
 };
 
 // src/lib/calculators/motor/motor-driver-power.ts
+var sig37 = (v) => String(Number(v.toPrecision(3)));
+var LOSS_DEFAULTS7 = { tDead: 100, vBody: 1 };
+function worstOver23(as, bs, f) {
+  let best = { value: -Infinity, a: NaN, b: NaN };
+  for (const a of as) {
+    for (const b of bs) {
+      const y = f(a, b);
+      if (y > best.value) best = { value: y, a, b };
+    }
+  }
+  return best;
+}
 function calculateMotorDriverPower(inputs) {
   const { motorCurrent, rdson, dutyCycle, switchingFreq, gateCharge, supplyVoltage } = inputs;
   const transitionTime = inputs.transitionTime ?? 50;
+  const { motorCurrentMin = 0, motorCurrentMax = 0, supplyVoltageMin = 0, supplyVoltageMax = 0 } = inputs;
+  const p = { ...LOSS_DEFAULTS7, ...Object.fromEntries(Object.keys(LOSS_DEFAULTS7).filter((k) => inputs[k] !== void 0).map((k) => [k, inputs[k]])) };
+  if (motorCurrentMin > 0 && motorCurrentMin > motorCurrent) {
+    return { values: {}, errors: ["Minimum motor current must not be above the nominal motor current"] };
+  }
+  if (motorCurrentMax > 0 && motorCurrentMax < motorCurrent) {
+    return { values: {}, errors: ["Maximum motor current must not be below the nominal motor current"] };
+  }
+  if (supplyVoltageMin > 0 && supplyVoltageMin > supplyVoltage) {
+    return { values: {}, errors: ["Minimum supply voltage must not be above the nominal supply voltage"] };
+  }
+  if (supplyVoltageMax > 0 && supplyVoltageMax < supplyVoltage) {
+    return { values: {}, errors: ["Maximum supply voltage must not be below the nominal supply voltage"] };
+  }
   const conductionLoss = motorCurrent * motorCurrent * rdson;
   const switchingLoss = supplyVoltage * motorCurrent * transitionTime * 1e-9 * switchingFreq;
   const totalLossPerFet = Math.max(conductionLoss, conductionLoss * (dutyCycle / 100) + switchingLoss);
@@ -27056,7 +29501,54 @@ function calculateMotorDriverPower(inputs) {
   const gateDriveLoss = 2 * gateCharge * 1e-9 * supplyVoltage * switchingFreq;
   const supplyPower = supplyVoltage * motorCurrent * (dutyCycle / 100);
   const efficiency = supplyPower > 0 ? (1 - (totalLossBridge + gateDriveLoss) / supplyPower) * 100 : 0;
-  return { values: { conductionLoss, switchingLoss, totalLossPerFet, totalLossBridge, efficiency, gateDriveLoss } };
+  const at = (V, I) => {
+    const conduction = I * I * rdson;
+    const switching = V * I * transitionTime * 1e-9 * switchingFreq;
+    const bridge = 2 * conduction + switching;
+    const perFet = Math.max(conduction, conduction * (dutyCycle / 100) + switching);
+    const deadTime = p.vBody * I * 2 * p.tDead * 1e-9 * switchingFreq;
+    const gate = 2 * gateCharge * 1e-9 * V * switchingFreq;
+    const total = 2 * conduction + switching + deadTime + gate;
+    const delivered = Math.max(0, V * I * (dutyCycle / 100) - total);
+    const eff = delivered + total > 0 ? 100 * delivered / (delivered + total) : 0;
+    return { bridge, perFet, deadTime, total, delivered, eff };
+  };
+  const lossConduction = 2 * conductionLoss;
+  const lossDeadTime = at(supplyVoltage, motorCurrent).deadTime;
+  const lossTotal = lossConduction + switchingLoss + lossDeadTime + gateDriveLoss;
+  const outputPower = Math.max(0, supplyPower - lossTotal);
+  const volts = corners(supplyVoltage, supplyVoltageMin, supplyVoltageMax);
+  const amps = corners(motorCurrent, motorCurrentMin, motorCurrentMax);
+  const vHi = volts[volts.length - 1];
+  const bridgeWorst = worstOver23(volts, amps, (V, I) => at(V, I).bridge);
+  const fetWorst = worstOver23(volts, amps, (V, I) => at(V, I).perFet);
+  const effWorst = worstOver23(volts, amps, (V, I) => -at(V, I).eff);
+  return {
+    values: {
+      conductionLoss,
+      switchingLoss,
+      totalLossPerFet,
+      totalLossBridge,
+      efficiency,
+      gateDriveLoss,
+      totalLossBridgeWorst: bridgeWorst.value,
+      totalLossBridgeWorstVoltage: bridgeWorst.a,
+      totalLossBridgeWorstCurrent: bridgeWorst.b,
+      totalLossPerFetWorst: fetWorst.value,
+      totalLossPerFetWorstCurrent: fetWorst.b,
+      fetRmsCurrentWorst: amps[amps.length - 1],
+      vdsRating: ratingAtOrAbove(VOLTAGE_DERATING * vHi, MOSFET_VDS),
+      vdsRatingVoltage: vHi,
+      efficiencyWorst: -effWorst.value,
+      efficiencyWorstVoltage: effWorst.a,
+      efficiencyWorstCurrent: effWorst.b,
+      lossConduction,
+      lossDeadTime,
+      lossTotal,
+      outputPower,
+      efficiencyLossModel: outputPower + lossTotal > 0 ? 100 * outputPower / (outputPower + lossTotal) : 0
+    }
+  };
 }
 var motorDriverPower = {
   slug: "motor-driver-power",
@@ -27073,7 +29565,13 @@ var motorDriverPower = {
     { key: "dutyCycle", label: "PWM Duty Cycle", symbol: "D", unit: "%", defaultValue: 75, min: 0, max: 100 },
     { key: "switchingFreq", label: "Switching Frequency", symbol: "f_sw", unit: "Hz", defaultValue: 2e4, min: 100 },
     { key: "gateCharge", label: "Gate Charge Qg", symbol: "Qg", unit: "nC", defaultValue: 30, min: 0.1, tooltip: "From MOSFET datasheet" },
-    { key: "transitionTime", label: "Transition Time", symbol: "t_sw", unit: "ns", defaultValue: 50, min: 0, tooltip: "Rise or fall time of the hard-switched FET, taken equal: TI SLVA504A's 0.5·V·I·(t_r + t_f)·f is then V·I·t_sw·f" }
+    { key: "transitionTime", label: "Transition Time", symbol: "t_sw", unit: "ns", defaultValue: 50, min: 0, tooltip: "Rise or fall time of the hard-switched FET, taken equal: TI SLVA504A's 0.5·V·I·(t_r + t_f)·f is then V·I·t_sw·f" },
+    { key: "motorCurrentMin", label: "Minimum Motor Current", symbol: "I_{min}", unit: "A", defaultValue: 0, min: 0, tooltip: "The lowest RMS motor current in service; 0 for the nominal.", group: "Operating envelope" },
+    { key: "motorCurrentMax", label: "Maximum Motor Current", symbol: "I_{max}", unit: "A", defaultValue: 0, min: 0, tooltip: "The highest RMS motor current in service; 0 for the nominal. The FETs' current and loss are taken at it.", group: "Operating envelope" },
+    { key: "supplyVoltageMin", label: "Minimum Supply Voltage", symbol: "V_{min}", unit: "V", defaultValue: 0, min: 0, tooltip: "The lowest supply in service; 0 for the nominal.", group: "Operating envelope" },
+    { key: "supplyVoltageMax", label: "Maximum Supply Voltage", symbol: "V_{max}", unit: "V", defaultValue: 0, min: 0, tooltip: "The highest supply in service; 0 for the nominal. The FETs' drain-source rating is taken at it.", group: "Operating envelope" },
+    { key: "tDead", label: "Dead Time (each edge)", symbol: "t_{d}", unit: "ns", defaultValue: 100, min: 0, max: 1e5, group: "Loss model", tooltip: "The time both FETs of the switching half bridge are off at each edge, when the recirculating FET's body diode carries the current (TI SLVA504A eq. 3)." },
+    { key: "vBody", label: "Body Diode Forward Voltage", symbol: "V_{F}", unit: "V", defaultValue: 1, min: 0, max: 5, group: "Loss model" }
   ],
   outputs: [
     { key: "conductionLoss", label: "Conduction Loss / Conducting FET", symbol: "P_cond", unit: "W", precision: 3, tooltip: "I²·R_DS(on); two FETs conduct at any instant" },
@@ -27081,7 +29579,25 @@ var motorDriverPower = {
     { key: "totalLossPerFet", label: "Hottest FET", symbol: "P_FET", unit: "W", precision: 3, tooltip: "The larger of I²·R (the high side that conducts all period) and I²·R·D + P_sw (the low side, which also switches)" },
     { key: "totalLossBridge", label: "Total Bridge Loss", symbol: "P_bridge", unit: "W", precision: 2, tooltip: "2·I²·R + P_sw (TI SLVA504A); the gate drive is reported apart", primary: true },
     { key: "efficiency", label: "Driver Efficiency (est.)", symbol: "η", unit: "%", precision: 1, tooltip: "1 − (bridge loss + gate drive)/(V·I·D), against the power the supply delivers" },
-    { key: "gateDriveLoss", label: "Gate-Drive Loss", symbol: "P_gate", unit: "W", precision: 4, tooltip: "2·Q_g·V·f for the two FETs that switch each period, dissipated in the gate driver (IR AN-1070)" }
+    { key: "gateDriveLoss", label: "Gate-Drive Loss", symbol: "P_gate", unit: "W", precision: 4, tooltip: "2·Q_g·V·f for the two FETs that switch each period, dissipated in the gate driver (IR AN-1070)" },
+    // C11 (waves/W7.md): the envelope's worst cases, each with the corner it occurs at.
+    { key: "totalLossBridgeWorst", label: "Total Bridge Loss, Worst Case", symbol: "P_{bridge,max}", unit: "W", precision: 3, tooltip: "2·I²·R + V·I·t_sw·f where it is largest" },
+    { key: "totalLossBridgeWorstVoltage", label: "Supply at the Worst Bridge Loss", symbol: "V", unit: "V", precision: 3 },
+    { key: "totalLossBridgeWorstCurrent", label: "Motor Current at the Worst Bridge Loss", symbol: "I", unit: "A", precision: 3 },
+    { key: "totalLossPerFetWorst", label: "Hottest FET, Worst Case", symbol: "P_{FET,max}", unit: "W", precision: 3 },
+    { key: "totalLossPerFetWorstCurrent", label: "Motor Current at the Hottest FET", symbol: "I", unit: "A", precision: 3 },
+    { key: "fetRmsCurrentWorst", label: "Highest FET RMS Current", symbol: "I_{rms,max}", unit: "A", precision: 3, tooltip: "The high side that conducts all period carries the motor current" },
+    { key: "vdsRating", label: "MOSFET Drain-Source Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the highest supply" },
+    { key: "vdsRatingVoltage", label: "Supply at the Drain-Source Rating", symbol: "V", unit: "V", precision: 3 },
+    { key: "efficiencyWorst", label: "Efficiency with Dead Time, Worst Case", symbol: "η_{min}", unit: "%", precision: 2, thresholds: { good: { min: 95 }, warning: { min: 85, max: 95 }, danger: { min: 85 } } },
+    { key: "efficiencyWorstVoltage", label: "Supply at the Worst Efficiency", symbol: "V", unit: "V", precision: 3 },
+    { key: "efficiencyWorstCurrent", label: "Motor Current at the Worst Efficiency", symbol: "I", unit: "A", precision: 3 },
+    // C11: the loss model at the nominal supply and current, W.
+    { key: "lossConduction", label: "Conduction Loss (two FETs)", symbol: "P_{cond}", unit: "W", precision: 4, tooltip: "2·I²·R_DS(on): two FETs carry the motor current at any instant" },
+    { key: "lossDeadTime", label: "Dead-Time Loss", symbol: "P_{dead}", unit: "W", precision: 4, tooltip: "V_F·I·2·t_d·f, the body diode through the two dead times (TI SLVA504A eq. 3)" },
+    { key: "lossTotal", label: "Total Loss with Dead Time and Gate Drive", symbol: "P_{loss}", unit: "W", precision: 4, tooltip: "The bridge loss, the dead time and the gate drive" },
+    { key: "outputPower", label: "Power to the Motor", symbol: "P_{out}", unit: "W", precision: 3, tooltip: "V·I·D from the supply, less the losses" },
+    { key: "efficiencyLossModel", label: "Efficiency with Dead Time", symbol: "η", unit: "%", precision: 2, tooltip: "1 − (bridge loss + dead time + gate drive)/(V·I·D): the driver efficiency with the dead time counted", thresholds: { good: { min: 95 }, warning: { min: 85, max: 95 }, danger: { min: 85 } } }
   ],
   calculate: calculateMotorDriverPower,
   formula: {
@@ -27118,8 +29634,68 @@ var motorDriverPower = {
     {
       code: "gate-drive-at-supply-voltage",
       text: "The gate charge is delivered at the supply voltage, 2·Qg·V·f, and is counted in the driver efficiency, as an integrated driver dissipates it; it is not a FET loss."
+    },
+    {
+      code: "loss-model-dead-time",
+      text: "The loss model adds the dead time, V_F·I·2·t_d·f (SLVA504A eq. 3), to the bridge loss and the gate drive; its efficiency is the driver efficiency with the dead time counted, and the two agree where t_d or V_F is 0."
+    },
+    {
+      code: "average-motor-current",
+      text: "No motor inductance is modelled, so the motor current is drawn at its average, without ripple."
     }
-  ]
+  ],
+  examples: [
+    { id: "slva504a-example", label: "TI SLVA504A's example: 13.5 V, 1 A, 100 mΩ, 50 % at 20 kHz", values: { supplyVoltage: 13.5, motorCurrent: 1, rdson: 0.1, dutyCycle: 50, switchingFreq: 2e4, transitionTime: 1e3, tDead: 100, vBody: 1 } },
+    { id: "bridge-24v-10a", label: "24 V bridge, 18–30 V, 6–12 A at 80 kHz", values: { supplyVoltage: 24, supplyVoltageMin: 18, supplyVoltageMax: 30, motorCurrent: 10, motorCurrentMin: 6, motorCurrentMax: 12, rdson: 8e-3, dutyCycle: 75, switchingFreq: 8e4, gateCharge: 50, transitionTime: 40, tDead: 150, vBody: 0.9 } },
+    { id: "automotive-12v", label: "Automotive 9–16 V, 1–4 A at 20 kHz", values: { supplyVoltage: 13.5, supplyVoltageMin: 9, supplyVoltageMax: 16, motorCurrent: 2.5, motorCurrentMin: 1, motorCurrentMax: 4, rdson: 0.012, dutyCycle: 80, switchingFreq: 2e4, gateCharge: 25, transitionTime: 100, tDead: 300, vBody: 0.8 } }
+  ],
+  // C11 (waves/W7.md): the supply and current ranges, the worst cases and their corners, the four FETs' stresses.
+  envelope: {
+    ranges: [
+      { input: "supplyVoltage", min: "supplyVoltageMin", max: "supplyVoltageMax" },
+      { input: "motorCurrent", min: "motorCurrentMin", max: "motorCurrentMax" }
+    ],
+    results: [
+      { output: "totalLossBridge", note: { worst: "totalLossBridgeWorst", input: "supplyVoltage", at: "totalLossBridgeWorstVoltage", and: { input: "motorCurrent", at: "totalLossBridgeWorstCurrent" } } },
+      { output: "totalLossPerFet", note: { worst: "totalLossPerFetWorst", input: "motorCurrent", at: "totalLossPerFetWorstCurrent" } },
+      { output: "efficiencyWorst", note: { corner: { input: "supplyVoltage", at: "efficiencyWorstVoltage", and: { input: "motorCurrent", at: "efficiencyWorstCurrent" } } } },
+      { output: "vdsRating", note: { corner: { input: "supplyVoltage", at: "vdsRatingVoltage" } } }
+    ],
+    parts: [
+      {
+        ref: "Q1–Q4",
+        role: "bridge",
+        value: { key: "rdson" },
+        stresses: [
+          { symbol: "V_{DS}", sense: "min", key: "vdsRating", at: { input: "supplyVoltage", key: "vdsRatingVoltage" } },
+          { symbol: "I_{rms}", sense: "min", key: "fetRmsCurrentWorst" },
+          { symbol: "P_{D}", sense: "min", key: "totalLossPerFetWorst", at: { input: "motorCurrent", key: "totalLossPerFetWorstCurrent" } },
+          { symbol: "Q_{g}", sense: "max", key: "gateCharge" }
+        ]
+      }
+    ],
+    // Sign-magnitude PWM at the nominal supply: the bridge's output at V for D·T and 0 V while the
+    // current recirculates; the motor current at its average.
+    waveforms: {
+      periods: 2.5,
+      traces: (i) => bridgeTraces(i.supplyVoltage, i.motorCurrent, i.dutyCycle, i.switchingFreq, 2.5)
+    },
+    bom: (i, v) => [
+      { qty: 4, description: "Q1–Q4 (N-channel MOSFET, H-bridge)", value: `RDS(on) ≤ ${sig37(i.rdson * 1e3)} mΩ, VDS ≥ ${v.vdsRating} V, Irms ≥ ${sig37(v.fetRmsCurrentWorst)} A, PD ≥ ${sig37(v.totalLossPerFetWorst)} W, Qg ≤ ${sig37(i.gateCharge)} nC`, package: "" }
+    ]
+  },
+  lossModel: {
+    inputs: ["rdson", "transitionTime", "gateCharge", "tDead", "vBody"],
+    efficiency: "efficiencyLossModel",
+    total: "lossTotal",
+    outputPower: "outputPower",
+    losses: [
+      { output: "lossConduction", lever: "rdson" },
+      { output: "switchingLoss", lever: "edges" },
+      { output: "gateDriveLoss", lever: "gate-charge" },
+      { output: "lossDeadTime", lever: "dead-time" }
+    ]
+  }
 };
 
 // src/lib/calculators/motor/pid-tuning.ts
@@ -28990,7 +31566,8 @@ var photodiodeTransimpedance = {
       symbol: "R_f",
       unit: "kΩ",
       defaultValue: 100,
-      min: 1e-3
+      min: 1e-3,
+      max: 1e7
     },
     {
       key: "feedbackCapacitance",
@@ -28999,7 +31576,26 @@ var photodiodeTransimpedance = {
       unit: "pF",
       defaultValue: 10,
       min: 1e-3,
+      max: 1e5,
       tooltip: "Stabilizing capacitor in parallel with Rf"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -29008,7 +31604,9 @@ var photodiodeTransimpedance = {
     { key: "noiseVoltage", label: "Johnson Noise", symbol: "e_n", unit: "nV/√Hz", precision: 1 }
   ],
   calculate: (inputs) => {
-    const { photocurrent, feedbackResistance, feedbackCapacitance } = inputs;
+    const { photocurrent, eSeries = 0 } = inputs;
+    const feedbackResistance = roundToSeries(inputs.feedbackResistance, eSeries);
+    const feedbackCapacitance = roundToSeries(inputs.feedbackCapacitance, eSeries);
     const rfOhm = feedbackResistance * 1e3;
     const cfF = feedbackCapacitance * 1e-12;
     const outputVoltageV = photocurrent * 1e-6 * rfOhm * 1e3;
@@ -29025,6 +31623,51 @@ var photodiodeTransimpedance = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["wheatstone-bridge", "load-cell-amplifier", "sensor-accuracy-budget"],
+  examples: [
+    { id: "ambient-light-1v-e24", label: "1 V from 10 µA, 10 kHz bandwidth, E24", values: { photocurrent: 10, feedbackResistance: 100, feedbackCapacitance: 159, eSeries: 24 } },
+    { id: "pulse-receiver-100khz-e96", label: "2 V from 50 µA, 100 kHz bandwidth, E96", values: { photocurrent: 50, feedbackResistance: 40, feedbackCapacitance: 39.8, eSeries: 96 } },
+    { id: "low-light-1na-e12", label: "0.5 V from 1 nA for low light, E12", values: { photocurrent: 1e-3, feedbackResistance: 5e5, feedbackCapacitance: 0.32, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): the reader's Rf and Cf, rounded by `eSeries` in
+  // calculate(); drawn as the transimpedance stage. The response is the
+  // single pole of Rf ∥ Cf that calculate() reports as the bandwidth.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "feedbackResistance", position: "feedback" },
+      { ref: "C1", kind: "C", key: "feedbackCapacitance", position: "feedback" }
+    ],
+    schematic: {
+      kind: "tia",
+      roles: { rf: "R1", cf: "C1" },
+      others: (i, _v, fmt5) => ({ photodiode: { ref: "D1", value: fmt5(i.photocurrent, "μA") } })
+    },
+    targets: [
+      { output: "outputVoltageV", solveFor: ["feedbackResistance"] },
+      { output: "bandwidth", solveFor: ["feedbackCapacitance"] }
+    ],
+    response: {
+      outputs: ["outputVoltageV", "bandwidth", "noiseVoltage"],
+      curve: {
+        x: {
+          label: "Frequency",
+          unit: "Hz",
+          scale: "log",
+          range: (i) => {
+            const bw = 1 / (2 * Math.PI * i.feedbackResistance * 1e3 * i.feedbackCapacitance * 1e-12);
+            return [bw / 100, bw * 100];
+          }
+        },
+        y: { label: "Transimpedance", unit: "dBΩ" },
+        // |Z(f)| = R_f / √(1 + (f/BW)²), R_f read back from V_out = I_ph·R_f.
+        points: (_i, v, xs) => {
+          const rf = v.outputVoltageV / (v.photocurrent * 1e-3);
+          return xs.map((f) => 20 * Math.log10(rf) - 10 * Math.log10(1 + (f / (v.bandwidth * 1e3)) ** 2));
+        },
+        marks: [(_i, v) => v.bandwidth * 1e3]
+      }
+    }
+  },
   relatedBlogPosts: ["sensor-signal-conditioning"]
 };
 
@@ -32514,11 +35157,28 @@ var thermalViaArray = {
 };
 
 // src/lib/calculators/signal/pll-loop-filter.ts
+function pllOpenLoopGain(w, c1, r1, c2, icp, kvcoRads, n) {
+  const k = icp * kvcoRads / (2 * Math.PI * n);
+  const t1 = r1 * c1;
+  const t3 = r1 * c2;
+  return k / (w * w * c1) * (Math.sqrt(1 + (w * t1) ** 2) / Math.sqrt(1 + (w * t3) ** 2));
+}
+function pllBuilt(wc, c1, r1, c2, icp, kvcoRads, n) {
+  let lo = wc / 100;
+  let hi = wc * 100;
+  for (let i = 0; i < 64; i++) {
+    const m = Math.sqrt(lo * hi);
+    if (pllOpenLoopGain(m, c1, r1, c2, icp, kvcoRads, n) >= 1) lo = m;
+    else hi = m;
+  }
+  const wx = Math.sqrt(lo * hi);
+  return { wx, pm: (Math.atan(wx * r1 * c1) - Math.atan(wx * r1 * c2)) * 180 / Math.PI };
+}
 function calculatePllLoopFilter(inputs) {
-  const { fRef, loopBW, phaseMargin, kvco, n, icp } = inputs;
+  const { fRef, loopBW, phaseMargin, kvco, n, icp, eSeries = 0 } = inputs;
   if (loopBW <= 0 || phaseMargin <= 0 || phaseMargin >= 90 || kvco <= 0 || n < 1 || icp <= 0) {
     return {
-      values: { c1: 0, c2: 0, r1: 0, pmActual: 0, bwRatio: 0 },
+      values: {},
       errors: ["All parameters must be positive; phase margin must be 0–90°"]
     };
   }
@@ -32543,13 +35203,22 @@ function calculatePllLoopFilter(inputs) {
   const C1_F = Icp_A * Kvco_rads / (2 * Math.PI * n * wc * wc) * (magNum / magDen);
   const R_Ohm = T1 / C1_F;
   const C2_F = gamma * C1_F;
-  const c1 = C1_F * 1e9;
-  const c2 = C2_F * 1e12;
-  const r1 = R_Ohm / 1e3;
-  const pmActual = (Math.atan(wc * T1) - Math.atan(wc * T3)) * 180 / Math.PI;
+  let c1 = C1_F * 1e9;
+  let c2 = C2_F * 1e12;
+  let r1 = R_Ohm / 1e3;
+  let pmActual = (Math.atan(wc * T1) - Math.atan(wc * T3)) * 180 / Math.PI;
+  let crossoverBuilt = loopBW;
+  if (seriesName(eSeries)) {
+    c1 = roundToSeries(c1, eSeries);
+    c2 = roundToSeries(c2, eSeries);
+    r1 = roundToSeries(r1, eSeries);
+    const built = pllBuilt(wc, c1 * 1e-9, r1 * 1e3, c2 * 1e-12, Icp_A, Kvco_rads, n);
+    pmActual = built.pm;
+    crossoverBuilt = built.wx / (2 * Math.PI * 1e3);
+  }
   const bwRatio = loopBW / fRef;
   return {
-    values: { c1, c2, r1, pmActual, bwRatio },
+    values: { c1, c2, r1, pmActual, bwRatio, crossoverBuilt },
     ...bwRatio > 0.1 ? { warnings: ["Loop BW > 1/10 of reference frequency — may cause excessive reference spurs"] } : {}
   };
 }
@@ -32635,6 +35304,31 @@ var pllLoopFilter = {
         { label: "500 μA", values: { icp: 500 } },
         { label: "5 mA", values: { icp: 5e3 } }
       ]
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
     }
   ],
   outputs: [
@@ -32661,7 +35355,7 @@ var pllLoopFilter = {
       symbol: "C₂",
       unit: "pF",
       precision: 1,
-      tooltip: "Secondary capacitor (C2 = C1/10). Provides high-frequency spur filtering."
+      tooltip: "Secondary capacitor, γ·C1, where γ = T3/T1 is at most 0.1 and smaller for high phase margins. Provides high-frequency spur filtering."
     },
     {
       key: "pmActual",
@@ -32670,7 +35364,7 @@ var pllLoopFilter = {
       symbol: "PM",
       unit: "°",
       precision: 1,
-      tooltip: "Computed phase margin at the crossover frequency.",
+      tooltip: "Computed phase margin at the crossover frequency; with a part series, the rounded parts' margin at the frequency where their loop crosses 0 dB.",
       thresholds: {
         good: { min: 40 },
         warning: { min: 25 },
@@ -32689,15 +35383,24 @@ var pllLoopFilter = {
         warning: { max: 0.2 },
         danger: { max: 0.2 }
       }
+    },
+    {
+      key: "crossoverBuilt",
+      label: "Crossover as Built",
+      symbol: "f_{c,b}",
+      unit: "kHz",
+      precision: 3,
+      tooltip: "Where the open-loop gain of the loop these parts build crosses 0 dB, in the model the filter is designed with; the loop bandwidth entered with ideal values"
     }
   ],
   calculate: calculatePllLoopFilter,
   formula: {
-    primary: "C₁ = (Icp·Kvco)/(N·ωc²) · |Z(jωc)|, R₁ = T₁/C₁, C₂ = C₁/10",
+    primary: "C₁ = (Icp·Kvco)/(N·ωc²) · |Z(jωc)|, R₁ = T₁/C₁, C₂ = γ·C₁",
     latex: "C_1 = \\frac{I_{cp} K_{vco}}{N \\omega_c^2} \\cdot \\frac{\\sqrt{1+(\\omega_c T_1)^2}}{\\sqrt{1+(\\omega_c T_3)^2}}",
     variables: [
       { symbol: "ωc", description: "Loop crossover frequency (2π × f_BW)", unit: "rad/s" },
-      { symbol: "T₁", description: "Zero time constant: tan(φ)/ωc", unit: "s" },
+      { symbol: "T₁", description: "Zero time constant, the root of PM = arctan(ωc·T₁) − arctan(ωc·γ·T₁)", unit: "s" },
+      { symbol: "γ", description: "C₂/C₁ = T₃/T₁: at most 0.1, smaller for high phase margins", unit: "" },
       { symbol: "Icp", description: "Charge pump current", unit: "A" },
       { symbol: "Kvco", description: "VCO gain", unit: "rad/s/V" },
       { symbol: "N", description: "Feedback divider ratio", unit: "" }
@@ -32705,16 +35408,45 @@ var pllLoopFilter = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["filter-designer", "phase-noise-to-jitter", "snr-calculator"],
+  examples: [
+    { id: "synth-100k-ref-e24", label: "100 kHz reference, 5 kHz loop, 45° margin, E24 parts", values: { fRef: 100, loopBW: 5, phaseMargin: 45, kvco: 20, n: 100, icp: 500, eSeries: 24 } },
+    { id: "ism-2g4-e12", label: "2.4 GHz synthesiser, 1 MHz reference, 50 kHz loop, E12 parts", values: { fRef: 1e3, loopBW: 50, phaseMargin: 52, kvco: 60, n: 2400, icp: 1e3, eSeries: 12 } },
+    { id: "frac-n-25m-e96", label: "Fractional-N at 4 GHz, 25 MHz reference, 100 kHz loop, 60° margin, E96 parts", values: { fRef: 25e3, loopBW: 100, phaseMargin: 60, kvco: 30, n: 160, icp: 2500, eSeries: 96 } }
+  ],
+  // C5 (waves/W7.md): the export's rows, R1–C1 in series to ground (the
+  // zero) then C2 to ground (the pole), each rounded by `eSeries`. The
+  // response is where the rounded loop crosses 0 dB and its margin there,
+  // and its open-loop gain against frequency, in the model the filter is
+  // designed with.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "r1", position: "zero" },
+      { ref: "C1", kind: "C", key: "c1", position: "zero" },
+      { ref: "C2", kind: "C", key: "c2", position: "pole" }
+    ],
+    schematic: { kind: "rows" },
+    response: {
+      outputs: ["crossoverBuilt", "pmActual"],
+      curve: {
+        x: { label: "Frequency", unit: "Hz", scale: "log", range: (i) => [i.loopBW * 10, i.loopBW * 1e5] },
+        y: { label: "Open-loop gain", unit: "dB" },
+        points: (i, v, xs) => xs.map((f) => 20 * Math.log10(pllOpenLoopGain(2 * Math.PI * f, v.c1 * 1e-9, v.r1 * 1e3, v.c2 * 1e-12, i.icp * 1e-6, i.kvco * 2 * Math.PI * 1e6, i.n))),
+        level: { value: 0, label: "0 dB" },
+        marks: [(_i, v) => v.crossoverBuilt * 1e3]
+      }
+    }
+  },
   exportComponents: (inputs, outputs) => {
     const r1_ohm = (outputs?.r1 ?? 0) * 1e3;
     const c1_uf = (outputs?.c1 ?? 0) / 1e3;
     const c2_uf = (outputs?.c2 ?? 0) / 1e6;
     const fmtR = (ohm) => ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} kΩ` : `${+ohm.toPrecision(3)} Ω`;
-    const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)} nF` : `${+(uf * 1e6).toPrecision(3)} pF`;
+    const fmtC3 = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)} nF` : `${+(uf * 1e6).toPrecision(3)} pF`;
     return [
       { qty: 1, description: "R1 (zero resistor)", value: fmtR(r1_ohm), package: resistorPackage(((inputs.icp ?? 0) * 1e-6) ** 2 * r1_ohm), componentType: "R", placement: "branch", branch: "zero", returnNet: "GND" },
-      { qty: 1, description: "C1 (integrator)", value: fmtC(c1_uf), package: capacitorPackage(c1_uf * 1e-6), componentType: "C", placement: "branch", branch: "zero", returnNet: "GND" },
-      { qty: 1, description: "C2 (pole)", value: fmtC(c2_uf), package: capacitorPackage(c2_uf * 1e-6), componentType: "C", placement: "shunt" }
+      { qty: 1, description: "C1 (integrator)", value: fmtC3(c1_uf), package: capacitorPackage(c1_uf * 1e-6), componentType: "C", placement: "branch", branch: "zero", returnNet: "GND" },
+      { qty: 1, description: "C2 (pole)", value: fmtC3(c2_uf), package: capacitorPackage(c2_uf * 1e-6), componentType: "C", placement: "shunt" }
     ];
   }
 };
@@ -34082,19 +36814,21 @@ var mixerSpurCalculator = {
 
 // src/lib/calculators/general/schmitt-trigger.ts
 function calculateSchmittTrigger(inputs) {
-  const { vcc, r1, r2, r3 } = inputs;
+  const { vcc, eSeries = 0 } = inputs;
+  const r1 = roundToSeries(inputs.r1, eSeries);
+  const r2 = roundToSeries(inputs.r2, eSeries);
+  const r3 = roundToSeries(inputs.r3, eSeries);
   if (vcc <= 0) {
     return { values: {}, errors: ["Vcc must be positive"] };
   }
   if (r1 <= 0 || r2 <= 0 || r3 <= 0) {
     return { values: {}, errors: ["All resistor values must be positive"] };
   }
-  const vref = vcc * r1 / (r1 + r2);
-  const vhyst = vcc * r2 / (r2 + r3);
-  const vth_high = vref + vhyst / 2;
-  const vth_low = vref - vhyst / 2;
-  const hysteresis = vhyst;
-  const centerVoltage = vref;
+  const par = (a, b) => a * b / (a + b);
+  const vth_high = vcc * r1 / (r1 + par(r2, r3));
+  const vth_low = vcc * par(r1, r3) / (r2 + par(r1, r3));
+  const hysteresis = vth_high - vth_low;
+  const centerVoltage = (vth_high + vth_low) / 2;
   return {
     values: {
       vth_high,
@@ -34110,7 +36844,7 @@ var schmittTrigger = {
   shortTitle: "Schmitt Trigger",
   metaTitle: "Schmitt Trigger Calculator — Free Online Electronics Tool",
   category: "general",
-  description: "Calculate non-inverting Schmitt trigger threshold voltages and hysteresis band for comparator circuits with positive feedback.",
+  description: "Calculate inverting Schmitt trigger threshold voltages and hysteresis band for comparator circuits with positive feedback.",
   keywords: ["schmitt trigger calculator", "hysteresis comparator", "threshold voltage", "positive feedback comparator", "noise immunity trigger"],
   inputs: [
     {
@@ -34131,7 +36865,7 @@ var schmittTrigger = {
       defaultValue: 10,
       min: 1e-3,
       max: 1e4,
-      tooltip: "Lower resistor to ground in the voltage divider network"
+      tooltip: "Lower divider resistor, from the non-inverting input to ground"
     },
     {
       key: "r2",
@@ -34141,7 +36875,7 @@ var schmittTrigger = {
       defaultValue: 10,
       min: 1e-3,
       max: 1e4,
-      tooltip: "Upper resistor from output to the voltage divider node"
+      tooltip: "Upper divider resistor, from Vcc to the non-inverting input"
     },
     {
       key: "r3",
@@ -34152,6 +36886,24 @@ var schmittTrigger = {
       min: 1e-3,
       max: 1e4,
       tooltip: "Feedback resistor from output to non-inverting input"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -34183,39 +36935,62 @@ var schmittTrigger = {
     {
       key: "centerVoltage",
       label: "Center Voltage",
-      symbol: "V_ref",
+      symbol: "V_mid",
       unit: "V",
       precision: 4,
-      tooltip: "Center (reference) voltage of the hysteresis window"
+      tooltip: "The middle of the hysteresis window, (V_TH+ + V_TH−)/2"
     }
   ],
   calculate: calculateSchmittTrigger,
   formula: {
-    primary: "V_{ref} = V_{cc}\\frac{R_1}{R_1+R_2},\\quad V_{hyst} = V_{cc}\\frac{R_2}{R_2+R_3}",
-    latex: "V_{TH\\pm} = V_{ref} \\pm \\frac{V_{hyst}}{2}",
+    primary: "V_{TH+} = V_{cc}\\frac{R_1}{R_1 + R_2 \\parallel R_3},\\quad V_{TH-} = V_{cc}\\frac{R_1 \\parallel R_3}{R_2 + R_1 \\parallel R_3}",
+    latex: "V_{TH+} = V_{cc}\\frac{R_1}{R_1 + R_2 \\parallel R_3},\\quad V_{TH-} = V_{cc}\\frac{R_1 \\parallel R_3}{R_2 + R_1 \\parallel R_3},\\quad V_{hyst} = V_{TH+} - V_{TH-}",
     variables: [
       { symbol: "Vcc", description: "Supply voltage", unit: "V" },
       { symbol: "R1", description: "Lower voltage divider resistor", unit: "kΩ" },
       { symbol: "R2", description: "Upper voltage divider resistor", unit: "kΩ" },
       { symbol: "R3", description: "Feedback resistor", unit: "kΩ" }
     ],
-    reference: 'Horowitz & Hill, "The Art of Electronics" 3rd ed.'
+    reference: 'Horowitz & Hill, "The Art of Electronics" 3rd ed.; TI SNOA997A (comparator with hysteresis)'
   },
   visualization: { type: "none" },
   relatedCalculators: ["comparator-hysteresis", "opamp-gain", "opamp-bandwidth"],
+  examples: [
+    { id: "mid-supply-5v-e24", label: "Thresholds about 2.5 V on 5 V, E24", values: { vcc: 5, r1: 10, r2: 10, r3: 132.9, eSeries: 24 } },
+    { id: "low-threshold-3v3-e96", label: "Thresholds about 1 V on 3.3 V, E96", values: { vcc: 3.3, r1: 43.48, r2: 100, r3: 1e3, eSeries: 96 } },
+    { id: "wide-band-12v-e12", label: "Wide band about 6 V on 12 V, E12", values: { vcc: 12, r1: 22, r2: 22, r3: 50, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): the reader's resistors, rounded by `eSeries` in
+  // calculate(); drawn as the comparator with a divider reference.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "r1", position: "bottom" },
+      { ref: "R2", kind: "R", key: "r2", position: "top" },
+      { ref: "R3", kind: "R", key: "r3", position: "feedback" }
+    ],
+    schematic: { kind: "comparator", roles: { bottom: "R1", top: "R2", feedback: "R3" }, variant: "divider" },
+    targets: [
+      { output: "hysteresis", solveFor: ["r3"] },
+      { output: "centerVoltage", solveFor: ["r1"] }
+    ],
+    response: { outputs: ["vth_high", "vth_low", "hysteresis", "centerVoltage"] }
+  },
   verificationData: [
     {
       inputs: { vcc: 5, r1: 10, r2: 10, r3: 100 },
-      expectedOutputs: { vth_high: 2.727, vth_low: 2.273, hysteresis: 0.4545, centerVoltage: 2.5 },
-      tolerance: 0.01,
-      source: "Analytical derivation"
+      expectedOutputs: { vth_high: 2.619, vth_low: 2.381, hysteresis: 0.2381, centerVoltage: 2.5 },
+      tolerance: 1e-3,
+      source: "Superposition at the non-inverting input: 5·10/(10 + 10∥100) = 2.6190 V, 5·(10∥100)/(10 + 10∥100) = 2.3810 V"
     }
   ]
 };
 
 // src/lib/calculators/general/crystal-load-capacitance.ts
 function calculateCrystalLoadCapacitance(inputs) {
-  const { cl, cstray, c1, c2 } = inputs;
+  const { cl, cstray, eSeries = 0 } = inputs;
+  const c1 = roundToSeries(inputs.c1, eSeries);
+  const c2 = roundToSeries(inputs.c2, eSeries);
   if (c1 <= 0 || c2 <= 0) {
     return { values: {}, errors: ["External capacitor values must be positive"] };
   }
@@ -34283,6 +37058,24 @@ var crystalLoadCapacitance = {
       min: 0.1,
       max: 1e3,
       tooltip: "External capacitor 2"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -34335,6 +37128,27 @@ var crystalLoadCapacitance = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["rc-time-constant", "lc-resonance", "schmitt-trigger"],
+  examples: [
+    { id: "watch-crystal-7pf-e24", label: "32.768 kHz watch crystal, C_L 7 pF, E24", values: { cl: 7, cstray: 2.2, c1: 9.6, c2: 9.6, eSeries: 24 } },
+    { id: "ethernet-25mhz-18pf-e12", label: "25 MHz Ethernet crystal, C_L 18 pF, E12", values: { cl: 18, cstray: 5, c1: 26, c2: 26, eSeries: 12 } },
+    { id: "mcu-8mhz-20pf", label: "8 MHz MCU crystal, C_L 20 pF, ideal values", values: { cl: 20, cstray: 5, c1: 30, c2: 30, eSeries: 0 } }
+  ],
+  // C5 (waves/W7.md): the reader's capacitors, rounded by `eSeries` in
+  // calculate(); drawn as the Pierce oscillator, the crystal labelled by its C_L.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "C1", kind: "C", key: "c1", position: "input" },
+      { ref: "C2", kind: "C", key: "c2", position: "output" }
+    ],
+    schematic: {
+      kind: "pierce",
+      roles: { c1: "C1", c2: "C2" },
+      others: (i, _v, fmt5) => ({ crystal: { ref: "Y1", value: fmt5(i.cl, "pF") } })
+    },
+    targets: [{ output: "clActual", solveFor: ["c2", "c1"] }],
+    response: { outputs: ["clActual", "clError", "freqError"] }
+  },
   relatedBlogPosts: ["crystal-tolerance-ppm-budget"],
   liveWidgets: [
     { type: "ism-coexistence", position: "below-outputs", props: { bandMhz: 2400 } }
@@ -34452,7 +37266,8 @@ var opampBandwidth = {
 
 // src/lib/calculators/general/lm317-resistors.ts
 function calculateLm317Resistors(inputs) {
-  const { vout, r1, iadj } = inputs;
+  const { vout, iadj, eSeries = 0 } = inputs;
+  const r1 = roundToSeries(inputs.r1, eSeries);
   const VREF = 1.25;
   if (vout < VREF) {
     return { values: {}, errors: [`Output voltage must be >= ${VREF}V (Vref)`] };
@@ -34461,7 +37276,7 @@ function calculateLm317Resistors(inputs) {
     return { values: {}, errors: ["R1 must be positive"] };
   }
   const iadj_A = iadj * 1e-6;
-  const r2 = (vout - VREF) / (VREF / r1 + iadj_A);
+  const r2 = roundToSeries((vout - VREF) / (VREF / r1 + iadj_A), eSeries);
   const voutActual = VREF * (1 + r2 / r1) + iadj_A * r2;
   const ir1 = VREF / r1;
   const powerR1 = ir1 * ir1 * r1 * 1e3;
@@ -34514,6 +37329,24 @@ var lm317Resistors = {
       min: 0,
       max: 500,
       tooltip: "ADJ pin current — typically 50μA for LM317, 65μA for LM317A"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ]
     }
   ],
   outputs: [
@@ -34524,7 +37357,7 @@ var lm317Resistors = {
       symbol: "R2",
       unit: "Ω",
       precision: 1,
-      tooltip: "Calculated R2 value from ADJ pin to ground"
+      tooltip: "R2 from the ADJ pin to ground: the exact value for R1, or with a part series the nearest value of the series"
     },
     {
       key: "voutActual",
@@ -34532,7 +37365,7 @@ var lm317Resistors = {
       symbol: "Vout_actual",
       unit: "V",
       precision: 4,
-      tooltip: "Actual output voltage including ADJ pin current effect"
+      tooltip: "The output voltage R1 and R2 set, including the ADJ pin current; with a part series, the rounded resistors' voltage"
     },
     {
       key: "powerR1",
@@ -34565,6 +37398,22 @@ var lm317Resistors = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["voltage-regulator-dropout", "zener-diode", "ldo-thermal"],
+  examples: [
+    { id: "rail-5v-e24", label: "5 V rail with R1 240 Ω, E24", values: { vout: 5, r1: 240, iadj: 50, eSeries: 24 } },
+    { id: "rail-12v-e96", label: "12 V rail with R1 240 Ω, E96", values: { vout: 12, r1: 240, iadj: 50, eSeries: 96 } },
+    { id: "rail-3v3-e48", label: "3.3 V rail with R1 120 Ω, E48", values: { vout: 3.3, r1: 120, iadj: 50, eSeries: 48 } }
+  ],
+  // C5 (waves/W7.md): R1 is the reader's, R2 the calculator's, both rounded
+  // by `eSeries` in calculate(); drawn as the adjustable regulator.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "R1", kind: "R", key: "r1", position: "reference" },
+      { ref: "R2", kind: "R", key: "r2", position: "adjust" }
+    ],
+    schematic: { kind: "regulator", roles: { r1: "R1", r2: "R2" } },
+    response: { outputs: ["voutActual", "powerR1", "powerR2"] }
+  },
   exportComponents: (inputs, outputs) => {
     const fmtR = (ohm) => ohm >= 1e6 ? `${+(ohm / 1e6).toPrecision(3)} MΩ` : ohm >= 1e3 ? `${+(ohm / 1e3).toPrecision(3)} kΩ` : `${+ohm.toPrecision(3)} Ω`;
     return [
@@ -34888,8 +37737,32 @@ var transformerTurnsRatio = {
 };
 
 // src/lib/calculators/power/flyback-converter.ts
+var sig38 = (v) => String(Number(v.toPrecision(3)));
+var LOSS_DEFAULTS8 = { rdsOn: 50, tFall: 20, qg: 15, vGate: 10, vDiode: 0.5, rPri: 50, rSec: 20, coreLoss: 100, leakageInductance: 2.6, clampRatio: 2 };
+function trace(T, ton, end, on, off) {
+  const pts = [];
+  const along = (seg, t0, len, t) => seg[0] + (seg[1] - seg[0]) * (t - t0) / len;
+  for (let k = 0; k * T < end; k++) {
+    const t0 = k * T;
+    const t1 = t0 + ton;
+    const t2 = t0 + T;
+    pts.push([t0, on[0]]);
+    if (t1 >= end) {
+      pts.push([end, along(on, t0, ton, end)]);
+      break;
+    }
+    pts.push([t1, on[1]], [t1, off[0]]);
+    if (t2 >= end) {
+      pts.push([end, along(off, t1, T - ton, end)]);
+      break;
+    }
+    pts.push([t2, off[1]]);
+  }
+  return pts;
+}
 function calculateFlybackConverter(inputs) {
-  const { vin, vout, iout, efficiency, fsw, dutyCycle } = inputs;
+  const { vin, vout, iout, efficiency, fsw, dutyCycle, vinMin = 0, vinMax = 0 } = inputs;
+  const p = { ...LOSS_DEFAULTS8, ...Object.fromEntries(Object.keys(LOSS_DEFAULTS8).filter((k) => inputs[k] !== void 0).map((k) => [k, inputs[k]])) };
   if (vin <= 0 || vout <= 0) {
     return { values: {}, errors: ["Voltages must be positive"] };
   }
@@ -34898,6 +37771,15 @@ function calculateFlybackConverter(inputs) {
   }
   if (dutyCycle <= 0 || dutyCycle >= 100) {
     return { values: {}, errors: ["Duty cycle must be between 0 and 100%"] };
+  }
+  if (vinMin > 0 && vinMin > vin) {
+    return { values: {}, errors: ["Minimum input voltage must not be above the nominal input voltage"] };
+  }
+  if (vinMax > 0 && vinMax < vin) {
+    return { values: {}, errors: ["Maximum input voltage must not be below the nominal input voltage"] };
+  }
+  if (!(p.clampRatio > 1)) {
+    return { values: {}, errors: ["The clamp voltage must be above the reflected output voltage n·V_out: at or below it the clamp would conduct continuously and carry the output power"] };
   }
   const D = dutyCycle / 100;
   const eta = efficiency / 100;
@@ -34908,6 +37790,41 @@ function calculateFlybackConverter(inputs) {
   const ipPeak = 2 * iinAvg / D;
   const isecPeak = ipPeak * turnsRatio;
   const primaryInductance = vin * D / (fsw * 1e3 * ipPeak) * 1e6;
+  const f = fsw * 1e3;
+  const lp = primaryInductance * 1e-6;
+  const reflectedVoltage = turnsRatio * vout;
+  const clampVoltage = p.clampRatio * reflectedVoltage;
+  const op = (v) => {
+    if (v === vin) return { d: D, ipk: ipPeak, pRms2: D * ipPeak * ipPeak / 3, sRms2: (1 - D) * isecPeak * isecPeak / 3 };
+    if (v > vin) {
+      const d2 = vin * D / v;
+      return { d: d2, ipk: ipPeak, pRms2: d2 * ipPeak * ipPeak / 3, sRms2: (1 - D) * isecPeak * isecPeak / 3 };
+    }
+    const d = reflectedVoltage / (v + reflectedVoltage);
+    const ia = inputPower / (v * d);
+    const di = v * d / (lp * f);
+    const sq = ia * ia + di * di / 12;
+    return { d, ipk: ia + di / 2, pRms2: d * sq, sRms2: (1 - d) * turnsRatio * turnsRatio * sq };
+  };
+  const vins = corners(vin, vinMin, vinMax);
+  const lo = vins[0];
+  const hi = vins[vins.length - 1];
+  const ipWorst = worstOver(vins, (v) => op(v).ipk);
+  const isWorst = worstOver(vins, (v) => op(v).ipk * turnsRatio);
+  const pRms = worstOver(vins, (v) => Math.sqrt(op(v).pRms2));
+  const sRms = worstOver(vins, (v) => Math.sqrt(op(v).sRms2));
+  const vdsPeak = worstOver(vins, (v) => v + clampVoltage);
+  const diodeVr = worstOver(vins, (v) => vout + v / turnsRatio);
+  const pRms2Nom = D * ipPeak * ipPeak / 3;
+  const sRms2Nom = (1 - D) * isecPeak * isecPeak / 3;
+  const lossConduction = pRms2Nom * p.rdsOn / 1e3;
+  const lossSwitching = 0.5 * (vin + reflectedVoltage) * ipPeak * p.tFall * 1e-9 * f;
+  const lossGateDrive = p.qg * 1e-9 * p.vGate * f;
+  const lossDiode = p.vDiode * iout;
+  const lossCopper = pRms2Nom * p.rPri / 1e3 + sRms2Nom * p.rSec / 1e3;
+  const lossCore = p.coreLoss / 1e3;
+  const lossClamp = 0.5 * p.leakageInductance * 1e-6 * ipPeak * ipPeak * f * (p.clampRatio / (p.clampRatio - 1));
+  const lossTotal = lossConduction + lossSwitching + lossGateDrive + lossDiode + lossCopper + lossCore + lossClamp;
   return {
     values: {
       turnsRatio,
@@ -34915,7 +37832,34 @@ function calculateFlybackConverter(inputs) {
       ipPeak,
       isecPeak,
       outputPower,
-      primaryInductance
+      primaryInductance,
+      dutyMin: op(hi).d * 100,
+      dutyMax: op(lo).d * 100,
+      ipPeakWorst: ipWorst.value,
+      ipPeakWorstVin: ipWorst.at,
+      isecPeakWorst: isWorst.value,
+      isecPeakWorstVin: isWorst.at,
+      primaryRmsA: pRms.value,
+      primaryRmsVin: pRms.at,
+      secondaryRmsA: sRms.value,
+      secondaryRmsVin: sRms.at,
+      reflectedVoltage,
+      clampVoltage,
+      vdsPeakWorst: vdsPeak.value,
+      vdsPeakVin: vdsPeak.at,
+      vdsRating: ratingAtOrAbove(vdsPeak.value, MOSFET_VDS),
+      diodeVrWorst: diodeVr.value,
+      diodeVrVin: diodeVr.at,
+      diodeVrRating: ratingAtOrAbove(VOLTAGE_DERATING * diodeVr.value, MOSFET_VDS),
+      lossConduction,
+      lossSwitching,
+      lossGateDrive,
+      lossDiode,
+      lossCopper,
+      lossCore,
+      lossClamp,
+      lossTotal,
+      efficiencyLossModel: outputPower / (outputPower + lossTotal) * 100
     }
   };
 }
@@ -34987,7 +37931,39 @@ var flybackConverter = {
       min: 5,
       max: 90,
       tooltip: "Primary switch duty cycle (typical: 30-50% for flyback)"
-    }
+    },
+    {
+      key: "vinMin",
+      label: "Minimum Input Voltage",
+      symbol: "V_{in,min}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      max: 1e3,
+      tooltip: "The lowest input the converter must work from; 0 for the nominal. The transformer designed at the nominal runs in continuous conduction below it.",
+      group: "Operating envelope"
+    },
+    {
+      key: "vinMax",
+      label: "Maximum Input Voltage",
+      symbol: "V_{in,max}",
+      unit: "V",
+      defaultValue: 0,
+      min: 0,
+      max: 1e3,
+      tooltip: "The highest input the converter must work from; 0 for the nominal. It sets the switch's and the rectifier's voltage.",
+      group: "Operating envelope"
+    },
+    { key: "rdsOn", label: "Switch R_DS(on)", symbol: "R_{DS(on)}", unit: "mΩ", defaultValue: 50, min: 0.1, max: 1e5, group: "Loss model", tooltip: "The switch FET's on-resistance at its operating temperature." },
+    { key: "tFall", label: "Switch Turn-off Time", symbol: "t_{f}", unit: "ns", defaultValue: 20, min: 0, max: 1e4, group: "Loss model", tooltip: "The switch turns off at the peak current: the switching loss is ½·(V_in + n·V_out)·I_pk·t_f·f_sw. It turns on at zero current at the boundary." },
+    { key: "qg", label: "Total Gate Charge", symbol: "Q_{g}", unit: "nC", defaultValue: 15, min: 0, max: 1e4, group: "Loss model", tooltip: "The switch's gate charge at the drive voltage: the gate drive takes Q_g·V_g·f_sw." },
+    { key: "vGate", label: "Gate Drive Voltage", symbol: "V_{g}", unit: "V", defaultValue: 10, min: 1, max: 20, group: "Loss model" },
+    { key: "vDiode", label: "Rectifier Forward Voltage", symbol: "V_{F}", unit: "V", defaultValue: 0.5, min: 0, max: 3, group: "Loss model", tooltip: "The output rectifier's forward voltage: it dissipates V_F·I_out." },
+    { key: "rPri", label: "Primary Winding Resistance", symbol: "R_{p}", unit: "mΩ", defaultValue: 50, min: 0, max: 1e5, group: "Loss model" },
+    { key: "rSec", label: "Secondary Winding Resistance", symbol: "R_{s}", unit: "mΩ", defaultValue: 20, min: 0, max: 1e5, group: "Loss model" },
+    { key: "coreLoss", label: "Transformer Core Loss", symbol: "P_{core}", unit: "mW", defaultValue: 100, min: 0, max: 1e6, group: "Loss model", tooltip: "From the core's datasheet at this flux swing and frequency." },
+    { key: "leakageInductance", label: "Leakage Inductance", symbol: "L_{lk}", unit: "μH", defaultValue: 2.6, min: 0, max: 1e5, group: "Loss model", tooltip: "Primary leakage inductance, measured with the secondary shorted; typically 1 to 3 % of the primary inductance. Its energy goes to the clamp." },
+    { key: "clampRatio", label: "Clamp Voltage Ratio", symbol: "k_{clamp}", unit: "", defaultValue: 2, min: 1.1, max: 10, group: "Loss model", tooltip: "The clamp voltage as a multiple of the reflected output voltage; AN-4147 suggests 2 to 2.5. A lower clamp spends more of the magnetizing energy in the clamp, a higher one stresses the switch more." }
   ],
   outputs: [
     {
@@ -35038,6 +38014,43 @@ var flybackConverter = {
       unit: "μH",
       precision: 2,
       tooltip: "Magnetizing inductance at which the primary current ramps from zero to the peak in each on-time (boundary conduction): Vin·D/(fsw·Ipk)"
+    },
+    // C11 (waves/W7.md): the nominal design's transformer over the input range, each stress where it is largest.
+    { key: "dutyMin", label: "Minimum Duty Cycle", symbol: "D_{min}", unit: "%", precision: 2, tooltip: "At the maximum input voltage, in discontinuous conduction" },
+    { key: "dutyMax", label: "Maximum Duty Cycle", symbol: "D_{max}", unit: "%", precision: 2, tooltip: "At the minimum input voltage, in continuous conduction" },
+    { key: "ipPeakWorst", label: "Peak Primary Current, Worst Case", symbol: "I_{p,pk}", unit: "A", precision: 3, tooltip: "The transformer's saturation current must be at least this" },
+    { key: "ipPeakWorstVin", label: "Input at the Worst Primary Peak", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "isecPeakWorst", label: "Peak Secondary Current, Worst Case", symbol: "I_{s,pk}", unit: "A", precision: 3 },
+    { key: "isecPeakWorstVin", label: "Input at the Worst Secondary Peak", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "primaryRmsA", label: "Primary RMS Current, Worst Case", symbol: "I_{p,rms}", unit: "A", precision: 3, tooltip: "In the switch and the primary winding" },
+    { key: "primaryRmsVin", label: "Input at the Worst Primary RMS Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "secondaryRmsA", label: "Secondary RMS Current, Worst Case", symbol: "I_{s,rms}", unit: "A", precision: 3, tooltip: "In the rectifier and the secondary winding" },
+    { key: "secondaryRmsVin", label: "Input at the Worst Secondary RMS Current", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "reflectedVoltage", label: "Reflected Output Voltage", symbol: "nV_{out}", unit: "V", precision: 3, tooltip: "The output as the primary sees it while the secondary conducts" },
+    { key: "clampVoltage", label: "Clamp Voltage", symbol: "V_{clamp}", unit: "V", precision: 3, tooltip: "Above the input rail, where the clamp holds the drain after turn-off" },
+    { key: "vdsPeakWorst", label: "Peak Drain Voltage, Worst Case", symbol: "V_{DS,pk}", unit: "V", precision: 3, tooltip: "The maximum input plus the clamp voltage" },
+    { key: "vdsPeakVin", label: "Input at the Worst Drain Voltage", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "vdsRating", label: "Switch Voltage Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above the clamped peak drain voltage" },
+    { key: "diodeVrWorst", label: "Rectifier Reverse Voltage, Worst Case", symbol: "V_{R}", unit: "V", precision: 3, tooltip: "The output plus the maximum input over the turns ratio, while the switch is on" },
+    { key: "diodeVrVin", label: "Input at the Worst Reverse Voltage", symbol: "V_{in}", unit: "V", precision: 3 },
+    { key: "diodeVrRating", label: "Rectifier Voltage Rating", symbol: "V_{RRM}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the worst reverse voltage" },
+    // C11: the loss model at the nominal input and load, a separate estimate from the efficiency input.
+    { key: "lossConduction", label: "Switch Conduction Loss", symbol: "P_{cond}", unit: "W", precision: 4 },
+    { key: "lossSwitching", label: "Switch Turn-off Loss", symbol: "P_{sw}", unit: "W", precision: 4 },
+    { key: "lossGateDrive", label: "Gate Drive Loss", symbol: "P_{gate}", unit: "W", precision: 4 },
+    { key: "lossDiode", label: "Rectifier Conduction Loss", symbol: "P_{D}", unit: "W", precision: 4 },
+    { key: "lossCopper", label: "Winding Copper Loss", symbol: "P_{Cu}", unit: "W", precision: 4 },
+    { key: "lossCore", label: "Transformer Core Loss", symbol: "P_{core}", unit: "W", precision: 4 },
+    { key: "lossClamp", label: "Clamp Loss", symbol: "P_{clamp}", unit: "W", precision: 4, tooltip: "The leakage energy ½·L_lk·I_pk²·f and the magnetizing energy the clamp takes while the leakage resets" },
+    { key: "lossTotal", label: "Total Loss", symbol: "P_{loss}", unit: "W", precision: 4 },
+    {
+      key: "efficiencyLossModel",
+      label: "Efficiency (loss model)",
+      symbol: "η_{loss}",
+      unit: "%",
+      precision: 2,
+      tooltip: "At the nominal input and load, from the loss model. The currents are sized with the efficiency input; set it to this value and they follow the loss model",
+      thresholds: { good: { min: 85 }, warning: { min: 75, max: 85 }, danger: { min: 75 } }
     }
   ],
   calculate: calculateFlybackConverter,
@@ -35054,6 +38067,64 @@ var flybackConverter = {
     reference: "Unitrode Power Supply Design Seminar SEM600; TI SLVA057 for L_p"
   },
   visualization: { type: "none" },
+  examples: [
+    { id: "telecom-48v-to-12v", label: "Telecom 36–72 V to 12 V at 1 A, 100 kHz", values: { vin: 48, vinMin: 36, vinMax: 72, vout: 12, iout: 1, efficiency: 85, fsw: 100, dutyCycle: 40 } },
+    { id: "offline-12v-24w", label: "Off-line 120–375 V DC bus to 12 V at 2 A, 65 kHz", values: { vin: 325, vinMin: 120, vinMax: 375, vout: 12, iout: 2, efficiency: 85, fsw: 65, dutyCycle: 25, rdsOn: 600, tFall: 30, qg: 20, vGate: 12, vDiode: 0.6, rPri: 600, rSec: 10, coreLoss: 150, leakageInductance: 36, clampRatio: 2 } },
+    { id: "auxiliary-24v-to-5v", label: "Isolated auxiliary 18–36 V to 5 V at 1 A, 200 kHz", values: { vin: 24, vinMin: 18, vinMax: 36, vout: 5, iout: 1, efficiency: 80, fsw: 200, dutyCycle: 45, rdsOn: 40, tFall: 15, qg: 8, vGate: 10, vDiode: 0.4, rPri: 40, rSec: 15, coreLoss: 40, leakageInductance: 1, clampRatio: 2.5 } }
+  ],
+  // C11 (waves/W7.md): the input range, the results at their worst corners, the parts and their stresses.
+  envelope: {
+    ranges: [{ input: "vin", min: "vinMin", max: "vinMax" }],
+    results: [
+      { output: "ipPeak", note: { worst: "ipPeakWorst", input: "vin", at: "ipPeakWorstVin" } },
+      { output: "vdsPeakWorst", note: { corner: { input: "vin", at: "vdsPeakVin" } } },
+      { output: "isecPeak", note: { worst: "isecPeakWorst", input: "vin", at: "isecPeakWorstVin" } },
+      { output: "diodeVrWorst", note: { corner: { input: "vin", at: "diodeVrVin" } } }
+    ],
+    parts: [
+      { ref: "T1", role: "transformer", value: { key: "primaryInductance" }, stresses: [{ symbol: "I_{sat}", sense: "min", key: "ipPeakWorst", at: { input: "vin", key: "ipPeakWorstVin" } }, { symbol: "L_{lk}", sense: "max", key: "leakageInductance" }] },
+      { ref: "Q1", role: "switch", value: { key: "rdsOn" }, stresses: [{ symbol: "V_{DS}", sense: "min", key: "vdsRating" }, { symbol: "I_{rms}", sense: "min", key: "primaryRmsA", at: { input: "vin", key: "primaryRmsVin" } }] },
+      { ref: "D1", role: "diode", value: { key: "vDiode" }, stresses: [{ symbol: "V_{RRM}", sense: "min", key: "diodeVrRating" }, { symbol: "I_{F(AV)}", sense: "min", key: "iout" }, { symbol: "I_{pk}", sense: "min", key: "isecPeakWorst", at: { input: "vin", key: "isecPeakWorstVin" } }] },
+      { ref: "RCD1", role: "clamp", value: { key: "clampVoltage" }, stresses: [{ symbol: "P", sense: "min", key: "lossClamp" }] }
+    ],
+    // Boundary conduction at the nominal input, ideal switching: the drain at 0 during the on-time and at V_in + n·V_out after;
+    // the primary current ramps from zero to I_pk while on, the secondary from n·I_pk to zero while off.
+    waveforms: {
+      periods: 2.5,
+      traces: (i, v) => {
+        const T = 1 / (i.fsw * 1e3);
+        const ton = i.dutyCycle / 100 * T;
+        const end = 2.5 * T;
+        const vOff = i.vin + v.reflectedVoltage;
+        return [
+          { id: "vds", symbol: "V_{DS}", unit: "V", points: trace(T, ton, end, [0, 0], [vOff, vOff]), spans: [{ symbol: "t_{on}", axis: "x", from: 0, to: ton }] },
+          { id: "ip", symbol: "I_{p}", unit: "A", points: trace(T, ton, end, [0, v.ipPeak], [0, 0]), spans: [{ symbol: "I_{p,pk}", axis: "y", from: 0, to: v.ipPeak }] },
+          { id: "is", symbol: "I_{s}", unit: "A", points: trace(T, ton, end, [0, 0], [v.isecPeak, 0]), spans: [{ symbol: "I_{s,pk}", axis: "y", from: 0, to: v.isecPeak }] }
+        ];
+      }
+    },
+    bom: (i, v) => [
+      { qty: 1, description: "T1 (flyback transformer)", value: `Lp ${sig38(v.primaryInductance)} µH, Np:Ns ${sig38(v.turnsRatio)}:1, Isat ≥ ${sig38(v.ipPeakWorst)} A, Llk ≤ ${sig38(i.leakageInductance)} µH`, package: "" },
+      { qty: 1, description: "Q1 (N-channel MOSFET)", value: `RDS(on) ≤ ${sig38(i.rdsOn)} mΩ, VDS ≥ ${v.vdsRating} V, Irms ≥ ${sig38(v.primaryRmsA)} A`, package: "" },
+      { qty: 1, description: "D1 (output rectifier)", value: `VF ≤ ${sig38(i.vDiode)} V, VRRM ≥ ${v.diodeVrRating} V, IF(AV) ≥ ${sig38(i.iout)} A, IFRM ≥ ${sig38(v.isecPeakWorst)} A`, package: diodePackage(i.iout) },
+      { qty: 1, description: "RCD1 (drain clamp: resistor, capacitor and ultrafast diode)", value: `Vclamp ${sig38(v.clampVoltage)} V above the input, P ≥ ${sig38(v.lossClamp)} W`, package: "" }
+    ]
+  },
+  lossModel: {
+    inputs: ["rdsOn", "tFall", "qg", "vGate", "vDiode", "rPri", "rSec", "coreLoss", "leakageInductance", "clampRatio"],
+    efficiency: "efficiencyLossModel",
+    total: "lossTotal",
+    outputPower: "outputPower",
+    losses: [
+      { output: "lossDiode", lever: "diode" },
+      { output: "lossClamp", lever: "leakage" },
+      { output: "lossCopper", lever: "copper" },
+      { output: "lossCore", lever: "core" },
+      { output: "lossSwitching", lever: "edges" },
+      { output: "lossConduction", lever: "rdson" },
+      { output: "lossGateDrive", lever: "gate-charge" }
+    ]
+  },
   relatedCalculators: ["transformer-turns-ratio", "buck-converter", "mosfet-power-dissipation", "rcd-clamp-snubber", "rc-snubber"],
   relatedTools: ["magnetics-optimizer", "smps-control-loop"],
   relatedBlogPosts: ["magnetics-optimizer-transformer-design"],
@@ -36549,8 +39620,13 @@ var solderPasteVolume = {
 };
 
 // src/lib/calculators/emc/emi-filter-lc.ts
+function piInsertionLossDb(inductanceUh, capacitanceUf, zs, zl, f) {
+  const c2 = capacitanceUf * 1e-6;
+  const ladder = [shunt("C", { c: c2 }), series("L", { l: inductanceUh * 1e-6 }), shunt("C", { c: c2 })];
+  return 10 * Math.log10(transducerGain([], f, zs, zl) / transducerGain(ladder, f, zs, zl));
+}
 function calculateEmiFilterLc(inputs) {
-  const { fc, attenuationNeeded, zSource, zLoad } = inputs;
+  const { fc, attenuationNeeded, zSource, zLoad, eSeries = 0 } = inputs;
   if (fc <= 0) {
     return { values: {}, errors: ["Cutoff frequency must be positive"] };
   }
@@ -36562,16 +39638,18 @@ function calculateEmiFilterLc(inputs) {
   const filterOrder = Math.max(2, n);
   const z0 = Math.sqrt(zSource * zLoad);
   const impedanceMatching = z0;
-  const inductance = z0 / wc * 1e6;
-  const capacitance = 1 / (z0 * wc) * 1e6;
+  const inductance = roundToSeries(z0 / wc * 1e6, eSeries);
+  const capacitance = roundToSeries(1 / (z0 * wc) * 1e6, eSeries);
   const actualAttenuation = filterOrder * 20 * Math.log10(10);
+  const insertionLossBuilt = piInsertionLossDb(inductance, capacitance, zSource, zLoad, 10 * fc * 1e3);
   return {
     values: {
       inductance,
       capacitance,
       filterOrder,
       actualAttenuation,
-      impedanceMatching
+      impedanceMatching,
+      insertionLossBuilt
     }
   };
 }
@@ -36602,7 +39680,7 @@ var emiFilterLc = {
       defaultValue: 40,
       min: 6,
       max: 120,
-      tooltip: "Required attenuation at the cutoff frequency to meet EMC limits"
+      tooltip: "The attenuation needed at ten times the cutoff frequency; it sets the filter order, n = ⌈A/20⌉"
     },
     {
       key: "zSource",
@@ -36623,6 +39701,31 @@ var emiFilterLc = {
       min: 0.1,
       max: 1e4,
       tooltip: "Load impedance"
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
     }
   ],
   outputs: [
@@ -36633,7 +39736,7 @@ var emiFilterLc = {
       symbol: "L",
       unit: "μH",
       precision: 3,
-      tooltip: "Filter inductor value per stage"
+      tooltip: "Filter inductor value per stage; rounded to the part series when one is chosen"
     },
     {
       key: "capacitance",
@@ -36641,7 +39744,7 @@ var emiFilterLc = {
       symbol: "C",
       unit: "μF",
       precision: 4,
-      tooltip: "Filter capacitor value per stage"
+      tooltip: "Filter capacitor value per stage; rounded to the part series when one is chosen"
     },
     {
       key: "filterOrder",
@@ -36667,24 +39770,32 @@ var emiFilterLc = {
       unit: "Ω",
       precision: 2,
       tooltip: "Geometric mean impedance for filter matching"
+    },
+    {
+      key: "insertionLossBuilt",
+      label: "Pi Filter Insertion Loss at 10× fc",
+      symbol: "IL_{10f_c}",
+      unit: "dB",
+      precision: 1,
+      tooltip: "What the exported pi filter (C1, L, C2) with these part values does at 10× the cutoff frequency between the source and load impedances: the circuit's insertion loss, solved as a ladder, not the per-order estimate above"
     }
   ],
   calculate: calculateEmiFilterLc,
   exportComponents: (_inputs, outputs) => {
-    const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)} nF` : `${+(uf * 1e6).toPrecision(3)} pF`;
-    const fmtL = (uh) => uh >= 1 ? `${+uh.toPrecision(3)} μH` : `${+(uh * 1e3).toPrecision(3)} nH`;
+    const fmtC3 = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)} nF` : `${+(uf * 1e6).toPrecision(3)} pF`;
+    const fmtL3 = (uh) => uh >= 1 ? `${+uh.toPrecision(3)} μH` : `${+(uh * 1e3).toPrecision(3)} nH`;
     return [
-      { qty: 1, description: "C1 (shunt, input)", value: fmtC(outputs.capacitance), package: capacitorPackage(outputs.capacitance * 1e-6), componentType: "C", placement: "shunt" },
-      { qty: 1, description: "L (series)", value: fmtL(outputs.inductance), package: inductorPackage(outputs.inductance * 1e-6), componentType: "L", placement: "series" },
-      { qty: 1, description: "C2 (shunt, output)", value: fmtC(outputs.capacitance), package: capacitorPackage(outputs.capacitance * 1e-6), componentType: "C", placement: "shunt" }
+      { qty: 1, description: "C1 (shunt, input)", value: fmtC3(outputs.capacitance), package: capacitorPackage(outputs.capacitance * 1e-6), componentType: "C", placement: "shunt" },
+      { qty: 1, description: "L (series)", value: fmtL3(outputs.inductance), package: inductorPackage(outputs.inductance * 1e-6), componentType: "L", placement: "series" },
+      { qty: 1, description: "C2 (shunt, output)", value: fmtC3(outputs.capacitance), package: capacitorPackage(outputs.capacitance * 1e-6), componentType: "C", placement: "shunt" }
     ];
   },
   schematicSections: (_inputs, outputs) => {
     if (!outputs) return [];
-    const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)}μF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)}nF` : `${+(uf * 1e6).toPrecision(3)}pF`;
-    const fmtL = (uh) => uh >= 1 ? `${+uh.toPrecision(3)}μH` : `${+(uh * 1e3).toPrecision(3)}nH`;
-    const L = fmtL(outputs.inductance);
-    const C10 = fmtC(outputs.capacitance);
+    const fmtC3 = (uf) => uf >= 1 ? `${+uf.toPrecision(3)}μF` : uf >= 1e-3 ? `${+(uf * 1e3).toPrecision(3)}nF` : `${+(uf * 1e6).toPrecision(3)}pF`;
+    const fmtL3 = (uh) => uh >= 1 ? `${+uh.toPrecision(3)}μH` : `${+(uh * 1e3).toPrecision(3)}nH`;
+    const L = fmtL3(outputs.inductance);
+    const C10 = fmtC3(outputs.capacitance);
     return [{
       label: "Pi LC EMI Filter",
       elements: [
@@ -36707,7 +39818,27 @@ var emiFilterLc = {
   visualization: { type: "none" },
   relatedCalculators: ["ferrite-bead", "shielding-effectiveness", "esd-tvs-diode"],
   relatedTools: ["emi-radiated"],
-  relatedBlogPosts: ["cable-shield-effectiveness", "emc-fcc-ce-testing-guide", "emi-filter-design-cispr-compliance"]
+  relatedBlogPosts: ["cable-shield-effectiveness", "emc-fcc-ce-testing-guide", "emi-filter-design-cispr-compliance"],
+  examples: [
+    { id: "cispr-150k-lisn-e12", label: "CISPR 32 conducted band from 150 kHz, 50 Ω LISN both sides, E12 parts", values: { fc: 150, attenuationNeeded: 40, zSource: 50, zLoad: 50, eSeries: 12 } },
+    { id: "dcdc-input-30k-e24", label: "DC-DC converter input filter at 30 kHz, 50 Ω LISN into a 5 Ω converter input, E24 parts", values: { fc: 30, attenuationNeeded: 60, zSource: 50, zLoad: 5, eSeries: 24 } },
+    { id: "rf-supply-1m-e96", label: "1 MHz supply filter in a 50 Ω system, E96 parts", values: { fc: 1e3, attenuationNeeded: 40, zSource: 50, zLoad: 50, eSeries: 96 } }
+  ],
+  // C5 (waves/W7.md): the export's pi, C1 to ground, L in the line, C2 to
+  // ground (C1 = C2), rounded by `eSeries`, between the source and the load.
+  // Its response is the circuit's own insertion loss at 10·fc. No curve: the
+  // ladder disagrees with `actualAttenuation`'s n × 20 dB estimate (53.9 dB
+  // against 40 dB at the defaults), which the founder is to settle.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "C1", kind: "C", key: "capacitance", position: "shunt" },
+      { ref: "L1", kind: "L", key: "inductance", position: "series" },
+      { ref: "C2", kind: "C", key: "capacitance", position: "shunt" }
+    ],
+    schematic: { kind: "rows", source: { label: "Z_s", value: "zSource" }, load: { label: "Z_L", value: "zLoad" } },
+    response: { outputs: ["insertionLossBuilt"] }
+  }
 };
 
 // src/lib/calculators/emc/esd-tvs-diode.ts
@@ -37647,6 +40778,12 @@ var pcbCrosstalkEmc = {
 };
 
 // src/lib/calculators/emc/power-supply-ripple-filter.ts
+function rippleAttenuationDb(resonantKHz, fKHz) {
+  const freqRatio = fKHz * 1e3 / (resonantKHz * 1e3);
+  return freqRatio > 1 ? -40 * Math.log10(freqRatio) : 0;
+}
+var fmtL = (uh) => uh >= 1e3 ? `${+(uh / 1e3).toPrecision(3)} mH` : `${+uh.toPrecision(3)} μH`;
+var fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : `${+(uf * 1e3).toPrecision(3)} nF`;
 var powerSupplyRippleFilter = {
   slug: "power-supply-ripple-filter",
   title: "Power Supply Ripple Filter",
@@ -37658,8 +40795,33 @@ var powerSupplyRippleFilter = {
   inputs: [
     { key: "inputRipple", label: "Input Ripple Voltage", symbol: "V_ripple", unit: "mV", defaultValue: 100, min: 1e-3 },
     { key: "frequency", label: "Ripple Frequency", symbol: "f", unit: "kHz", defaultValue: 100, min: 1e-3 },
-    { key: "inductance", label: "Inductor Value", symbol: "L", unit: "μH", defaultValue: 10, min: 1e-3 },
-    { key: "capacitance", label: "Capacitor Value", symbol: "C", unit: "μF", defaultValue: 10, min: 1e-3 }
+    { key: "inductance", label: "Inductor Value", symbol: "L", unit: "μH", defaultValue: 10, min: 1e-3, max: 1e5 },
+    { key: "capacitance", label: "Capacitor Value", symbol: "C", unit: "μF", defaultValue: 10, min: 1e-3, max: 1e5 },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
+    }
   ],
   outputs: [
     { key: "resonantFreq", label: "Filter Resonant Frequency", symbol: "f₀", unit: "kHz", precision: 1 },
@@ -37667,7 +40829,9 @@ var powerSupplyRippleFilter = {
     { key: "outputRipple", label: "Output Ripple", symbol: "V_out", unit: "mV", precision: 3, primary: true }
   ],
   calculate: (inputs) => {
-    const { inputRipple, frequency, inductance, capacitance } = inputs;
+    const { inputRipple, frequency, eSeries = 0 } = inputs;
+    const inductance = roundToSeries(inputs.inductance, eSeries);
+    const capacitance = roundToSeries(inputs.capacitance, eSeries);
     const lH = inductance * 1e-6;
     const cF = capacitance * 1e-6;
     const freqHz = frequency * 1e3;
@@ -37683,7 +40847,57 @@ var powerSupplyRippleFilter = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["emi-filter-lc", "conducted-emissions-filter", "common-mode-choke"],
-  relatedBlogPosts: ["linear-regulator-dropout", "ohms-law", "solar-panel-sizing"]
+  relatedBlogPosts: ["linear-regulator-dropout", "ohms-law", "solar-panel-sizing"],
+  examples: [
+    { id: "ldo-preregulator-100k-e12", label: "LDO pre-filter: 100 mV at 100 kHz through 10 µH and 10 µF, E12 parts", values: { inputRipple: 100, frequency: 100, inductance: 10, capacitance: 10, eSeries: 12 } },
+    { id: "buck-post-filter-500k-e24", label: "Buck converter post-filter: 30 mV at 500 kHz through 1 µH and 22 µF, E24 parts", values: { inputRipple: 30, frequency: 500, inductance: 1, capacitance: 22, eSeries: 24 } },
+    { id: "solved-1mv-300k-e12", label: "50 mV at 300 kHz down to 1 mV with 4.7 µH: 2.994 µF solved, rounded to E12", values: { inputRipple: 50, frequency: 300, inductance: 4.7, capacitance: 2.994, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): the reader types the parts, L in the line then C
+  // across the output; with a part series `calculate()` rounds them, and the
+  // page can solve C (then L) for an output ripple or an attenuation. The
+  // response is the model's own: 40 dB/decade above the rounded parts'
+  // resonance.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "L1", kind: "L", key: "inductance", position: "series" },
+      { ref: "C1", kind: "C", key: "capacitance", position: "shunt" }
+    ],
+    schematic: { kind: "rows" },
+    targets: [
+      { output: "outputRipple", solveFor: ["capacitance", "inductance"] },
+      { output: "attenuation", solveFor: ["capacitance", "inductance"] }
+    ],
+    response: {
+      outputs: ["resonantFreq", "attenuation", "outputRipple"],
+      curve: {
+        x: {
+          label: "Frequency",
+          unit: "kHz",
+          scale: "log",
+          range: (i) => {
+            const f0 = 1 / (2 * Math.PI * Math.sqrt(i.inductance * 1e-6 * i.capacitance * 1e-6)) / 1e3;
+            return [Math.min(f0, i.frequency) / 10, Math.max(f0, i.frequency) * 10];
+          }
+        },
+        y: { label: "Attenuation", unit: "dB" },
+        points: (_i, v, xs) => xs.map((f) => rippleAttenuationDb(v.resonantFreq, f)),
+        marks: [(i) => i.frequency]
+      }
+    }
+  },
+  // L in the line and C across the output, the parts as typed (rounded to
+  // the part series by the page before export). Sized by value alone: the
+  // calculator knows no load current or rail voltage.
+  exportComponents: (inputs) => {
+    const l = inputs.inductance;
+    const c2 = inputs.capacitance;
+    return [
+      { qty: 1, description: "L (ripple filter, series)", value: fmtL(l), package: inductorPackage(l * 1e-6), componentType: "L", placement: "series" },
+      { qty: 1, description: "C (ripple filter, shunt)", value: fmtC(c2), package: capacitorPackage(c2 * 1e-6), componentType: "C", placement: "shunt" }
+    ];
+  }
 };
 
 // src/lib/calculators/emc/cable-shield-effectiveness.ts
@@ -37954,18 +41168,35 @@ var emiMarginBudget = {
 };
 
 // src/lib/calculators/emc/conducted-emissions-filter.ts
+function lcAttenuationDb(inductanceUh, capacitanceUf, fKHz) {
+  const f0 = 1 / (2 * Math.PI * Math.sqrt(inductanceUh * 1e-6 * capacitanceUf * 1e-6));
+  const ratio = fKHz * 1e3 / f0;
+  return ratio > 1 ? 40 * Math.log10(ratio) : 0;
+}
 function calculateConductedEmissionsFilter(inputs) {
-  const { emissionLevel, frequency, targetAttenuation, loadImpedance } = inputs;
+  const { emissionLevel, frequency, targetAttenuation, loadImpedance, eSeries = 0 } = inputs;
   if (targetAttenuation <= 0) {
     return { values: {}, errors: ["Target attenuation must be greater than 0 dB for meaningful filter design"] };
   }
   const freqHz = frequency * 1e3;
   const requiredF0 = freqHz / Math.pow(10, targetAttenuation / 40);
   const lcProduct = 1 / (2 * Math.PI * requiredF0) ** 2;
-  const cValue = Math.sqrt(lcProduct / loadImpedance) * 1e6;
-  const lValue = Math.sqrt(lcProduct * loadImpedance) * 1e6;
+  const cValue = roundToSeries(Math.sqrt(lcProduct) / loadImpedance * 1e6, eSeries);
+  const lValue = roundToSeries(Math.sqrt(lcProduct) * loadImpedance * 1e6, eSeries);
   const outputLevel = emissionLevel - targetAttenuation;
-  return { values: { requiredF0: requiredF0 / 1e3, cValue, lValue, outputLevel } };
+  const cornerBuilt = 1 / (2 * Math.PI * Math.sqrt(lValue * 1e-6 * cValue * 1e-6)) / 1e3;
+  const attenuationBuilt = lcAttenuationDb(lValue, cValue, frequency);
+  return {
+    values: {
+      requiredF0: requiredF0 / 1e3,
+      cValue,
+      lValue,
+      outputLevel,
+      cornerBuilt,
+      attenuationBuilt,
+      outputLevelBuilt: emissionLevel - attenuationBuilt
+    }
+  };
 }
 var conductedEmissionsFilter = {
   slug: "conducted-emissions-filter",
@@ -37979,38 +41210,105 @@ var conductedEmissionsFilter = {
     { key: "emissionLevel", label: "Measured Emission", symbol: "V_emi", unit: "dBμV", defaultValue: 80, min: 0, tooltip: "CISPR 22 Class B limit: 66 dBμV at 150 kHz" },
     { key: "frequency", label: "Problem Frequency", symbol: "f", unit: "kHz", defaultValue: 150, min: 0.1 },
     { key: "targetAttenuation", label: "Required Attenuation", symbol: "A", unit: "dB", defaultValue: 20, min: 0 },
-    { key: "loadImpedance", label: "Load Impedance", symbol: "Z_L", unit: "Ω", defaultValue: 50, min: 0.1 }
+    { key: "loadImpedance", label: "Load Impedance", symbol: "Z_L", unit: "Ω", defaultValue: 50, min: 0.1 },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
+    }
   ],
   outputs: [
     { key: "requiredF0", label: "Filter Corner Frequency", symbol: "f₀", unit: "kHz", precision: 1, primary: true },
-    { key: "cValue", label: "Capacitor Value", symbol: "C", unit: "μF", precision: 3 },
-    { key: "lValue", label: "Inductor Value", symbol: "L", unit: "μH", precision: 2 },
-    { key: "outputLevel", label: "Output Emission Level", symbol: "V_out", unit: "dBμV", precision: 1 }
+    { key: "cValue", label: "Capacitor Value", symbol: "C", unit: "μF", precision: 3, tooltip: "Rounded to the part series when one is chosen" },
+    { key: "lValue", label: "Inductor Value", symbol: "L", unit: "μH", precision: 2, tooltip: "Rounded to the part series when one is chosen" },
+    { key: "outputLevel", label: "Output Emission Level", symbol: "V_out", unit: "dBμV", precision: 1 },
+    { key: "cornerBuilt", label: "Corner Frequency as Built", symbol: "f_{0,b}", unit: "kHz", precision: 2, tooltip: "The corner 1/(2π√(LC)) of the rounded L and C; the required corner with ideal values" },
+    { key: "attenuationBuilt", label: "Attenuation as Built", symbol: "A_b", unit: "dB", precision: 2, tooltip: "What the rounded L and C give at the problem frequency in the same 40 dB/decade model, 40·log₁₀(f/f₀); the required attenuation with ideal values" },
+    { key: "outputLevelBuilt", label: "Output Emission Level as Built", symbol: "V_{out,b}", unit: "dBμV", precision: 1, tooltip: "The measured emission less the attenuation the rounded parts give" }
   ],
   calculate: calculateConductedEmissionsFilter,
   formula: {
-    primary: "f₀ = f / 10^(A/40),  L = Z√(1/(2πf₀)²/Z)",
-    variables: []
+    primary: "f_0 = \\frac{f}{10^{A/40}},\\quad L = \\frac{Z_L}{2\\pi f_0},\\quad C = \\frac{1}{2\\pi f_0 Z_L}",
+    latex: "f_0 = \\frac{f}{10^{A/40}},\\quad L = \\frac{Z_L}{2\\pi f_0},\\quad C = \\frac{1}{2\\pi f_0 Z_L}",
+    variables: [
+      { symbol: "f₀", description: "The LC corner, set so the 40 dB/decade slope gives A at f", unit: "Hz" },
+      { symbol: "f", description: "The problem frequency", unit: "Hz" },
+      { symbol: "A", description: "The attenuation required at f", unit: "dB" },
+      { symbol: "Z_L", description: "The load impedance, which the filter's √(L/C) matches", unit: "Ω" }
+    ]
   },
   visualization: { type: "none" },
   relatedCalculators: ["emi-filter-lc", "power-supply-ripple-filter", "common-mode-choke"],
   relatedTools: ["emi-radiated"],
   relatedBlogPosts: ["emi-filter-design-cispr-compliance"],
+  examples: [
+    { id: "cispr-150k-20db-e12", label: "20 dB at 150 kHz into a 50 Ω LISN, E12 parts", values: { emissionLevel: 80, frequency: 150, targetAttenuation: 20, loadImpedance: 50, eSeries: 12 } },
+    { id: "smps-harmonic-450k-e24", label: "A buck converter's 450 kHz harmonic at 74 dBµV, 30 dB in 50 Ω, E24 parts", values: { emissionLevel: 74, frequency: 450, targetAttenuation: 30, loadImpedance: 50, eSeries: 24 } },
+    { id: "mains-input-200k-e12", label: "40 dB at 200 kHz on a 10 Ω mains input, E12 parts", values: { emissionLevel: 95, frequency: 200, targetAttenuation: 40, loadImpedance: 10, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): the export's L in the line then C to ground, rounded
+  // by `eSeries`; the response is the calculator's own 40 dB/decade model
+  // evaluated with the rounded parts. A doubly terminated ladder would not
+  // agree with it (the model has no source impedance), so the curve is the
+  // model's.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "L1", kind: "L", key: "lValue", position: "series" },
+      { ref: "C1", kind: "C", key: "cValue", position: "shunt" }
+    ],
+    schematic: { kind: "rows", load: { label: "Z_L", value: "loadImpedance" } },
+    response: {
+      outputs: ["cornerBuilt", "attenuationBuilt", "outputLevelBuilt"],
+      curve: {
+        x: { label: "Frequency", unit: "kHz", scale: "log", range: (i) => [i.frequency / 100, i.frequency * 10] },
+        y: { label: "Attenuation", unit: "dB" },
+        points: (_i, v, xs) => xs.map((f) => lcAttenuationDb(v.lValue, v.cValue, f)),
+        marks: [(i) => i.frequency]
+      }
+    }
+  },
   exportComponents: (_inputs, outputs) => {
     const l = outputs?.lValue ?? 0;
     const c2 = outputs?.cValue ?? 0;
-    const fmtL = (uh) => uh >= 1e3 ? `${+(uh / 1e3).toPrecision(3)} mH` : `${+uh.toPrecision(3)} μH`;
-    const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : `${+(uf * 1e3).toPrecision(3)} nF`;
+    const fmtL3 = (uh) => uh >= 1e3 ? `${+(uh / 1e3).toPrecision(3)} mH` : `${+uh.toPrecision(3)} μH`;
+    const fmtC3 = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : `${+(uf * 1e3).toPrecision(3)} nF`;
     return [
-      { qty: 1, description: "L (series filter)", value: fmtL(l), package: inductorPackage(l * 1e-6), componentType: "L", placement: "series" },
-      { qty: 1, description: "C (shunt filter)", value: fmtC(c2), package: capacitorPackage(c2 * 1e-6), componentType: "C", placement: "shunt" }
+      { qty: 1, description: "L (series filter)", value: fmtL3(l), package: inductorPackage(l * 1e-6), componentType: "L", placement: "series" },
+      { qty: 1, description: "C (shunt filter)", value: fmtC3(c2), package: capacitorPackage(c2 * 1e-6), componentType: "C", placement: "shunt" }
     ];
   }
 };
 
 // src/lib/calculators/emc/differential-mode-filter.ts
+function dmAttenuationDb(cornerKHz, fKHz) {
+  const ratio = fKHz / cornerKHz;
+  return ratio > 1 ? -40 * Math.log10(ratio) : 0;
+}
 function calculateDifferentialModeFilter(inputs) {
-  const { inductance, capacitance, frequency } = inputs;
+  const { frequency, eSeries = 0 } = inputs;
+  const inductance = roundToSeries(inputs.inductance, eSeries);
+  const capacitance = roundToSeries(inputs.capacitance, eSeries);
   const lH = inductance * 1e-6;
   const cF = capacitance * 1e-6;
   const cornerFreq = 1 / (2 * Math.PI * Math.sqrt(lH * cF));
@@ -38020,6 +41318,8 @@ function calculateDifferentialModeFilter(inputs) {
   const characteristicImpedance = Math.sqrt(lH / cF);
   return { values: { cornerFreq: cornerFreq / 1e3, attenuation, characteristicImpedance } };
 }
+var fmtL2 = (uh) => uh >= 1e3 ? `${+(uh / 1e3).toPrecision(3)} mH` : `${+uh.toPrecision(3)} μH`;
+var fmtC2 = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : `${+(uf * 1e3).toPrecision(3)} nF`;
 var differentialModeFilter = {
   slug: "differential-mode-filter",
   title: "Differential Mode EMI Filter",
@@ -38029,9 +41329,34 @@ var differentialModeFilter = {
   description: "Design a differential mode LC EMI filter. Calculate corner frequency, attenuation, and impedance for SMPS output noise suppression.",
   keywords: ["differential mode filter", "DM EMI filter", "differential mode noise", "SMPS EMI filter", "EMI filter differential", "power line filter"],
   inputs: [
-    { key: "inductance", label: "Differential Mode Inductance", symbol: "L_DM", unit: "μH", defaultValue: 47, min: 1e-3 },
-    { key: "capacitance", label: "Differential Mode Capacitance", symbol: "C_DM", unit: "μF", defaultValue: 0.47, min: 1e-3 },
-    { key: "frequency", label: "Problem Frequency", symbol: "f", unit: "kHz", defaultValue: 150, min: 1e-3 }
+    { key: "inductance", label: "Differential Mode Inductance", symbol: "L_DM", unit: "μH", defaultValue: 47, min: 1e-3, max: 1e5 },
+    { key: "capacitance", label: "Differential Mode Capacitance", symbol: "C_DM", unit: "μF", defaultValue: 0.47, min: 1e-3, max: 1e3 },
+    { key: "frequency", label: "Problem Frequency", symbol: "f", unit: "kHz", defaultValue: 150, min: 1e-3 },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
+    }
   ],
   outputs: [
     { key: "cornerFreq", label: "Corner Frequency", symbol: "f₀", unit: "kHz", precision: 1 },
@@ -38044,7 +41369,53 @@ var differentialModeFilter = {
     variables: []
   },
   visualization: { type: "none" },
-  relatedCalculators: ["common-mode-choke", "conducted-emissions-filter", "emi-filter-lc"]
+  relatedCalculators: ["common-mode-choke", "conducted-emissions-filter", "emi-filter-lc"],
+  examples: [
+    { id: "smps-input-150k-e12", label: "SMPS input filter, 47 µH and 0.47 µF X capacitor, judged at 150 kHz, E12 parts", values: { inductance: 47, capacitance: 0.47, frequency: 150, eSeries: 12 } },
+    { id: "pfc-boost-65k-e12", label: "65 kHz PFC boost input, 150 µH and 1 µF, judged at its second harmonic, E12 parts", values: { inductance: 150, capacitance: 1, frequency: 130, eSeries: 12 } },
+    { id: "solved-30db-at-150k-e24", label: "30 dB at 150 kHz with a 22 µH choke: 1.618 µF solved, rounded to E24", values: { inductance: 22, capacitance: 1.618, frequency: 150, eSeries: 24 } }
+  ],
+  // C5 (waves/W7.md): the reader types the parts, L in the line then C
+  // across it; with a part series `calculate()` rounds them, and the page
+  // can solve C (then L) for an attenuation. The response is the model's own:
+  // 40 dB/decade above the corner of the rounded parts.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "L1", kind: "L", key: "inductance", position: "series" },
+      { ref: "C1", kind: "C", key: "capacitance", position: "shunt" }
+    ],
+    schematic: { kind: "rows" },
+    targets: [{ output: "attenuation", solveFor: ["capacitance", "inductance"] }],
+    response: {
+      outputs: ["cornerFreq", "attenuation", "characteristicImpedance"],
+      curve: {
+        x: {
+          label: "Frequency",
+          unit: "kHz",
+          scale: "log",
+          range: (i) => {
+            const f0 = 1 / (2 * Math.PI * Math.sqrt(i.inductance * 1e-6 * i.capacitance * 1e-6)) / 1e3;
+            return [Math.min(f0, i.frequency) / 10, Math.max(f0, i.frequency) * 10];
+          }
+        },
+        y: { label: "Attenuation", unit: "dB" },
+        points: (_i, v, xs) => xs.map((f) => dmAttenuationDb(v.cornerFreq, f)),
+        marks: [(i) => i.frequency]
+      }
+    }
+  },
+  // L in the line and C across it, the parts as typed (rounded to the part
+  // series by the page before export). Sized by value alone: the calculator
+  // knows no current or voltage.
+  exportComponents: (inputs) => {
+    const l = inputs.inductance;
+    const c2 = inputs.capacitance;
+    return [
+      { qty: 1, description: "L (DM choke, series)", value: fmtL2(l), package: inductorPackage(l * 1e-6), componentType: "L", placement: "series" },
+      { qty: 1, description: "C (X capacitor, shunt)", value: fmtC2(c2), package: capacitorPackage(c2 * 1e-6), componentType: "C", placement: "shunt" }
+    ];
+  }
 };
 
 // src/lib/calculators/audio/audio-power-amplifier.ts
@@ -38215,8 +41586,15 @@ var audioPowerAmplifier = {
 };
 
 // src/lib/calculators/audio/speaker-crossover.ts
+function crossoverEdgeHz(section, order, l, c2, r) {
+  if (order === 1) return section === "woofer" ? r / (2 * Math.PI * l) : 1 / (2 * Math.PI * r * c2);
+  const a = (l * c2) ** 2;
+  const b = l * l / (r * r) - 2 * l * c2;
+  const u = section === "woofer" ? 2 / (b + Math.sqrt(b * b + 4 * a)) : (b + Math.sqrt(b * b + 4 * a)) / (2 * a);
+  return Math.sqrt(u) / (2 * Math.PI);
+}
 function calculateSpeakerCrossover(inputs) {
-  const { crossoverFreq, wooferImpedance, tweeterImpedance, order } = inputs;
+  const { crossoverFreq, wooferImpedance, tweeterImpedance, order, eSeries = 0 } = inputs;
   if (crossoverFreq <= 0) {
     return { values: {}, errors: ["Crossover frequency must be positive"] };
   }
@@ -38246,13 +41624,25 @@ function calculateSpeakerCrossover(inputs) {
     tweeterL = Math.SQRT2 * Zt / wc * 1e3;
   }
   const slopeDb = ord * 6;
+  let wooferCutoffBuilt = crossoverFreq;
+  let tweeterCutoffBuilt = crossoverFreq;
+  if (seriesName(eSeries)) {
+    wooferL = roundToSeries(wooferL, eSeries);
+    wooferC = roundToSeries(wooferC, eSeries);
+    tweeterC = roundToSeries(tweeterC, eSeries);
+    tweeterL = roundToSeries(tweeterL, eSeries);
+    wooferCutoffBuilt = crossoverEdgeHz("woofer", ord, wooferL * 1e-3, wooferC * 1e-6, Zw);
+    tweeterCutoffBuilt = crossoverEdgeHz("tweeter", ord, tweeterL * 1e-3, tweeterC * 1e-6, Zt);
+  }
   return {
     values: {
       wooferL,
       wooferC,
       tweeterC,
       tweeterL,
-      slopeDb
+      slopeDb,
+      wooferCutoffBuilt,
+      tweeterCutoffBuilt
     }
   };
 }
@@ -38318,6 +41708,31 @@ var speakerCrossover = {
         { label: "1st order (6dB/oct)", values: { order: 1 } },
         { label: "2nd order (12dB/oct)", values: { order: 2 } }
       ]
+    },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
     }
   ],
   outputs: [
@@ -38361,6 +41776,22 @@ var speakerCrossover = {
       unit: "dB/oct",
       precision: 0,
       tooltip: "Crossover rolloff slope"
+    },
+    {
+      key: "wooferCutoffBuilt",
+      label: "Woofer Low-Pass −3 dB as Built",
+      symbol: "f_{w,b}",
+      unit: "Hz",
+      precision: 1,
+      tooltip: "Where the woofer section these part values build, into the woofer's nominal impedance, is 3 dB down; the crossover frequency with ideal values"
+    },
+    {
+      key: "tweeterCutoffBuilt",
+      label: "Tweeter High-Pass −3 dB as Built",
+      symbol: "f_{t,b}",
+      unit: "Hz",
+      precision: 1,
+      tooltip: "Where the tweeter section these part values build, into the tweeter's nominal impedance, is 3 dB down; the crossover frequency with ideal values"
     }
   ],
   calculate: calculateSpeakerCrossover,
@@ -38378,6 +41809,27 @@ var speakerCrossover = {
   visualization: { type: "none" },
   relatedCalculators: ["audio-power-amplifier", "lc-resonance", "filter-designer"],
   relatedBlogPosts: ["room-modes"],
+  examples: [
+    { id: "two-way-3k-8ohm-e12", label: "Two-way at 3 kHz, 8 Ω drivers, 2nd-order Butterworth, E12 parts", values: { crossoverFreq: 3e3, wooferImpedance: 8, tweeterImpedance: 8, order: 2, eSeries: 12 } },
+    { id: "bookshelf-2k5-6ohm-e24", label: "Bookshelf two-way at 2.5 kHz, 6 Ω woofer and 4 Ω tweeter, E24 parts", values: { crossoverFreq: 2500, wooferImpedance: 6, tweeterImpedance: 4, order: 2, eSeries: 24 } },
+    { id: "first-order-1k8-8ohm-e12", label: "First-order crossover at 1.8 kHz, 8 Ω drivers, E12 parts", values: { crossoverFreq: 1800, wooferImpedance: 8, tweeterImpedance: 8, order: 1, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): the export's two branches from the amplifier, in its
+  // order: the woofer's L1 (and C1 across the woofer, 2nd order) and the
+  // tweeter's C2 (and L2 across the tweeter, 2nd order), each rounded by
+  // `eSeries`. A 1st-order network's tweeter capacitor is C2 here: the
+  // export names it C1, and refs must be unique across both orders.
+  synthesis: {
+    series: "eSeries",
+    parts: [
+      { ref: "L1", kind: "L", key: "wooferL", position: "woofer" },
+      { ref: "C1", kind: "C", key: "wooferC", position: "woofer", when: (i) => Math.round(i.order ?? 2) === 2 },
+      { ref: "C2", kind: "C", key: "tweeterC", position: "tweeter" },
+      { ref: "L2", kind: "L", key: "tweeterL", position: "tweeter", when: (i) => Math.round(i.order ?? 2) === 2 }
+    ],
+    schematic: { kind: "rows", source: { label: "Amplifier" } },
+    response: { outputs: ["wooferCutoffBuilt", "tweeterCutoffBuilt"] }
+  },
   // Both sections hang off the amplifier output (IN), each its own path to
   // its driver; until 2026-10-05 the export cascaded the tweeter section
   // after the woofer's. 2nd order: the woofer low-pass is L1 then C1 to GND
@@ -38387,19 +41839,19 @@ var speakerCrossover = {
   // terminal on the amplifier's ground); its BOM used to list the two shunt
   // parts a 1st-order network does not have.
   exportComponents: (inputs, outputs) => {
-    const fmtL = (mh) => mh >= 1 ? `${+mh.toPrecision(3)} mH` : `${+(mh * 1e3).toPrecision(3)} μH`;
-    const fmtC = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : `${+(uf * 1e3).toPrecision(3)} nF`;
+    const fmtL3 = (mh) => mh >= 1 ? `${+mh.toPrecision(3)} mH` : `${+(mh * 1e3).toPrecision(3)} μH`;
+    const fmtC3 = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : `${+(uf * 1e3).toPrecision(3)} nF`;
     if (Math.round(inputs.order ?? 2) === 1) {
       return [
-        { qty: 1, description: "L1 (woofer LP, series)", value: fmtL(outputs?.wooferL ?? 0), package: inductorPackage((outputs?.wooferL ?? 0) * 1e-3, { audio: true }), componentType: "L", placement: "branch", branch: "woofer", returnNet: "WOOFER" },
-        { qty: 1, description: "C1 (tweeter HP, series)", value: fmtC(outputs?.tweeterC ?? 0), package: capacitorPackage((outputs?.tweeterC ?? 0) * 1e-6, { audio: true }), componentType: "C", placement: "branch", branch: "tweeter", returnNet: "TWEETER" }
+        { qty: 1, description: "L1 (woofer LP, series)", value: fmtL3(outputs?.wooferL ?? 0), package: inductorPackage((outputs?.wooferL ?? 0) * 1e-3, { audio: true }), componentType: "L", placement: "branch", branch: "woofer", returnNet: "WOOFER" },
+        { qty: 1, description: "C1 (tweeter HP, series)", value: fmtC3(outputs?.tweeterC ?? 0), package: capacitorPackage((outputs?.tweeterC ?? 0) * 1e-6, { audio: true }), componentType: "C", placement: "branch", branch: "tweeter", returnNet: "TWEETER" }
       ];
     }
     return [
-      { qty: 1, description: "L1 (woofer LP, series)", value: fmtL(outputs?.wooferL ?? 0), package: inductorPackage((outputs?.wooferL ?? 0) * 1e-3, { audio: true }), componentType: "L", placement: "branch", branch: "woofer", returnNet: "GND" },
-      { qty: 1, description: "C1 (woofer LP, shunt)", value: fmtC(outputs?.wooferC ?? 0), package: capacitorPackage((outputs?.wooferC ?? 0) * 1e-6, { audio: true }), componentType: "C", placement: "branch", branch: "woofer", returnNet: "GND" },
-      { qty: 1, description: "C2 (tweeter HP, series)", value: fmtC(outputs?.tweeterC ?? 0), package: capacitorPackage((outputs?.tweeterC ?? 0) * 1e-6, { audio: true }), componentType: "C", placement: "branch", branch: "tweeter", returnNet: "GND" },
-      { qty: 1, description: "L2 (tweeter HP, shunt)", value: fmtL(outputs?.tweeterL ?? 0), package: inductorPackage((outputs?.tweeterL ?? 0) * 1e-3, { audio: true }), componentType: "L", placement: "branch", branch: "tweeter", returnNet: "GND" }
+      { qty: 1, description: "L1 (woofer LP, series)", value: fmtL3(outputs?.wooferL ?? 0), package: inductorPackage((outputs?.wooferL ?? 0) * 1e-3, { audio: true }), componentType: "L", placement: "branch", branch: "woofer", returnNet: "GND" },
+      { qty: 1, description: "C1 (woofer LP, shunt)", value: fmtC3(outputs?.wooferC ?? 0), package: capacitorPackage((outputs?.wooferC ?? 0) * 1e-6, { audio: true }), componentType: "C", placement: "branch", branch: "woofer", returnNet: "GND" },
+      { qty: 1, description: "C2 (tweeter HP, series)", value: fmtC3(outputs?.tweeterC ?? 0), package: capacitorPackage((outputs?.tweeterC ?? 0) * 1e-6, { audio: true }), componentType: "C", placement: "branch", branch: "tweeter", returnNet: "GND" },
+      { qty: 1, description: "L2 (tweeter HP, shunt)", value: fmtL3(outputs?.tweeterL ?? 0), package: inductorPackage((outputs?.tweeterL ?? 0) * 1e-3, { audio: true }), componentType: "L", placement: "branch", branch: "tweeter", returnNet: "GND" }
     ];
   }
 };
@@ -38927,16 +42379,26 @@ var subwooferBox = {
 };
 
 // src/lib/calculators/audio/tweeter-capacitor.ts
+function tweeterRolloffDb(fc, f) {
+  return -20 * Math.log10(Math.sqrt(1 + Math.pow(fc / f, 2)));
+}
 function calculateTweeterCapacitor(inputs) {
-  const { tweetImpedance, crossoverFreq } = inputs;
+  const { tweetImpedance, crossoverFreq, eSeries = 0 } = inputs;
   if (tweetImpedance <= 0 || crossoverFreq <= 0) {
     return { values: {}, errors: ["Impedance and crossover frequency must be positive"] };
   }
-  const capacitanceFarads = 1 / (2 * Math.PI * crossoverFreq * tweetImpedance);
-  const capacitanceMicroF = capacitanceFarads * 1e6;
+  let capacitanceFarads = 1 / (2 * Math.PI * crossoverFreq * tweetImpedance);
+  let capacitanceMicroF = capacitanceFarads * 1e6;
+  let rolloffAt100Hz = -20 * Math.log10(Math.sqrt(1 + Math.pow(crossoverFreq / 100, 2)));
+  let crossoverBuilt = crossoverFreq;
+  if (seriesName(eSeries)) {
+    capacitanceMicroF = roundToSeries(capacitanceMicroF, eSeries);
+    capacitanceFarads = capacitanceMicroF * 1e-6;
+    crossoverBuilt = 1 / (2 * Math.PI * capacitanceFarads * tweetImpedance);
+    rolloffAt100Hz = tweeterRolloffDb(crossoverBuilt, 100);
+  }
   const reactanceAt1k = 1 / (2 * Math.PI * 1e3 * capacitanceFarads);
-  const rolloffAt100Hz = -20 * Math.log10(Math.sqrt(1 + Math.pow(crossoverFreq / 100, 2)));
-  return { values: { capacitanceMicroF, reactanceAt1k, rolloffAt100Hz } };
+  return { values: { capacitanceMicroF, reactanceAt1k, rolloffAt100Hz, crossoverBuilt } };
 }
 var tweeterCapacitor = {
   slug: "tweeter-capacitor",
@@ -38959,12 +42421,38 @@ var tweeterCapacitor = {
         { label: "8 Ω", values: { tweetImpedance: 8 } }
       ]
     },
-    { key: "crossoverFreq", label: "Crossover Frequency", symbol: "f_c", unit: "Hz", defaultValue: 3e3, min: 100 }
+    { key: "crossoverFreq", label: "Crossover Frequency", symbol: "f_c", unit: "Hz", defaultValue: 3e3, min: 100 },
+    {
+      key: "eSeries",
+      label: "Part Series",
+      symbol: "E",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 96,
+      step: 1,
+      tooltip: "Rounds every part to the nearest value in the series; the response and the export are the rounded design's.",
+      options: [
+        { value: 0, label: "Ideal values" },
+        { value: 12, label: "E12 (10%)" },
+        { value: 24, label: "E24 (5%)" },
+        { value: 48, label: "E48 (2%)" },
+        { value: 96, label: "E96 (1%)" }
+      ],
+      presets: [
+        { label: "Ideal", values: { eSeries: 0 } },
+        { label: "E12 (10%)", values: { eSeries: 12 } },
+        { label: "E24 (5%)", values: { eSeries: 24 } },
+        { label: "E48 (2%)", values: { eSeries: 48 } },
+        { label: "E96 (1%)", values: { eSeries: 96 } }
+      ]
+    }
   ],
   outputs: [
-    { key: "capacitanceMicroF", label: "Capacitor Value", symbol: "C", unit: "μF", precision: 2, primary: true },
+    { key: "capacitanceMicroF", label: "Capacitor Value", symbol: "C", unit: "μF", precision: 2, primary: true, tooltip: "1/(2π·f_c·Z_t), rounded to the part series when one is chosen" },
     { key: "reactanceAt1k", label: "Reactance at 1 kHz", symbol: "Xc", unit: "Ω", precision: 1 },
-    { key: "rolloffAt100Hz", label: "Rolloff at 100 Hz", symbol: "ΔdB", unit: "dB", precision: 0 }
+    { key: "rolloffAt100Hz", label: "Rolloff at 100 Hz", symbol: "ΔdB", unit: "dB", precision: 0 },
+    { key: "crossoverBuilt", label: "Crossover as Built (−3 dB)", symbol: "f_{c,b}", unit: "Hz", precision: 1, tooltip: "The −3 dB point of the rounded capacitor into the tweeter's nominal impedance, 1/(2π·C·Z_t); the crossover entered with the ideal value" }
   ],
   calculate: calculateTweeterCapacitor,
   formula: {
@@ -38977,20 +42465,73 @@ var tweeterCapacitor = {
   visualization: { type: "none" },
   relatedCalculators: ["speaker-sensitivity", "subwoofer-box", "audio-transformer"],
   relatedBlogPosts: ["cable-capacitance-rolloff"],
+  examples: [
+    { id: "dome-3k-8ohm-e12", label: "8 Ω dome tweeter crossed at 3 kHz, E12 capacitor", values: { tweetImpedance: 8, crossoverFreq: 3e3, eSeries: 12 } },
+    { id: "car-audio-4k-4ohm-e24", label: "4 Ω car-audio tweeter at 4 kHz, E24 capacitor", values: { tweetImpedance: 4, crossoverFreq: 4e3, eSeries: 24 } },
+    { id: "super-tweeter-8k-e12", label: "8 Ω super-tweeter protected below 8 kHz, E12 capacitor", values: { tweetImpedance: 8, crossoverFreq: 8e3, eSeries: 12 } }
+  ],
+  // C5 (waves/W7.md): one series capacitor into the tweeter, drawn with the
+  // tweeter as its load, rounded by `eSeries`. The response is the
+  // first-order high-pass the rounded capacitor makes with the tweeter's
+  // nominal impedance, the same expression as the rolloff at 100 Hz.
+  synthesis: {
+    series: "eSeries",
+    parts: [{ ref: "C1", kind: "C", key: "capacitanceMicroF", position: "series" }],
+    schematic: {
+      kind: "rows",
+      extra: (inputs, _values, fmt5) => [{ description: "Tweeter", value: fmt5(inputs.tweetImpedance, "Ω"), componentType: "R", placement: "shunt" }]
+    },
+    response: {
+      outputs: ["crossoverBuilt", "rolloffAt100Hz", "reactanceAt1k"],
+      curve: {
+        x: { label: "Frequency", unit: "Hz", scale: "log", range: (i) => [Math.min(20, i.crossoverFreq / 10), Math.max(2e4, i.crossoverFreq * 10)] },
+        y: { label: "Tweeter level", unit: "dB" },
+        points: (_i, v, xs) => xs.map((f) => tweeterRolloffDb(v.crossoverBuilt, f)),
+        level: { value: -10 * Math.log10(2), label: "−3 dB" },
+        marks: [(_i, v) => v.crossoverBuilt, () => 100]
+      }
+    }
+  },
   exportComponents: (_inputs, outputs) => {
     const uf = outputs?.capacitanceMicroF ?? 0;
-    const fmtC = (v) => v >= 1 ? `${+v.toPrecision(3)} μF` : `${+(v * 1e3).toPrecision(3)} nF`;
+    const fmtC3 = (v) => v >= 1 ? `${+v.toPrecision(3)} μF` : `${+(v * 1e3).toPrecision(3)} nF`;
     return [
-      { qty: 1, description: "C (tweeter crossover)", value: fmtC(uf), package: capacitorPackage(uf * 1e-6, { audio: true }), componentType: "C", placement: "series" }
+      { qty: 1, description: "C (tweeter crossover)", value: fmtC3(uf), package: capacitorPackage(uf * 1e-6, { audio: true }), componentType: "C", placement: "series" }
     ];
   }
 };
 
 // src/lib/calculators/audio/class-d-efficiency.ts
+var sig39 = (v) => String(Number(v.toPrecision(3)));
+var LOSS_DEFAULTS9 = { switchingFreq: 400, filterCutoff: 40, tSwitch: 10, coss: 200, qg: 10, vGate: 12, dcr: 25, coreLoss: 100 };
+function worstOver24(as, bs, f) {
+  let best = { value: -Infinity, a: NaN, b: NaN };
+  for (const a of as) {
+    for (const b of bs) {
+      const y = f(a, b);
+      if (y > best.value) best = { value: y, a, b };
+    }
+  }
+  return best;
+}
 function calculateClassDEfficiency(inputs) {
   const { outputPower, supplyVoltage, loadImpedance, rdson, mosfetCount, quiescentCurrent } = inputs;
+  const { outputPowerMin = 0, outputPowerMax = 0, supplyVoltageMin = 0, supplyVoltageMax = 0 } = inputs;
+  const p = { ...LOSS_DEFAULTS9, ...Object.fromEntries(Object.keys(LOSS_DEFAULTS9).filter((k) => inputs[k] !== void 0).map((k) => [k, inputs[k]])) };
   if (outputPower <= 0 || supplyVoltage <= 0) {
     return { values: {}, errors: ["Output power and supply voltage must be positive"] };
+  }
+  if (outputPowerMin > 0 && outputPowerMin > outputPower) {
+    return { values: {}, errors: ["Minimum output power must not be above the nominal output power"] };
+  }
+  if (outputPowerMax > 0 && outputPowerMax < outputPower) {
+    return { values: {}, errors: ["Maximum output power must not be below the nominal output power"] };
+  }
+  if (supplyVoltageMin > 0 && supplyVoltageMin > supplyVoltage) {
+    return { values: {}, errors: ["Minimum supply voltage must not be above the nominal supply voltage"] };
+  }
+  if (supplyVoltageMax > 0 && supplyVoltageMax < supplyVoltage) {
+    return { values: {}, errors: ["Maximum supply voltage must not be below the nominal supply voltage"] };
   }
   const rdsonOhms = rdson / 1e3;
   const loadCurrent = Math.sqrt(outputPower / loadImpedance);
@@ -38999,7 +42540,138 @@ function calculateClassDEfficiency(inputs) {
   const totalLoss = conductionLoss + quiescentLoss;
   const totalInput = outputPower + totalLoss;
   const efficiency = outputPower / totalInput * 100;
-  return { values: { conductionLoss, quiescentLoss, totalLoss, totalInput, efficiency } };
+  const bridged = mosfetCount >= 4;
+  const halfBridges = mosfetCount / 2;
+  const fsw = p.switchingFreq * 1e3;
+  const w0 = 2 * Math.PI * p.filterCutoff * 1e3;
+  const rSingleEnded = bridged ? loadImpedance / 2 : loadImpedance;
+  const filterInductorUH = rSingleEnded * Math.SQRT2 / w0 * 1e6;
+  const filterCapUF = 1 / (w0 * rSingleEnded * Math.SQRT2) * 1e6;
+  const filterInductorChosenUH = e12AtOrAbove(filterInductorUH);
+  const filterCapChosenUF = e12AtOrAbove(filterCapUF);
+  const L = filterInductorChosenUH * 1e-6;
+  const filterCutoffBuilt = 1 / (2 * Math.PI * Math.sqrt(L * filterCapChosenUF * 1e-6)) / 1e3;
+  const ripple = (V) => V / (4 * L * fsw);
+  const swing = (V) => bridged ? V : V / 2;
+  const at = (V, P) => {
+    const I = Math.sqrt(P / loadImpedance);
+    const iSwitched = I * 2 * Math.SQRT2 / Math.PI;
+    const dI = ripple(V);
+    const conduction = I * I * rdsonOhms * mosfetCount / 2;
+    const quiescent = V * quiescentCurrent / 1e3;
+    const switching = halfBridges * 0.5 * iSwitched * V * (p.tSwitch * 1e-9) * fsw;
+    const outputCap = halfBridges * 0.5 * p.coss * 1e-12 * V * V * fsw;
+    const gateDrive = halfBridges * 2 * p.qg * 1e-9 * p.vGate * fsw;
+    const dcrLoss = halfBridges * (I * I + dI * dI / 12) * (p.dcr / 1e3);
+    const core = halfBridges * (p.coreLoss / 1e3);
+    const total = conduction + switching + outputCap + gateDrive + dcrLoss + core + quiescent;
+    return {
+      switching,
+      outputCap,
+      gateDrive,
+      dcrLoss,
+      core,
+      total,
+      efficiency: 100 * P / (P + total),
+      headroom: swing(V) - Math.sqrt(2 * P * loadImpedance),
+      peak: Math.sqrt(2 * P / loadImpedance) + dI / 2,
+      rms: Math.sqrt(I * I + dI * dI / 12)
+    };
+  };
+  const volts = corners(supplyVoltage, supplyVoltageMin, supplyVoltageMax);
+  const powers = corners(outputPower, outputPowerMin, outputPowerMax);
+  const vLo = volts[0];
+  const vHi = volts[volts.length - 1];
+  const pHi = powers[powers.length - 1];
+  if ((vLo !== supplyVoltage || pHi !== outputPower) && at(vLo, pHi).headroom < 0) {
+    return { values: {}, errors: ["The minimum supply voltage cannot drive the maximum output power into the load"] };
+  }
+  const effWorst = worstOver24(volts, powers, (V, P) => -at(V, P).efficiency);
+  const lossWorst = worstOver24(volts, powers, (V, P) => at(V, P).total);
+  const headroomWorst = worstOver24(volts, powers, (V, P) => -at(V, P).headroom);
+  const peakWorst = worstOver24(volts, powers, (V, P) => at(V, P).peak);
+  const rmsWorst = worstOver24(volts, powers, (V, P) => at(V, P).rms);
+  const nom = at(supplyVoltage, outputPower);
+  const lossTotal = conductionLoss + nom.switching + nom.outputCap + nom.gateDrive + nom.dcrLoss + nom.core + quiescentLoss;
+  return {
+    values: {
+      conductionLoss,
+      quiescentLoss,
+      totalLoss,
+      totalInput,
+      efficiency,
+      // C11: the loss model at the nominal supply and power, W.
+      lossSwitching: nom.switching,
+      lossOutputCap: nom.outputCap,
+      lossGateDrive: nom.gateDrive,
+      lossDcr: nom.dcrLoss,
+      lossCore: nom.core,
+      lossTotal,
+      loadPower: outputPower,
+      efficiencyLossModel: 100 * outputPower / (outputPower + lossTotal),
+      // C11: the output filter.
+      filterInductorUH,
+      filterInductorChosenUH,
+      filterCapUF,
+      filterCapChosenUF,
+      filterCutoffBuilt,
+      filterCount: halfBridges,
+      fetCount: mosfetCount,
+      // C11: the envelope's worst cases and the corners they occur at.
+      efficiencyWorst: -effWorst.value,
+      efficiencyWorstVoltage: effWorst.a,
+      efficiencyWorstPower: effWorst.b,
+      lossTotalWorst: lossWorst.value,
+      lossTotalWorstVoltage: lossWorst.a,
+      lossTotalWorstPower: lossWorst.b,
+      headroomWorst: -headroomWorst.value,
+      headroomWorstVoltage: headroomWorst.a,
+      headroomWorstPower: headroomWorst.b,
+      rippleA: ripple(supplyVoltage),
+      rippleWorstA: ripple(vHi),
+      rippleWorstVoltage: vHi,
+      peakCurrentWorst: peakWorst.value,
+      peakCurrentWorstVoltage: peakWorst.a,
+      peakCurrentWorstPower: peakWorst.b,
+      inductorRmsWorst: rmsWorst.value,
+      inductorRmsWorstPower: rmsWorst.b,
+      vdsRating: ratingAtOrAbove(VOLTAGE_DERATING * vHi, MOSFET_VDS),
+      capVoltageRating: ratingAtOrAbove(VOLTAGE_DERATING * vHi, CAPACITOR_V),
+      vdsRatingVoltage: vHi
+    }
+  };
+}
+function switchNodeTraces(i, v, periods) {
+  const V = i.supplyVoltage;
+  const f = i.switchingFreq * 1e3;
+  const T = 1 / f;
+  const swing = i.mosfetCount >= 4 ? V : V / 2;
+  const m = Math.min(1, Math.sqrt(2 * i.outputPower * i.loadImpedance) / swing);
+  const d = (1 + m) / 2;
+  const ton = d * T;
+  const centre = Math.sqrt(2 * i.outputPower / i.loadImpedance);
+  const dI = V * d * (1 - d) / (v.filterInductorChosenUH * 1e-6 * f);
+  const lo = centre - dI / 2;
+  const hi = centre + dI / 2;
+  const end = periods * T;
+  const sw = [];
+  const il = [[0, lo]];
+  for (let k = 0; k * T < end; k++) {
+    const t0 = k * T;
+    sw.push([t0, 0], [t0, V]);
+    if (t0 + ton < end) {
+      sw.push([t0 + ton, V], [t0 + ton, 0]);
+      il.push([t0 + ton, hi]);
+    }
+    if (t0 + T <= end) il.push([t0 + T, lo]);
+  }
+  const ph = end - Math.floor(end / T - 1e-12) * T;
+  sw.push([end, ph < ton ? V : 0]);
+  if (il[il.length - 1][0] < end) il.push([end, ph < ton ? lo + (hi - lo) * ph / ton : hi - (hi - lo) * (ph - ton) / (T - ton)]);
+  return [
+    { id: "sw", symbol: "V_{SW}", unit: "V", points: sw, spans: [{ symbol: "t_{on}", axis: "x", from: 0, to: ton }] },
+    { id: "il", symbol: "I_{L}", unit: "A", points: il, spans: [{ symbol: "ΔI_{L}", axis: "y", from: lo, to: hi }] }
+  ];
 }
 var classDEfficiency = {
   slug: "class-d-efficiency",
@@ -39018,14 +42690,64 @@ var classDEfficiency = {
     ] },
     { key: "rdson", label: "MOSFET RDS(on)", symbol: "R_DS", unit: "mΩ", defaultValue: 50, min: 1, tooltip: "Per MOSFET in milliohms" },
     { key: "mosfetCount", label: "Number of MOSFETs", symbol: "N", unit: "", defaultValue: 4, min: 2, step: 2, tooltip: "Half bridge 2, full bridge (BTL) 4. One FET of each half bridge carries the load at a time, so N/2 conduct" },
-    { key: "quiescentCurrent", label: "Quiescent Current", symbol: "I_q", unit: "mA", defaultValue: 30, min: 0 }
+    { key: "quiescentCurrent", label: "Quiescent Current", symbol: "I_q", unit: "mA", defaultValue: 30, min: 0 },
+    { key: "switchingFreq", label: "Switching Frequency", symbol: "f_{sw}", unit: "kHz", defaultValue: 400, min: 50, max: 5e3, tooltip: "The PWM carrier frequency." },
+    { key: "filterCutoff", label: "Output Filter Cutoff", symbol: "f_{0}", unit: "kHz", defaultValue: 40, min: 20, max: 500, tooltip: "The LC filter's Butterworth cutoff, which sizes L and C from the load (TI SLAA701B)." },
+    { key: "outputPowerMin", label: "Minimum Output Power", symbol: "P_{out,min}", unit: "W", defaultValue: 0, min: 0, tooltip: "The lowest power in service, where the fixed losses weigh most; 0 for the nominal.", group: "Operating envelope" },
+    { key: "outputPowerMax", label: "Maximum Output Power", symbol: "P_{out,max}", unit: "W", defaultValue: 0, min: 0, tooltip: "The highest continuous sine power in service; 0 for the nominal.", group: "Operating envelope" },
+    { key: "supplyVoltageMin", label: "Minimum Supply Voltage", symbol: "V_{s,min}", unit: "V", defaultValue: 0, min: 0, tooltip: "The lowest supply in service, which must still swing the maximum power; 0 for the nominal.", group: "Operating envelope" },
+    { key: "supplyVoltageMax", label: "Maximum Supply Voltage", symbol: "V_{s,max}", unit: "V", defaultValue: 0, min: 0, tooltip: "The highest supply in service; 0 for the nominal. The parts' voltage ratings are taken at it.", group: "Operating envelope" },
+    { key: "tSwitch", label: "Switching Edges (t_r + t_f)", symbol: "t_{r}+t_{f}", unit: "ns", defaultValue: 10, min: 0, max: 1e4, group: "Loss model", tooltip: "The FETs' rise and fall times added: ½·I·V_s·(t_r + t_f)·f_sw per half bridge (IR AN-1070)." },
+    { key: "coss", label: "Output Capacitance", symbol: "C_{oss}", unit: "pF", defaultValue: 200, min: 0, max: 1e5, group: "Loss model", tooltip: "½·C_oss·V_s²·f_sw per half bridge (IR AN-1070)." },
+    { key: "qg", label: "Total Gate Charge", symbol: "Q_{g}", unit: "nC", defaultValue: 10, min: 0, max: 1e4, group: "Loss model", tooltip: "Per FET: 2·Q_g·V_driver·f_sw per half bridge (IR AN-1070)." },
+    { key: "vGate", label: "Gate Drive Voltage", symbol: "V_{driver}", unit: "V", defaultValue: 12, min: 1, max: 20, group: "Loss model" },
+    { key: "dcr", label: "Filter Inductor DCR", symbol: "DCR", unit: "mΩ", defaultValue: 25, min: 0, max: 1e5, group: "Loss model", tooltip: "Each output inductor's winding resistance." },
+    { key: "coreLoss", label: "Filter Inductor Core Loss", symbol: "P_{core}", unit: "mW", defaultValue: 100, min: 0, max: 1e5, group: "Loss model", tooltip: "Each output inductor's, from its datasheet at this ripple and frequency." }
   ],
   outputs: [
     { key: "efficiency", label: "Efficiency", symbol: "η", unit: "%", precision: 1, thresholds: { good: { min: 85 }, warning: { min: 70 } }, primary: true },
     { key: "conductionLoss", label: "Conduction Loss", symbol: "P_cond", unit: "W", precision: 2, tooltip: "I²·R_DS(on)·N/2: the FETs that carry the load current at once" },
     { key: "quiescentLoss", label: "Quiescent Loss", symbol: "P_q", unit: "W", precision: 2 },
     { key: "totalLoss", label: "Total Power Loss", symbol: "P_loss", unit: "W", precision: 2, tooltip: "Total heat dissipated — use for heatsink sizing" },
-    { key: "totalInput", label: "Total Input Power", symbol: "P_in", unit: "W", precision: 1 }
+    { key: "totalInput", label: "Total Input Power", symbol: "P_in", unit: "W", precision: 1 },
+    // C11 (waves/W7.md): the loss model at the nominal supply and power, W.
+    { key: "lossSwitching", label: "Switching-Edge Loss", symbol: "P_{sw}", unit: "W", precision: 4, tooltip: "½·I·V_s·(t_r + t_f)·f_sw per half bridge, with I the load current averaged over the audio cycle" },
+    { key: "lossOutputCap", label: "Output-Capacitance Loss", symbol: "P_{oss}", unit: "W", precision: 4, tooltip: "½·C_oss·V_s²·f_sw per half bridge" },
+    { key: "lossGateDrive", label: "Gate-Drive Loss", symbol: "P_{gate}", unit: "W", precision: 4, tooltip: "2·Q_g·V_driver·f_sw per half bridge" },
+    { key: "lossDcr", label: "Filter Inductor DCR Loss", symbol: "P_{DCR}", unit: "W", precision: 4, tooltip: "(I² + ΔI²/12)·DCR per output inductor, with the idle ripple" },
+    { key: "lossCore", label: "Filter Inductor Core Loss", symbol: "P_{core}", unit: "W", precision: 4 },
+    { key: "lossTotal", label: "Total Loss with Switching and Filter", symbol: "P_{loss}", unit: "W", precision: 4, tooltip: "Conduction, quiescent, switching, output capacitance, gate drive and the filter inductors" },
+    { key: "loadPower", label: "Power into the Load", symbol: "P_{out}", unit: "W", precision: 3 },
+    { key: "efficiencyLossModel", label: "Efficiency with Switching and Filter Losses", symbol: "η", unit: "%", precision: 2, tooltip: "P_out/(P_out + every loss in the loss model), at the nominal supply and power", thresholds: { good: { min: 85 }, warning: { min: 70, max: 85 }, danger: { min: 70 } } },
+    // C11: the output filter.
+    { key: "filterInductorUH", label: "Filter Inductance", symbol: "L_{F}", unit: "μH", precision: 3, tooltip: "Butterworth, L = R_L·√2/ω₀, per output" },
+    { key: "filterInductorChosenUH", label: "Chosen Filter Inductor", symbol: "L_{F}", unit: "μH", precision: 3, tooltip: "The E12 value at or above the filter inductance" },
+    { key: "filterCapUF", label: "Filter Capacitance", symbol: "C_{F}", unit: "μF", precision: 3, tooltip: "Butterworth, C = 1/(ω₀·R_L·√2), per output to ground" },
+    { key: "filterCapChosenUF", label: "Chosen Filter Capacitor", symbol: "C_{F}", unit: "μF", precision: 3, tooltip: "The E12 value at or above the filter capacitance" },
+    { key: "filterCutoffBuilt", label: "Filter Cutoff, Chosen Parts", symbol: "f_{0}", unit: "kHz", precision: 3 },
+    { key: "filterCount", label: "Output Filters", symbol: "n_{F}", unit: "", precision: 0, display: { integer: true }, tooltip: "One LC filter per half-bridge output" },
+    { key: "fetCount", label: "MOSFETs", symbol: "N", unit: "", precision: 0, display: { integer: true } },
+    // C11: the envelope's worst cases, each with the corner it occurs at.
+    { key: "efficiencyWorst", label: "Efficiency with Switching and Filter Losses, Worst Case", symbol: "η_{min}", unit: "%", precision: 2, thresholds: { good: { min: 85 }, warning: { min: 70, max: 85 }, danger: { min: 70 } } },
+    { key: "efficiencyWorstVoltage", label: "Supply at the Worst Efficiency", symbol: "V_{s}", unit: "V", precision: 3 },
+    { key: "efficiencyWorstPower", label: "Output Power at the Worst Efficiency", symbol: "P_{out}", unit: "W", precision: 3 },
+    { key: "lossTotalWorst", label: "Total Loss, Worst Case", symbol: "P_{loss,max}", unit: "W", precision: 3, tooltip: "For the heatsink" },
+    { key: "lossTotalWorstVoltage", label: "Supply at the Worst Loss", symbol: "V_{s}", unit: "V", precision: 3 },
+    { key: "lossTotalWorstPower", label: "Output Power at the Worst Loss", symbol: "P_{out}", unit: "W", precision: 3 },
+    { key: "headroomWorst", label: "Voltage Headroom, Worst Case", symbol: "V_{hr,min}", unit: "V", precision: 3, tooltip: "The swing the supply gives (V_s bridged, V_s/2 for a half bridge) less the peak load voltage √(2·P·Z_L); below 0 the output clips", thresholds: { good: { min: 0 }, danger: { min: 0 } } },
+    { key: "headroomWorstVoltage", label: "Supply at the Least Headroom", symbol: "V_{s}", unit: "V", precision: 3 },
+    { key: "headroomWorstPower", label: "Output Power at the Least Headroom", symbol: "P_{out}", unit: "W", precision: 3 },
+    { key: "rippleA", label: "Filter Inductor Ripple", symbol: "ΔI_{L}", unit: "A", precision: 3, tooltip: "Peak to peak at idle (50 % duty), where it is largest: V_s/(4·L·f_sw)" },
+    { key: "rippleWorstA", label: "Filter Inductor Ripple, Worst Case", symbol: "ΔI_{L,max}", unit: "A", precision: 3 },
+    { key: "rippleWorstVoltage", label: "Supply at the Worst Ripple", symbol: "V_{s}", unit: "V", precision: 3 },
+    { key: "peakCurrentWorst", label: "Peak Current, Worst Case", symbol: "I_{pk,max}", unit: "A", precision: 3, tooltip: "The load's peak current √(2·P/Z_L) plus half the ripple, through the FETs and the inductors" },
+    { key: "peakCurrentWorstVoltage", label: "Supply at the Worst Peak Current", symbol: "V_{s}", unit: "V", precision: 3 },
+    { key: "peakCurrentWorstPower", label: "Output Power at the Worst Peak Current", symbol: "P_{out}", unit: "W", precision: 3 },
+    { key: "inductorRmsWorst", label: "Filter Inductor RMS Current, Worst Case", symbol: "I_{L,rms}", unit: "A", precision: 3 },
+    { key: "inductorRmsWorstPower", label: "Output Power at the Worst Inductor Current", symbol: "P_{out}", unit: "W", precision: 3 },
+    { key: "vdsRating", label: "MOSFET Drain-Source Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the highest supply" },
+    { key: "capVoltageRating", label: "Filter Capacitor Voltage Rating", symbol: "V_{C}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the highest supply" },
+    { key: "vdsRatingVoltage", label: "Supply at the Voltage Ratings", symbol: "V_{s}", unit: "V", precision: 3 }
   ],
   calculate: calculateClassDEfficiency,
   formula: {
@@ -39056,8 +42778,88 @@ var classDEfficiency = {
     {
       code: "no-switching-or-gate-loss",
       text: "Switching loss 0.5·I·V·(t_r + t_f)·f_sw, output-capacitance loss and gate-drive loss 2·Q_g·V·f_sw (IR AN-1070) are not included, so the efficiency is an upper bound."
+    },
+    {
+      code: "loss-model-adds-switching-and-filter",
+      text: "The loss model adds, per half bridge, AN-1070's switching ½·I·V_s·(t_r + t_f)·f_sw with I the load current averaged over a sine, its ½·C_oss·V_s²·f_sw and its gate drive 2·Q_g·V_driver·f_sw, and per output the filter inductor's DCR at the idle ripple and its core loss; it reports its own efficiency beside the upper bound. Reverse recovery is left out: AN-1070 scales it by a factor it does not give."
+    },
+    {
+      code: "butterworth-output-filter",
+      text: "Each output has a second-order Butterworth LC filter, L = R_L·√2/ω₀ and C = 1/(ω₀·R_L·√2) with R_L = Z_L/2 for a bridged load, its capacitor to ground, each part chosen at or above in E12 (TI SLAA701B, eqs. 5 and 6)."
+    },
+    {
+      code: "waveforms-at-the-sine-peak",
+      text: "The waveforms are drawn at the peak of the nominal power's sine, AD modulation: the leg's duty (1 + m)/2 for a modulation depth m, the inductor current about the load's peak current."
     }
-  ]
+  ],
+  examples: [
+    { id: "btl-36v-8ohm", label: "36 V bridged into 8 Ω, 1–60 W, 32–38 V supply", values: { outputPower: 50, outputPowerMin: 1, outputPowerMax: 60, supplyVoltage: 36, supplyVoltageMin: 32, supplyVoltageMax: 38, loadImpedance: 8, rdson: 50, mosfetCount: 4, quiescentCurrent: 30, switchingFreq: 400, filterCutoff: 40, tSwitch: 8, coss: 150, qg: 8, vGate: 12, dcr: 20, coreLoss: 80 } },
+    { id: "btl-48v-4ohm", label: "48 V bridged into 4 Ω, 5–200 W at 600 kHz", values: { outputPower: 150, outputPowerMin: 5, outputPowerMax: 200, supplyVoltage: 48, supplyVoltageMin: 44, supplyVoltageMax: 51, loadImpedance: 4, rdson: 20, mosfetCount: 4, quiescentCurrent: 50, switchingFreq: 600, filterCutoff: 60, tSwitch: 8, coss: 400, qg: 15, vGate: 12, dcr: 10, coreLoss: 150 } },
+    { id: "half-bridge-24v", label: "24 V half bridge into 4 Ω, 1–14 W", values: { outputPower: 10, outputPowerMin: 1, outputPowerMax: 14, supplyVoltage: 24, supplyVoltageMin: 22, supplyVoltageMax: 26, loadImpedance: 4, rdson: 30, mosfetCount: 2, quiescentCurrent: 20, switchingFreq: 400, filterCutoff: 40 } }
+  ],
+  // C11 (waves/W7.md): the supply and power ranges, the worst cases and their corners, the FETs and the output filter.
+  envelope: {
+    ranges: [
+      { input: "supplyVoltage", min: "supplyVoltageMin", max: "supplyVoltageMax" },
+      { input: "outputPower", min: "outputPowerMin", max: "outputPowerMax" }
+    ],
+    results: [
+      { output: "efficiencyWorst", note: { corner: { input: "supplyVoltage", at: "efficiencyWorstVoltage", and: { input: "outputPower", at: "efficiencyWorstPower" } } } },
+      { output: "lossTotal", note: { worst: "lossTotalWorst", input: "supplyVoltage", at: "lossTotalWorstVoltage", and: { input: "outputPower", at: "lossTotalWorstPower" } } },
+      { output: "headroomWorst", note: { corner: { input: "supplyVoltage", at: "headroomWorstVoltage", and: { input: "outputPower", at: "headroomWorstPower" } } } },
+      { output: "rippleA", note: { worst: "rippleWorstA", input: "supplyVoltage", at: "rippleWorstVoltage" } }
+    ],
+    parts: [
+      {
+        ref: "Q",
+        role: "bridge",
+        value: { key: "rdson", count: "fetCount" },
+        stresses: [
+          { symbol: "V_{DS}", sense: "min", key: "vdsRating", at: { input: "supplyVoltage", key: "vdsRatingVoltage" } },
+          { symbol: "I_{D,pk}", sense: "min", key: "peakCurrentWorst", at: { input: "outputPower", key: "peakCurrentWorstPower" } },
+          { symbol: "Q_{g}", sense: "max", key: "qg" }
+        ]
+      },
+      {
+        ref: "L_{F}",
+        role: "filter-inductor",
+        value: { key: "filterInductorChosenUH", count: "filterCount", calc: "filterInductorUH" },
+        stresses: [
+          { symbol: "I_{sat}", sense: "min", key: "peakCurrentWorst", at: { input: "outputPower", key: "peakCurrentWorstPower" } },
+          { symbol: "I_{rms}", sense: "min", key: "inductorRmsWorst", at: { input: "outputPower", key: "inductorRmsWorstPower" } },
+          { symbol: "DCR", sense: "max", key: "dcr" }
+        ]
+      },
+      {
+        ref: "C_{F}",
+        role: "filter-capacitor",
+        value: { key: "filterCapChosenUF", count: "filterCount", calc: "filterCapUF" },
+        stresses: [{ symbol: "V", sense: "min", key: "capVoltageRating", at: { input: "supplyVoltage", key: "vdsRatingVoltage" } }]
+      }
+    ],
+    // One output at the peak of the nominal power's sine: its switch node and filter-inductor current.
+    waveforms: { periods: 2.5, traces: (i, v) => switchNodeTraces(i, v, 2.5) },
+    bom: (i, v) => [
+      { qty: v.fetCount, description: "Q (N-channel MOSFET, class-D output stage)", value: `RDS(on) ≤ ${sig39(i.rdson)} mΩ, VDS ≥ ${v.vdsRating} V, ID(peak) ≥ ${sig39(v.peakCurrentWorst)} A, Qg ≤ ${sig39(i.qg)} nC`, package: "" },
+      { qty: v.filterCount, description: "L_F (output filter inductor)", value: `${sig39(v.filterInductorChosenUH)} µH, Isat ≥ ${sig39(v.peakCurrentWorst)} A, DCR ≤ ${sig39(i.dcr)} mΩ`, package: inductorPackage(v.filterInductorChosenUH * 1e-6, { currentA: v.peakCurrentWorst }) },
+      { qty: v.filterCount, description: "C_F (output filter capacitor, to ground)", value: `${sig39(v.filterCapChosenUF)} µF, ≥ ${v.capVoltageRating} V`, package: capacitorPackage(v.filterCapChosenUF * 1e-6, { workingVolts: v.vdsRatingVoltage }) }
+    ]
+  },
+  lossModel: {
+    inputs: ["rdson", "quiescentCurrent", "tSwitch", "coss", "qg", "vGate", "dcr", "coreLoss"],
+    efficiency: "efficiencyLossModel",
+    total: "lossTotal",
+    outputPower: "loadPower",
+    losses: [
+      { output: "conductionLoss", lever: "rdson" },
+      { output: "quiescentLoss", lever: "quiescent" },
+      { output: "lossSwitching", lever: "edges" },
+      { output: "lossOutputCap", lever: "output-capacitance" },
+      { output: "lossGateDrive", lever: "gate-charge" },
+      { output: "lossDcr", lever: "dcr" },
+      { output: "lossCore", lever: "core" }
+    ]
+  }
 };
 
 // src/lib/calculators/audio/audio-adc-snr.ts
