@@ -2059,16 +2059,43 @@ var coaxLoss = {
 
 // src/lib/calculators/rf/ism-coexistence.ts
 var BANDS = [
-  { name: "2.4 GHz ISM (2400–2483.5 MHz)", bwMHz: 83.5, liveMhz: 2400 },
-  { name: "868 MHz (Europe, 863–870 MHz)", bwMHz: 7, liveMhz: 868 },
-  { name: "915 MHz (Americas, 902–928 MHz)", bwMHz: 26, liveMhz: 900 },
-  { name: "5.8 GHz ISM (5725–5850 MHz)", bwMHz: 125, liveMhz: 5800 },
-  { name: "433 MHz (Europe, 433.05–434.79 MHz)", bwMHz: 1.74, liveMhz: 433 }
+  { name: "2.4 GHz ISM (2400–2483.5 MHz)", bwMHz: 83.5, liveMhz: 2400, lowMHz: 2400, highMHz: 2483.5 },
+  { name: "868 MHz (Europe, 863–870 MHz)", bwMHz: 7, liveMhz: 868, lowMHz: 863, highMHz: 870 },
+  { name: "915 MHz (Americas, 902–928 MHz)", bwMHz: 26, liveMhz: 900, lowMHz: 902, highMHz: 928 },
+  { name: "5.8 GHz ISM (5725–5850 MHz)", bwMHz: 125, liveMhz: 5800, lowMHz: 5725, highMHz: 5850 },
+  { name: "433 MHz (Europe, 433.05–434.79 MHz)", bwMHz: 1.74, liveMhz: 433, lowMHz: 433.05, highMHz: 434.79 }
 ];
+function bandOf(i) {
+  const k = i.bandIndex;
+  return BANDS[k === void 0 || !Number.isFinite(k) ? 0 : Math.min(BANDS.length - 1, Math.max(0, Math.round(k)))];
+}
+function centre(low, high, n, k) {
+  return low + (k - 0.5) * (high - low) / n;
+}
+function ismChannelPlan(i) {
+  const { lowMHz: low, highMHz: high } = bandOf(i);
+  const w1 = i.channelWidth1_MHz ?? 20;
+  const w2 = i.channelWidth2_MHz ?? 2;
+  const c1 = [];
+  for (let k = 1; k <= i.channels1; k++) c1.push(centre(low, high, i.channels1, k));
+  const protocol1 = c1.map((f) => ({ from: f - w1 / 2, to: f + w1 / 2, label: "protocol 1", kind: "band" }));
+  const protocol2 = [];
+  for (let k = 1; k <= i.channels2; k++) {
+    const f = centre(low, high, i.channels2, k);
+    const overlaps = c1.some((g) => Math.abs(f - g) < (w1 + w2) / 2);
+    protocol2.push({ f, name: `#${k}`, order: 1, zone: overlaps ? "in" : "clear" });
+  }
+  return { low, high, protocol1, protocol2 };
+}
 function calculateIsmCoexistence(inputs) {
   const { dutyCycle1_pct, dutyCycle2_pct, channels1, channels2, txPowerOffset_dB } = inputs;
+  const channelWidth1_MHz = inputs.channelWidth1_MHz ?? 20;
+  const channelWidth2_MHz = inputs.channelWidth2_MHz ?? 2;
   if (channels1 <= 0 || channels2 <= 0) {
     return { values: {}, errors: ["Channel counts must be > 0"] };
+  }
+  if (!(channelWidth1_MHz > 0) || !(channelWidth2_MHz > 0)) {
+    return { values: {}, errors: ["Channel widths must be positive"] };
   }
   const p1 = dutyCycle1_pct / 100;
   const p2 = dutyCycle2_pct / 100;
@@ -2081,12 +2108,14 @@ function calculateIsmCoexistence(inputs) {
   if (effectiveCollision_pct > 20) {
     warnings.push("High collision probability — consider frequency hopping, time-division coexistence, or moving to a less congested band");
   }
+  const overlappingChannels = ismChannelPlan({ ...inputs, channelWidth1_MHz, channelWidth2_MHz }).protocol2.filter((p) => p.zone === "in").length;
   return {
     values: {
       collisionProb_pct,
       effectiveCollision_pct,
       throughputImpact_pct,
-      sharedChannelFraction: sharedChannelFraction * 100
+      sharedChannelFraction: sharedChannelFraction * 100,
+      overlappingChannels
     },
     warnings: warnings.length ? warnings : void 0
   };
@@ -2140,6 +2169,26 @@ var ismCoexistence = {
       min: -30,
       max: 40,
       tooltip: "Positive = Protocol 1 is stronger. WiFi (20 dBm) vs BLE (10 dBm) = +10 dB"
+    },
+    {
+      key: "channelWidth1_MHz",
+      label: "Protocol 1 Channel Width",
+      symbol: "w₁",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 20,
+      min: 1e-3,
+      tooltip: "Wi-Fi 20 MHz, Zigbee 2 MHz, LoRa 0.125 MHz. The plan spreads the channels evenly across the band"
+    },
+    {
+      key: "channelWidth2_MHz",
+      label: "Protocol 2 Channel Width",
+      symbol: "w₂",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 2,
+      min: 1e-3,
+      tooltip: "Bluetooth LE 2 MHz, Zigbee 2 MHz, LoRa 0.125 MHz"
     }
   ],
   outputs: [
@@ -2153,7 +2202,23 @@ var ismCoexistence = {
     },
     { key: "collisionProb_pct", label: "Raw Collision Probability", unit: "%", precision: 2 },
     { key: "throughputImpact_pct", label: "Throughput Impact", unit: "%", precision: 1 },
-    { key: "sharedChannelFraction", label: "Shared Channel Fraction", unit: "%", precision: 1 }
+    { key: "sharedChannelFraction", label: "Shared Channel Fraction", unit: "%", precision: 1 },
+    {
+      key: "overlappingChannels",
+      label: "Protocol 2 Channels Overlapping Protocol 1",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "Protocol 2's channels that share spectrum with one of protocol 1's, with the channels spread evenly across the band: there a collision needs only both to transmit at once",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
+    }
+  ],
+  examples: [
+    { id: "wifi-and-ble", label: "Wi-Fi (3 × 20 MHz) and Bluetooth LE (37 × 2 MHz) at 2.4 GHz", values: { bandIndex: 0, dutyCycle1_pct: 50, channels1: 3, channelWidth1_MHz: 20, dutyCycle2_pct: 5, channels2: 37, channelWidth2_MHz: 2, txPowerOffset_dB: 10 } },
+    { id: "wifi-and-zigbee", label: "Busy Wi-Fi and Zigbee (16 × 2 MHz) sensors", values: { bandIndex: 0, dutyCycle1_pct: 40, channels1: 3, channelWidth1_MHz: 20, dutyCycle2_pct: 1, channels2: 16, channelWidth2_MHz: 2, txPowerOffset_dB: 20 } },
+    { id: "lora-and-fhss-915", label: "LoRa (64 × 125 kHz) and a 50-channel 500 kHz hopper at 915 MHz", values: { bandIndex: 2, dutyCycle1_pct: 1, channels1: 64, channelWidth1_MHz: 0.125, dutyCycle2_pct: 10, channels2: 50, channelWidth2_MHz: 0.5, txPowerOffset_dB: 0 } }
   ],
   calculate: calculateIsmCoexistence,
   formula: {
@@ -2165,6 +2230,34 @@ var ismCoexistence = {
     ]
   },
   relatedCalculators: ["rf-link-budget", "noise-figure-cascade", "free-space-path-loss", "lora-link-budget", "ble-link-budget", "5g-nr-band-lookup"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the selected band, protocol
+  // 1's channels shaded, protocol 2's channels marked, each overlapping one of
+  // protocol 1's a CHECK (a collision then needs only both to transmit). The
+  // hero stays the collision rate, the page's answer.
+  spectrum: {
+    title: "Channel plan",
+    tableTitle: "Protocol 2 channels, overlapping first",
+    frequencyLabel: "Channel centre",
+    nameLabel: "#",
+    rule: "f_k = f_low + (k − ½)·B / N",
+    unit: "MHz",
+    bands: (i) => ismChannelPlan(i).protocol1,
+    products: (i) => ismChannelPlan(i).protocol2,
+    // The axis is the band itself, edge to edge.
+    views: (i) => {
+      const { low, high } = ismChannelPlan(i);
+      return [{ id: "band", label: "The band", from: low, to: high }];
+    },
+    hero: "effectiveCollision_pct",
+    // The hero's line names the ISM band, not the first protocol-1 channel.
+    heroBand: (i) => {
+      const { low, high } = ismChannelPlan(i);
+      return { from: low, to: high };
+    },
+    results: ["overlappingChannels", "collisionProb_pct", "throughputImpact_pct", "sharedChannelFraction"],
+    counts: { in: "overlappingChannels" },
+    zoneStatus: { in: "check" }
+  },
   liveWidgets: [
     { type: "ism-coexistence", position: "above-outputs", props: { bandMhz: BANDS.map((b) => b.liveMhz) }, inputs: { bandMhz: "bandIndex" } },
     { type: "space-weather", position: "below-outputs" }
@@ -2413,14 +2506,14 @@ function piPadResponse(r1, r2, z0) {
 }
 var ohms = (v) => `${+v.toPrecision(6)} Ω`;
 function calculateAttenuatorDesigner(inputs) {
-  const { attenuation, impedance: Z0, eSeries = 24 } = inputs;
-  if (attenuation <= 0) {
+  const { attenuation: attenuation2, impedance: Z0, eSeries = 24 } = inputs;
+  if (attenuation2 <= 0) {
     return { values: {}, errors: ["Attenuation must be greater than 0 dB"] };
   }
   if (Z0 <= 0) {
     return { values: {}, errors: ["Impedance must be greater than 0 Ω"] };
   }
-  const K = Math.pow(10, attenuation / 20);
+  const K = Math.pow(10, attenuation2 / 20);
   if (K <= 1) {
     return { values: {}, errors: ["Attenuation must produce K > 1 (attenuation > 0 dB)"] };
   }
@@ -7479,8 +7572,28 @@ var filterDesigner = {
 };
 
 // src/lib/calculators/signal/sampling-nyquist.ts
+function foldFrequency(f, fs) {
+  const r = f - fs * Math.floor(f / fs);
+  return Math.min(r, fs - r);
+}
+function nyquistProducts(i) {
+  const f = i.signalFreq;
+  const fs = i.samplingRate;
+  const order = i.harmonicOrder ?? 5;
+  const out = [];
+  for (let n = 1; n <= order; n++) {
+    const raw = n * f;
+    const aliased = raw > fs / 2;
+    const at = aliased ? foldFrequency(raw, fs) : raw;
+    const zone = n === 1 && !aliased ? "desired" : at <= f ? "in" : "clear";
+    const note = !aliased ? void 0 : n === 1 ? "The signal itself aliases" : "Aliased harmonic";
+    out.push({ f: at, order: n, name: `${n}·f`, zone, note, label: n === 1 && aliased ? "alias" : void 0 });
+  }
+  return out;
+}
 function calculateSamplingNyquist(inputs) {
   const { signalFreq, samplingRate, adcBits, channels } = inputs;
+  const harmonicOrder = inputs.harmonicOrder ?? 5;
   if (signalFreq <= 0) {
     return { values: {}, errors: ["Signal bandwidth must be greater than zero"] };
   }
@@ -7490,13 +7603,18 @@ function calculateSamplingNyquist(inputs) {
   if (adcBits < 1) {
     return { values: {}, errors: ["ADC resolution must be at least 1 bit"] };
   }
+  if (!(harmonicOrder >= 1 && harmonicOrder <= 50)) {
+    return { values: {}, errors: ["The harmonic order must be between 1 and 50"] };
+  }
   const nyquistRate_Hz = 2 * signalFreq;
   const oversamplingRatio = samplingRate / nyquistRate_Hz;
-  const aliasFreq_Hz = oversamplingRatio < 1 ? Math.abs(samplingRate - signalFreq) : 0;
+  const aliasFreq_Hz = oversamplingRatio < 1 ? foldFrequency(signalFreq, samplingRate) : 0;
   const dynamicRangeDB = 20 * Math.log10(2) * adcBits + 10 * Math.log10(1.5);
   const snr_dB = dynamicRangeDB;
   const dataRateMbps = samplingRate * adcBits * channels / 1e6;
   const antiAliasingFC_Hz = samplingRate / 2;
+  const aliasesInBand = nyquistProducts({ ...inputs, harmonicOrder }).filter((p) => p.zone === "in").length;
+  const lowestAliasingInput = samplingRate - Math.min(signalFreq, samplingRate / 2);
   const warnings = [];
   if (oversamplingRatio < 1) {
     warnings.push("Sampling below Nyquist rate — aliasing will occur");
@@ -7509,7 +7627,9 @@ function calculateSamplingNyquist(inputs) {
       dynamicRangeDB,
       snr_dB,
       dataRateMbps,
-      antiAliasingFC_Hz
+      antiAliasingFC_Hz,
+      aliasesInBand,
+      lowestAliasingInput
     },
     warnings
   };
@@ -7582,6 +7702,17 @@ var samplingNyquist = {
       max: 32,
       step: 1,
       tooltip: "Number of parallel ADC channels (e.g., 2 for stereo, 1 for mono)"
+    },
+    {
+      key: "harmonicOrder",
+      label: "Highest Harmonic",
+      symbol: "n_{max}",
+      unit: "",
+      defaultValue: 5,
+      min: 1,
+      max: 50,
+      step: 1,
+      tooltip: "The highest harmonic of a tone at the top of the band, as the converter's distortion makes it, that the frequency plan follows; 1 follows the tone alone"
     }
   ],
   outputs: [
@@ -7614,7 +7745,7 @@ var samplingNyquist = {
       symbol: "f_alias",
       unit: "Hz",
       precision: 1,
-      tooltip: "Frequency at which aliased signal appears. Zero if no aliasing.",
+      tooltip: "Where the signal appears once sampled below the Nyquist rate: |f − k·f_s| for the integer k nearest f/f_s. Zero if no aliasing.",
       format: "engineering"
     },
     {
@@ -7649,7 +7780,33 @@ var samplingNyquist = {
       precision: 1,
       tooltip: "Maximum anti-aliasing filter cutoff frequency (= fs / 2, the Nyquist frequency)",
       format: "engineering"
+    },
+    {
+      key: "aliasesInBand",
+      display: { integer: true },
+      label: "Aliases in the Signal Band",
+      symbol: "N_{alias}",
+      unit: "",
+      precision: 0,
+      tooltip: "The harmonics of a tone at the top of the band, up to the highest harmonic, that fold back into the signal band after sampling, and the tone itself if it aliases: no filter after the converter can remove them",
+      // A count: none is PASS, any FAIL.
+      thresholds: { good: { max: 0 }, danger: { max: 0 } }
+    },
+    {
+      key: "lowestAliasingInput",
+      label: "Lowest Input That Aliases Into the Band",
+      symbol: "f_s − f_sig",
+      unit: "Hz",
+      precision: 1,
+      format: "engineering",
+      tooltip: "The lowest input frequency that folds into the signal band, f_s − f_sig (f_s/2 once the band reaches past it): the anti-alias filter must reject from here"
     }
+  ],
+  examples: [
+    { id: "cd-audio", label: "CD audio: a 20 kHz tone at 44.1 kSa/s", values: { signalFreq: 2e4, samplingRate: 44100, adcBits: 16, channels: 2, harmonicOrder: 5 } },
+    { id: "telephone-voice", label: "Telephone voice: 3.4 kHz at 8 kSa/s, 8-bit", values: { signalFreq: 3400, samplingRate: 8e3, adcBits: 8, channels: 1, harmonicOrder: 3 } },
+    { id: "oversampled-daq", label: "Data logger: 1 kHz at 100 kSa/s, 16-bit", values: { signalFreq: 1e3, samplingRate: 1e5, adcBits: 16, channels: 4, harmonicOrder: 5 } },
+    { id: "undersampled-tone", label: "Undersampled: a 30 kHz tone at 44.1 kSa/s", values: { signalFreq: 3e4, samplingRate: 44100, adcBits: 16, channels: 1, harmonicOrder: 3 } }
   ],
   calculate: calculateSamplingNyquist,
   formula: {
@@ -7665,7 +7822,7 @@ var samplingNyquist = {
     derivation: [
       "Nyquist theorem: f_s ≥ 2 × f_max to avoid aliasing",
       "Oversampling ratio OSR = f_s / (2 × f_sig)",
-      "When OSR < 1, alias frequency = |f_s − f_sig|",
+      "When OSR < 1, the tone appears at |f_sig − k·f_s|, k the integer nearest f_sig/f_s",
       "Ideal ADC SNR (SQNR) = 20·log₁₀(2)·N + 10·log₁₀(3/2) dB",
       "Raw data rate = f_s × N × channels (bits/sec)",
       "Anti-aliasing filter must have cutoff ≤ f_s / 2"
@@ -7675,6 +7832,29 @@ var samplingNyquist = {
   visualization: { type: "none" },
   relatedCalculators: ["filter-designer", "rc-time-constant", "rf-link-budget"],
   relatedBlogPosts: ["ber-snr", "rf-filter-tolerance-analysis"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the first Nyquist zone, the
+  // signal band shaded, f_s/2, and the band-edge tone with its harmonics where
+  // they land after sampling.
+  spectrum: {
+    title: "Frequency plan",
+    tableTitle: "The tone and its harmonics after sampling, nearest the band first",
+    frequencyLabel: "Lands at",
+    nameLabel: "n·f",
+    rule: "f_alias = |n·f − k·f_s|, k nearest n·f/f_s",
+    unit: "Hz",
+    bands: (i) => [{ from: 0, to: i.signalFreq, label: "signal band", kind: "band" }],
+    lines: (i) => [{ f: i.samplingRate / 2, label: "f_s/2" }],
+    products: (i) => nyquistProducts(i),
+    views: (i) => {
+      const half = i.samplingRate / 2;
+      const views = [{ id: "zone", label: "First Nyquist zone", from: 0, to: half }];
+      if (1.5 * i.signalFreq < half) views.push({ id: "band", label: "Around the band", from: 0, to: 1.5 * i.signalFreq });
+      return views;
+    },
+    hero: "aliasesInBand",
+    results: ["lowestAliasingInput", "oversamplingRatio", "aliasFreq_Hz", "nyquistRate_Hz"],
+    counts: { in: "aliasesInBand" }
+  },
   verificationData: [
     {
       inputs: { signalFreq: 1e4, samplingRate: 44100, adcBits: 16, channels: 1 },
@@ -8745,21 +8925,42 @@ var resistorColorCode = {
 };
 
 // src/lib/calculators/general/rc-time-constant.ts
+var TOLERANCE_GRADES = [1, 2, 5, 10, 20];
 function calculateRC(inputs) {
   const { resistance, capacitance } = inputs;
+  const rTolerance = inputs.rTolerance ?? 1;
+  const cTolerance = inputs.cTolerance ?? 5;
+  const tauBudget = inputs.tauBudget ?? 10;
+  if (!(rTolerance >= 0 && rTolerance < 100) || !(cTolerance >= 0 && cTolerance < 100)) {
+    return { values: {}, errors: ["Tolerances must be at least 0 % and below 100 %"] };
+  }
+  if (!(tauBudget > 0)) {
+    return { values: {}, errors: ["The τ budget must be greater than 0"] };
+  }
   const capF = capacitance * 1e-9;
   const tau = resistance * capF;
   const tauUs = tau * 1e6;
   const t63 = tau;
   const t99 = tau * Math.log(100);
   const f3db = 1 / (2 * Math.PI * tau);
+  const dR = rTolerance / 100;
+  const dC = cTolerance / 100;
+  const tauMinUs = tauUs * (1 - dR) * (1 - dC);
+  const tauMaxUs = tauUs * (1 + dR) * (1 + dC);
+  const tauErrorPct = ((1 + dR) * (1 + dC) - 1) * 100;
+  const warnings = [];
+  if (tauErrorPct > tauBudget) warnings.push(`τ can be off by more than the ±${tauBudget}% budget at these tolerances`);
   return {
     values: {
       tauUs,
       t63us: t63 * 1e6,
       t99us: t99 * 1e6,
-      f3db
-    }
+      f3db,
+      tauMinUs,
+      tauMaxUs,
+      tauErrorPct
+    },
+    warnings: warnings.length > 0 ? warnings : void 0
   };
 }
 var rcTimeConstant = {
@@ -8799,15 +9000,109 @@ var rcTimeConstant = {
         { label: "μF", factor: 1e3 },
         { label: "mF", factor: 1e6 }
       ]
+    },
+    {
+      key: "rTolerance",
+      label: "Resistor Tolerance",
+      symbol: "δ_R",
+      unit: "%",
+      defaultValue: 1,
+      min: 0,
+      max: 50,
+      step: 0.1,
+      tooltip: "The resistor's tolerance, ±: 1 % (IEC 60062 code F) for a metal-film part, 5 % (J) for a general one"
+    },
+    {
+      key: "cTolerance",
+      label: "Capacitor Tolerance",
+      symbol: "δ_C",
+      unit: "%",
+      defaultValue: 5,
+      min: 0,
+      max: 80,
+      step: 0.1,
+      tooltip: "The capacitor's tolerance, ±: 5 % (IEC 60062 code J) for C0G or film, 10 % (K) for X7R, 20 % (M) for an electrolytic"
+    },
+    {
+      key: "tauBudget",
+      label: "τ Budget",
+      symbol: "ε_{max}",
+      unit: "%",
+      defaultValue: 10,
+      min: 0.1,
+      max: 100,
+      step: 0.1,
+      tooltip: "How far τ may stray from its nominal value, ±, as the circuit needs it"
     }
   ],
   outputs: [
     { key: "tauUs", label: "Time Constant τ", symbol: "τ", unit: "μs", precision: 3, primary: true },
     { key: "t63us", label: "Time to 63.2%", unit: "μs", precision: 3 },
     { key: "t99us", label: "Time to 99%", unit: "μs", precision: 2 },
-    { key: "f3db", label: "−3dB Frequency", unit: "Hz", precision: 2, format: "engineering" }
+    { key: "f3db", label: "−3dB Frequency", unit: "Hz", precision: 2, format: "engineering" },
+    { key: "tauMinUs", label: "Minimum τ", symbol: "τ_{min}", unit: "μs", precision: 3, tooltip: "τ with both parts at the low end of their tolerance" },
+    { key: "tauMaxUs", label: "Maximum τ", symbol: "τ_{max}", unit: "μs", precision: 3, tooltip: "τ with both parts at the high end of their tolerance" },
+    {
+      key: "tauErrorPct",
+      label: "Worst-Case τ Error",
+      symbol: "ε_τ",
+      unit: "%",
+      precision: 3,
+      display: { decimals: 2 },
+      signed: "explicit",
+      tooltip: "The largest deviation of τ from nominal at the parts' tolerances: (1 + δR)(1 + δC) − 1, the high corner"
+    }
   ],
   calculate: calculateRC,
+  // C7 Timing & waveforms (site-redesign W8): the step and the capacitor
+  // charging to 5τ, the worst-case τ error against its budget, and the
+  // capacitor's tolerance grades.
+  waveform: {
+    title: "Charging after the step",
+    lanes: (_i, v) => {
+      const tau = v.tauUs * 1e-6;
+      const pad = 0.5 * tau;
+      const end = 5 * tau;
+      const curve = [[-pad, 0], [0, 0]];
+      for (let k = 1; k <= 100; k++) {
+        const t = k === 100 ? end : end * k / 100;
+        curve.push([t, 100 * (1 - Math.exp(-t / tau))]);
+      }
+      return [
+        { id: "vin", symbol: "V_{in}", kind: "digital", points: [[-pad, 0], [0, 0], [0, 1], [end, 1]] },
+        {
+          id: "vc",
+          symbol: "V_C",
+          kind: "analog",
+          unit: "%",
+          points: curve,
+          samples: [[tau, 100 * (1 - Math.exp(-1))], [v.t99us * 1e-6, 99]]
+        }
+      ];
+    },
+    intervals: (_i, v) => {
+      const tau = v.tauUs * 1e-6;
+      return [
+        { from: 0, to: tau, label: "τ" },
+        { from: 0, to: 5 * tau, label: "5τ" }
+      ];
+    }
+  },
+  tolerance: {
+    output: "tauErrorPct",
+    budget: { input: "tauBudget" },
+    results: ["tauUs", "tauMinUs", "tauMaxUs", "f3db"]
+  },
+  standardValues: {
+    input: "cTolerance",
+    values: TOLERANCE_GRADES,
+    columns: ["tauMinUs", "tauMaxUs", "tauErrorPct"]
+  },
+  examples: [
+    { id: "reset-delay-x7r", label: "Reset delay, 10 kΩ ±1 % and 100 nF X7R (±10 %)", values: { resistance: 1e4, capacitance: 100, rTolerance: 1, cTolerance: 10 } },
+    { id: "lowpass-1khz-c0g", label: "1 kHz low-pass, 1.6 kΩ ±1 % and 100 nF C0G (±5 %)", values: { resistance: 1600, capacitance: 100, rTolerance: 1, cTolerance: 5 } },
+    { id: "debounce-47k-1u", label: "Switch debounce, 47 kΩ ±5 % and 1 µF ±10 %, ±20 % budget", values: { resistance: 47e3, capacitance: 1e3, rTolerance: 5, cTolerance: 10, tauBudget: 20 } }
+  ],
   formula: {
     primary: "\\tau = RC, \\quad f_{-3dB} = \\frac{1}{2\\pi RC}",
     variables: [
@@ -9555,8 +9850,38 @@ var opampGain = {
 };
 
 // src/lib/calculators/protocol/uart-baud-rate.ts
+var STANDARD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, 1e6];
+function uartLane(i, byte) {
+  const t = 1 / i.baudRate;
+  const idle = 0.6 * t;
+  const bits = [{ name: "S", level: 0, shade: true }];
+  let ones = 0;
+  for (let k = 0; k < Math.round(i.dataBits); k++) {
+    const b = byte >> k & 1;
+    ones += b;
+    bits.push({ name: `D${k}`, level: b });
+  }
+  if (i.parity > 0) bits.push({ name: "P", level: ones % 2 });
+  const stops = Math.round(i.stopBits);
+  for (let k = 0; k < stops; k++) bits.push({ name: stops > 1 ? `STOP${k + 1}` : "STOP", level: 1, shade: true });
+  const end = bits.length * t;
+  const points = [[-idle, 1]];
+  bits.forEach((b, k) => points.push([k * t, points[points.length - 1][1]], [k * t, b.level]));
+  points.push([end, points[points.length - 1][1]], [end, 1], [end + idle, 1]);
+  return {
+    id: "tx",
+    symbol: "TX",
+    kind: "digital",
+    points,
+    segments: bits.map((b, k) => ({ from: k * t, to: (k + 1) * t, name: b.name, value: String(b.level), shade: b.shade })),
+    samples: bits.map((b, k) => [(k + 0.5) * t, b.level])
+  };
+}
 function calculateUartBaudRate(inputs) {
   const { baudRate, dataBits, stopBits, parity, clockFreq } = inputs;
+  const oversampling = inputs.oversampling ?? 16;
+  const divisorFraction = inputs.divisorFraction ?? 0;
+  const errorBudget = inputs.errorBudget ?? 2;
   if (baudRate <= 0) {
     return { values: {}, errors: ["Baud rate must be greater than 0"] };
   }
@@ -9566,19 +9891,27 @@ function calculateUartBaudRate(inputs) {
   if (dataBits < 5 || dataBits > 9) {
     return { values: {}, errors: ["Data bits must be between 5 and 9"] };
   }
+  if (oversampling !== 16 && oversampling !== 8) {
+    return { values: {}, errors: ["Oversampling must be 16 or 8"] };
+  }
+  if (!(errorBudget > 0)) {
+    return { values: {}, errors: ["The error budget must be greater than 0"] };
+  }
   const parityBits = parity > 0 ? 1 : 0;
   const frameBits = 1 + dataBits + parityBits + stopBits;
   const bitPeriod_us = 1e6 / baudRate;
   const framePeriod_us = bitPeriod_us * frameBits;
   const framesPerSecond = 1e6 / framePeriod_us;
   const throughputKbps = framesPerSecond * dataBits / 1e3;
-  const brrDivisor = clockFreq * 1e6 / (16 * baudRate);
-  const brrRounded = Math.round(brrDivisor);
-  const actualBaudRate = clockFreq * 1e6 / (16 * brrRounded);
+  const brrDivisor = clockFreq * 1e6 / (oversampling * baudRate);
+  const divisorSet = divisorFraction === 1 ? Math.max(1, Math.floor(brrDivisor * oversampling + 0.5)) / oversampling : Math.max(1, Math.floor(brrDivisor + 0.5));
+  const actualBaudRate = clockFreq * 1e6 / (oversampling * divisorSet);
   const baudRateError_pct = Math.abs(actualBaudRate - baudRate) / baudRate * 100;
+  const baudError_pct = (actualBaudRate - baudRate) / baudRate * 100;
+  const stopSampleOffset_bits = (1 + dataBits + (parity > 0 ? 1 : 0) + 0.5) * (baudRate / actualBaudRate - 1);
   const warnings = [];
-  if (baudRateError_pct > 2) {
-    warnings.push("Baud rate error exceeds 2% — may cause framing errors");
+  if (baudRateError_pct > errorBudget) {
+    warnings.push(`Baud rate error exceeds ${errorBudget}% — may cause framing errors`);
   }
   return {
     values: {
@@ -9589,12 +9922,12 @@ function calculateUartBaudRate(inputs) {
       throughputKbps,
       brrDivisor,
       actualBaudRate,
-      baudRateError_pct
+      baudRateError_pct,
+      divisorSet,
+      baudError_pct,
+      stopSampleOffset_bits
     },
-    warnings: warnings.length > 0 ? warnings : void 0,
-    intermediateValues: {
-      brrRounded
-    }
+    warnings: warnings.length > 0 ? warnings : void 0
   };
 }
 var uartBaudRate = {
@@ -9620,6 +9953,7 @@ var uartBaudRate = {
       label: "Baud Rate",
       symbol: "B",
       unit: "bps",
+      fieldUnit: "bps",
       defaultValue: 115200,
       min: 300,
       max: 4e6,
@@ -9695,6 +10029,46 @@ var uartBaudRate = {
         { label: "72 MHz", values: { clockFreq: 72 } },
         { label: "180 MHz", values: { clockFreq: 180 } }
       ]
+    },
+    {
+      key: "oversampling",
+      label: "Oversampling",
+      symbol: "OS",
+      unit: "",
+      defaultValue: 16,
+      min: 8,
+      max: 16,
+      step: 8,
+      tooltip: "Samples per bit: 16× is the usual mode; 8× (STM32 OVER8, AVR U2X) doubles the fastest rate at the cost of noise immunity",
+      options: [
+        { value: 16, label: "16×" },
+        { value: 8, label: "8×" }
+      ]
+    },
+    {
+      key: "divisorFraction",
+      label: "Divisor",
+      unit: "",
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      tooltip: "A whole divisor (AVR UBRR, the 16550) or one with a fraction of 1/OS (STM32 USARTDIV), which comes far closer to most rates",
+      options: [
+        { value: 0, label: "Whole number" },
+        { value: 1, label: "With fraction (1/OS)" }
+      ]
+    },
+    {
+      key: "errorBudget",
+      label: "Error Budget",
+      symbol: "ε_{max}",
+      unit: "%",
+      defaultValue: 2,
+      min: 0.1,
+      max: 10,
+      step: 0.1,
+      tooltip: "The baud-rate error the link can take, ± both ends together; about ±2 % for 16× oversampling and 8N1 frames"
     }
   ],
   outputs: [
@@ -9742,7 +10116,7 @@ var uartBaudRate = {
       symbol: "BRR",
       unit: "",
       precision: 1,
-      tooltip: "USART BRR register value (16× oversampling); round to nearest integer"
+      tooltip: "The clock over the oversampling rate times the baud rate, before rounding"
     },
     {
       key: "actualBaudRate",
@@ -9750,7 +10124,8 @@ var uartBaudRate = {
       symbol: "B_{actual}",
       unit: "bps",
       precision: 1,
-      tooltip: "Baud rate achieved with the rounded integer BRR divisor"
+      display: { unit: "bps", decimals: 0 },
+      tooltip: "Baud rate achieved with the divisor as set"
     },
     {
       key: "baudRateError_pct",
@@ -9766,9 +10141,66 @@ var uartBaudRate = {
         warning: { max: 2 },
         danger: { max: 2 }
       }
+    },
+    {
+      key: "divisorSet",
+      label: "Divisor as Set",
+      symbol: "BRR_{set}",
+      unit: "",
+      precision: 4,
+      display: { sig: 7 },
+      tooltip: "The divisor the register holds: whole, or in steps of 1/OS"
+    },
+    {
+      key: "baudError_pct",
+      label: "Baud Error",
+      symbol: "ε",
+      unit: "%",
+      precision: 3,
+      display: { decimals: 2 },
+      signed: "explicit",
+      tooltip: "Actual over target, signed: negative when the actual rate is slower"
+    },
+    {
+      key: "stopSampleOffset_bits",
+      label: "Stop-Bit Sample Offset",
+      symbol: "Δt_{stop}",
+      unit: "bits",
+      precision: 4,
+      display: { decimals: 3 },
+      signed: "explicit",
+      tooltip: "How far from the stop bit's centre a receiver at the actual rate samples a frame sent at the target rate; positive is late"
     }
   ],
   calculate: calculateUartBaudRate,
+  // C7 Timing & waveforms (waves/W8.md, "The C7 model"): one frame on the
+  // wire, the error against its budget, and the standard rates.
+  waveform: {
+    title: "One frame on the wire",
+    controls: [{ key: "byte", label: "Byte", defaultValue: 85, min: 0, max: 255, byte: true }],
+    lanes: (i, _v, c2) => [uartLane(i, c2.byte)],
+    intervals: (i, v) => {
+      const t = 1 / i.baudRate;
+      return [{ from: t, to: 2 * t, label: "bit" }, { from: 0, to: v.frameBits * t, label: "frame" }];
+    },
+    note: { output: "stopSampleOffset_bits" }
+  },
+  tolerance: {
+    output: "baudError_pct",
+    budget: { input: "errorBudget" },
+    results: ["divisorSet", "actualBaudRate", "bitPeriod_us", "framesPerSecond"]
+  },
+  standardValues: {
+    input: "baudRate",
+    values: STANDARD_RATES,
+    columns: ["divisorSet", "actualBaudRate", "baudError_pct"]
+  },
+  examples: [
+    { id: "stm32-16mhz-115200", label: "STM32 at 16 MHz, 115 200 Bd, fractional divisor", values: { clockFreq: 16, baudRate: 115200, oversampling: 16, divisorFraction: 1 } },
+    { id: "avr-16mhz-115200-u2x", label: "AVR at 16 MHz, 115 200 Bd, double speed (8×)", values: { clockFreq: 16, baudRate: 115200, oversampling: 8, divisorFraction: 0 } },
+    { id: "avr-14745600-115200", label: "AVR on a 14.7456 MHz baud-rate crystal, 115 200 Bd", values: { clockFreq: 14.7456, baudRate: 115200, oversampling: 16, divisorFraction: 0 } },
+    { id: "stm32-72mhz-921600-8e1", label: "STM32 at 72 MHz, 921 600 Bd 8E1", values: { clockFreq: 72, baudRate: 921600, parity: 1, oversampling: 16, divisorFraction: 1 } }
+  ],
   formula: {
     primary: "BRR = \\frac{f_{clk}}{16 \\times B}, \\quad T_{bit} = \\frac{1}{B}, \\quad N_{frame} = 1 + D + P + S",
     variables: [
@@ -12626,13 +13058,30 @@ var zenerDiode = {
 };
 
 // src/lib/calculators/general/inductor-energy.ts
+var E6 = [10, 15, 22, 33, 47, 68];
+function e6Around(l) {
+  if (!(l > 0) || !Number.isFinite(l)) return [];
+  const out = [];
+  const k0 = Math.floor(Math.log10(l / 4)) - 1;
+  for (let k = k0; k <= k0 + 3; k++) {
+    for (const m of E6) {
+      const v = k >= 0 ? m * 10 ** k : m / 10 ** -k;
+      if (v >= l / 4 && v <= l * 4 && v >= 1e-3) out.push(v);
+    }
+  }
+  return out;
+}
 function calculateInductorEnergy(inputs) {
   const { inductance, current, resistance, targetCurrent } = inputs;
+  const requiredTime = inputs.requiredTime ?? 20;
   if (targetCurrent >= 100) {
     return { values: {}, errors: ["Target current must be less than 100%"] };
   }
   if (resistance <= 0) {
     return { values: {}, errors: ["Series resistance must be positive"] };
+  }
+  if (!(requiredTime > 0)) {
+    return { values: {}, errors: ["The required rise time must be greater than 0"] };
   }
   const L_H = inductance * 1e-6;
   const energy = 0.5 * L_H * current * current * 1e6;
@@ -12700,6 +13149,15 @@ var inductorEnergy = {
       min: 1,
       max: 99,
       tooltip: "Target current as % of final value"
+    },
+    {
+      key: "requiredTime",
+      label: "Required Rise Time",
+      symbol: "t_{req}",
+      unit: "μs",
+      defaultValue: 20,
+      min: 1e-3,
+      tooltip: "The time the design allows for the current to reach its target (a relay's pull-in, a driver's on-time); the rise time must not exceed it"
     }
   ],
   outputs: [
@@ -12741,6 +13199,59 @@ var inductorEnergy = {
     }
   ],
   calculate: calculateInductorEnergy,
+  // C7 Timing & waveforms (site-redesign W8): the voltage step and the current
+  // rising through L/R to five time constants, the rise time to the target
+  // against the time required, and the E6 inductances around the one entered.
+  waveform: {
+    title: "Current after the step",
+    lanes: (i, v) => {
+      const tau = v.timeConst * 1e-6;
+      const end = Math.max(5 * tau, Math.min(1.1 * i.requiredTime * 1e-6, 10 * tau));
+      const pad = 0.1 * end;
+      const curve = [[-pad, 0], [0, 0]];
+      for (let k = 1; k <= 120; k++) {
+        const t = k === 120 ? end : end * k / 120;
+        curve.push([t, i.current * (1 - Math.exp(-t / tau))]);
+      }
+      return [
+        { id: "v", symbol: "V", kind: "digital", points: [[-pad, 0], [0, 0], [0, 1], [end, 1]] },
+        {
+          id: "i",
+          symbol: "i_L",
+          kind: "analog",
+          unit: "A",
+          points: curve,
+          samples: [[v.riseTime * 1e-6, i.current * i.targetCurrent / 100]]
+        }
+      ];
+    },
+    intervals: (i, v) => {
+      const tau = v.timeConst * 1e-6;
+      const end = Math.max(5 * tau, Math.min(1.1 * i.requiredTime * 1e-6, 10 * tau));
+      const out = [
+        { from: 0, to: tau, label: "τ" },
+        { from: 0, to: v.riseTime * 1e-6, label: "t_rise" }
+      ];
+      if (i.requiredTime * 1e-6 <= end) out.push({ from: 0, to: i.requiredTime * 1e-6, label: "t_req" });
+      return out;
+    }
+  },
+  tolerance: {
+    output: "riseTime",
+    budget: { input: "requiredTime" },
+    sense: "below",
+    results: ["timeConst", "energy", "peakVoltage"]
+  },
+  standardValues: {
+    input: "inductance",
+    values: (i) => e6Around(i.inductance),
+    columns: ["timeConst", "riseTime", "energy"]
+  },
+  examples: [
+    { id: "solenoid-pull-in", label: "Solenoid, 10 mH and 24 Ω at 1 A, pulls in at 70 % within 1 ms", values: { inductance: 1e4, current: 1, resistance: 24, targetCurrent: 70, requiredTime: 1e3 } },
+    { id: "relay-coil-12v", label: "12 V relay coil, 0.8 H and 400 Ω, pulls in at 75 % within 5 ms", values: { inductance: 8e5, current: 0.03, resistance: 400, targetCurrent: 75, requiredTime: 5e3 } },
+    { id: "gate-drive-choke", label: "100 µH choke behind 10 Ω, 90 % of 1 A within 20 µs", values: { inductance: 100, current: 1, resistance: 10, targetCurrent: 90, requiredTime: 20 } }
+  ],
   formula: {
     primary: "E = 1/2·LI², τ = L/R, i(t) = I_final × (1 - e^(-t/τ))",
     variables: [
@@ -14628,8 +15139,48 @@ var powerAmplifierEfficiency = {
 };
 
 // src/lib/calculators/rf/intermodulation-distortion.ts
+var HD2_BELOW_IM2 = 20 * Math.log10(2);
+var HD3_BELOW_IM3 = 20 * Math.log10(3);
+function twoToneProducts(i, im3Ratio, im2Ratio) {
+  const f1 = i.freq1;
+  const f2 = i.freq2;
+  const low = i.bandLow ?? 88;
+  const high = i.bandHigh ?? 108;
+  const strongest = Math.max(0, im2Ratio, im3Ratio);
+  const list = [
+    [f1, "f₁", 1, 0, void 0],
+    [f2, "f₂", 1, 0, void 0],
+    [Math.abs(f1 - f2), "|f₁ − f₂|", 2, im2Ratio, "Second-order beat"],
+    [f1 + f2, "f₁ + f₂", 2, im2Ratio, void 0],
+    [2 * f1, "2f₁", 2, im2Ratio - HD2_BELOW_IM2, "Second harmonic"],
+    [2 * f2, "2f₂", 2, im2Ratio - HD2_BELOW_IM2, "Second harmonic"],
+    [Math.abs(2 * f1 - f2), "2f₁ − f₂", 3, im3Ratio, "Third-order: beside the tones, hard to filter"],
+    [Math.abs(2 * f2 - f1), "2f₂ − f₁", 3, im3Ratio, "Third-order: beside the tones, hard to filter"],
+    [2 * f1 + f2, "2f₁ + f₂", 3, im3Ratio, void 0],
+    [2 * f2 + f1, "2f₂ + f₁", 3, im3Ratio, void 0],
+    [3 * f1, "3f₁", 3, im3Ratio - HD3_BELOW_IM3, "Third harmonic"],
+    [3 * f2, "3f₂", 3, im3Ratio - HD3_BELOW_IM3, "Third harmonic"]
+  ];
+  return list.map(([f, name, order, dbc, note], k) => ({
+    f,
+    name,
+    order,
+    zone: k < 2 ? "desired" : f >= low && f <= high ? "in" : "clear",
+    level: dbc - strongest,
+    note,
+    label: k === 6 || k === 7 ? "IM3" : void 0
+  }));
+}
 function calculateIntermodulationDistortion(inputs) {
   const { outputPower, inputPower, oip3, oip2, freq1, freq2 } = inputs;
+  const bandLow = inputs.bandLow ?? 88;
+  const bandHigh = inputs.bandHigh ?? 108;
+  if (!(bandHigh > bandLow)) {
+    return { values: {}, errors: ["The band must end above where it starts"] };
+  }
+  if (!(bandLow >= 0)) {
+    return { values: {}, errors: ["The band cannot start below 0 Hz"] };
+  }
   const gain = outputPower - inputPower;
   const iip3 = oip3 - gain;
   const im3Power = 3 * outputPower - 2 * oip3;
@@ -14640,10 +15191,11 @@ function calculateIntermodulationDistortion(inputs) {
   const im2Power = 2 * outputPower - oip2;
   const im2Ratio = im2Power - outputPower;
   const im3Low = Math.abs(2 * freq1 - freq2);
-  const im3High = 2 * freq2 - freq1;
+  const im3High = Math.abs(2 * freq2 - freq1);
   const im2Sum = freq1 + freq2;
   const im2Diff = Math.abs(freq1 - freq2);
   const toneSpacing = Math.abs(freq2 - freq1);
+  const productsInBand = twoToneProducts({ ...inputs, bandLow, bandHigh }, im3Ratio, im2Ratio).filter((p) => p.zone === "in").length;
   return {
     values: {
       iip3,
@@ -14657,7 +15209,8 @@ function calculateIntermodulationDistortion(inputs) {
       im3High,
       im2Sum,
       im2Diff,
-      toneSpacing
+      toneSpacing,
+      productsInBand
     }
   };
 }
@@ -14738,6 +15291,26 @@ var intermodulationDistortion = {
       defaultValue: 101,
       min: 0.1,
       tooltip: "Second test tone frequency"
+    },
+    {
+      key: "bandLow",
+      label: "Band Start",
+      symbol: "f_{band,lo}",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 88,
+      min: 0,
+      tooltip: "Where the band the products must not reach starts: a receive band, or the channel you listen on"
+    },
+    {
+      key: "bandHigh",
+      label: "Band Stop",
+      symbol: "f_{band,hi}",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 108,
+      min: 0,
+      tooltip: "Where the band ends"
     }
   ],
   outputs: [
@@ -14835,7 +15408,24 @@ var intermodulationDistortion = {
       symbol: "Δf",
       unit: "MHz",
       precision: 3
+    },
+    {
+      key: "productsInBand",
+      display: { integer: true },
+      label: "Products in the Band",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      tooltip: "Second- and third-order products and harmonics of the two tones that land inside the band, where no filter after the amplifier can remove them",
+      // A count: none is PASS, any FAIL.
+      thresholds: { good: { max: 0 }, danger: { max: 0 } }
     }
+  ],
+  examples: [
+    { id: "fm-broadcast", label: "Two FM stations at 100 and 101 MHz in the 88–108 MHz band", values: { outputPower: 10, inputPower: 0, oip3: 30, oip2: 50, freq1: 100, freq2: 101, bandLow: 88, bandHigh: 108 } },
+    { id: "wifi-channels-1-and-6", label: "LNA with Wi-Fi channels 1 and 6, 2.4 GHz band", values: { outputPower: -15, inputPower: -30, oip3: 20, oip2: 40, freq1: 2412, freq2: 2437, bandLow: 2400, bandHigh: 2483.5 } },
+    { id: "hf-40m-broadcast", label: "40 m receiver beside two 41 m broadcasters (7.25, 7.40 MHz)", values: { outputPower: -10, inputPower: -20, oip3: 30, oip2: 60, freq1: 7.25, freq2: 7.4, bandLow: 7, bandHigh: 7.2 } },
+    { id: "satcom-hpa-two-carriers", label: "C-band HPA with two carriers, 5925–6425 MHz uplink", values: { outputPower: 30, inputPower: 0, oip3: 50, oip2: 60, freq1: 6e3, freq2: 6010, bandLow: 5925, bandHigh: 6425 } }
   ],
   calculate: calculateIntermodulationDistortion,
   formula: {
@@ -14860,9 +15450,43 @@ var intermodulationDistortion = {
   relatedCalculators: ["mixer-spur-calculator", "noise-figure-cascade", "db-converter", "rf-link-budget"],
   relatedTools: ["rf-cascade"],
   relatedBlogPosts: ["rf-cascade-budget-monte-carlo", "rf-cascade-noise-figure-yield-analysis"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the tones and their second-
+  // and third-order products on an MHz axis, heights by level, against the
+  // band they must not reach.
+  spectrum: {
+    title: "Frequency plan",
+    tableTitle: "Products, nearest the band first",
+    frequencyLabel: "Product",
+    nameLabel: "m·f₁ ± n·f₂",
+    rule: "f = |m·f₁ ± n·f₂|, m + n ≤ 3",
+    unit: "MHz",
+    heightBy: "level",
+    rangeInputs: [{ from: "bandLow", to: "bandHigh", label: "Band" }],
+    bands: (i) => [{ from: i.bandLow ?? 88, to: i.bandHigh ?? 108, label: "band", kind: "band" }],
+    products: (i, v) => twoToneProducts(i, v.im3Ratio, v.im2Ratio),
+    views: (i) => {
+      const low = i.bandLow ?? 88;
+      const high = i.bandHigh ?? 108;
+      const from = Math.min(low, i.freq1, i.freq2);
+      const to = Math.max(high, i.freq1, i.freq2);
+      const span = Math.max(0.25 * (high - low), 2 * Math.abs(i.freq2 - i.freq1));
+      const spacing = Math.abs(i.freq2 - i.freq1);
+      const lowTone = Math.min(i.freq1, i.freq2);
+      const highTone = Math.max(i.freq1, i.freq2);
+      const near = spacing > 0 ? [{ id: "tones", label: "Around the tones", from: Math.max(0, lowTone - 2 * spacing), to: highTone + 2 * spacing }] : [];
+      return [
+        { id: "band", label: "Around the band", from: Math.max(0, from - span), to: to + span },
+        ...near,
+        { id: "wide", label: "Wide", from: 0, to: 1.05 * Math.max(3 * Math.max(i.freq1, i.freq2), high) }
+      ];
+    },
+    hero: "productsInBand",
+    results: ["im3Ratio", "im3Low", "im3High", "iip3"],
+    counts: { in: "productsInBand" }
+  },
   methodology: {
     references: [
-      { title: "RF Microelectronics, 2nd ed.", source: "Behzad Razavi (2011), Chapter 6 — Nonlinearity and intermodulation" },
+      { title: "RF Microelectronics, 2nd ed.", source: "Behzad Razavi (2011), Chapter 2, section 2.2 — Effects of nonlinearity" },
       { title: "Nonlinear Microwave and RF Circuits, 2nd ed.", source: "Stephen A. Maas (2003), Chapter 3 — Intermodulation and IP3" },
       { title: "RF Circuit Design", source: "Peter Vizmuller (1995), Chapter 3 — IIP3 and OIP3" }
     ]
@@ -14870,6 +15494,67 @@ var intermodulationDistortion = {
 };
 
 // src/lib/calculators/rf/phase-noise-to-jitter.ts
+function profileOf(i) {
+  return [
+    [i.offsetFreqLow * 1e3, i.phaseNoise],
+    [(i.offset2 ?? 10) * 1e3, i.pn2 ?? -140],
+    [(i.offset3 ?? 100) * 1e3, i.pn3 ?? -155],
+    [(i.offset4 ?? 1e3) * 1e3, i.pn4 ?? -165]
+  ].sort((x, y) => x[0] - y[0]);
+}
+function levelAt(points, f) {
+  if (f <= points[0][0]) return points[0][1];
+  const last = points[points.length - 1];
+  if (f >= last[0]) return last[1];
+  for (let k = 0; k < points.length - 1; k++) {
+    const [f1, l1] = points[k];
+    const [f2, l2] = points[k + 1];
+    if (f >= f1 && f <= f2) return f2 > f1 ? l1 + (l2 - l1) * Math.log10(f / f1) / Math.log10(f2 / f1) : l2;
+  }
+  return last[1];
+}
+function integrateProfile(points, a, b) {
+  const edges = [a, ...points.map(([f]) => f).filter((f) => f > a && f < b), b];
+  let total = 0;
+  for (let k = 0; k < edges.length - 1; k++) {
+    const f1 = edges[k];
+    const f2 = edges[k + 1];
+    if (!(f2 > f1)) continue;
+    const l1 = levelAt(points, f1);
+    const l2 = levelAt(points, f2);
+    const r = f2 / f1;
+    const slope = (l2 - l1) / (10 * Math.log10(r));
+    const s1 = Math.pow(10, l1 / 10);
+    total += Math.abs(slope + 1) < 1e-12 ? s1 * f1 * Math.log(r) : s1 * f1 * (Math.pow(r, slope + 1) - 1) / (slope + 1);
+  }
+  return total;
+}
+function phaseNoisePoints(i) {
+  const low = i.offsetFreqLow;
+  const high = i.offsetFreqHigh;
+  let points;
+  if ((i.profileMode ?? 0) >= 1) {
+    const profile = profileOf(i);
+    const beyond = high * 1e3 >= profile[profile.length - 1][0];
+    points = [
+      [low, i.phaseNoise, "L₁", 1, void 0],
+      [i.offset2 ?? 10, i.pn2 ?? -140, "L₂", 2, void 0],
+      [i.offset3 ?? 100, i.pn3 ?? -155, "L₃", 3, void 0],
+      [i.offset4 ?? 1e3, i.pn4 ?? -165, "L₄", 4, void 0],
+      [high, levelAt(profile, high * 1e3), "L(f₂)", 4, beyond ? "L₄ held to the band's end" : "Interpolated at the band's end"]
+    ];
+  } else {
+    points = [
+      [low, i.phaseNoise, "L(f)", 1, "One flat level"],
+      [high, i.phaseNoise, "L(f)", 1, "One flat level"]
+    ];
+  }
+  const strongest = Math.max(...points.map((p) => p[1]));
+  return points.map(([f, l, name, order, note]) => {
+    const inside = f * 1e3 >= low * 1e3 && f * 1e3 <= high * 1e3;
+    return { f, name, order, zone: inside ? "in" : "clear", level: l - strongest, note: inside ? note : "Outside the band: not integrated" };
+  });
+}
 function calculatePhaseNoiseToJitter(inputs) {
   const {
     carrierFreq,
@@ -14884,31 +15569,18 @@ function calculatePhaseNoiseToJitter(inputs) {
     offset4 = 1e3,
     pn4 = -165
   } = inputs;
+  if (!(carrierFreq > 0)) {
+    return { values: {}, errors: ["Carrier frequency must be > 0"] };
+  }
+  if (!(offsetFreqHigh > offsetFreqLow)) {
+    return { values: {}, errors: ["Offset high must be greater than offset low"] };
+  }
   const f_carrier_Hz = carrierFreq * 1e6;
   let phaseNoisePower_linear;
   let phaseNoisePower;
   if (profileMode >= 1) {
-    const points = [
-      [offsetFreqLow * 1e3, phaseNoise],
-      [offset2 * 1e3, pn2],
-      [offset3 * 1e3, pn3],
-      [offset4 * 1e3, pn4],
-      [offsetFreqHigh * 1e3, pn4]
-      // extend last known L(f) to upper limit
-    ];
-    points.sort((a, b) => a[0] - b[0]);
-    const f_low = offsetFreqLow * 1e3;
-    const f_high = offsetFreqHigh * 1e3;
-    const filtered = points.filter(([f]) => f >= f_low && f <= f_high);
-    let totalPower = 0;
-    for (let i = 0; i < filtered.length - 1; i++) {
-      const [f1, l1_dBc] = filtered[i];
-      const [f2, l2_dBc] = filtered[i + 1];
-      if (f2 <= f1) continue;
-      const L1 = Math.pow(10, l1_dBc / 10);
-      const L2 = Math.pow(10, l2_dBc / 10);
-      totalPower += (L1 + L2) / 2 * (f2 - f1);
-    }
+    const profile = profileOf({ ...inputs, offset2, pn2, offset3, pn3, offset4, pn4 });
+    const totalPower = integrateProfile(profile, offsetFreqLow * 1e3, offsetFreqHigh * 1e3);
     phaseNoisePower_linear = Math.max(totalPower, 1e-30);
     phaseNoisePower = 10 * Math.log10(phaseNoisePower_linear);
   } else {
@@ -14922,13 +15594,15 @@ function calculatePhaseNoiseToJitter(inputs) {
   const rmsPhaseError = Math.sqrt(2 * phaseNoisePower_linear) * (180 / Math.PI);
   const jitterProduct = 2 * Math.PI * Math.max(f_carrier_Hz, 1) * Math.max(rmsJitter_s, 1e-30);
   const adcSnrLimit = -20 * Math.log10(jitterProduct);
+  const pointsIntegrated = phaseNoisePoints(inputs).filter((p) => p.zone === "in").length;
   return {
     values: {
       rmsJitter,
       cycleToCycleJitter,
       phaseNoisePower,
       rmsPhaseError,
-      adcSnrLimit
+      adcSnrLimit,
+      pointsIntegrated
     }
   };
 }
@@ -15108,7 +15782,22 @@ var phaseNoiseToJitter = {
         danger: { min: 50 }
       },
       tooltip: "Maximum achievable ADC SNR limited by clock jitter at this carrier frequency"
+    },
+    {
+      key: "pointsIntegrated",
+      display: { integer: true },
+      label: "Profile Points Integrated",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      tooltip: "The L(f) points inside the integration band, the band's end where the last level is held included; a point outside it is left out of the integral"
     }
+  ],
+  examples: [
+    { id: "adc-clock-flat", label: "122.88 MHz ADC clock, flat −150 dBc/Hz, 1 kHz to 20 MHz", values: { carrierFreq: 122.88, phaseNoise: -150, offsetFreqLow: 1, offsetFreqHigh: 2e4, profileMode: 0 } },
+    { id: "xo-156-25-12k-20m", label: "156.25 MHz oscillator, 12 kHz to 20 MHz profile", values: { carrierFreq: 156.25, profileMode: 1, offsetFreqLow: 12, phaseNoise: -130, offset2: 100, pn2: -140, offset3: 1e3, pn3: -150, offset4: 1e4, pn4: -160, offsetFreqHigh: 2e4 } },
+    { id: "pll-1-ghz", label: "1 GHz PLL, 100 kHz loop, 1 kHz to 10 MHz", values: { carrierFreq: 1e3, profileMode: 1, offsetFreqLow: 1, phaseNoise: -90, offset2: 10, pn2: -100, offset3: 100, pn3: -105, offset4: 1e3, pn4: -130, offsetFreqHigh: 1e4 } },
+    { id: "xo-band-short-of-profile", label: "The 156.25 MHz profile integrated only to 5 MHz", values: { carrierFreq: 156.25, profileMode: 1, offsetFreqLow: 12, phaseNoise: -130, offset2: 100, pn2: -140, offset3: 1e3, pn3: -150, offset4: 1e4, pn4: -160, offsetFreqHigh: 5e3 } }
   ],
   calculate: calculatePhaseNoiseToJitter,
   formula: {
@@ -15130,6 +15819,35 @@ var phaseNoiseToJitter = {
   visualization: { type: "none" },
   relatedCalculators: ["adc-snr", "q-factor", "snr-calculator", "rf-link-budget"],
   relatedBlogPosts: ["angle-units", "pll-loop-filter"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the L(f) points on a log
+  // offset axis, heights by level, with the integration band shaded. A point
+  // inside it is integrated, not a fault; the jitter is the answer.
+  spectrum: {
+    title: "Phase-noise profile",
+    tableTitle: "Profile points, inside the band first",
+    frequencyLabel: "Offset",
+    nameLabel: "L",
+    rule: "J_rms = √(2·∫L(f)df) / (2π·f₀)",
+    unit: "kHz",
+    scale: "log",
+    heightBy: "level",
+    rangeInputs: [{ from: "offsetFreqLow", to: "offsetFreqHigh", label: "Integration band" }],
+    bands: (i) => [{ from: Math.min(i.offsetFreqLow, i.offsetFreqHigh), to: Math.max(i.offsetFreqLow, i.offsetFreqHigh), label: "integration band", kind: "band" }],
+    products: (i) => phaseNoisePoints(i),
+    views: (i) => {
+      const fs = [i.offsetFreqLow, i.offsetFreqHigh, ...phaseNoisePoints(i).map((p) => p.f)];
+      const lo = Math.min(i.offsetFreqLow, i.offsetFreqHigh);
+      const hi = Math.max(i.offsetFreqLow, i.offsetFreqHigh);
+      return [
+        { id: "band", label: "Around the band", from: lo / 2, to: hi * 2 },
+        { id: "wide", label: "Wide", from: Math.min(...fs) / 10, to: Math.max(...fs) * 10 }
+      ];
+    },
+    hero: "rmsJitter",
+    results: ["phaseNoisePower", "rmsPhaseError", "adcSnrLimit", "pointsIntegrated"],
+    counts: { in: "pointsIntegrated" },
+    zoneStatus: { in: "pass" }
+  },
   methodology: {
     references: [
       { title: "A Simple Model of Feedback Oscillator Noise Spectrum", source: "D. B. Leeson, Proc. IEEE 54(2), pp. 329–330 (1966)" },
@@ -15139,8 +15857,35 @@ var phaseNoiseToJitter = {
 };
 
 // src/lib/calculators/rf/vibration-phase-noise.ts
+function vibrationSidebands(i, lvib) {
+  const low = i.offsetBandLow ?? 1e3;
+  const high = i.offsetBandHigh ?? 1e4;
+  const levels = [lvib, 2 * lvib - 20 * Math.log10(2), 3 * lvib - 20 * Math.log10(6)];
+  const strongest = Math.max(...levels);
+  return levels.map((l, k) => {
+    const n = k + 1;
+    const f = n * i.vibFreq;
+    return {
+      f,
+      name: n === 1 ? "±f_vib" : `±${n}·f_vib`,
+      order: n,
+      zone: f >= low && f <= high ? "in" : "clear",
+      level: l - strongest,
+      note: n === 1 ? "First sideband: L_vib" : void 0,
+      label: n === 1 ? "L_vib" : void 0
+    };
+  });
+}
 function calculateVibrationPhaseNoise(inputs) {
   const { carrierFreq, vibSensitivity, vibAccel, vibFreq } = inputs;
+  const offsetBandLow = inputs.offsetBandLow ?? 1e3;
+  const offsetBandHigh = inputs.offsetBandHigh ?? 1e4;
+  if (!(offsetBandHigh > offsetBandLow)) {
+    return { values: {}, errors: ["The offset band must end above where it starts"] };
+  }
+  if (!(offsetBandLow > 0)) {
+    return { values: {}, errors: ["The offset band must start above 0 Hz"] };
+  }
   const f0 = carrierFreq * 1e9;
   const gamma = vibSensitivity * 1e-9;
   const aPeak = Math.SQRT2 * vibAccel;
@@ -15151,12 +15896,14 @@ function calculateVibrationPhaseNoise(inputs) {
   const freqDev = gamma * aPeak * f0;
   const typicalQuiescent = -120 + 20 * Math.log10(Math.max(100 / vibFreq, 1e-30));
   const degradation = lvib - typicalQuiescent;
+  const sidebandsInBand = vibrationSidebands({ ...inputs, offsetBandLow, offsetBandHigh }, lvib).filter((s) => s.zone === "in").length;
   return {
     values: {
       lvib,
       lRandom,
       freqDev,
-      degradation
+      degradation,
+      sidebandsInBand
     }
   };
 }
@@ -15236,6 +15983,26 @@ var vibrationPhaseNoise = {
       min: 1,
       max: 1e4,
       tooltip: "Vibration frequency or offset frequency at which to evaluate phase noise"
+    },
+    {
+      key: "offsetBandLow",
+      label: "Offset Band Start",
+      symbol: "f_{band,lo}",
+      unit: "Hz",
+      fieldUnit: "Hz",
+      defaultValue: 1e3,
+      min: 1e-3,
+      tooltip: "Where the offsets from the carrier that matter start: a radar's Doppler band (1 to 10 kHz is 15 to 150 m/s at 10 GHz), or a receiver's close-in band"
+    },
+    {
+      key: "offsetBandHigh",
+      label: "Offset Band Stop",
+      symbol: "f_{band,hi}",
+      unit: "Hz",
+      fieldUnit: "Hz",
+      defaultValue: 1e4,
+      min: 1e-3,
+      tooltip: "Where the offset band ends"
     }
   ],
   outputs: [
@@ -15280,7 +16047,24 @@ var vibrationPhaseNoise = {
         warning: { min: 0, max: 20 },
         danger: { max: 20 }
       }
+    },
+    {
+      key: "sidebandsInBand",
+      display: { integer: true },
+      label: "Vibration Sidebands in the Offset Band",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      tooltip: "Sidebands at ±f_vib, ±2·f_vib and ±3·f_vib inside the offset band, where they read as false targets or close-in noise",
+      // A count: none is PASS, any FAIL.
+      thresholds: { good: { max: 0 }, danger: { max: 0 } }
     }
+  ],
+  examples: [
+    { id: "x-band-radar-ocxo", label: "X-band radar OCXO, 1 g at 100 Hz, Doppler 1 to 10 kHz", values: { carrierFreq: 10, vibSensitivity: 1, vibAccel: 1, vibFreq: 100, offsetBandLow: 1e3, offsetBandHigh: 1e4 } },
+    { id: "airborne-x-band", label: "Airborne X-band radar, 2 g at 1.5 kHz", values: { carrierFreq: 10, vibSensitivity: 1, vibAccel: 2, vibFreq: 1500, offsetBandLow: 1e3, offsetBandHigh: 1e4 } },
+    { id: "vehicle-radar-24-ghz", label: "24 GHz vehicle radar, TCXO, 0.5 g at 200 Hz, 0.5 to 70 m/s", values: { carrierFreq: 24.125, vibSensitivity: 5, vibAccel: 0.5, vibFreq: 200, offsetBandLow: 80, offsetBandHigh: 11300 } },
+    { id: "ka-band-seeker", label: "Ka-band seeker, 10 g at 500 Hz, 100 to 1000 m/s closing", values: { carrierFreq: 35, vibSensitivity: 1, vibAccel: 10, vibFreq: 500, offsetBandLow: 23e3, offsetBandHigh: 234e3 } }
   ],
   calculate: calculateVibrationPhaseNoise,
   formula: {
@@ -15307,6 +16091,33 @@ var vibrationPhaseNoise = {
     reference: 'Filler, "The acceleration sensitivity of quartz crystal oscillators: a review", IEEE Trans. UFFC 35(3), 1988; Vig, "Quartz Crystal Resonators and Oscillators"; IEEE 1139'
   },
   liveWidgets: [{ type: "space-weather", position: "below-outputs" }],
+  // C8 Spectrum & frequency plan (waves/W8.md): the vibration sidebands on a
+  // log axis of offsets from the carrier, heights by level, against the
+  // offset band the reader cares about.
+  spectrum: {
+    title: "Vibration sidebands",
+    tableTitle: "Sidebands, nearest the band first",
+    frequencyLabel: "Offset",
+    nameLabel: "n·f_vib",
+    rule: "L_n = n·L_vib − 20·log10(n!) dBc",
+    unit: "Hz",
+    scale: "log",
+    heightBy: "level",
+    rangeInputs: [{ from: "offsetBandLow", to: "offsetBandHigh", label: "Offset band" }],
+    bands: (i) => [{ from: i.offsetBandLow ?? 1e3, to: i.offsetBandHigh ?? 1e4, label: "offset band", kind: "band" }],
+    products: (i, v) => vibrationSidebands(i, v.lvib),
+    views: (i) => {
+      const low = i.offsetBandLow ?? 1e3;
+      const high = i.offsetBandHigh ?? 1e4;
+      return [
+        { id: "all", label: "Sidebands and band", from: Math.min(low, i.vibFreq) / 2, to: Math.max(high, 3 * i.vibFreq) * 2 },
+        { id: "band", label: "Around the band", from: low / 1.5, to: high * 1.5 }
+      ];
+    },
+    hero: "sidebandsInBand",
+    results: ["lvib", "lRandom", "freqDev", "degradation"],
+    counts: { in: "sidebandsInBand" }
+  },
   visualization: { type: "none" },
   relatedCalculators: ["phase-noise-to-jitter", "q-factor", "rf-link-budget"],
   methodology: {
@@ -15725,8 +16536,53 @@ var adcSnr = {
 };
 
 // src/lib/calculators/signal/fft-bin-resolution.ts
+var WINDOWS = {
+  0: { terms: [1], nullBins: 1, bw6Bins: 1.2067 },
+  1: { terms: [0.5, 0.25], nullBins: 2, bw6Bins: 2 },
+  2: { terms: [0.42, 0.25, 0.04], nullBins: 3, bw6Bins: 2.2988 }
+};
+function fftWindow(windowType) {
+  return WINDOWS[Math.round(windowType)] ?? WINDOWS[1];
+}
+function sinc(x) {
+  return x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x);
+}
+function windowLevel(windowType, delta) {
+  const { terms } = fftWindow(windowType);
+  let w = terms[0] * sinc(delta);
+  for (let m = 1; m < terms.length; m++) w += terms[m] * (sinc(delta - m) + sinc(delta + m));
+  return 20 * Math.log10(Math.max(Math.abs(w) / terms[0], 1e-10));
+}
+function fftTones(i) {
+  const fs = i.sampleRate * 1e3;
+  const df = fs / Math.max(i.fftSize, 1);
+  const f0 = i.toneFreq ?? 1e3;
+  const spacing = i.sidebandSpacing ?? 100;
+  const bw6 = fftWindow(i.windowType).bw6Bins * df;
+  const out = [];
+  const inRange = (f) => f >= 0 && f <= fs / 2;
+  if (!inRange(f0)) return out;
+  out.push({ f: f0, order: 0, name: "f₀", zone: "desired", label: "tone" });
+  for (let k = 1; k <= 3; k++) {
+    for (const sign of [-1, 1]) {
+      const f = f0 + sign * k * spacing;
+      if (!inRange(f)) continue;
+      const zone = k * spacing <= bw6 ? "in" : "clear";
+      out.push({ f, order: k, name: `f₀ ${sign < 0 ? "−" : "+"} ${k === 1 ? "" : k}Δ`, zone, note: zone === "in" ? "Merges with the tone" : void 0 });
+    }
+  }
+  return out;
+}
 function calculateFftBinResolution(inputs) {
   const { sampleRate, fftSize, windowType } = inputs;
+  const toneFreq = inputs.toneFreq ?? 1e3;
+  const sidebandSpacing = inputs.sidebandSpacing ?? 100;
+  if (!(toneFreq >= 0)) {
+    return { values: {}, errors: ["The tone frequency cannot be negative"] };
+  }
+  if (!(sidebandSpacing > 0)) {
+    return { values: {}, errors: ["The sideband spacing must be greater than zero"] };
+  }
   const fs_Hz = sampleRate * 1e3;
   const binResolution = fs_Hz / Math.max(fftSize, 1);
   const frequencyRange = sampleRate / 2;
@@ -15735,13 +16591,22 @@ function calculateFftBinResolution(inputs) {
   const type = Math.round(windowType);
   const scalloping = scallopingLossMap[type] ?? 1.42;
   const noiseFloor = -10 * Math.log10(Math.max(fftSize / 2, 1));
+  const onBins = toneFreq <= fs_Hz / 2;
+  const toneBin = onBins ? toneFreq / binResolution : NaN;
+  const toneLevelError = onBins ? 0 - windowLevel(windowType, toneBin - Math.round(toneBin)) : NaN;
+  const resolutionBandwidth = fftWindow(windowType).bw6Bins * binResolution;
+  const sidebandsUnresolved = onBins ? fftTones({ ...inputs, toneFreq, sidebandSpacing }).filter((p) => p.zone === "in").length : NaN;
   return {
     values: {
       binResolution,
       frequencyRange,
       timeRecord,
       noiseFloor,
-      scalloping
+      scalloping,
+      toneBin,
+      toneLevelError,
+      resolutionBandwidth,
+      sidebandsUnresolved
     }
   };
 }
@@ -15812,6 +16677,24 @@ var fftBinResolution = {
         { value: 1, label: "Hann" },
         { value: 2, label: "Blackman" }
       ]
+    },
+    {
+      key: "toneFreq",
+      label: "Tone Frequency",
+      symbol: "f₀",
+      unit: "Hz",
+      defaultValue: 1e3,
+      min: 0,
+      tooltip: "A tone to place on the bins: how far it falls from a bin centre sets how low the FFT reads it"
+    },
+    {
+      key: "sidebandSpacing",
+      label: "Sideband Spacing",
+      symbol: "Δ",
+      unit: "Hz",
+      defaultValue: 100,
+      min: 1e-3,
+      tooltip: "The spacing of the neighbours to separate from the tone, at f₀ ± Δ, ± 2Δ and ± 3Δ: modulation sidebands, motor slip sidebands, mains hum"
     }
   ],
   outputs: [
@@ -15857,7 +16740,53 @@ var fftBinResolution = {
         warning: { min: 1.5, max: 3 },
         danger: { max: 3 }
       }
+    },
+    {
+      key: "toneBin",
+      label: "Tone Position",
+      symbol: "f₀/Δf",
+      unit: "bins",
+      precision: 3,
+      tooltip: "Where the tone falls on the bins: its frequency over the bin width; a whole number is a tone on a bin centre"
+    },
+    {
+      key: "toneLevelError",
+      label: "Tone Reads Low By",
+      symbol: "L_{f₀}",
+      unit: "dB",
+      precision: 2,
+      tooltip: "How far below the tone's true level the nearest bin reads it, from the window's response at the tone's offset from that bin; at half a bin it is the scalloping loss",
+      thresholds: {
+        good: { max: 1.5 },
+        warning: { min: 1.5, max: 3 },
+        danger: { max: 3 }
+      }
+    },
+    {
+      key: "resolutionBandwidth",
+      label: "Resolution Bandwidth (6 dB)",
+      symbol: "B_{6dB}",
+      unit: "Hz",
+      precision: 3,
+      tooltip: "The window's 6 dB bandwidth: two tones of equal strength closer than this show one peak (Harris 1978); a weaker neighbour needs more"
+    },
+    {
+      key: "sidebandsUnresolved",
+      display: { integer: true },
+      label: "Sidebands Not Resolved",
+      symbol: "N_{merged}",
+      unit: "",
+      precision: 0,
+      tooltip: "Of the neighbours at f₀ ± Δ, ± 2Δ and ± 3Δ inside the FFT's range, those within the 6 dB bandwidth of the tone: they merge with it into one peak",
+      // A count: none is PASS, any FAIL.
+      thresholds: { good: { max: 0 }, danger: { max: 0 } }
     }
+  ],
+  examples: [
+    { id: "motor-current-sidebands", label: "Motor current: 50 Hz with ±2 Hz rotor-bar sidebands, 4096 points at 1 kHz", values: { sampleRate: 1, fftSize: 4096, windowType: 1, toneFreq: 50, sidebandSpacing: 2 } },
+    { id: "hum-sidebands", label: "1 kHz tone with 50 Hz hum sidebands, 4096 points at 48 kHz, Blackman", values: { sampleRate: 48, fftSize: 4096, windowType: 2, toneFreq: 1e3, sidebandSpacing: 50 } },
+    { id: "hum-sidebands-short", label: "The same in 512 points: the hum merges with the tone", values: { sampleRate: 48, fftSize: 512, windowType: 2, toneFreq: 1e3, sidebandSpacing: 50 } },
+    { id: "tone-between-bins", label: "A tone half a bin off, rectangular window", values: { sampleRate: 8, fftSize: 256, windowType: 0, toneFreq: 1015.625, sidebandSpacing: 250 } }
   ],
   calculate: calculateFftBinResolution,
   formula: {
@@ -15870,7 +16799,37 @@ var fftBinResolution = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["sampling-nyquist", "snr-calculator", "adc-snr"]
+  relatedCalculators: ["sampling-nyquist", "snr-calculator", "adc-snr"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the tone and its neighbours on
+  // the frequency axis, the zone where a neighbour merges with the tone (one
+  // 6 dB bandwidth each side) shaded, and the bin centre nearest the tone.
+  spectrum: {
+    title: "Frequency plan",
+    tableTitle: "The tone and its sidebands, nearest the band first",
+    frequencyLabel: "Frequency",
+    nameLabel: "f₀ ± kΔ",
+    rule: "resolved when k·Δ > B₆dB = b₆·f_s/N",
+    unit: "Hz",
+    bands: (i, v) => {
+      const f0 = i.toneFreq ?? 1e3;
+      const half = v.resolutionBandwidth;
+      return [{ from: Math.max(0, f0 - half), to: f0 + half, label: "merges with the tone", kind: "band" }];
+    },
+    lines: (i, v) => [{ f: Math.round(v.toneBin) * v.binResolution, label: "nearest bin" }],
+    products: (i) => fftTones(i),
+    views: (i, v) => {
+      const f0 = i.toneFreq ?? 1e3;
+      const spacing = i.sidebandSpacing ?? 100;
+      const half = Math.max(3.5 * spacing, (fftWindow(i.windowType).nullBins + 2) * v.binResolution);
+      return [
+        { id: "tone", label: "Around the tone", from: Math.max(0, f0 - half), to: f0 + half },
+        { id: "wide", label: "Up to f_s/2", from: 0, to: i.sampleRate * 1e3 / 2 }
+      ];
+    },
+    hero: "sidebandsUnresolved",
+    results: ["binResolution", "resolutionBandwidth", "toneLevelError", "scalloping"],
+    counts: { in: "sidebandsUnresolved" }
+  }
 };
 
 // src/lib/calculators/signal/johnson-noise.ts
@@ -16006,8 +16965,27 @@ var johnsonNoise = {
 };
 
 // src/lib/calculators/signal/am-modulation-index.ts
+function amLines(i) {
+  const m = i.messageAmplitude / Math.max(i.carrierAmplitude, 1e-9);
+  const fc = i.carrierFreq;
+  const fm = i.messageFreq;
+  const half = (i.channelWidth ?? 10) / 2;
+  const sideband = 20 * Math.log10(Math.max(m / 2, 1e-10));
+  const top = Math.max(0, sideband);
+  const out = [{ f: fc, order: 0, name: "f_c", zone: "desired", label: "carrier", level: 0 - top }];
+  for (const [f, name] of [[Math.abs(fc - fm), "f_c − f_m"], [fc + fm, "f_c + f_m"]]) {
+    const inside = Math.abs(f - fc) <= half;
+    const zone = !(m > 0) ? "clear" : inside ? "in" : "near";
+    out.push({ f, order: 1, name, zone, note: zone === "near" ? "Outside the channel" : void 0, level: sideband - top });
+  }
+  return out;
+}
 function calculateAmModulationIndex(inputs) {
   const { carrierAmplitude, messageAmplitude, carrierFreq, messageFreq } = inputs;
+  const channelWidth = inputs.channelWidth ?? 10;
+  if (!(channelWidth > 0)) {
+    return { values: {}, errors: ["The channel width must be greater than zero"] };
+  }
   const Ac = Math.max(carrierAmplitude, 1e-9);
   const Am = messageAmplitude;
   const modulationIndex = Am / Ac * 100;
@@ -16017,6 +16995,11 @@ function calculateAmModulationIndex(inputs) {
   const m = Am / Ac;
   const powerEfficiency = m * m / (2 + m * m) * 100;
   const sidebandsToCarrier = 20 * Math.log10(Math.max(m / 2, 1e-10));
+  const lines = amLines({ ...inputs, channelWidth });
+  const sidebandsInChannel = lines.filter((p) => p.zone === "in").length;
+  const sidebandsOutside = lines.filter((p) => p.zone === "near").length;
+  const s = m > 0 ? m * m / 4 : 0;
+  const powerInChannel = 100 * (1 + s * sidebandsInChannel) / (1 + 2 * s);
   return {
     values: {
       modulationIndex,
@@ -16024,7 +17007,10 @@ function calculateAmModulationIndex(inputs) {
       lowerSideband,
       bandwidth: bw,
       powerEfficiency,
-      sidebandsToCarrier
+      sidebandsToCarrier,
+      powerInChannel,
+      sidebandsInChannel,
+      sidebandsOutside
     }
   };
 }
@@ -16081,6 +17067,15 @@ var amModulationIndex = {
       defaultValue: 1,
       min: 1e-3,
       tooltip: "Modulating signal (audio) frequency"
+    },
+    {
+      key: "channelWidth",
+      label: "Channel Width",
+      symbol: "B_{ch}",
+      unit: "kHz",
+      defaultValue: 10,
+      min: 1e-3,
+      tooltip: "The channel the emission must fit, centred on the carrier: 10 kHz on the 47 CFR 73.14 raster (540 to 1700 kHz in 10 kHz steps), 9 kHz where the GE75 plan puts carriers on multiples of 9 kHz"
     }
   ],
   outputs: [
@@ -16132,7 +17127,43 @@ var amModulationIndex = {
       symbol: "S/C",
       unit: "dB",
       precision: 2
+    },
+    {
+      key: "powerInChannel",
+      label: "Power in the Channel",
+      symbol: "P_{ch}/P",
+      unit: "%",
+      precision: 2,
+      tooltip: "The share of the emission's power inside the channel. The occupied bandwidth leaves 0.5 % on each side (ITU Radio Regulations No. 1.153), so below 99 % it does not fit the channel",
+      // Below 99 % the occupied bandwidth is wider than the channel.
+      thresholds: { good: { min: 99 }, danger: { min: 99 } }
+    },
+    {
+      key: "sidebandsInChannel",
+      display: { integer: true },
+      label: "Sidebands in the Channel",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      tooltip: "Sidebands inside the channel, where they belong"
+    },
+    {
+      key: "sidebandsOutside",
+      display: { integer: true },
+      label: "Sidebands Outside the Channel",
+      symbol: "N_{out}",
+      unit: "",
+      precision: 0,
+      tooltip: "Sidebands outside the channel, in the adjacent one: the message is wider than half the channel",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
     }
+  ],
+  examples: [
+    { id: "mw-region-2", label: "MW broadcast, 1 MHz, 5 kHz audio in a 10 kHz channel", values: { carrierAmplitude: 1, messageAmplitude: 0.9, carrierFreq: 1e3, messageFreq: 5, channelWidth: 10 } },
+    { id: "mw-9-khz", label: "MW broadcast, 999 kHz, 4.5 kHz audio in a 9 kHz channel", values: { carrierAmplitude: 1, messageAmplitude: 0.8, carrierFreq: 999, messageFreq: 4.5, channelWidth: 9 } },
+    { id: "mw-too-wide", label: "10 kHz audio in a 9 kHz channel: the sidebands spill over", values: { carrierAmplitude: 1, messageAmplitude: 0.8, carrierFreq: 999, messageFreq: 10, channelWidth: 9 } },
+    { id: "airband-8-33", label: "VHF airband, 118.000 MHz, 2.5 kHz speech in an 8.33 kHz channel", values: { carrierAmplitude: 1, messageAmplitude: 0.85, carrierFreq: 118e3, messageFreq: 2.5, channelWidth: 8.33 } }
   ],
   calculate: calculateAmModulationIndex,
   formula: {
@@ -16146,25 +17177,145 @@ var amModulationIndex = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["fm-modulation-index", "snr-calculator", "db-converter"]
+  relatedCalculators: ["fm-modulation-index", "snr-calculator", "db-converter"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the carrier and its sidebands
+  // by level, the channel shaded and the adjacent channels beside it.
+  spectrum: {
+    title: "Spectrum",
+    tableTitle: "Carrier and sidebands, nearest the channel first",
+    frequencyLabel: "Frequency",
+    nameLabel: "f_c ± f_m",
+    rule: "f = f_c ± f_m, sidebands at m/2 of the carrier",
+    unit: "kHz",
+    heightBy: "level",
+    bands: (i) => {
+      const fc = i.carrierFreq;
+      const w = i.channelWidth ?? 10;
+      const at = (f) => Math.max(0, f);
+      return [
+        { from: at(fc - 1.5 * w), to: at(fc - w / 2), label: "adjacent channel", kind: "near" },
+        { from: at(fc + w / 2), to: at(fc + 1.5 * w), label: "adjacent channel", kind: "near" },
+        { from: at(fc - w / 2), to: at(fc + w / 2), label: "channel", kind: "band" }
+      ];
+    },
+    products: (i) => amLines(i),
+    views: (i) => {
+      const w = i.channelWidth ?? 10;
+      const half = Math.max(1.6 * w, 1.3 * i.messageFreq);
+      return [{ id: "channel", label: "Around the channel", from: Math.max(0, i.carrierFreq - half), to: i.carrierFreq + half }];
+    },
+    hero: "powerInChannel",
+    results: ["sidebandsOutside", "bandwidth", "modulationIndex", "sidebandsToCarrier"],
+    counts: { in: "sidebandsInChannel", near: "sidebandsOutside" },
+    zoneStatus: { in: "pass", near: "check" }
+  }
 };
 
 // src/lib/calculators/signal/fm-modulation-index.ts
+function besselJ(x, n) {
+  const out = new Array(n + 1).fill(0);
+  if (x < 1e-6) {
+    let t = 1;
+    for (let k = 0; k <= n; k++) {
+      out[k] = k === 0 ? 1 - x * x / 4 : t *= x / 2 / k;
+    }
+    return out;
+  }
+  const top = Math.max(n, Math.ceil(x));
+  const start = 2 * Math.floor((top + 20 + Math.floor(Math.sqrt(40 * top))) / 2);
+  const j = new Array(start + 2).fill(0);
+  j[start] = 1e-30;
+  for (let k = start; k >= 1; k--) {
+    j[k - 1] = 2 * k / x * j[k] - j[k + 1];
+    if (Math.abs(j[k - 1]) > 1e250) for (let t = k - 1; t <= start; t++) j[t] *= 1e-250;
+  }
+  let sum = j[0];
+  for (let k = 2; k <= start; k += 2) sum += 2 * j[k];
+  for (let k = 0; k <= n; k++) out[k] = j[k] / sum;
+  return out;
+}
+var SIGNIFICANT = 0.01;
+var BETA_MAX = 1e3;
+function fmSpectrum(frequencyDeviation, messageFreq) {
+  const fm = Math.max(messageFreq, 1e-9);
+  const beta = Math.max(frequencyDeviation, 1e-9) / fm;
+  if (!(beta <= BETA_MAX)) return null;
+  const cb = Math.ceil(beta);
+  const reach = cb + 20 + Math.floor(Math.sqrt(40 * cb));
+  const J = besselJ(beta, reach + 2);
+  let nSig = 0;
+  for (let n = 1; n <= reach; n++) if (Math.abs(J[n]) > SIGNIFICANT) nSig = n;
+  let n99 = 0;
+  let held = J[0] * J[0];
+  while (held < 0.99 && n99 < reach) {
+    n99++;
+    held += 2 * J[n99] * J[n99];
+  }
+  return { fm, beta, J, reach, nSig, n99 };
+}
+function fmLines(i) {
+  const lo = i.channelLow ?? 98e3;
+  const hi = i.channelHigh ?? 98200;
+  const c2 = (lo + hi) / 2;
+  const spectrum = fmSpectrum(i.frequencyDeviation, i.messageFreq);
+  if (!spectrum) return [];
+  const { fm, J, nSig } = spectrum;
+  const last = nSig + 2;
+  let strongest = 0;
+  for (let n = 0; n <= last; n++) strongest = Math.max(strongest, Math.abs(J[n]));
+  const level = (n) => 20 * Math.log10(Math.max(Math.abs(J[n]), 1e-10) / strongest);
+  const out = [{ f: c2, order: 0, name: "f_c", zone: "desired", label: "carrier", level: level(0) }];
+  for (let n = 1; n <= last; n++) {
+    for (const sign of [-1, 1]) {
+      const f = c2 + sign * n * fm;
+      if (!(f >= 0)) continue;
+      const inside = f >= lo && f <= hi;
+      const zone = !(Math.abs(J[n]) > SIGNIFICANT) ? "clear" : inside ? "in" : "near";
+      out.push({ f, order: n, name: `f_c ${sign < 0 ? "−" : "+"} ${n === 1 ? "" : n}f_m`, zone, note: zone === "near" ? "Outside the channel" : void 0, level: level(n) });
+    }
+  }
+  return out;
+}
 function calculateFmModulationIndex(inputs) {
   const { frequencyDeviation, messageFreq } = inputs;
+  const channelLow = inputs.channelLow ?? 98e3;
+  const channelHigh = inputs.channelHigh ?? 98200;
+  if (!(channelHigh > channelLow)) {
+    return { values: {}, errors: ["The channel must end above where it starts"] };
+  }
   const deltaF = Math.max(frequencyDeviation, 1e-9);
   const fm = Math.max(messageFreq, 1e-9);
   const modulationIndex = deltaF / fm;
   const carsonBandwidth = 2 * (deltaF + fm);
-  const besselBandwidth = 2 * (modulationIndex + 1) * fm;
+  const spectrum = fmSpectrum(frequencyDeviation, messageFreq);
+  const besselBandwidth = spectrum ? 2 * spectrum.nSig * fm : NaN;
+  const occupiedBandwidth = spectrum ? 2 * spectrum.n99 * fm : NaN;
   const snrImprovement = 10 * Math.log10(Math.max(3 * modulationIndex * modulationIndex * (modulationIndex + 1), 1e-10));
+  const c2 = (channelLow + channelHigh) / 2;
+  let held = 0;
+  if (spectrum) {
+    for (let n = -spectrum.reach; n <= spectrum.reach; n++) {
+      const f = c2 + n * fm;
+      if (f >= channelLow && f <= channelHigh) held += spectrum.J[Math.abs(n)] * spectrum.J[Math.abs(n)];
+    }
+  }
+  const powerInChannel = spectrum ? 100 * held : NaN;
+  const lines = fmLines({ ...inputs, channelLow, channelHigh });
+  const sidebandsInChannel = spectrum ? lines.filter((p) => p.zone === "in").length : NaN;
+  const sidebandsOutside = spectrum ? lines.filter((p) => p.zone === "near").length : NaN;
+  const warnings = spectrum ? void 0 : [`Above β = ${BETA_MAX} the Bessel spectrum is not computed; Carson's rule gives the bandwidth`];
   return {
     values: {
       modulationIndex,
       carsonBandwidth,
       besselBandwidth,
-      snrImprovement
-    }
+      snrImprovement,
+      occupiedBandwidth,
+      powerInChannel,
+      sidebandsInChannel,
+      sidebandsOutside
+    },
+    warnings
   };
 }
 var fmModulationIndex = {
@@ -16206,6 +17357,26 @@ var fmModulationIndex = {
       defaultValue: 15,
       min: 1e-3,
       tooltip: "Highest modulating signal frequency"
+    },
+    {
+      key: "channelLow",
+      label: "Channel Start",
+      symbol: "f_{ch,lo}",
+      unit: "kHz",
+      fieldUnit: "MHz",
+      defaultValue: 98e3,
+      min: 0,
+      tooltip: "Where the channel the emission must fit begins; the carrier sits at its centre. FM broadcast channels are 200 kHz wide, 88.1 to 107.9 MHz (47 CFR 73.201)"
+    },
+    {
+      key: "channelHigh",
+      label: "Channel Stop",
+      symbol: "f_{ch,hi}",
+      unit: "kHz",
+      fieldUnit: "MHz",
+      defaultValue: 98200,
+      min: 0,
+      tooltip: "Where the channel ends"
     }
   ],
   // β and Carson's bandwidth do not depend on the carrier, so it changed no
@@ -16232,7 +17403,8 @@ var fmModulationIndex = {
       label: "Bessel Bandwidth",
       symbol: "BW_Bessel",
       unit: "kHz",
-      precision: 2
+      precision: 2,
+      tooltip: "The span of the sidebands above 1 % of the unmodulated carrier, 2·n·f_m with n the highest such order (Haykin, Communication Systems)"
     },
     {
       key: "snrImprovement",
@@ -16242,7 +17414,51 @@ var fmModulationIndex = {
       unit: "dB",
       precision: 2,
       tooltip: "FM SNR improvement over AM: 10·log₁₀(3β²(β+1))"
+    },
+    {
+      key: "occupiedBandwidth",
+      label: "Occupied Bandwidth (99 %)",
+      symbol: "B_{99}",
+      unit: "kHz",
+      precision: 2,
+      tooltip: "The narrowest span of sidebands, the same on each side, holding 99 % of the power, 0.5 % left on each side (ITU Radio Regulations No. 1.153)"
+    },
+    {
+      key: "powerInChannel",
+      label: "Power in the Channel",
+      symbol: "P_{ch}/P",
+      unit: "%",
+      precision: 2,
+      tooltip: "The share of the emission's power inside the channel. The occupied bandwidth leaves 0.5 % on each side (ITU Radio Regulations No. 1.153), so below 99 % it does not fit the channel",
+      // Below 99 % the occupied bandwidth is wider than the channel.
+      thresholds: { good: { min: 99 }, danger: { min: 99 } }
+    },
+    {
+      key: "sidebandsInChannel",
+      display: { integer: true },
+      label: "Significant Sidebands in the Channel",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      tooltip: "Sidebands above 1 % of the unmodulated carrier inside the channel"
+    },
+    {
+      key: "sidebandsOutside",
+      display: { integer: true },
+      label: "Significant Sidebands Outside the Channel",
+      symbol: "N_{out}",
+      unit: "",
+      precision: 0,
+      tooltip: "Sidebands above 1 % of the unmodulated carrier outside the channel: check them against the emission mask that applies",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
     }
+  ],
+  examples: [
+    { id: "wfm-broadcast", label: "FM broadcast, 88.1 MHz: 75 kHz deviation, 15 kHz audio", values: { frequencyDeviation: 75, messageFreq: 15, channelLow: 88e3, channelHigh: 88200 } },
+    { id: "wfm-overdeviated", label: "FM broadcast over-deviated to 100 kHz", values: { frequencyDeviation: 100, messageFreq: 15, channelLow: 98e3, channelHigh: 98200 } },
+    { id: "marine-vhf", label: "Marine VHF channel 16: 5 kHz deviation, 3 kHz audio, 25 kHz channel", values: { frequencyDeviation: 5, messageFreq: 3, channelLow: 156787.5, channelHigh: 156812.5 } },
+    { id: "pmr446", label: "PMR446 channel 1: 2.5 kHz deviation, 2.5 kHz audio, 12.5 kHz channel", values: { frequencyDeviation: 2.5, messageFreq: 2.5, channelLow: 446e3, channelHigh: 446012.5 } }
   ],
   calculate: calculateFmModulationIndex,
   formula: {
@@ -16256,12 +17472,87 @@ var fmModulationIndex = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["am-modulation-index", "snr-calculator", "sampling-nyquist"],
-  relatedBlogPosts: ["am-modulation-index"]
+  relatedBlogPosts: ["am-modulation-index"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the carrier and the Bessel
+  // sidebands by level, the channel shaded and the adjacent channels beside it.
+  spectrum: {
+    title: "Spectrum",
+    tableTitle: "Carrier and sidebands, nearest the channel first",
+    frequencyLabel: "Frequency",
+    nameLabel: "f_c ± n·f_m",
+    rule: "J_n(β) at f_c ± n·f_m; significant above 1 % of the carrier",
+    unit: "kHz",
+    heightBy: "level",
+    rangeInputs: [{ from: "channelLow", to: "channelHigh", label: "Channel" }],
+    bands: (i) => {
+      const lo = i.channelLow ?? 98e3;
+      const hi = i.channelHigh ?? 98200;
+      const w = hi - lo;
+      return [
+        { from: Math.max(0, lo - w), to: Math.max(0, lo), label: "adjacent channel", kind: "near" },
+        { from: hi, to: hi + w, label: "adjacent channel", kind: "near" },
+        { from: lo, to: hi, label: "channel", kind: "band" }
+      ];
+    },
+    products: (i) => fmLines(i),
+    views: (i) => {
+      const lo = i.channelLow ?? 98e3;
+      const hi = i.channelHigh ?? 98200;
+      const c2 = (lo + hi) / 2;
+      const near = 1.6 * (hi - lo);
+      const spectrum = fmSpectrum(i.frequencyDeviation, i.messageFreq);
+      const all = spectrum ? (spectrum.nSig + 3) * spectrum.fm : 0;
+      const views = [{ id: "channel", label: "Around the channel", from: Math.max(0, c2 - near), to: c2 + near }];
+      if (all > near) views.push({ id: "all", label: "Every sideband", from: Math.max(0, c2 - all), to: c2 + all });
+      return views;
+    },
+    hero: "powerInChannel",
+    results: ["sidebandsOutside", "occupiedBandwidth", "besselBandwidth", "carsonBandwidth"],
+    counts: { in: "sidebandsInChannel", near: "sidebandsOutside" },
+    zoneStatus: { in: "pass", near: "check" }
+  }
 };
 
 // src/lib/calculators/signal/oversampling-snr.ts
+var GL_X = [0.9602898564975363, 0.7966664774136267, 0.525532409916329, 0.1834346424956498];
+var GL_W = [0.1012285362903763, 0.2223810344533745, 0.3137066458778873, 0.362683783378362];
+function shapedNoise(f1, f2, fs, order) {
+  const mid = (f1 + f2) / 2;
+  const half = (f2 - f1) / 2;
+  let sum = 0;
+  for (let k = 0; k < GL_X.length; k++) {
+    for (const s of [-1, 1]) {
+      const f = mid + s * half * GL_X[k];
+      sum += GL_W[k] * Math.pow(2 * Math.sin(Math.PI * f / fs), 2 * order);
+    }
+  }
+  return sum * half;
+}
+function foldBands(i) {
+  const osr = Math.max(i.oversamplingRatio, 1);
+  const order = Math.max(0, Math.round(i.noiseShapingOrder));
+  const fB = i.signalBandwidth ?? 24e3;
+  const fs = 2 * osr * fB;
+  const count = Math.floor(osr / 2);
+  const ks = count <= 1024 ? Array.from({ length: count }, (_, j) => j + 1) : Array.from({ length: 1024 }, (_, j) => 1 + Math.floor(j * (count - 1) / 1023 + 0.5));
+  const noise = ks.map((k) => shapedNoise(2 * k * fB - fB, Math.min(2 * k * fB + fB, fs / 2), fs, order));
+  const most = Math.max(...noise, 0);
+  const noisiest = order > 0 ? noise.indexOf(most) : -1;
+  return noise.map((p, n) => ({
+    f: 2 * ks[n] * fB,
+    order: ks[n],
+    name: `${ks[n]}·f_out`,
+    zone: "in",
+    level: 10 * Math.log10(Math.max(p / most, 1e-30)),
+    note: n === 0 ? "Next to the band" : n === noisiest ? "Most noise" : void 0
+  }));
+}
 function calculateOversamplingSnr(inputs) {
   const { bits, oversamplingRatio, noiseShapingOrder } = inputs;
+  const signalBandwidth = inputs.signalBandwidth ?? 24e3;
+  if (!(signalBandwidth > 0)) {
+    return { values: {}, errors: ["The signal bandwidth must be greater than zero"] };
+  }
   const OSR = Math.max(oversamplingRatio, 1);
   const L = Math.round(noiseShapingOrder);
   const baseSnr = 20 * Math.log10(2) * bits + 10 * Math.log10(1.5);
@@ -16274,12 +17565,21 @@ function calculateOversamplingSnr(inputs) {
   }
   const snrImprovement = oversampledSnr - baseSnr;
   const effectiveBits = (oversampledSnr - 10 * Math.log10(1.5)) / (20 * Math.log10(2));
+  const modulatorRate = 2 * OSR * signalBandwidth;
+  const order = Math.max(0, L);
+  const inBand = shapedNoise(0, signalBandwidth, modulatorRate, order);
+  const outOfBand = shapedNoise(signalBandwidth, modulatorRate / 2, modulatorRate, order);
+  const outOfBandNoise = !(outOfBand > 0) ? -Infinity : !(inBand > 0) ? Infinity : 10 * Math.log10(outOfBand / inBand);
+  const bands = Math.floor(OSR / 2);
   return {
     values: {
       baseSnr,
       oversampledSnr,
       effectiveBits,
-      snrImprovement
+      snrImprovement,
+      modulatorRate,
+      outOfBandNoise,
+      foldBands: bands
     }
   };
 }
@@ -16344,6 +17644,15 @@ var oversamplingSnr = {
         { label: "2nd order", values: { noiseShapingOrder: 2 } },
         { label: "3rd order", values: { noiseShapingOrder: 3 } }
       ]
+    },
+    {
+      key: "signalBandwidth",
+      label: "Signal Bandwidth",
+      symbol: "f_B",
+      unit: "Hz",
+      defaultValue: 24e3,
+      min: 1e-3,
+      tooltip: "The band the converter delivers, half its output rate: 24 kHz for 48 kHz audio. The modulator runs at 2·OSR·f_B"
     }
   ],
   outputs: [
@@ -16376,11 +17685,44 @@ var oversamplingSnr = {
       symbol: "ΔSNR",
       unit: "dB",
       precision: 2
+    },
+    {
+      key: "modulatorRate",
+      label: "Modulator Rate",
+      symbol: "f_s",
+      unit: "Hz",
+      precision: 3,
+      format: "engineering",
+      tooltip: "The rate the modulator samples at, 2·OSR·f_B"
+    },
+    {
+      key: "outOfBandNoise",
+      label: "Noise Outside the Band",
+      symbol: "N_{out}/N_{in}",
+      unit: "dB",
+      precision: 2,
+      signed: "explicit",
+      tooltip: "The shaped quantization noise between f_B and f_s/2 against the noise left inside the band: what the decimation filter must remove before it can fold back"
+    },
+    {
+      key: "foldBands",
+      display: { integer: true },
+      label: "Bands Folded Onto the Signal Band",
+      symbol: "N_{fold}",
+      unit: "",
+      precision: 0,
+      tooltip: "Decimating to f_s/OSR folds every band 2·f_B wide around a multiple of the output rate onto the signal band, OSR/2 of them: the decimation filter must reject each (the plan draws at most 1024)"
     }
+  ],
+  examples: [
+    { id: "audio-48k-64x", label: "Audio ADC: 48 kHz out, 64× oversampling, 2nd order", values: { bits: 1, oversamplingRatio: 64, noiseShapingOrder: 2, signalBandwidth: 24e3 } },
+    { id: "audio-dac-128x", label: "Audio DAC: 48 kHz out, 128× oversampling, 3rd order", values: { bits: 1, oversamplingRatio: 128, noiseShapingOrder: 3, signalBandwidth: 24e3 } },
+    { id: "sensor-256x", label: "Bridge sensor: 10 Hz band, 256× oversampling, 2nd order", values: { bits: 1, oversamplingRatio: 256, noiseShapingOrder: 2, signalBandwidth: 10 } },
+    { id: "plain-oversampling", label: "12-bit SAR averaging 16 samples, no shaping", values: { bits: 12, oversamplingRatio: 16, noiseShapingOrder: 0, signalBandwidth: 1e3 } }
   ],
   calculate: calculateOversamplingSnr,
   formula: {
-    primary: "SNR_os = SNR_base + 10·log₁₀(π²ᴸ/(2L+1)) + (2L+1)·10·log₁₀(OSR)",
+    primary: "SNR_os = SNR_base − 10·log₁₀(π²ᴸ/(2L+1)) + (2L+1)·10·log₁₀(OSR)",
     variables: [
       { symbol: "N", description: "ADC resolution", unit: "bits" },
       { symbol: "OSR", description: "Oversampling ratio", unit: "" },
@@ -16391,12 +17733,79 @@ var oversamplingSnr = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["adc-snr", "sampling-nyquist", "snr-calculator"],
-  relatedBlogPosts: ["audio-adc-snr", "quantization-noise"]
+  relatedBlogPosts: ["audio-adc-snr", "quantization-noise"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the Nyquist band of the
+  // modulator, the signal band shaded, and the bands the decimator folds onto
+  // it, each by its shaped noise. The pattern fits loosely: nothing lands in
+  // the signal band until the decimator folds it there.
+  spectrum: {
+    title: "Noise and decimation plan",
+    tableTitle: "Bands the decimator folds onto the signal band, nearest the band first",
+    frequencyLabel: "Centre",
+    nameLabel: "k·f_out",
+    rule: "k·f_out ± f_B fold onto 0 … f_B, f_out = f_s/OSR",
+    unit: "Hz",
+    heightBy: "level",
+    bands: (i) => [{ from: 0, to: i.signalBandwidth ?? 24e3, label: "signal band", kind: "band" }],
+    lines: (i, v) => [{ f: v.modulatorRate / 2, label: "f_s/2" }],
+    products: (i) => foldBands(i),
+    views: (i, v) => {
+      const fB = i.signalBandwidth ?? 24e3;
+      const views = [{ id: "nyquist", label: "Up to f_s/2", from: 0, to: v.modulatorRate / 2 }];
+      if (10 * fB < v.modulatorRate / 2) views.push({ id: "band", label: "Around the band", from: 0, to: 10 * fB });
+      return views;
+    },
+    hero: "oversampledSnr",
+    results: ["effectiveBits", "modulatorRate", "outOfBandNoise", "foldBands"],
+    // No counts: the plan thins its bands beyond 1024, while foldBands counts them all.
+    zoneStatus: { in: "check" }
+  }
 };
 
 // src/lib/calculators/signal/digital-filter-order.ts
+function filterHarmonics(i) {
+  const fp = Math.max(i.passbandFreq, 1);
+  const fs = Math.max(i.stopbandFreq, 1);
+  const f0 = i.toneFreq ?? 1e3;
+  const order = i.maxHarmonic ?? 5;
+  const out = [];
+  for (let n = 1; n <= order; n++) {
+    const f = n * f0;
+    if (n === 1) {
+      out.push({ f, order: 1, name: "f₀", zone: "desired", note: f > fp ? "The tone itself is above the passband" : void 0 });
+      continue;
+    }
+    const zone = f <= fp ? "in" : f < fs ? "near" : "clear";
+    out.push({ f, order: n, name: `${n}·f₀`, zone, note: zone === "in" ? "Passed with the tone" : zone === "near" ? "In the transition band" : void 0 });
+  }
+  return out;
+}
+function attenuation(eps2, log10g) {
+  return 2 * log10g > 300 ? 10 * Math.log10(eps2) + 20 * log10g : 10 * Math.log10(1 + eps2 * Math.pow(10, 2 * log10g));
+}
+function log10Cosh(t) {
+  return t > 20 ? (t - Math.LN2) / Math.LN10 : Math.log10(Math.cosh(t));
+}
+function ellipticK2(k) {
+  let a = 1;
+  let b = Math.sqrt(1 - k * k);
+  for (let i = 0; i < 64 && Math.abs(a - b) > 1e-15 * a; i++) {
+    const m = (a + b) / 2;
+    b = Math.sqrt(a * b);
+    a = m;
+  }
+  return Math.PI / (2 * a);
+}
 function calculateDigitalFilterOrder(inputs) {
   const { passbandFreq, stopbandFreq, passbandRipple, stopbandAttenuation } = inputs;
+  const toneFreq = inputs.toneFreq ?? 1e3;
+  const maxHarmonic = inputs.maxHarmonic ?? 5;
+  if (!(toneFreq > 0)) {
+    return { values: {}, errors: ["The tone frequency must be greater than zero"] };
+  }
+  if (!(maxHarmonic >= 1 && maxHarmonic <= 50)) {
+    return { values: {}, errors: ["The harmonic order must be between 1 and 50"] };
+  }
   const Ap = passbandRipple;
   const As = stopbandAttenuation;
   const Omega_p = Math.max(passbandFreq, 1);
@@ -16412,13 +17821,29 @@ function calculateDigitalFilterOrder(inputs) {
   const chebyshevOrder = Math.ceil(
     acosh(Math.sqrt(Math.max(ratio, 1))) / acosh(Math.max(transitionRatio, 1.0001))
   );
-  const ellipticOrder = Math.max(1, Math.ceil(chebyshevOrder / 1.5));
+  const kSel = 1 / Math.max(transitionRatio, 1.0001);
+  const kDis = 1 / Math.sqrt(Math.max(ratio, 1));
+  const ellipticOrder = Math.max(1, Math.ceil(ellipticK2(kSel) * ellipticK2(Math.sqrt(1 - kDis * kDis)) / (ellipticK2(Math.sqrt(1 - kSel * kSel)) * ellipticK2(kDis))));
+  const harmonics = filterHarmonics({ ...inputs, toneFreq, maxHarmonic });
+  const harmonicsInPassband = harmonics.filter((p) => p.zone === "in").length;
+  const harmonicsInTransition = harmonics.filter((p) => p.zone === "near").length;
+  const above = harmonics.find((p) => p.zone !== "desired" && p.f > Omega_p);
+  const nearestHarmonic = above ? above.f : NaN;
+  const nBw = Math.max(1, butterworthOrder);
+  const nCh = Math.max(1, chebyshevOrder);
+  const butterworthAttenuation = above ? attenuation(eps2_p, nBw * Math.log10(above.f / Omega_p)) : NaN;
+  const chebyshevAttenuation = above ? attenuation(eps2_p, log10Cosh(nCh * acosh(above.f / Omega_p))) : NaN;
   return {
     values: {
-      butterworthOrder: Math.max(1, butterworthOrder),
-      chebyshevOrder: Math.max(1, chebyshevOrder),
+      butterworthOrder: nBw,
+      chebyshevOrder: nCh,
       ellipticOrder: Math.max(1, ellipticOrder),
-      transitionRatio
+      transitionRatio,
+      harmonicsInPassband,
+      harmonicsInTransition,
+      nearestHarmonic,
+      butterworthAttenuation,
+      chebyshevAttenuation
     }
   };
 }
@@ -16475,6 +17900,26 @@ var digitalFilterOrder = {
       defaultValue: 40,
       min: 1,
       tooltip: "Minimum attenuation required in the stopband"
+    },
+    {
+      key: "toneFreq",
+      label: "Tone Frequency",
+      symbol: "f₀",
+      unit: "Hz",
+      defaultValue: 1e3,
+      min: 1e-3,
+      tooltip: "A tone the filter must pass while it rejects the tone's harmonics: a transmitter's carrier, the mains fundamental, a test tone"
+    },
+    {
+      key: "maxHarmonic",
+      label: "Highest Harmonic",
+      symbol: "n_{max}",
+      unit: "",
+      defaultValue: 5,
+      min: 1,
+      max: 50,
+      step: 1,
+      tooltip: "The highest harmonic of the tone the frequency plan follows"
     }
   ],
   outputs: [
@@ -16498,7 +17943,7 @@ var digitalFilterOrder = {
     {
       key: "ellipticOrder",
       display: { integer: true },
-      label: "Elliptic Order (approx)",
+      label: "Elliptic Order",
       symbol: "n_EL",
       unit: "",
       precision: 0
@@ -16509,7 +17954,60 @@ var digitalFilterOrder = {
       symbol: "Ωs/Ωp",
       unit: "",
       precision: 3
+    },
+    {
+      key: "harmonicsInPassband",
+      display: { integer: true },
+      label: "Harmonics in the Passband",
+      symbol: "N_{pass}",
+      unit: "",
+      precision: 0,
+      tooltip: "Harmonics of the tone, up to the highest, at or below the passband edge: the filter passes them with the tone",
+      // A count: none is PASS, any FAIL.
+      thresholds: { good: { max: 0 }, danger: { max: 0 } }
+    },
+    {
+      key: "harmonicsInTransition",
+      display: { integer: true },
+      label: "Harmonics in the Transition Band",
+      symbol: "N_{trans}",
+      unit: "",
+      precision: 0,
+      tooltip: "Harmonics between the passband and stopband edges: attenuated, but by less than the stopband attenuation is guaranteed",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
+    },
+    {
+      key: "nearestHarmonic",
+      label: "Lowest Harmonic Above the Passband",
+      symbol: "f_h",
+      unit: "Hz",
+      precision: 3,
+      format: "engineering",
+      tooltip: "The lowest harmonic of the tone above the passband edge, up to the highest harmonic; none if every one is in the passband"
+    },
+    {
+      key: "butterworthAttenuation",
+      label: "Butterworth Attenuation at f_h",
+      symbol: "A_{BW}(f_h)",
+      unit: "dB",
+      precision: 2,
+      tooltip: "What the Butterworth of the order above does to that harmonic: 10·log10(1 + ε_p²·(f/f_p)^2n)"
+    },
+    {
+      key: "chebyshevAttenuation",
+      label: "Chebyshev Attenuation at f_h",
+      symbol: "A_{CH}(f_h)",
+      unit: "dB",
+      precision: 2,
+      tooltip: "What the Chebyshev of the order above does to that harmonic: 10·log10(1 + ε_p²·cosh²(n·acosh(f/f_p)))"
     }
+  ],
+  examples: [
+    { id: "grid-50-hz", label: "Grid monitoring: keep 50 Hz, reject its harmonics from 100 Hz", values: { passbandFreq: 55, stopbandFreq: 100, passbandRipple: 0.5, stopbandAttenuation: 40, toneFreq: 50, maxHarmonic: 7 } },
+    { id: "grid-60-hz-late-stopband", label: "60 Hz with the stopband at 130 Hz: the 2nd harmonic falls in the transition band", values: { passbandFreq: 65, stopbandFreq: 130, passbandRipple: 0.5, stopbandAttenuation: 40, toneFreq: 60, maxHarmonic: 7 } },
+    { id: "hf-harmonic-filter", label: "7.1 MHz transmitter harmonic filter, 50 dB from the 2nd harmonic", values: { passbandFreq: 73e5, stopbandFreq: 142e5, passbandRipple: 0.1, stopbandAttenuation: 50, toneFreq: 71e5, maxHarmonic: 5 } },
+    { id: "hf-filter-wrong-band", label: "An 80 m harmonic filter used at 1.85 MHz: the 2nd harmonic passes", values: { passbandFreq: 4e6, stopbandFreq: 7e6, passbandRipple: 0.1, stopbandAttenuation: 50, toneFreq: 185e4, maxHarmonic: 5 } }
   ],
   calculate: calculateDigitalFilterOrder,
   formula: {
@@ -16524,7 +18022,38 @@ var digitalFilterOrder = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["filter-designer", "sampling-nyquist", "fft-bin-resolution"],
-  relatedBlogPosts: ["rf-filter-tolerance-analysis"]
+  relatedBlogPosts: ["rf-filter-tolerance-analysis"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the passband shaded as the
+  // band, the transition band as the zone near it, and a tone with its
+  // harmonics against them. The order stays in the results: the plan asks
+  // what the specification does to the tone's harmonics.
+  spectrum: {
+    title: "Frequency plan",
+    tableTitle: "The tone and its harmonics, nearest the passband first",
+    frequencyLabel: "Frequency",
+    nameLabel: "n·f₀",
+    rule: "passband ≤ f_p < transition < f_s ≤ stopband",
+    unit: "Hz",
+    bands: (i) => {
+      const fp = Math.max(i.passbandFreq, 1);
+      const fs = Math.max(i.stopbandFreq, 1);
+      const out = [{ from: 0, to: fp, label: "passband", kind: "band" }];
+      if (fs > fp) out.push({ from: fp, to: fs, label: "transition band", kind: "near" });
+      return out;
+    },
+    lines: (i) => [{ f: Math.max(i.stopbandFreq, 1), label: "f_s" }],
+    products: (i) => filterHarmonics(i),
+    views: (i) => {
+      const fs = Math.max(i.stopbandFreq, 1);
+      const top = Math.floor(i.maxHarmonic ?? 5) * (i.toneFreq ?? 1e3);
+      const views = [{ id: "harmonics", label: "Every harmonic", from: 0, to: 1.08 * Math.max(top, 1.25 * fs) }];
+      if (1.5 * fs < 1.08 * Math.max(top, 1.25 * fs)) views.push({ id: "band", label: "Around the band", from: 0, to: 1.5 * fs });
+      return views;
+    },
+    hero: "harmonicsInPassband",
+    results: ["harmonicsInTransition", "butterworthOrder", "chebyshevOrder", "butterworthAttenuation"],
+    counts: { in: "harmonicsInPassband", near: "harmonicsInTransition" }
+  }
 };
 
 // src/lib/calculators/antenna/yagi-antenna.ts
@@ -22319,6 +23848,45 @@ var rcdClampSnubber = {
 };
 
 // src/lib/calculators/protocol/spi-timing.ts
+var STANDARD_CLOCKS = [1, 2, 5, 10, 20, 25, 50];
+function spiLanes(i, word) {
+  const t = 1 / (Math.max(i.clockFreq, 1e-3) * 1e6);
+  const n = Math.round(i.dataWidth);
+  const tau = 3.3 / Math.max(i.driveStrength * 1e-3, 1e-6) * i.traceCapacitance * 1e-12;
+  const end = n * t;
+  const pad = t / 2;
+  const sclk = [[-pad, 0], [0, 0]];
+  let v = 0;
+  for (let h = 0; h < 2 * n; h++) {
+    const target = h % 2 ? 3.3 : 0;
+    const from = h * t / 2;
+    for (let k = 1; k <= 16; k++) {
+      const dt = k * t / 32;
+      sclk.push([from + dt, target + (v - target) * Math.exp(-dt / tau)]);
+    }
+    v = sclk[sclk.length - 1][1];
+  }
+  for (let k = 1; k <= 16; k++) {
+    const dt = k * pad / 16;
+    sclk.push([end + dt, v * Math.exp(-dt / tau)]);
+  }
+  const bits = Array.from({ length: n }, (_, k) => Math.floor(word / 2 ** (n - 1 - k)) % 2);
+  const mosi = [[-pad, 0], [0, 0]];
+  bits.forEach((b, k) => mosi.push([k * t, mosi[mosi.length - 1][1]], [k * t, b]));
+  mosi.push([end, mosi[mosi.length - 1][1]], [end + pad, mosi[mosi.length - 1][1]]);
+  return [
+    { id: "cs", symbol: "CS", kind: "digital", points: [[-pad, 1], [0, 1], [0, 0], [end, 0], [end, 1], [end + pad, 1]] },
+    { id: "sclk", symbol: "SCLK", kind: "analog", unit: "V", points: sclk },
+    {
+      id: "mosi",
+      symbol: "MOSI",
+      kind: "digital",
+      points: mosi,
+      segments: bits.map((b, k) => ({ from: k * t, to: (k + 1) * t, name: n <= 16 ? `D${n - 1 - k}` : String(n - 1 - k), value: String(b) })),
+      samples: bits.map((b, k) => [(k + 0.5) * t, b])
+    }
+  ];
+}
 function calculateSpiTiming(inputs) {
   const { clockFreq, dataWidth, traceCapacitance, driveStrength } = inputs;
   const f_MHz = Math.max(clockFreq, 1e-3);
@@ -22331,13 +23899,17 @@ function calculateSpiTiming(inputs) {
   const maxFreqCapacitive = 1 / (2 * 2.2 * tau_s) / 1e6;
   const slewRate = 3.3 / (2.2 * Math.max(tau_ns, 1e-12));
   const dataRate = f_MHz;
+  const riseTime = 2.2 * tau_ns;
+  const edgeShare_pct = riseTime / (bitPeriod / 2) * 100;
   return {
     values: {
       bitPeriod,
       framePeriod,
       maxFreqCapacitive,
       slewRate,
-      dataRate
+      dataRate,
+      riseTime,
+      edgeShare_pct
     }
   };
 }
@@ -22449,9 +24021,60 @@ var spiTiming = {
       symbol: "f_data",
       unit: "Mbps",
       precision: 3
+    },
+    {
+      key: "riseTime",
+      label: "Edge Time (10–90 %)",
+      symbol: "t_r",
+      unit: "ns",
+      precision: 3,
+      display: { sig: 4 },
+      tooltip: "2.2τ, the 10–90 % rise of the RC charge through the calculator's drive model, R = 3.3 V / I_drive (825 Ω at 4 mA); a CMOS output is usually stiffer than that (V_OL / I_OL), so this edge is a slow bound"
+    },
+    {
+      key: "edgeShare_pct",
+      label: "Edge Share of Half Period",
+      symbol: "t_r/(t_{bit}/2)",
+      unit: "%",
+      precision: 3,
+      display: { sig: 3 },
+      tooltip: "How much of the half period the edge takes before the sampling edge; 100 % at the RC-limited maximum"
     }
   ],
   calculate: calculateSpiTiming,
+  // C7 Timing & waveforms (waves/W8.md): one word in mode 0 with the RC-limited
+  // clock, the RC-limited maximum against the clock used, and round clock rates.
+  waveform: {
+    title: "One word in mode 0",
+    controls: [{ key: "word", label: "Word", defaultValue: 165, min: 0, max: 4294967295, byte: true }],
+    lanes: (i, _v, c2) => spiLanes(i, c2.word),
+    intervals: (i, v) => {
+      const t = 1 / (Math.max(i.clockFreq, 1e-3) * 1e6);
+      const tr = v.riseTime * 1e-9;
+      return [
+        { from: 0, to: t, label: "bit" },
+        { from: t / 2, to: Math.min(t / 2 + tr, Math.round(i.dataWidth) * t), label: "t_r" },
+        { from: 0, to: Math.round(i.dataWidth) * t, label: "word" }
+      ];
+    },
+    note: { output: "edgeShare_pct" }
+  },
+  tolerance: {
+    output: "maxFreqCapacitive",
+    budget: { input: "clockFreq" },
+    sense: "above",
+    results: ["riseTime", "bitPeriod", "framePeriod", "slewRate"]
+  },
+  standardValues: {
+    input: "clockFreq",
+    values: STANDARD_CLOCKS,
+    columns: ["bitPeriod", "framePeriod", "edgeShare_pct"]
+  },
+  examples: [
+    { id: "flash-20mhz-15pf-8ma", label: "SPI flash at 20 MHz, 15 pF, 8 mA drive", values: { clockFreq: 20, dataWidth: 8, traceCapacitance: 15, driveStrength: 8 } },
+    { id: "adc-16bit-5mhz-30pf", label: "16-bit ADC at 5 MHz over 30 pF, 4 mA drive", values: { clockFreq: 5, dataWidth: 16, traceCapacitance: 30, driveStrength: 4 } },
+    { id: "display-25mhz-40pf-4ma", label: "Display at 25 MHz over a 40 pF cable, 4 mA drive", values: { clockFreq: 25, dataWidth: 8, traceCapacitance: 40, driveStrength: 4 } }
+  ],
   formula: {
     primary: "t_bit = 1/f_CLK;  τ = R_drive·C_trace;  f_max = 1/(4.4τ)",
     variables: [
@@ -22468,20 +24091,82 @@ var spiTiming = {
 };
 
 // src/lib/calculators/protocol/can-bus-timing.ts
+var NBT_MIN = 8;
+var NBT_MAX = 25;
+var STANDARD_RATES2 = [10, 20, 50, 125, 250, 500, 800, 1e3];
+function segmentsOf(n, samplePoint) {
+  const sp = Math.min(Math.floor(n * samplePoint / 100 + 0.5), n - 1);
+  const phase2 = Math.max(1, n - sp);
+  const before = sp - 1;
+  const propSeg = Math.max(1, Math.floor(before / 2));
+  const phase1 = Math.max(1, before - propSeg);
+  return { propSeg, phase1, phase2 };
+}
+function chooseQuanta(f_Hz, baud_bps, samplePoint) {
+  let best = null;
+  for (let n = NBT_MIN; n <= NBT_MAX; n++) {
+    const x = f_Hz / (baud_bps * n);
+    for (const p of /* @__PURE__ */ new Set([Math.max(1, Math.floor(x)), Math.max(1, Math.ceil(x))])) {
+      const e = Math.abs(f_Hz / (p * n) - baud_bps) / baud_bps;
+      const seg = segmentsOf(n, samplePoint);
+      const s = Math.abs((1 + seg.propSeg + seg.phase1) / n * 100 - samplePoint);
+      const better = !best || e < best.e - 1e-12 || Math.abs(e - best.e) <= 1e-12 && (s < best.s - 1e-9 || Math.abs(s - best.s) <= 1e-9 && (Math.abs(n - 16) < Math.abs(best.n - 16) || Math.abs(n - 16) === Math.abs(best.n - 16) && p < best.p));
+      if (better) best = { p, n, e, s };
+    }
+  }
+  return { prescaler: best.p, quanta: best.n };
+}
+function canLanes(v) {
+  const tq = v.tq * 1e-9;
+  const segs = [
+    { name: "SYNC", n: v.syncSeg, shade: true },
+    { name: "PROP", n: v.propSeg },
+    { name: "PHASE1", n: v.phase1 },
+    { name: "PHASE2", n: v.phase2 }
+  ];
+  const bit = (v.syncSeg + v.propSeg + v.phase1 + v.phase2) * tq;
+  const pad = 0.12 * bit;
+  let at = 0;
+  const segments = segs.map((s) => {
+    const seg = { from: at, to: at + s.n * tq, name: s.name, value: `${s.n} tq`, shade: s.shade };
+    at += s.n * tq;
+    return seg;
+  });
+  const quanta = [[-pad, 0]];
+  for (let k = 0; k < Math.round(bit / tq); k++) quanta.push([k * tq, 0], [k * tq, 1], [(k + 0.5) * tq, 1], [(k + 0.5) * tq, 0]);
+  quanta.push([bit + pad, 0]);
+  return [
+    {
+      id: "bus",
+      symbol: "CAN",
+      kind: "digital",
+      points: [[-pad, 1], [0, 1], [0, 0], [bit, 0], [bit, 1], [bit + pad, 1]],
+      segments,
+      samples: [[(v.syncSeg + v.propSeg + v.phase1) * tq, 0]]
+    },
+    { id: "tq", symbol: "tq", kind: "digital", points: quanta }
+  ];
+}
 function calculateCanBusTiming(inputs) {
   const { clockFreq, baudRate, samplePoint } = inputs;
+  const sjwSet = inputs.sjw ?? 1;
   const f_Hz = clockFreq * 1e6;
   const baud_bps = baudRate * 1e3;
+  if (!(sjwSet >= 1)) {
+    return { values: {}, errors: ["The sync jump width must be at least 1 tq"] };
+  }
   const tq_ns = 1 / f_Hz * 1e9;
-  const targetTQ = 16;
-  const prescaler = Math.max(1, Math.round(f_Hz / (baud_bps * targetTQ)));
-  const actualTQ = Math.round(f_Hz / (baud_bps * Math.max(prescaler, 1)));
+  const { prescaler, quanta: actualTQ } = chooseQuanta(f_Hz, baud_bps, samplePoint);
   const syncSeg = 1;
-  const samplePointTQ = Math.round(actualTQ * samplePoint / 100);
-  const phase2 = Math.max(1, actualTQ - samplePointTQ);
-  const beforeSample = samplePointTQ - syncSeg;
-  const propSeg = Math.max(1, Math.floor(beforeSample / 2));
-  const phase1 = Math.max(1, beforeSample - propSeg);
+  const { propSeg, phase1, phase2 } = segmentsOf(actualTQ, samplePoint);
+  const bitTq = syncSeg + propSeg + phase1 + phase2;
+  const bitRateActual = f_Hz / (prescaler * bitTq) / 1e3;
+  const bitRateError_pct = (bitRateActual - baudRate) / baudRate * 100;
+  const samplePointActual = (syncSeg + propSeg + phase1) / bitTq * 100;
+  const sjw = Math.min(sjwSet, phase1, phase2);
+  const oscTolerance_pct = Math.min(Math.min(phase1, phase2) / (2 * (13 * bitTq - phase2)), sjw / (20 * bitTq)) * 100;
+  const warnings = [];
+  if (sjwSet > sjw) warnings.push(`The sync jump width is limited to ${sjw} tq: it cannot exceed either phase segment`);
   return {
     values: {
       tq: tq_ns * prescaler,
@@ -22491,8 +24176,13 @@ function calculateCanBusTiming(inputs) {
       propSeg,
       phase1,
       phase2,
-      prescaler
-    }
+      prescaler,
+      bitRateActual,
+      bitRateError_pct,
+      samplePointActual,
+      oscTolerance_pct
+    },
+    warnings: warnings.length ? warnings : void 0
   };
 }
 var canBusTiming = {
@@ -22552,6 +24242,17 @@ var canBusTiming = {
       min: 50,
       max: 95,
       tooltip: "Sample point position as percentage of bit time (CiA 601 recommends 75–87.5%)"
+    },
+    {
+      key: "sjw",
+      label: "Sync Jump Width",
+      symbol: "SJW",
+      unit: "tq",
+      defaultValue: 1,
+      min: 1,
+      max: 4,
+      step: 1,
+      tooltip: "How far a resynchronisation may move the sample point; a wider jump lets the bus take a looser clock, up to the length of either phase segment"
     }
   ],
   outputs: [
@@ -22610,9 +24311,78 @@ var canBusTiming = {
       symbol: "BRP",
       unit: "",
       precision: 0
+    },
+    {
+      key: "bitRateActual",
+      label: "Actual Bit Rate",
+      symbol: "f_{bit}",
+      unit: "kbps",
+      precision: 4,
+      display: { sig: 7 },
+      tooltip: "The clock over the prescaler and the quanta of the bit as programmed"
+    },
+    {
+      key: "bitRateError_pct",
+      label: "Bit Rate Error",
+      symbol: "ε",
+      unit: "%",
+      precision: 3,
+      display: { decimals: 2 },
+      signed: "explicit",
+      tooltip: "Actual over requested, signed; it adds to the oscillator's own tolerance"
+    },
+    {
+      key: "samplePointActual",
+      label: "Actual Sample Point",
+      symbol: "SP_{set}",
+      unit: "%",
+      precision: 2,
+      display: { decimals: 1 },
+      tooltip: "Sync, propagation and phase 1 over the whole bit, in whole quanta"
+    },
+    {
+      key: "oscTolerance_pct",
+      label: "Clock Tolerance Allowed",
+      symbol: "Δf",
+      unit: "%",
+      precision: 3,
+      display: { sig: 3 },
+      tooltip: "The largest deviation from nominal each node's clock may have (ISO 11898-1): the smaller of min(PS1, PS2)/(2·(13·NBT − PS2)) and SJW/(20·NBT)"
     }
   ],
   calculate: calculateCanBusTiming,
+  // C7 Timing & waveforms (waves/W8.md): one bit in time quanta, the bit-rate
+  // error against the clock tolerance the bit timing allows, and the CANopen
+  // bit rates.
+  waveform: {
+    title: "One bit in time quanta",
+    lanes: (_i, v) => canLanes(v),
+    intervals: (_i, v) => {
+      const tq = v.tq * 1e-9;
+      return [
+        { from: 0, to: tq, label: "tq" },
+        { from: 0, to: (v.syncSeg + v.propSeg + v.phase1) * tq, label: "SP" },
+        { from: 0, to: (v.syncSeg + v.propSeg + v.phase1 + v.phase2) * tq, label: "bit" }
+      ];
+    },
+    note: { output: "samplePointActual" }
+  },
+  tolerance: {
+    output: "bitRateError_pct",
+    budget: { output: "oscTolerance_pct" },
+    results: ["prescaler", "bitRateActual", "tq", "nominalBitTime"]
+  },
+  standardValues: {
+    input: "baudRate",
+    values: STANDARD_RATES2,
+    columns: ["prescaler", "nominalBitTime", "bitRateError_pct"]
+  },
+  examples: [
+    { id: "stm32f1-36mhz-500k", label: "STM32F1 CAN at 36 MHz, 500 kbps", values: { clockFreq: 36, baudRate: 500, samplePoint: 87.5 } },
+    { id: "uart-crystal-500k", label: "A 14.7456 MHz UART crystal at 500 kbps", values: { clockFreq: 14.7456, baudRate: 500, samplePoint: 87.5 } },
+    { id: "canopen-125k-sjw4", label: "CANopen at 125 kbps from 16 MHz, sample point 75 %, SJW 4 tq", values: { clockFreq: 16, baudRate: 125, samplePoint: 75, sjw: 4 } },
+    { id: "80mhz-500k-sp80-sjw2", label: "80 MHz, 500 kbps, sample point 80 %, SJW 2 tq", values: { clockFreq: 80, baudRate: 500, samplePoint: 80, sjw: 2 } }
+  ],
   formula: {
     primary: "tq = 1/(f_clk/BRP);  NBT = SS + PROP + BS1 + BS2",
     variables: [
@@ -23068,8 +24838,37 @@ var rs485Termination = {
 };
 
 // src/lib/calculators/power/pwm-duty-cycle.ts
+var STANDARD_PERIODS = [1e3, 500, 200, 100, 50, 40, 20, 10, 5];
+function pwmLanes(v, timerClock) {
+  const tick = 1e-6 / timerClock;
+  const T = v.periodCounts * tick;
+  const on = v.onCounts * tick;
+  const cnt = [];
+  const out = [];
+  const segments = [];
+  for (let k = 0; k < 3; k++) {
+    const a = k * T;
+    cnt.push([a, 0], [a + T - tick, v.periodCounts - 1], [a + T, v.periodCounts - 1]);
+    out.push([a, out.length ? out[out.length - 1][1] : on > 0 ? 1 : 0], [a, on > 0 ? 1 : 0], [a + on, on > 0 ? 1 : 0], [a + on, on < T ? 0 : 1], [a + T, on < T ? 0 : 1]);
+    if (on > 0) segments.push({ from: a, to: a + on, name: "t_on" });
+    if (on < T) segments.push({ from: a + on, to: a + T, name: "t_off" });
+  }
+  cnt.push([3 * T, 0]);
+  return [
+    { id: "out", symbol: "PWM", kind: "digital", points: out, segments },
+    { id: "cnt", symbol: "CNT", kind: "analog", points: cnt }
+  ];
+}
 function calculatePwmDutyCycle(inputs) {
   const { onTime, period, supplyVoltage } = inputs;
+  const timerClock = inputs.timerClock ?? 16;
+  const requiredBits = inputs.requiredBits ?? 8;
+  if (!(timerClock > 0)) {
+    return { values: {}, errors: ["The timer clock must be greater than 0"] };
+  }
+  if (!(requiredBits > 0)) {
+    return { values: {}, errors: ["The required resolution must be greater than 0"] };
+  }
   const safePeriod = Math.max(period, 1e-3);
   const safeOnTime = Math.min(onTime, safePeriod);
   const dutyCycle = safeOnTime / safePeriod * 100;
@@ -23077,13 +24876,23 @@ function calculatePwmDutyCycle(inputs) {
   const avgVoltage = supplyVoltage * dutyCycle / 100;
   const offTime = safePeriod - safeOnTime;
   const rmsVoltage = supplyVoltage * Math.sqrt(dutyCycle / 100);
+  const periodCounts = Math.max(1, Math.floor(safePeriod * timerClock + 0.5));
+  const onCounts = Math.min(periodCounts, Math.floor(safeOnTime * timerClock + 0.5));
+  const dutyActual = onCounts / periodCounts * 100;
+  const frequencyActual = timerClock * 1e3 / periodCounts;
+  const dutyResolution_bits = Math.log2(periodCounts);
   return {
     values: {
       dutyCycle,
       frequency,
       avgVoltage,
       offTime,
-      rmsVoltage
+      rmsVoltage,
+      periodCounts,
+      onCounts,
+      dutyActual,
+      frequencyActual,
+      dutyResolution_bits
     }
   };
 }
@@ -23130,6 +24939,28 @@ var pwmDutyCycle = {
       defaultValue: 3.3,
       min: 0.1,
       tooltip: "High-level voltage of the PWM signal"
+    },
+    {
+      key: "timerClock",
+      label: "Timer Clock",
+      symbol: "f_{tim}",
+      unit: "MHz",
+      defaultValue: 16,
+      min: 1e-3,
+      max: 1e3,
+      step: 0.1,
+      tooltip: "The clock the PWM timer counts, which sets the step of the on-time and the period"
+    },
+    {
+      key: "requiredBits",
+      label: "Required Resolution",
+      symbol: "n_{min}",
+      unit: "bits",
+      defaultValue: 8,
+      min: 1,
+      max: 32,
+      step: 1,
+      tooltip: "The duty resolution the design needs: 8 bits is 256 steps"
     }
   ],
   outputs: [
@@ -23173,9 +25004,83 @@ var pwmDutyCycle = {
       symbol: "V_rms",
       unit: "V",
       precision: 3
+    },
+    {
+      key: "periodCounts",
+      label: "Period in Timer Ticks",
+      symbol: "N",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The period in whole ticks of the timer clock (auto-reload + 1)"
+    },
+    {
+      key: "onCounts",
+      label: "On-Time in Timer Ticks",
+      symbol: "M",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The compare value: the on-time in whole ticks"
+    },
+    {
+      key: "dutyActual",
+      label: "Duty as Set",
+      symbol: "D_{set}",
+      unit: "%",
+      precision: 3,
+      display: { decimals: 2 },
+      tooltip: "M over N"
+    },
+    {
+      key: "frequencyActual",
+      label: "Frequency as Set",
+      symbol: "f_{set}",
+      unit: "kHz",
+      precision: 4,
+      display: { sig: 6 },
+      tooltip: "The timer clock over N"
+    },
+    {
+      key: "dutyResolution_bits",
+      label: "Duty Resolution",
+      symbol: "n",
+      unit: "bits",
+      precision: 3,
+      display: { decimals: 2 },
+      tooltip: "log2 N: the steps one period offers the duty"
     }
   ],
   calculate: calculatePwmDutyCycle,
+  // C7 Timing & waveforms (waves/W8.md): three periods as a timer makes them,
+  // the duty resolution against the one required, and round PWM frequencies.
+  waveform: {
+    title: "Three periods from the timer",
+    lanes: (i, v) => pwmLanes(v, i.timerClock ?? 16),
+    intervals: (i, v) => {
+      const tick = 1e-6 / (i.timerClock ?? 16);
+      return [
+        ...v.onCounts > 0 ? [{ from: 0, to: v.onCounts * tick, label: "t_on" }] : [],
+        { from: 0, to: v.periodCounts * tick, label: "T" }
+      ];
+    }
+  },
+  tolerance: {
+    output: "dutyResolution_bits",
+    budget: { input: "requiredBits" },
+    sense: "above",
+    results: ["dutyActual", "frequencyActual", "periodCounts", "onCounts"]
+  },
+  standardValues: {
+    input: "period",
+    values: STANDARD_PERIODS,
+    columns: ["frequency", "periodCounts", "dutyResolution_bits"]
+  },
+  examples: [
+    { id: "fan-25khz-72mhz", label: "A 4-wire fan at 25 kHz from a 72 MHz timer", values: { onTime: 20, period: 40, supplyVoltage: 12, timerClock: 72, requiredBits: 8 } },
+    { id: "led-1khz-10bit", label: "LED dimming at 1 kHz, 10 bits from a 16 MHz timer", values: { onTime: 250, period: 1e3, supplyVoltage: 5, timerClock: 16, requiredBits: 10 } },
+    { id: "buck-500khz-64mhz", label: "A 500 kHz converter from a 64 MHz timer", values: { onTime: 0.66, period: 2, supplyVoltage: 12, timerClock: 64, requiredBits: 8 } }
+  ],
   formula: {
     primary: "D = t_on / T × 100%, V_avg = V_cc × D, V_rms = V_cc × √D",
     variables: [
@@ -23916,8 +25821,32 @@ var solarPanelSizing = {
 };
 
 // src/lib/calculators/power/battery-charge-time.ts
+var CHARGE_RATES = [0.2, 0.5, 1, 2];
+function chargeLanes(i, v) {
+  const tcc = v.ccTime * 3600;
+  const total = v.chargeTime * 3600;
+  const pad = 0.08 * total;
+  const segments = [{ from: 0, to: tcc, name: "CC" }];
+  if (total > tcc) segments.push({ from: tcc, to: total, name: "CV" });
+  return [
+    { id: "chg", symbol: "CHG", kind: "digital", points: [[-pad, 0], [0, 0], [0, 1], [total, 1], [total, 0], [total + pad, 0]], segments },
+    { id: "i", symbol: "I_{chg}", kind: "analog", unit: "mA", points: [[-pad, 0], [0, 0], [0, v.chargeCurrent], [tcc, v.chargeCurrent]] },
+    {
+      id: "soc",
+      symbol: "SoC",
+      kind: "analog",
+      unit: "%",
+      points: [[-pad, i.initialSoc], [0, i.initialSoc], [tcc, Math.max(i.targetSoc, i.initialSoc)]],
+      samples: [[tcc, Math.max(i.targetSoc, i.initialSoc)]]
+    }
+  ];
+}
 function calculateBatteryChargeTime(inputs) {
   const { capacity, chargeCurrentC, initialSoc, targetSoc, chargingVoltage, battVoltage } = inputs;
+  const requiredTime = inputs.requiredTime ?? 3;
+  if (!(requiredTime > 0)) {
+    return { values: {}, errors: ["The required charge time must be greater than 0"] };
+  }
   const safeCapacity = Math.max(capacity, 1);
   const chargeCurrent = safeCapacity * chargeCurrentC;
   const socDelta = Math.max(targetSoc - initialSoc, 0);
@@ -23968,6 +25897,9 @@ var batteryChargeTime = {
       label: "Charge Rate (C-rate)",
       symbol: "I_c",
       unit: "C",
+      // A C-rate, not coulombs: one unit, never prefixed (the page read 0.2 as 200 mC).
+      fieldUnit: "C",
+      unitOptions: [{ label: "C", factor: 1 }],
       defaultValue: 1,
       min: 0.1,
       max: 4,
@@ -24016,6 +25948,16 @@ var batteryChargeTime = {
       defaultValue: 3.7,
       min: 0.1,
       tooltip: "Nominal battery voltage for energy calculation"
+    },
+    {
+      key: "requiredTime",
+      label: "Required Charge Time",
+      symbol: "t_{req}",
+      unit: "hr",
+      defaultValue: 3,
+      min: 0.01,
+      step: 0.1,
+      tooltip: "The time the charge must finish in. 3 h is the upper end of a full Li-ion charge at 0.5C to 1C (Battery University BU-409: about 2–3 hours)"
     }
   ],
   outputs: [
@@ -24062,6 +26004,34 @@ var batteryChargeTime = {
     }
   ],
   calculate: calculateBatteryChargeTime,
+  // C7 Timing & waveforms (site-redesign W8): the charge phases, the current
+  // and the state of charge, the charge time against the time required, and
+  // the usual charge rates.
+  waveform: {
+    title: "The charge over time",
+    lanes: chargeLanes,
+    intervals: (_i, v) => {
+      const out = [{ from: 0, to: v.ccTime * 3600, label: "CC" }];
+      if (v.chargeTime > v.ccTime) out.push({ from: 0, to: v.chargeTime * 3600, label: "total" });
+      return out;
+    }
+  },
+  tolerance: {
+    output: "chargeTime",
+    budget: { input: "requiredTime" },
+    sense: "below",
+    results: ["ccTime", "chargeCurrent", "chargingEfficiency"]
+  },
+  standardValues: {
+    input: "chargeCurrentC",
+    values: CHARGE_RATES,
+    columns: ["chargeCurrent", "ccTime", "chargeTime"]
+  },
+  examples: [
+    { id: "phone-1c-20-100", label: "Phone cell, 4 000 mAh at 1C, 20 → 100 %", values: { capacity: 4e3, chargeCurrentC: 1, initialSoc: 20, targetSoc: 100 } },
+    { id: "cell-18650-0p5c-full", label: "18650 cell, 3 400 mAh at 0.5C, empty to full", values: { capacity: 3400, chargeCurrentC: 0.5, initialSoc: 0, targetSoc: 100 } },
+    { id: "pack-overnight-0p2c", label: "Pack at 0.2C overnight, 10 → 90 %, required in 8 h", values: { capacity: 1e4, chargeCurrentC: 0.2, initialSoc: 10, targetSoc: 90, requiredTime: 8 } }
+  ],
   formula: {
     primary: "t_CC = ΔSoC × C / I_chg, t_CV ≈ 0.25 × t_CC (if target > 80%)",
     variables: [
@@ -24078,16 +26048,27 @@ var batteryChargeTime = {
 };
 
 // src/lib/calculators/power/inrush-current-limiter.ts
+var NTC_R25 = [2.5, 3, 4.7, 5, 7, 8, 10, 15, 16, 22, 25, 30, 40, 47, 60];
 function calculateInrushCurrentLimiter(inputs) {
   const { supplyVoltage, filterCapacitance, targetInrush, ntcResistanceHot } = inputs;
+  const ntcR25 = inputs.ntcR25 ?? 0;
+  const ntcTolerance = inputs.ntcTolerance ?? 20;
+  if (!(ntcR25 >= 0)) {
+    return { values: {}, errors: ["The fitted NTC resistance cannot be negative"] };
+  }
+  if (!(ntcTolerance >= 0 && ntcTolerance < 100)) {
+    return { values: {}, errors: ["The NTC tolerance must be at least 0 % and below 100 %"] };
+  }
   const safeTargetInrush = Math.max(targetInrush, 1e-3);
   const safeCapacitance = Math.max(filterCapacitance, 1e-3);
   const ntcResistanceCold = supplyVoltage / safeTargetInrush;
-  const peakInrush = supplyVoltage / Math.max(ntcResistanceCold, 1e-3);
+  const rFitted = ntcR25 > 0 ? ntcR25 : ntcResistanceCold;
+  const peakInrush = supplyVoltage / Math.max(rFitted, 1e-3);
+  const peakInrushMax = supplyVoltage / Math.max(rFitted * (1 - ntcTolerance / 100), 1e-3);
   const hotRestartInrush = supplyVoltage / Math.max(ntcResistanceHot, 1e-3);
-  const timeConstant = ntcResistanceCold * safeCapacitance * 1e-6 * 1e3;
+  const timeConstant = rFitted * safeCapacitance * 1e-6 * 1e3;
   const energyAbsorbed = 0.5 * safeCapacitance * 1e-6 * supplyVoltage * supplyVoltage * 1e3;
-  const limitingResistor = ntcResistanceCold;
+  const limitingResistor = rFitted;
   return {
     values: {
       ntcResistanceCold,
@@ -24095,7 +26076,8 @@ function calculateInrushCurrentLimiter(inputs) {
       timeConstant,
       energyAbsorbed,
       limitingResistor,
-      hotRestartInrush
+      hotRestartInrush,
+      peakInrushMax
     }
   };
 }
@@ -24151,6 +26133,27 @@ var inrushCurrentLimiter = {
       defaultValue: 0.5,
       min: 1e-3,
       tooltip: "NTC thermistor resistance when fully heated (steady-state)"
+    },
+    {
+      key: "ntcR25",
+      label: "Fitted NTC Cold Resistance",
+      symbol: "R_{25}",
+      unit: "Ω",
+      defaultValue: 0,
+      min: 0,
+      max: 1e3,
+      tooltip: "The R25 of the thermistor you fit; for the worst-case peak to meet the target it must be at least the required resistance over (1 − tolerance). 0 fits exactly the required resistance"
+    },
+    {
+      key: "ntcTolerance",
+      label: "NTC R25 Tolerance",
+      symbol: "δ_R",
+      unit: "%",
+      defaultValue: 20,
+      min: 0,
+      max: 50,
+      step: 1,
+      tooltip: "The thermistor's R25 tolerance, ±; TDK's S238 inrush limiters are ±20 %. The low end sets the worst-case peak"
     }
   ],
   outputs: [
@@ -24202,9 +26205,68 @@ var inrushCurrentLimiter = {
       unit: "A",
       precision: 3,
       tooltip: "Peak current if power is reapplied before the thermistor has cooled: V_s / R_hot"
+    },
+    {
+      key: "peakInrushMax",
+      label: "Worst-Case Peak Inrush",
+      symbol: "I_{peak,max}",
+      unit: "A",
+      precision: 3,
+      tooltip: "The cold-start peak with the fitted thermistor at 25 °C and the low end of its R25 tolerance: V_s / (R25 × (1 − δ_R)). A warmer thermistor lets more through"
     }
   ],
   calculate: calculateInrushCurrentLimiter,
+  // C7 Timing & waveforms (site-redesign W8): the inrush current and the
+  // capacitor voltage after switch-on through the cold thermistor, and the
+  // current of a hot restart; the worst-case peak against the target; the
+  // R25 values of a standard series.
+  waveform: {
+    title: "Switch-on through the thermistor",
+    lanes: (i, v) => {
+      const tau = v.timeConstant * 1e-3;
+      const tauHot = Math.max(i.ntcResistanceHot, 1e-3) * Math.max(i.filterCapacitance, 1e-3) * 1e-6;
+      const end = 5 * tau;
+      const pad = 0.1 * end;
+      const n = 120;
+      const iCold = [[-pad, 0], [0, 0]];
+      const vc = [[-pad, 0], [0, 0]];
+      const iHot = [[-pad, 0], [0, 0]];
+      for (let k = 0; k <= n; k++) {
+        const t = k === n ? end : end * k / n;
+        iCold.push([t, v.peakInrush * Math.exp(-t / tau)]);
+        vc.push([t, i.supplyVoltage * (1 - Math.exp(-t / tau))]);
+        iHot.push([t, v.hotRestartInrush * Math.exp(-t / tauHot)]);
+      }
+      return [
+        { id: "i", symbol: "i_{in}", kind: "analog", unit: "A", points: iCold, samples: [[0, v.peakInrush]] },
+        { id: "vc", symbol: "V_C", kind: "analog", unit: "V", points: vc, samples: [[tau, i.supplyVoltage * (1 - Math.exp(-1))]] },
+        { id: "ihot", symbol: "i_{hot}", kind: "analog", unit: "A", points: iHot, samples: [[0, v.hotRestartInrush]] }
+      ];
+    },
+    intervals: (_i, v) => {
+      const tau = v.timeConstant * 1e-3;
+      return [
+        { from: 0, to: tau, label: "τ" },
+        { from: 0, to: 5 * tau, label: "5τ" }
+      ];
+    }
+  },
+  tolerance: {
+    output: "peakInrushMax",
+    budget: { input: "targetInrush" },
+    sense: "below",
+    results: ["ntcResistanceCold", "peakInrush", "timeConstant", "energyAbsorbed"]
+  },
+  standardValues: {
+    input: "ntcR25",
+    values: NTC_R25,
+    columns: ["peakInrush", "peakInrushMax", "timeConstant"]
+  },
+  examples: [
+    { id: "psu-12v-1000u-4r7", label: "12 V into 1 000 µF, 5 A limit, a 4.7 Ω S238 thermistor", values: { supplyVoltage: 12, filterCapacitance: 1e3, targetInrush: 5, ntcResistanceHot: 0.09, ntcR25: 4.7 } },
+    { id: "smps-230vac-470u-22r", label: "230 V AC mains (325 V peak) into 470 µF, 20 A limit, a 22 Ω S238", values: { supplyVoltage: 325, filterCapacitance: 470, targetInrush: 20, ntcResistanceHot: 0.257, ntcR25: 22 } },
+    { id: "telecom-48v-2200u-7r", label: "48 V telecom bus into 2 200 µF, 10 A limit, a 7 Ω S238", values: { supplyVoltage: 48, filterCapacitance: 2200, targetInrush: 10, ntcResistanceHot: 0.113, ntcR25: 7 } }
+  ],
   formula: {
     primary: "R_cold = V_s / I_inrush, I_peak = V_s / R_cold, I_hot = V_s / R_hot, τ = R_cold × C_f, E = 0.5 × C_f × V_s²",
     variables: [
@@ -26456,8 +28518,72 @@ var comparatorHysteresis = {
 };
 
 // src/lib/calculators/general/555-timer.ts
+var E62 = [1, 1.5, 2.2, 3.3, 4.7, 6.8];
+function e6Around2(c2) {
+  const out = [];
+  for (let k = Math.floor(Math.log10(c2 / 10)) - 1; k <= Math.ceil(Math.log10(c2 * 10)) + 1; k++) {
+    for (const m of E62) {
+      const v = Number((m * 10 ** k).toPrecision(2));
+      if (v >= c2 / 10 * (1 - 1e-9) && v <= c2 * 10 * (1 + 1e-9) && v >= 1e-4) out.push(v);
+    }
+  }
+  return out;
+}
+function timerLanes(i, v) {
+  const ra = Math.max(i.ra, 1e-3) * 1e3;
+  const rb = Math.max(i.rb, 1e-3) * 1e3;
+  const c2 = Math.max(i.c, 1e-4) * 1e-6;
+  const curve = (pts, from, dur, v0, vf, tau) => {
+    for (let k = 1; k <= 24; k++) {
+      const dt = k * dur / 24;
+      pts.push([from + dt, vf + (v0 - vf) * Math.exp(-dt / tau)]);
+    }
+  };
+  if (i.mode >= 1) {
+    const w = v.pulseWidth * 1e-3;
+    const pad = 0.25 * w;
+    const vc2 = [[-pad, 0], [0, 0]];
+    curve(vc2, 0, w, 0, 1, ra * c2);
+    vc2.push([w, 0], [w + pad, 0]);
+    return [
+      { id: "trig", symbol: "TRIG", kind: "digital", points: [[-pad, 1], [0, 1], [0, 0], [0.04 * w, 0], [0.04 * w, 1], [w + pad, 1]] },
+      { id: "out", symbol: "OUT", kind: "digital", points: [[-pad, 0], [0, 0], [0, 1], [w, 1], [w, 0], [w + pad, 0]], segments: [{ from: 0, to: w, name: "t_W" }] },
+      { id: "vc", symbol: "V_C", kind: "analog", points: vc2 }
+    ];
+  }
+  const th = v.highTime * 1e-3;
+  const tl = v.lowTime * 1e-3;
+  const T = th + tl;
+  const vc = [[0, 1 / 3]];
+  const out = [];
+  const segments = [];
+  for (let k = 0; k < 3; k++) {
+    const a = k * T;
+    curve(vc, a, th, 1 / 3, 1, (ra + rb) * c2);
+    curve(vc, a + th, tl, 2 / 3, 0, rb * c2);
+    out.push([a, out.length ? 0 : 1], [a, 1], [a + th, 1], [a + th, 0], [a + T, 0]);
+    segments.push({ from: a, to: a + th, name: "t_H" }, { from: a + th, to: a + T, name: "t_L" });
+  }
+  return [
+    { id: "out", symbol: "OUT", kind: "digital", points: out, segments },
+    { id: "vc", symbol: "V_C", kind: "analog", points: vc }
+  ];
+}
 function calculate555Timer(inputs) {
   const { mode, ra, rb, c: c2 } = inputs;
+  const targetTime = inputs.targetTime ?? 2;
+  const errorBudget = inputs.errorBudget ?? 5;
+  const rTolerance = inputs.rTolerance ?? 0;
+  const cTolerance = inputs.cTolerance ?? 0;
+  if (!(targetTime > 0)) {
+    return { values: {}, errors: ["The target time must be greater than 0"] };
+  }
+  if (!(errorBudget > 0)) {
+    return { values: {}, errors: ["The error budget must be greater than 0"] };
+  }
+  if (!(rTolerance >= 0 && rTolerance < 100) || !(cTolerance >= 0 && cTolerance < 100)) {
+    return { values: {}, errors: ["A tolerance must be at least 0 % and below 100 %"] };
+  }
   const ra_Ohm = Math.max(ra, 1e-3) * 1e3;
   const rb_Ohm = Math.max(rb, 1e-3) * 1e3;
   const c_F = Math.max(c2, 1e-4) * 1e-6;
@@ -26482,6 +28608,12 @@ function calculate555Timer(inputs) {
     dutyCycle = period > 0 ? highTime / period * 100 : 0;
     pulseWidth = highTime;
   }
+  const time = mode >= 1 ? pulseWidth : period;
+  const timeMin = time * (1 - rTolerance / 100) * (1 - cTolerance / 100);
+  const timeMax = time * (1 + rTolerance / 100) * (1 + cTolerance / 100);
+  const errMin = (timeMin - targetTime) / targetTime;
+  const errMax = (timeMax - targetTime) / targetTime;
+  const timingError_pct = (Math.abs(errMax) >= Math.abs(errMin) ? errMax : errMin) * 100;
   return {
     values: {
       frequency,
@@ -26489,7 +28621,10 @@ function calculate555Timer(inputs) {
       pulseWidth,
       dutyCycle,
       highTime,
-      lowTime
+      lowTime,
+      timeMin,
+      timeMax,
+      timingError_pct
     }
   };
 }
@@ -26554,6 +28689,48 @@ var timer555 = {
       unit: "μF",
       defaultValue: 0.1,
       min: 1e-4
+    },
+    {
+      key: "targetTime",
+      label: "Target Period or Pulse Width",
+      symbol: "T_{target}",
+      unit: "ms",
+      defaultValue: 2,
+      min: 1e-6,
+      tooltip: "The period the oscillator is for (astable), or the pulse width (monostable)"
+    },
+    {
+      key: "errorBudget",
+      label: "Error Budget",
+      symbol: "ε_{max}",
+      unit: "%",
+      defaultValue: 5,
+      min: 0.01,
+      max: 100,
+      step: 0.1,
+      tooltip: "How far from the target the time may land, ±"
+    },
+    {
+      key: "rTolerance",
+      label: "Resistor Tolerance",
+      symbol: "δ_R",
+      unit: "%",
+      defaultValue: 0,
+      min: 0,
+      max: 50,
+      step: 0.1,
+      tooltip: "The resistors' tolerance; 0 takes the nominal values"
+    },
+    {
+      key: "cTolerance",
+      label: "Capacitor Tolerance",
+      symbol: "δ_C",
+      unit: "%",
+      defaultValue: 0,
+      min: 0,
+      max: 50,
+      step: 0.1,
+      tooltip: "The capacitor's tolerance: 1–5 % for film or C0G, 10–20 % for X7R, 20 % for electrolytic; 0 takes the nominal value"
     }
   ],
   // The thresholds are fixed fractions of V_CC (1/3 and 2/3), so ln 2 and
@@ -26603,9 +28780,65 @@ var timer555 = {
       symbol: "t_L",
       unit: "ms",
       precision: 3
+    },
+    {
+      key: "timeMin",
+      label: "Shortest Time at Tolerance",
+      symbol: "T_{min}",
+      unit: "ms",
+      precision: 4,
+      display: { sig: 4 },
+      tooltip: "The period (astable) or pulse width (monostable) with every part at its low extreme"
+    },
+    {
+      key: "timeMax",
+      label: "Longest Time at Tolerance",
+      symbol: "T_{max}",
+      unit: "ms",
+      precision: 4,
+      display: { sig: 4 },
+      tooltip: "The same with every part at its high extreme"
+    },
+    {
+      key: "timingError_pct",
+      label: "Worst-Case Timing Error",
+      symbol: "ε",
+      unit: "%",
+      precision: 3,
+      display: { decimals: 2 },
+      signed: "explicit",
+      tooltip: "The extreme farther from the target, over the target, signed; the 555's own initial error adds to it"
     }
   ],
   calculate: calculate555Timer,
+  // C7 Timing & waveforms (waves/W8.md): the output and the capacitor over
+  // three periods or one pulse, the worst-case time against the target, and
+  // the E6 capacitors around the one chosen.
+  waveform: {
+    title: "Output and capacitor",
+    lanes: (i, v) => timerLanes(i, v),
+    intervals: (i, v) => i.mode >= 1 ? [{ from: 0, to: v.pulseWidth * 1e-3, label: "t_W" }] : [
+      { from: 0, to: v.highTime * 1e-3, label: "t_H" },
+      { from: v.highTime * 1e-3, to: v.period * 1e-3, label: "t_L" },
+      { from: 0, to: v.period * 1e-3, label: "T" }
+    ]
+  },
+  tolerance: {
+    output: "timingError_pct",
+    budget: { input: "errorBudget" },
+    results: ["timeMin", "timeMax", "frequency", "pulseWidth"]
+  },
+  standardValues: {
+    input: "c",
+    values: (i) => e6Around2(i.c),
+    // The period (astable) or pulse width (monostable) at the parts' extremes, so a monostable's rows are not zeros.
+    columns: ["timeMin", "timeMax", "timingError_pct"]
+  },
+  examples: [
+    { id: "astable-1khz-c0g", label: "1 kHz oscillator, 1 % resistors and a 1 % film capacitor", values: { mode: 0, ra: 1, rb: 6.8, c: 0.1, targetTime: 1, errorBudget: 5, rTolerance: 1, cTolerance: 1 } },
+    { id: "debounce-10ms-x7r", label: "10 ms one-shot, 1 % resistor and a 10 % X7R capacitor", values: { mode: 1, ra: 91, c: 0.1, targetTime: 10, errorBudget: 10, rTolerance: 1, cTolerance: 10 } },
+    { id: "flasher-1hz-electrolytic", label: "1 Hz flasher, 5 % resistors and a 20 % electrolytic", values: { mode: 0, ra: 10, rb: 68, c: 10, targetTime: 1e3, errorBudget: 30, rTolerance: 5, cTolerance: 20 } }
+  ],
   formula: {
     primary: "Astable: f = 1.44/((R_A+2R_B)×C), Monostable: t = 1.1×R_A×C",
     variables: [
@@ -28772,8 +31005,13 @@ var inductionMotorSlip = {
 };
 
 // src/lib/calculators/motor/motor-inrush-current.ts
+var INRUSH_MULTIPLIERS = [2, 3, 4, 5, 6, 7, 8];
 function calculateMotorInrushCurrent(inputs) {
   const { ratedCurrent, inrushMultiplier, startupDuration, supplyVoltage, lineResistance } = inputs;
+  const dipLimit = inputs.dipLimit ?? 10;
+  if (!(dipLimit > 0)) {
+    return { values: {}, errors: ["The voltage-dip limit must be greater than 0"] };
+  }
   const inrushCurrent = ratedCurrent * inrushMultiplier;
   const voltageDropAtInrush = inrushCurrent * lineResistance;
   const voltageDropPercent = voltageDropAtInrush / supplyVoltage * 100;
@@ -28794,7 +31032,18 @@ var motorInrushCurrent = {
     { key: "inrushMultiplier", label: "Inrush Multiplier", symbol: "k", unit: "×", defaultValue: 6, min: 1, max: 15, tooltip: "Typically 5–8× for induction motors" },
     { key: "startupDuration", label: "Startup Duration", symbol: "t", unit: "s", defaultValue: 0.1, min: 1e-3, step: 0.01 },
     { key: "supplyVoltage", label: "Supply Voltage", symbol: "V", unit: "V", defaultValue: 120, min: 1 },
-    { key: "lineResistance", label: "Line Resistance", symbol: "R_line", unit: "Ω", defaultValue: 0.5, min: 0, step: 0.01 }
+    { key: "lineResistance", label: "Line Resistance", symbol: "R_line", unit: "Ω", defaultValue: 0.5, min: 0, step: 0.01 },
+    {
+      key: "dipLimit",
+      label: "Voltage-Dip Limit",
+      symbol: "ΔV_{max}",
+      unit: "%",
+      defaultValue: 10,
+      min: 0.1,
+      max: 50,
+      step: 0.5,
+      tooltip: "The dip the supply may take during the start: a design limit, 10 % by default. Other loads on a public supply are held to less (IEC 61000-3-3)"
+    }
   ],
   outputs: [
     { key: "inrushCurrent", label: "Inrush Current", symbol: "I_inrush", unit: "A", precision: 1, primary: true },
@@ -28804,6 +31053,55 @@ var motorInrushCurrent = {
     { key: "peakPower", label: "Peak Power Draw", symbol: "P_peak", unit: "W", precision: 0 }
   ],
   calculate: calculateMotorInrushCurrent,
+  // C7 Timing & waveforms (site-redesign W8): the start as the model has it,
+  // the inrush current held for the start-up duration (the I²t it reports)
+  // and then the rated current, and the supply at the motor dipping by the
+  // line's drop; the dip against its limit; the usual inrush multipliers.
+  waveform: {
+    title: "The start on the line",
+    lanes: (i, v) => {
+      const t1 = i.startupDuration;
+      const end = 2 * t1;
+      const pad = 0.2 * t1;
+      const vRun = i.supplyVoltage - i.ratedCurrent * i.lineResistance;
+      const vStart = i.supplyVoltage - v.voltageDropAtInrush;
+      return [
+        {
+          id: "i",
+          symbol: "I",
+          kind: "analog",
+          unit: "A",
+          points: [[-pad, 0], [0, 0], [0, v.inrushCurrent], [t1, v.inrushCurrent], [t1, i.ratedCurrent], [end, i.ratedCurrent]],
+          samples: [[t1 / 2, v.inrushCurrent]]
+        },
+        {
+          id: "v",
+          symbol: "V_M",
+          kind: "analog",
+          unit: "V",
+          points: [[-pad, i.supplyVoltage], [0, i.supplyVoltage], [0, vStart], [t1, vStart], [t1, vRun], [end, vRun]],
+          samples: [[t1 / 2, vStart]]
+        }
+      ];
+    },
+    intervals: (i) => [{ from: 0, to: i.startupDuration, label: "start" }]
+  },
+  tolerance: {
+    output: "voltageDropPercent",
+    budget: { input: "dipLimit" },
+    sense: "below",
+    results: ["inrushCurrent", "voltageDropAtInrush", "fuseISquaredT"]
+  },
+  standardValues: {
+    input: "inrushMultiplier",
+    values: INRUSH_MULTIPLIERS,
+    columns: ["inrushCurrent", "voltageDropPercent", "fuseISquaredT"]
+  },
+  examples: [
+    { id: "dol-230v-15a", label: "Induction motor direct on line, 15 A at 230 V, 6× for 0.5 s, 0.3 Ω line", values: { ratedCurrent: 15, inrushMultiplier: 6, startupDuration: 0.5, supplyVoltage: 230, lineResistance: 0.3 } },
+    { id: "soft-start-230v-15a", label: "The same motor on a soft starter, 3× for 2 s", values: { ratedCurrent: 15, inrushMultiplier: 3, startupDuration: 2, supplyVoltage: 230, lineResistance: 0.3 } },
+    { id: "pump-120v-long-run", label: "Pump on a long 120 V run, 8 A, 6× for 0.5 s, 0.2 Ω, 5 % dip allowed", values: { ratedCurrent: 8, inrushMultiplier: 6, startupDuration: 0.5, supplyVoltage: 120, lineResistance: 0.2, dipLimit: 5 } }
+  ],
   formula: {
     primary: "I_inrush = k × I_FL,  ΔV = I_inrush × R_line",
     variables: [
@@ -29699,8 +31997,73 @@ var motorDriverPower = {
 };
 
 // src/lib/calculators/motor/pid-tuning.ts
+var DEAD_TIME_SHARES = [0.05, 0.1, 0.2, 0.3, 0.5, 1];
+var SETTLE_BAND = 0.02;
+function pidStepResponse(K, L, tau) {
+  if (!(K > 0) || !(L > 0) || !(tau > 0) || !Number.isFinite(K + L + tau)) return null;
+  const kp = 1.2 * tau / (K * L);
+  const ti = 2 * L;
+  const td = 0.5 * L;
+  const span = 40 + 10 * L / tau;
+  const NMAX = 2e4;
+  let D;
+  let h;
+  let n;
+  if (span * 50 <= NMAX) {
+    D = 50;
+    h = L / D;
+    n = Math.ceil(span * D);
+  } else if (span <= NMAX) {
+    D = Math.floor(NMAX / span);
+    h = L / D;
+    n = Math.ceil(span * D);
+  } else {
+    D = 1;
+    h = span * L / NMAX;
+    n = NMAX;
+  }
+  const a = Math.exp(-h / tau);
+  const c2 = 1 - (1 - a) * tau / h;
+  const y = new Array(n + 1).fill(0);
+  const uBefore = new Array(n + 1).fill(0);
+  const uAfter = new Array(n + 1).fill(0);
+  let z4 = 0;
+  const control = (k, uDelayed) => kp * (1 - y[k] + z4 / ti - td * (K * uDelayed - y[k]) / tau);
+  uAfter[0] = control(0, 0);
+  for (let k = 0; k < n; k++) {
+    const p = k - D >= 0 ? uAfter[k - D] : 0;
+    const q = k + 1 - D > 0 ? uBefore[k + 1 - D] : 0;
+    y[k + 1] = a * y[k] + K * ((1 - a) * p + (q - p) * c2);
+    z4 += h * (1 - y[k] + (1 - y[k + 1])) / 2;
+    uBefore[k + 1] = control(k + 1, q);
+    uAfter[k + 1] = control(k + 1, k + 1 - D >= 0 ? uAfter[k + 1 - D] : 0);
+  }
+  let peak = y[0];
+  let kPeak = 0;
+  for (let k = 1; k <= n; k++) {
+    if (y[k] > peak) {
+      peak = y[k];
+      kPeak = k;
+    }
+  }
+  let last = -1;
+  for (let k = 0; k <= n; k++) if (Math.abs(y[k] - 1) > SETTLE_BAND) last = k;
+  let settlingTime;
+  if (last < 0) settlingTime = 0;
+  else if (last === n) settlingTime = Infinity;
+  else {
+    const e0 = Math.abs(y[last] - 1) - SETTLE_BAND;
+    const e1 = Math.abs(y[last + 1] - 1) - SETTLE_BAND;
+    settlingTime = (last + e0 / (e0 - e1)) * h;
+  }
+  return { h, y, overshootPct: Math.max(0, (peak - 1) * 100), peakTime: kPeak * h, settlingTime };
+}
 function calculatePidTuning(inputs) {
   const { processGain, deadTime, timeConstant } = inputs;
+  const overshootBudget = inputs.overshootBudget ?? 25;
+  if (!(overshootBudget > 0)) {
+    return { values: {}, errors: ["The overshoot budget must be greater than 0"] };
+  }
   const kpPID = 1.2 * timeConstant / (processGain * deadTime);
   const tiPID = 2 * deadTime;
   const tdPID = 0.5 * deadTime;
@@ -29708,7 +32071,10 @@ function calculatePidTuning(inputs) {
   const kdPID = kpPID * tdPID;
   const kpPI = 0.9 * timeConstant / (processGain * deadTime);
   const tiPI = 3.33 * deadTime;
-  return { values: { kpPID, kiPID, kdPID, tiPID, tdPID, kpPI, tiPI } };
+  const step = pidStepResponse(processGain, deadTime, timeConstant);
+  const overshootPct = step ? step.overshootPct : NaN;
+  const settlingTime = step ? step.settlingTime : NaN;
+  return { values: { kpPID, kiPID, kdPID, tiPID, tdPID, kpPI, tiPI, overshootPct, settlingTime } };
 }
 var pidTuning = {
   slug: "pid-tuning",
@@ -29721,7 +32087,18 @@ var pidTuning = {
   inputs: [
     { key: "processGain", label: "Process Gain (K)", symbol: "K", unit: "", defaultValue: 1.5, min: 1e-3, step: 0.1, tooltip: "Output change / Input step size from step test" },
     { key: "deadTime", label: "Dead Time (L)", symbol: "L", unit: "s", defaultValue: 0.1, min: 1e-3, step: 0.01, tooltip: "Time before response begins" },
-    { key: "timeConstant", label: "Time Constant (τ)", symbol: "τ", unit: "s", defaultValue: 1, min: 1e-3, step: 0.1, tooltip: "Time for 63.2% of final step response" }
+    { key: "timeConstant", label: "Time Constant (τ)", symbol: "τ", unit: "s", defaultValue: 1, min: 1e-3, step: 0.1, tooltip: "Time for 63.2% of final step response" },
+    {
+      key: "overshootBudget",
+      label: "Overshoot Budget",
+      symbol: "M_{p,max}",
+      unit: "%",
+      defaultValue: 25,
+      min: 0.1,
+      max: 200,
+      step: 1,
+      tooltip: "The overshoot the loop may have on a setpoint step; Ziegler–Nichols tuning aims at about 25 % (Ogata, Modern Control Engineering, 5th ed., ch. 8)"
+    }
   ],
   outputs: [
     { key: "kpPID", label: "Kp (PID)", symbol: "Kp", unit: "", precision: 3, primary: true },
@@ -29730,9 +32107,84 @@ var pidTuning = {
     { key: "kpPI", label: "Kp (PI only)", symbol: "Kp_PI", unit: "", precision: 3 },
     { key: "tiPI", label: "Ti (PI only)", symbol: "Ti_PI", unit: "s", precision: 3 },
     { key: "tiPID", label: "Ti (PID)", symbol: "Ti", unit: "s", precision: 3 },
-    { key: "tdPID", label: "Td (PID)", symbol: "Td", unit: "s", precision: 4 }
+    { key: "tdPID", label: "Td (PID)", symbol: "Td", unit: "s", precision: 4 },
+    {
+      key: "overshootPct",
+      label: "Overshoot (PID)",
+      symbol: "M_p",
+      unit: "%",
+      precision: 2,
+      display: { decimals: 1 },
+      tooltip: "How far the process overshoots a setpoint step under the PID gains, simulated with the derivative on the measurement"
+    },
+    {
+      key: "settlingTime",
+      label: "Settling Time (PID, 2 %)",
+      symbol: "t_s",
+      unit: "s",
+      precision: 4,
+      display: { sig: 3 },
+      tooltip: "When the simulated step response last leaves ±2 % of the setpoint"
+    }
   ],
   calculate: calculatePidTuning,
+  // C7 Timing & waveforms (site-redesign W8): the setpoint step and the
+  // process's closed-loop response under the PID gains, the overshoot against
+  // its budget, and the tuning at the usual shares of dead time.
+  waveform: {
+    title: "Closed-loop step response (PID)",
+    lanes: (i, v) => {
+      const s = pidStepResponse(i.processGain, i.deadTime, i.timeConstant);
+      if (!s) return [];
+      const horizon = (s.y.length - 1) * s.h;
+      const settled = Number.isFinite(v.settlingTime) ? v.settlingTime : horizon;
+      const end = Math.min(horizon, Math.max(1.5 * settled, s.overshootPct > 0 ? 3 * s.peakTime : 0, 6 * i.deadTime));
+      const last = Math.min(s.y.length - 1, Math.ceil(end / s.h));
+      const stride = Math.max(1, Math.ceil(last / 400));
+      const pad = 0.05 * end;
+      const curve = [[-pad, 0]];
+      for (let k = 0; k <= last; k += stride) curve.push([k * s.h, 100 * s.y[k]]);
+      if (last % stride !== 0) curve.push([last * s.h, 100 * s.y[last]]);
+      const samples = [];
+      if (s.overshootPct > 0 && s.peakTime <= end) samples.push([s.peakTime, 100 + s.overshootPct]);
+      if (Number.isFinite(v.settlingTime) && v.settlingTime <= end) {
+        const k = Math.min(last, Math.round(v.settlingTime / s.h));
+        samples.push([v.settlingTime, 100 * s.y[k] >= 100 ? 100 * (1 + SETTLE_BAND) : 100 * (1 - SETTLE_BAND)]);
+      }
+      return [
+        { id: "sp", symbol: "SP", kind: "digital", points: [[-pad, 0], [0, 0], [0, 1], [last * s.h, 1]] },
+        { id: "y", symbol: "y", kind: "analog", unit: "%", points: curve, samples }
+      ];
+    },
+    intervals: (i, v) => {
+      const out = [{ from: 0, to: i.deadTime, label: "L" }];
+      const s = pidStepResponse(i.processGain, i.deadTime, i.timeConstant);
+      if (s && Number.isFinite(v.settlingTime)) {
+        const horizon = (s.y.length - 1) * s.h;
+        const end = Math.min(horizon, Math.max(1.5 * v.settlingTime, 3 * s.peakTime, 6 * i.deadTime));
+        const last = Math.min(s.y.length - 1, Math.ceil(end / s.h));
+        if (v.settlingTime > 0 && v.settlingTime <= last * s.h) out.push({ from: 0, to: v.settlingTime, label: "t_s" });
+      }
+      return out;
+    }
+  },
+  tolerance: {
+    output: "overshootPct",
+    budget: { input: "overshootBudget" },
+    sense: "below",
+    results: ["kpPID", "tiPID", "tdPID", "settlingTime"]
+  },
+  standardValues: {
+    input: "deadTime",
+    // To 12 significant figures, so 0.3 × 1 s is 0.3 s, not 0.30000000000000004.
+    values: (i) => DEAD_TIME_SHARES.map((r) => Number((r * i.timeConstant).toPrecision(12))).filter((v) => v >= 1e-3),
+    columns: ["kpPID", "overshootPct", "settlingTime"]
+  },
+  examples: [
+    { id: "oven-temperature", label: "Oven temperature loop, K 0.8, 30 s dead time, 300 s lag", values: { processGain: 0.8, deadTime: 30, timeConstant: 300 } },
+    { id: "dc-motor-speed", label: "DC motor speed loop, K 1.5, 20 ms dead time, 100 ms lag", values: { processGain: 1.5, deadTime: 0.02, timeConstant: 0.1 } },
+    { id: "dead-time-heavy", label: "Dead-time-heavy loop, L/τ = 0.5, 35 % overshoot allowed", values: { processGain: 1, deadTime: 5, timeConstant: 10, overshootBudget: 35 } }
+  ],
   formula: {
     primary: "Kp = 1.2τ/(K·L),  Ti = 2L,  Td = 0.5L",
     variables: [
@@ -36610,8 +39062,61 @@ var linkMargin = {
 };
 
 // src/lib/calculators/rf/mixer-spur-calculator.ts
+function mixerResponses(i) {
+  const rf = i.rfFreq;
+  const lo = i.loFreq;
+  const order = i.maxOrder;
+  const bandLow = i.rfBandLow ?? 902;
+  const bandHigh = i.rfBandHigh ?? 928;
+  const bw = i.ifBandwidth ?? 10;
+  const near = i.nearMargin ?? 50;
+  const ifF = Math.abs(lo - rf);
+  const above = rf >= lo;
+  const out = [];
+  for (let m = 1; m <= order; m++) {
+    for (let n = 0; n <= order - m; n++) {
+      const pair = n === 0 ? [{ f: ifF / m, plus: true }] : [{ f: (n * lo + ifF) / m, plus: true }, { f: Math.abs(n * lo - ifF) / m, plus: false }];
+      for (const { f, plus } of pair) {
+        if (!(f > 0)) continue;
+        const half = bw / (2 * m);
+        const inBand = f + half >= bandLow && f - half <= bandHigh;
+        const nearBand = f + half >= bandLow - near && f - half <= bandHigh + near;
+        let zone = inBand ? "in" : nearBand ? "near" : "clear";
+        let note;
+        let label;
+        if (m === 1 && n === 1) {
+          if (plus === above) zone = "desired";
+          else {
+            note = "Image: reject it in the preselector";
+            label = "image";
+          }
+        } else if (m === 2 && n === 2 && plus === above) {
+          note = "Half-IF";
+          label = "½-IF";
+        } else if (m === 1 && n === 0) {
+          note = "IF feedthrough";
+        }
+        out.push({ f, m, n, order: m + n, name: `${m} × ${n}`, zone, note, label });
+      }
+    }
+  }
+  return out;
+}
+function toBand(f, low, high) {
+  return f < low ? f - low : f > high ? f - high : 0;
+}
 function calculateMixerSpurs(inputs) {
   const { rfFreq, loFreq, maxOrder } = inputs;
+  const rfBandLow = inputs.rfBandLow ?? 902;
+  const rfBandHigh = inputs.rfBandHigh ?? 928;
+  const ifBandwidth = inputs.ifBandwidth ?? 10;
+  const nearMargin = inputs.nearMargin ?? 50;
+  if (!(rfBandHigh > rfBandLow)) {
+    return { values: {}, errors: ["The RF band must end above where it starts"] };
+  }
+  if (!(ifBandwidth >= 0) || !(nearMargin >= 0)) {
+    return { values: {}, errors: ["The IF bandwidth and the near-band margin cannot be negative"] };
+  }
   const ifLow = Math.abs(loFreq - rfFreq);
   const ifHigh = loFreq + rfFreq;
   const im3Low = Math.abs(2 * loFreq - rfFreq);
@@ -36645,6 +39150,17 @@ function calculateMixerSpurs(inputs) {
       }
     }
   }
+  const responses = mixerResponses({ ...inputs, rfBandLow, rfBandHigh, ifBandwidth, nearMargin });
+  const spurs = responses.filter((r) => r.zone !== "desired");
+  const spursInBand = spurs.filter((r) => r.zone === "in").length;
+  const spursNearBand = spurs.filter((r) => r.zone === "near").length;
+  let nearestSpur = NaN;
+  for (const r of spurs) {
+    if (!Number.isFinite(nearestSpur) || Math.abs(toBand(r.f, rfBandLow, rfBandHigh)) < Math.abs(toBand(nearestSpur, rfBandLow, rfBandHigh))) nearestSpur = r.f;
+  }
+  const imageFreq = Math.abs(2 * loFreq - rfFreq);
+  const imageToBand = toBand(imageFreq, rfBandLow, rfBandHigh);
+  const loToBand = toBand(loFreq, rfBandLow, rfBandHigh);
   return {
     values: {
       ifLow,
@@ -36654,7 +39170,13 @@ function calculateMixerSpurs(inputs) {
       im3RfLow,
       im3RfHigh,
       totalSpurs,
-      spursNearIf
+      spursNearIf,
+      spursInBand,
+      spursNearBand,
+      nearestSpur,
+      imageFreq,
+      imageToBand,
+      loToBand
     }
   };
 }
@@ -36683,13 +39205,14 @@ var mixerSpurCalculator = {
       label: "RF Frequency",
       symbol: "fRF",
       unit: "MHz",
+      fieldUnit: "MHz",
       defaultValue: 915,
       tooltip: "Input RF signal frequency in MHz",
       presets: [
-        { label: "433 MHz ISM", values: { rfFreq: 433, loFreq: 443.95 } },
-        { label: "915 MHz ISM", values: { rfFreq: 915, loFreq: 1e3 } },
-        { label: "2.4 GHz ISM", values: { rfFreq: 2400, loFreq: 2870 } },
-        { label: "5.8 GHz ISM", values: { rfFreq: 5800, loFreq: 6270 } }
+        { label: "433 MHz ISM", values: { rfFreq: 433.92, loFreq: 444.62, rfBandLow: 433.05, rfBandHigh: 434.79 } },
+        { label: "915 MHz ISM", values: { rfFreq: 915, loFreq: 1e3, rfBandLow: 902, rfBandHigh: 928 } },
+        { label: "2.4 GHz ISM", values: { rfFreq: 2400, loFreq: 2870, rfBandLow: 2400, rfBandHigh: 2483.5 } },
+        { label: "5.8 GHz ISM", values: { rfFreq: 5800, loFreq: 6270, rfBandLow: 5725, rfBandHigh: 5875 } }
       ]
     },
     {
@@ -36697,6 +39220,7 @@ var mixerSpurCalculator = {
       label: "LO Frequency",
       symbol: "fLO",
       unit: "MHz",
+      fieldUnit: "MHz",
       defaultValue: 1e3,
       tooltip: "Local oscillator frequency in MHz"
     },
@@ -36710,6 +39234,46 @@ var mixerSpurCalculator = {
       max: 7,
       step: 1,
       tooltip: "Maximum harmonic order (m+n) to analyze (2-7)"
+    },
+    {
+      key: "rfBandLow",
+      label: "RF Band Start",
+      symbol: "f_{band,lo}",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 902,
+      min: 0,
+      tooltip: "Where the band the receiver takes begins"
+    },
+    {
+      key: "rfBandHigh",
+      label: "RF Band Stop",
+      symbol: "f_{band,hi}",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 928,
+      min: 0,
+      tooltip: "Where the band ends"
+    },
+    {
+      key: "ifBandwidth",
+      label: "IF Bandwidth",
+      symbol: "BW_{IF}",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 10,
+      min: 0,
+      tooltip: "The IF filter's bandwidth; a response of RF order m converts into it from a stretch BW/m wide"
+    },
+    {
+      key: "nearMargin",
+      label: "Near-Band Margin",
+      symbol: "Δf_{near}",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 50,
+      min: 0,
+      tooltip: "How close to the band a response counts as near: about where the preselector has not yet rejected it"
     }
   ],
   outputs: [
@@ -36776,13 +39340,74 @@ var mixerSpurCalculator = {
         warning: { min: 1, max: 4 },
         danger: { max: 4 }
       }
+    },
+    {
+      key: "spursInBand",
+      display: { integer: true },
+      label: "In-Band Spurious Responses",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      tooltip: "Inputs inside the RF band, other than the desired one, that convert into the IF band up to the maximum order: the preselector cannot reject them",
+      // A count: none is PASS, any FAIL.
+      thresholds: { good: { max: 0 }, danger: { max: 0 } }
+    },
+    {
+      key: "spursNearBand",
+      display: { integer: true },
+      label: "Responses Near the Band",
+      symbol: "N_{near}",
+      unit: "",
+      precision: 0,
+      tooltip: "Responses outside the band but within the near-band margin, where the preselector rejects little",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
+    },
+    {
+      key: "nearestSpur",
+      label: "Nearest Spurious Response",
+      symbol: "f_{spur}",
+      unit: "MHz",
+      precision: 3,
+      display: { unit: "MHz", sig: 6 },
+      tooltip: "The response other than the desired one nearest the band"
+    },
+    {
+      key: "imageFreq",
+      label: "Image",
+      symbol: "f_{image}",
+      unit: "MHz",
+      precision: 3,
+      display: { unit: "MHz", sig: 6 },
+      tooltip: "The input on the other side of the LO that converts to the same IF, 2·f_LO − f_RF"
+    },
+    {
+      key: "imageToBand",
+      label: "Image to Band",
+      symbol: "Δf_{image}",
+      unit: "MHz",
+      precision: 3,
+      display: { unit: "MHz", sig: 6 },
+      signed: "explicit",
+      tooltip: "How far the image lies from the band, negative below it; 0 inside it"
+    },
+    {
+      key: "loToBand",
+      label: "LO to Band",
+      symbol: "Δf_{LO}",
+      unit: "MHz",
+      precision: 3,
+      display: { unit: "MHz", sig: 6 },
+      signed: "explicit",
+      tooltip: "How far the LO, which leaks to the antenna, lies from the band, negative below it"
     }
   ],
   examples: [
-    { id: "ism-433-mhz", label: "433 MHz ISM", values: { rfFreq: 433, loFreq: 443.95 } },
-    { id: "ism-915-mhz", label: "915 MHz ISM", values: { rfFreq: 915, loFreq: 1e3 } },
-    { id: "ism-2-4-ghz", label: "2.4 GHz ISM", values: { rfFreq: 2400, loFreq: 2870 } },
-    { id: "ism-5-8-ghz", label: "5.8 GHz ISM", values: { rfFreq: 5800, loFreq: 6270 } }
+    { id: "ism-433-mhz", label: "433 MHz ISM, 10.7 MHz IF", values: { rfFreq: 433.92, loFreq: 444.62, rfBandLow: 433.05, rfBandHigh: 434.79, ifBandwidth: 0.2, nearMargin: 10 } },
+    { id: "ism-915-mhz", label: "915 MHz ISM", values: { rfFreq: 915, loFreq: 1e3, rfBandLow: 902, rfBandHigh: 928, ifBandwidth: 10, nearMargin: 50 } },
+    { id: "ism-2-4-ghz", label: "2.4 GHz ISM", values: { rfFreq: 2400, loFreq: 2870, rfBandLow: 2400, rfBandHigh: 2483.5, ifBandwidth: 20, nearMargin: 200 } },
+    { id: "wifi-2-4-ghz-high-side", label: "2.4 GHz, LO below the band, 300 MHz IF", values: { rfFreq: 2440, loFreq: 2140, rfBandLow: 2400, rfBandHigh: 2483.5, ifBandwidth: 20, nearMargin: 200, maxOrder: 7 } },
+    { id: "ism-5-8-ghz", label: "5.8 GHz ISM", values: { rfFreq: 5800, loFreq: 6270, rfBandLow: 5725, rfBandHigh: 5875, ifBandwidth: 20, nearMargin: 200 } }
   ],
   calculate: calculateMixerSpurs,
   formula: {
@@ -36800,6 +39425,39 @@ var mixerSpurCalculator = {
   visualization: { type: "none" },
   relatedCalculators: ["intermodulation-distortion", "noise-figure-cascade", "rf-link-budget"],
   relatedBlogPosts: ["noise-figure-cascade"],
+  // C8 Spectrum & frequency plan (waves/W8.md, canvas board ExSpectrum): the
+  // inputs that convert to the IF, on the RF axis with the band, its near
+  // zone and the LO.
+  spectrum: {
+    title: "Frequency plan",
+    tableTitle: "Spurious responses, nearest the band first",
+    frequencyLabel: "RF input",
+    nameLabel: "m × n",
+    rule: "f_RF = (n·LO ± IF) / m",
+    unit: "MHz",
+    rangeInputs: [{ from: "rfBandLow", to: "rfBandHigh", label: "RF Band" }],
+    bands: (i) => {
+      const near = i.nearMargin ?? 50;
+      return [
+        { from: i.rfBandLow - near, to: i.rfBandLow, label: "near", kind: "near" },
+        { from: i.rfBandHigh, to: i.rfBandHigh + near, label: "near", kind: "near" },
+        { from: i.rfBandLow, to: i.rfBandHigh, label: "RF band", kind: "band" }
+      ];
+    },
+    lines: (i) => [{ f: i.loFreq, label: "LO" }],
+    products: (i) => mixerResponses(i),
+    views: (i) => {
+      const c2 = (i.rfBandLow + i.rfBandHigh) / 2;
+      const span = Math.max(3 * (i.nearMargin ?? 50), i.rfBandHigh - i.rfBandLow);
+      return [
+        { id: "wide", label: "Wide", from: Math.max(0, i.rfBandLow - 0.6 * c2), to: i.rfBandHigh + 0.6 * c2 },
+        { id: "band", label: "Around the band", from: Math.max(0, i.rfBandLow - span), to: i.rfBandHigh + span }
+      ];
+    },
+    hero: "spursInBand",
+    results: ["spursNearBand", "nearestSpur", "imageFreq", "loToBand"],
+    counts: { in: "spursInBand", near: "spursNearBand" }
+  },
   liveWidgets: [
     { type: "spur-chart", position: "below-outputs", props: {} },
     { type: "space-weather", position: "below-outputs" }
@@ -38137,8 +40795,13 @@ var flybackConverter = {
 };
 
 // src/lib/calculators/power/supercapacitor-backup.ts
+var SUPERCAP_VALUES = [1, 5, 15, 35, 60, 100];
+function drawingEnd(holdUp, backup) {
+  return 1.1 * Math.max(backup, Math.min(holdUp, 3 * backup));
+}
 function calculateSupercapacitorBackup(inputs) {
   const { capacitance, vMax, vMin, iLoad } = inputs;
+  const holdUpTime = inputs.holdUpTime ?? 60;
   if (capacitance <= 0) {
     return { values: {}, errors: ["Capacitance must be positive"] };
   }
@@ -38147,6 +40810,9 @@ function calculateSupercapacitorBackup(inputs) {
   }
   if (iLoad <= 0) {
     return { values: {}, errors: ["Load current must be positive"] };
+  }
+  if (!(holdUpTime > 0)) {
+    return { values: {}, errors: ["The required hold-up time must be greater than 0"] };
   }
   const iLoad_A = iLoad * 1e-3;
   const energy = 0.5 * capacitance * (vMax * vMax - vMin * vMin);
@@ -38215,6 +40881,15 @@ var supercapacitorBackup = {
       min: 0.01,
       max: 1e5,
       tooltip: "Load current drawn during backup operation"
+    },
+    {
+      key: "holdUpTime",
+      label: "Required Hold-Up Time",
+      symbol: "t_{hold}",
+      unit: "s",
+      defaultValue: 60,
+      min: 1e-3,
+      tooltip: "How long the load must keep running after the supply fails; the backup time must reach it"
     }
   ],
   outputs: [
@@ -38261,6 +40936,44 @@ var supercapacitorBackup = {
     }
   ],
   calculate: calculateSupercapacitorBackup,
+  // C7 Timing & waveforms (site-redesign W8): the supply failing and the
+  // capacitor falling from V_max to V_min at the load current, the backup time
+  // against the hold-up required, and standard supercapacitor values.
+  waveform: {
+    title: "Hold-up after the supply fails",
+    lanes: (i, v) => {
+      const tb = v.backupTime;
+      const end = drawingEnd(i.holdUpTime, tb);
+      const pad = 0.1 * end;
+      const samples = [[tb, i.vMin]];
+      if (i.holdUpTime < tb) samples.unshift([i.holdUpTime, i.vMax - i.iLoad * 1e-3 * i.holdUpTime / i.capacitance]);
+      return [
+        { id: "vin", symbol: "V_{in}", kind: "digital", points: [[-pad, 1], [0, 1], [0, 0], [end, 0]] },
+        { id: "vc", symbol: "V_C", kind: "analog", unit: "V", points: [[-pad, i.vMax], [0, i.vMax], [tb, i.vMin]], samples }
+      ];
+    },
+    intervals: (i, v) => {
+      const out = [{ from: 0, to: v.backupTime, label: "backup" }];
+      if (i.holdUpTime <= drawingEnd(i.holdUpTime, v.backupTime)) out.push({ from: 0, to: i.holdUpTime, label: "hold-up" });
+      return out;
+    }
+  },
+  tolerance: {
+    output: "backupTime",
+    budget: { input: "holdUpTime" },
+    sense: "above",
+    results: ["backupTimeMin", "energy", "chargeTime"]
+  },
+  standardValues: {
+    input: "capacitance",
+    values: SUPERCAP_VALUES,
+    columns: ["backupTime", "energy", "chargeTime"]
+  },
+  examples: [
+    { id: "last-gasp-flush", label: "Last-gasp flash write, 5 F from 5 V to 3.3 V at 500 mA, 10 s needed", values: { capacitance: 5, vMax: 5, vMin: 3.3, iLoad: 500, holdUpTime: 10 } },
+    { id: "rtc-backup-day", label: "Clock backup, 1 F from 5 V to 2 V at 10 µA, a day needed", values: { capacitance: 1, vMax: 5, vMin: 2, iLoad: 0.01, holdUpTime: 86400 } },
+    { id: "gateway-ride-through", label: "Gateway ride-through, 15 F from 5.4 V to 4.5 V at 300 mA, 60 s needed", values: { capacitance: 15, vMax: 5.4, vMin: 4.5, iLoad: 300, holdUpTime: 60 } }
+  ],
   formula: {
     primary: "E = \\frac{1}{2}C(V_{max}^2 - V_{min}^2),\\quad t = \\frac{E}{V_{avg} \\cdot I_{load}}",
     variables: [
@@ -38414,8 +41127,48 @@ var batteryInternalResistance = {
 };
 
 // src/lib/calculators/protocol/i2s-timing.ts
+var STANDARD_RATES3 = [8, 16, 22.05, 32, 44.1, 48, 88.2, 96, 176.4, 192];
+function i2sLanes(i, word) {
+  const bits = Math.round(i.bitDepth);
+  const ch = Math.round(i.channels);
+  const t = 1 / (i.sampleRate * 1e3 * bits * ch);
+  const frame = bits * ch;
+  const total = frame + 1;
+  const bclk = [];
+  for (let k = 0; k < total; k++) bclk.push([k * t, 0], [(k + 0.5) * t, 0], [(k + 0.5) * t, 1], [(k + 1) * t, 1], [(k + 1) * t, 0]);
+  const ws = ch <= 2 ? [[0, 0], [bits * t, 0], [bits * t, ch === 2 ? 1 : 0], [frame * t, ch === 2 ? 1 : 0], [frame * t, 0], [total * t, 0]] : [[0, 1], [t, 1], [t, 0], [frame * t, 0], [frame * t, 1], [total * t, 1]];
+  const level = (k) => {
+    const j = (k - 1 + frame) % frame;
+    const pos = j % bits;
+    return bits - 1 - pos < 53 ? Math.floor(word / 2 ** (bits - 1 - pos)) % 2 : 0;
+  };
+  const sd = [];
+  for (let k = 0; k < total; k++) {
+    const b = level(k);
+    if (k && b === sd[sd.length - 1][1]) continue;
+    if (k) sd.push([k * t, sd[sd.length - 1][1]]);
+    sd.push([k * t, b]);
+  }
+  sd.push([total * t, sd[sd.length - 1][1]]);
+  const hex = `0x${word.toString(16).toUpperCase().padStart(2, "0")}`;
+  const name = (c2) => ch === 2 ? c2 ? "R" : "L" : `CH${c2 + 1}`;
+  return [
+    { id: "bclk", symbol: "BCLK", kind: "digital", points: bclk },
+    { id: "ws", symbol: "WS", kind: "digital", points: ws },
+    {
+      id: "sd",
+      symbol: "SD",
+      kind: "digital",
+      points: sd,
+      segments: Array.from({ length: ch }, (_, c2) => ({ from: (c2 * bits + 1) * t, to: ((c2 + 1) * bits + 1) * t, name: name(c2), value: hex })),
+      samples: Array.from({ length: ch }, (_, c2) => [(c2 * bits + 1.5) * t, level(c2 * bits + 1)])
+    }
+  ];
+}
 function calculateI2sTiming(inputs) {
   const { sampleRate, bitDepth, channels } = inputs;
+  const mclk = inputs.mclk ?? 16.9344;
+  const rateBudget = inputs.rateBudget ?? 0.1;
   if (sampleRate <= 0) {
     return { values: {}, errors: ["Sample rate must be positive"] };
   }
@@ -38425,16 +41178,30 @@ function calculateI2sTiming(inputs) {
   if (channels <= 0) {
     return { values: {}, errors: ["Channel count must be positive"] };
   }
+  if (!(mclk > 0)) {
+    return { values: {}, errors: ["The master clock must be positive"] };
+  }
+  if (!(rateBudget > 0)) {
+    return { values: {}, errors: ["The sample-rate budget must be greater than 0"] };
+  }
   const bclk = sampleRate * bitDepth * channels / 1e3;
   const wclk = sampleRate;
   const bclkPeriod = 1 / (bclk * 1e6) * 1e9;
   const dataRate = sampleRate * bitDepth * channels / 1e3;
+  const mclkDivider = Math.max(1, Math.floor(mclk / bclk + 0.5));
+  const bclkActual = mclk / mclkDivider;
+  const sampleRateActual = bclkActual * 1e3 / (bitDepth * channels);
+  const sampleRateError_pct = (sampleRateActual - sampleRate) / sampleRate * 100;
   return {
     values: {
       bclk,
       wclk,
       bclkPeriod,
-      dataRate
+      dataRate,
+      mclkDivider,
+      bclkActual,
+      sampleRateActual,
+      sampleRateError_pct
     }
   };
 }
@@ -38487,6 +41254,28 @@ var i2sTiming = {
       min: 1,
       max: 32,
       tooltip: "Number of audio channels (1 for mono, 2 for stereo)"
+    },
+    {
+      key: "mclk",
+      label: "Master Clock (MCLK)",
+      symbol: "MCLK",
+      unit: "MHz",
+      defaultValue: 16.9344,
+      min: 0.1,
+      max: 200,
+      step: 1e-4,
+      tooltip: "The clock BCLK is divided from by a whole number: 16.9344 MHz is 384 × 44.1 kHz, 12.288 MHz is 256 × 48 kHz"
+    },
+    {
+      key: "rateBudget",
+      label: "Sample-Rate Budget",
+      symbol: "ε_{max}",
+      unit: "%",
+      defaultValue: 0.1,
+      min: 1e-3,
+      max: 10,
+      step: 1e-3,
+      tooltip: "The sample-rate error the link can take; ±0.1 % (1000 ppm) is IEC 60958-3's Level II clock accuracy for consumer digital audio"
     }
   ],
   outputs: [
@@ -38522,9 +41311,79 @@ var i2sTiming = {
       unit: "Mbps",
       precision: 4,
       tooltip: "Raw audio data rate on the I2S bus"
+    },
+    {
+      key: "mclkDivider",
+      label: "MCLK Divider",
+      symbol: "N",
+      unit: "",
+      precision: 0,
+      display: { integer: true },
+      tooltip: "The whole number MCLK is divided by, the nearest to MCLK/BCLK"
+    },
+    {
+      key: "bclkActual",
+      label: "Actual BCLK",
+      symbol: "BCLK_{set}",
+      unit: "MHz",
+      precision: 4,
+      display: { sig: 6 },
+      tooltip: "MCLK over the divider"
+    },
+    {
+      key: "sampleRateActual",
+      label: "Actual Sample Rate",
+      symbol: "F_{s,set}",
+      unit: "kHz",
+      precision: 4,
+      display: { sig: 6 },
+      tooltip: "The actual BCLK over the bits in a frame"
+    },
+    {
+      key: "sampleRateError_pct",
+      label: "Sample-Rate Error",
+      symbol: "ε",
+      unit: "%",
+      precision: 4,
+      display: { decimals: 3 },
+      signed: "explicit",
+      tooltip: "Actual over requested, signed; zero only where MCLK is a whole multiple of BCLK"
     }
   ],
   calculate: calculateI2sTiming,
+  // C7 Timing & waveforms (waves/W8.md): one frame of BCLK, WS and SD, the
+  // sample-rate error from dividing MCLK against its budget, and the audio
+  // sample rates.
+  waveform: {
+    title: "One frame",
+    controls: [{ key: "word", label: "Sample Word", defaultValue: 165, min: 0, max: 4294967295, byte: true }],
+    lanes: (i, _v, c2) => i2sLanes(i, c2.word),
+    intervals: (i) => {
+      const bits = Math.round(i.bitDepth);
+      const ch = Math.round(i.channels);
+      const t = 1 / (i.sampleRate * 1e3 * bits * ch);
+      return [
+        { from: 0, to: t, label: "BCLK" },
+        { from: 0, to: bits * ch * t, label: "frame" }
+      ];
+    }
+  },
+  tolerance: {
+    output: "sampleRateError_pct",
+    budget: { input: "rateBudget" },
+    results: ["bclk", "mclkDivider", "sampleRateActual", "bclkPeriod"]
+  },
+  standardValues: {
+    input: "sampleRate",
+    values: STANDARD_RATES3,
+    columns: ["bclk", "mclkDivider", "sampleRateError_pct"]
+  },
+  examples: [
+    { id: "48k-24bit-12288", label: "48 kHz, 24-bit stereo from a 12.288 MHz MCLK", values: { sampleRate: 48, bitDepth: 24, channels: 2, mclk: 12.288 } },
+    { id: "48k-32bit-slots-12288", label: "48 kHz in 32-bit slots from a 12.288 MHz MCLK", values: { sampleRate: 48, bitDepth: 32, channels: 2, mclk: 12.288 } },
+    { id: "44k1-16bit-11289", label: "44.1 kHz, 16-bit stereo from an 11.2896 MHz MCLK", values: { sampleRate: 44.1, bitDepth: 16, channels: 2, mclk: 11.2896 } },
+    { id: "tdm8-48k-24576", label: "TDM, 8 channels of 32 bits at 48 kHz from a 24.576 MHz MCLK", values: { sampleRate: 48, bitDepth: 32, channels: 8, mclk: 24.576 } }
+  ],
   formula: {
     primary: "BCLK = F_s \\times N_{bits} \\times N_{ch}",
     variables: [
@@ -38540,13 +41399,64 @@ var i2sTiming = {
 };
 
 // src/lib/calculators/protocol/lin-bus-timing.ts
+var STANDARD_RATES4 = [2.4, 9.6, 10.417, 19.2];
+function protectedId(id) {
+  const b = (k) => id >> k & 1;
+  const p0 = b(0) ^ b(1) ^ b(2) ^ b(4);
+  const p1 = 1 - (b(1) ^ b(3) ^ b(4) ^ b(5));
+  return id & 63 | p0 << 6 | p1 << 7;
+}
+function linChecksum(id, pid, data) {
+  let sum = id >= 60 ? 0 : pid;
+  for (const d of data) {
+    sum += d;
+    if (sum > 255) sum -= 255;
+  }
+  return ~sum & 255;
+}
+function linLane(i, id) {
+  const t = 1 / (i.baudRate * 1e3);
+  const n = Math.round(i.dataBytes);
+  const pid = protectedId(id);
+  const data = Array.from({ length: n }, (_, k) => 17 * (k + 1) & 255);
+  const fields = [
+    { name: "SYNC", byte: 85 },
+    { name: "PID", byte: pid },
+    ...data.map((d, k) => ({ name: `D${k + 1}`, byte: d })),
+    { name: "CS", byte: linChecksum(id, pid, data) }
+  ];
+  const hex = (v) => `0x${v.toString(16).toUpperCase().padStart(2, "0")}`;
+  const points = [[-2 * t, 1], [0, 1], [0, 0], [13 * t, 0], [13 * t, 1]];
+  const segments = [{ from: 0, to: 14 * t, name: "BREAK", shade: true }];
+  const samples = [];
+  let at = 14;
+  let level = 1;
+  const bit = (b) => {
+    if (b !== level) points.push([at * t, level], [at * t, b]);
+    level = b;
+    at++;
+  };
+  for (const f of fields) {
+    const from = at;
+    const bits = [0, ...Array.from({ length: 8 }, (_, k) => f.byte >> k & 1), 1];
+    if (f.name === "SYNC") bits.forEach((b, k) => samples.push([(at + k + 0.5) * t, b]));
+    bits.forEach(bit);
+    segments.push({ from: from * t, to: at * t, name: f.name, value: hex(f.byte) });
+  }
+  points.push([at * t, level], [(at + 2) * t, 1]);
+  return { id: "lin", symbol: "LIN", kind: "digital", points, segments, samples };
+}
 function calculateLinBusTiming(inputs) {
   const { baudRate, dataBytes } = inputs;
+  const slotTime = inputs.slotTime ?? 10;
   if (baudRate <= 0) {
     return { values: {}, errors: ["Baud rate must be positive"] };
   }
   if (dataBytes <= 0 || dataBytes > 8) {
     return { values: {}, errors: ["Data bytes must be 1 to 8"] };
+  }
+  if (!(slotTime > 0)) {
+    return { values: {}, errors: ["The frame slot must be greater than 0"] };
   }
   const bitTime = 1 / (baudRate * 1e3) * 1e6;
   const breakLength = 13 * bitTime;
@@ -38555,13 +41465,15 @@ function calculateLinBusTiming(inputs) {
   const framesPerSec = 1e6 / frameTime;
   const interFrameGap = 4 * bitTime;
   const busLoad = frameTime / (frameTime + interFrameGap) * 100;
+  const frameTimeMax = 1.4 * frameTime / 1e3;
   return {
     values: {
       bitTime,
       breakLength,
       frameTime,
       framesPerSec,
-      busLoad
+      busLoad,
+      frameTimeMax
     }
   };
 }
@@ -38600,6 +41512,17 @@ var linBusTiming = {
       max: 8,
       step: 1,
       tooltip: "Number of data bytes in the response field (1-8 per LIN spec)"
+    },
+    {
+      key: "slotTime",
+      label: "Frame Slot",
+      symbol: "T_slot",
+      unit: "ms",
+      defaultValue: 10,
+      min: 0.1,
+      max: 1e3,
+      step: 0.1,
+      tooltip: "The schedule table's time for this frame; LIN 2.x needs it to hold the frame at its 1.4 × nominal maximum"
     }
   ],
   outputs: [
@@ -38643,9 +41566,50 @@ var linBusTiming = {
       unit: "%",
       precision: 1,
       tooltip: "Approximate bus utilization percentage"
+    },
+    {
+      key: "frameTimeMax",
+      label: "Maximum Frame Time",
+      symbol: "T_{frame,max}",
+      unit: "ms",
+      precision: 3,
+      display: { sig: 4 },
+      tooltip: "The frame time with its 40 % allowance for inter-byte spaces and the response space (LIN 2.x TFrame_Maximum); the schedule slot must hold it"
     }
   ],
   calculate: calculateLinBusTiming,
+  // C7 Timing & waveforms (waves/W8.md): one frame on the bus, its maximum
+  // time against the schedule slot, and the LIN rates.
+  waveform: {
+    title: "One frame on the bus",
+    controls: [{ key: "id", label: "Frame ID", defaultValue: 16, min: 0, max: 63 }],
+    lanes: (i, _v, c2) => [linLane(i, c2.id)],
+    intervals: (i) => {
+      const t = 1 / (i.baudRate * 1e3);
+      return [
+        { from: 0, to: 13 * t, label: "break" },
+        { from: 0, to: 34 * t, label: "header" },
+        { from: 34 * t, to: (34 + 10 * (Math.round(i.dataBytes) + 1)) * t, label: "response" }
+      ];
+    }
+  },
+  tolerance: {
+    output: "frameTimeMax",
+    budget: { input: "slotTime" },
+    sense: "below",
+    results: ["frameTime", "bitTime", "breakLength", "framesPerSec"]
+  },
+  standardValues: {
+    input: "baudRate",
+    values: STANDARD_RATES4,
+    columns: ["bitTime", "frameTime", "frameTimeMax"]
+  },
+  examples: [
+    { id: "body-19k2-8-slot10", label: "19 200 Bd, 8 data bytes in a 10 ms slot", values: { baudRate: 19.2, dataBytes: 8, slotTime: 10 } },
+    { id: "j2602-4-slot20", label: "SAE J2602 at 10 417 Bd, 4 data bytes in a 20 ms slot", values: { baudRate: 10.417, dataBytes: 4, slotTime: 20 } },
+    { id: "2k4-2-slot50", label: "2400 Bd, 2 data bytes in a 50 ms slot", values: { baudRate: 2.4, dataBytes: 2, slotTime: 50 } },
+    { id: "19k2-8-slot5", label: "19 200 Bd, 8 data bytes in a 5 ms slot", values: { baudRate: 19.2, dataBytes: 8, slotTime: 5 } }
+  ],
   formula: {
     primary: "T_{bit} = \\frac{1}{baud\\_rate},\\quad T_{frame} = (13+1+10+10+10N+10) \\cdot T_{bit}",
     variables: [
@@ -38660,25 +41624,92 @@ var linBusTiming = {
 };
 
 // src/lib/calculators/protocol/modbus-frame-timing.ts
+var STANDARD_RATES5 = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
+function crc16(bytes) {
+  let crc = 65535;
+  for (const b of bytes) {
+    crc ^= b;
+    for (let k = 0; k < 8; k++) crc = crc & 1 ? crc >>> 1 ^ 40961 : crc >>> 1;
+  }
+  return crc;
+}
+function modbusLane(i, v, addr) {
+  const t = 1 / i.baudRate;
+  const n = Math.round(i.dataBytes);
+  const gap = (i.charGap ?? 0) * 1e-3;
+  const charBits = 1 + 8 + i.parityBits + i.stopBits;
+  const t35 = v.t35 * 1e-3;
+  const data = Array.from({ length: n }, (_, k) => 17 * (k + 1) & 255);
+  const body = [addr, 3, ...data];
+  const crc = crc16(body);
+  const chars = [...body, crc & 255, crc >> 8];
+  const hex = (v2, w = 2) => `0x${v2.toString(16).toUpperCase().padStart(w, "0")}`;
+  const points = [[-t35, 1]];
+  const starts = [];
+  let at = 0;
+  let level = 1;
+  const go = (b) => {
+    if (b !== level) points.push([at, level], [at, b]);
+    level = b;
+  };
+  chars.forEach((ch, k) => {
+    if (k) at += gap;
+    starts.push(at);
+    let ones = 0;
+    const bits = [0];
+    for (let j = 0; j < 8; j++) {
+      const b = ch >> j & 1;
+      ones += b;
+      bits.push(b);
+    }
+    if (i.parityBits > 0) bits.push(ones % 2);
+    for (let j = 0; j < i.stopBits; j++) bits.push(1);
+    for (const b of bits) {
+      go(b);
+      at += t;
+    }
+  });
+  const end = at;
+  points.push([end, level], [end, 1], [end + t35, 1]);
+  const charEnd = (k) => starts[k] + charBits * t;
+  const segments = [
+    { from: starts[0], to: charEnd(0), name: "ADDR", value: hex(addr) },
+    { from: starts[1], to: charEnd(1), name: "FUNC", value: hex(3) }
+  ];
+  if (chars.length <= 16) data.forEach((d, k) => segments.push({ from: starts[2 + k], to: charEnd(2 + k), name: `D${k + 1}`, value: hex(d) }));
+  else segments.push({ from: starts[2], to: charEnd(1 + n), name: "DATA", value: `${n} B` });
+  segments.push({ from: starts[2 + n], to: end, name: "CRC", value: hex(crc, 4) });
+  return { id: "bus", symbol: "RS-485", kind: "digital", points, segments };
+}
 function calculateModbusFrameTiming(inputs) {
   const { baudRate, dataBytes, parityBits, stopBits } = inputs;
+  const charGap = inputs.charGap ?? 0;
   if (baudRate <= 0) {
     return { values: {}, errors: ["Baud rate must be positive"] };
   }
   if (dataBytes <= 0) {
     return { values: {}, errors: ["Data bytes must be positive"] };
   }
+  if (!(charGap >= 0)) {
+    return { values: {}, errors: ["The pause between characters cannot be negative"] };
+  }
   const bitsPerChar = 1 + 8 + parityBits + stopBits;
   const charTime = bitsPerChar / baudRate * 1e3;
-  const t35 = 3.5 * charTime;
-  const frameTime = (dataBytes + 4) * charTime;
+  const t35 = baudRate > 19200 ? 1.75 : 3.5 * charTime;
+  const frameTime = (dataBytes + 4) * charTime + (dataBytes + 3) * charGap;
+  const t15 = baudRate > 19200 ? 0.75 : 1.5 * charTime;
+  const charGapChars = charGap / charTime;
+  const t15Chars = t15 / charTime;
   const maxFrameRate = 1 / ((frameTime + t35) / 1e3);
   return {
     values: {
       charTime,
       t35,
       frameTime,
-      maxFrameRate
+      maxFrameRate,
+      t15,
+      charGapChars,
+      t15Chars
     }
   };
 }
@@ -38696,6 +41727,7 @@ var modbusFrameTiming = {
       label: "Baud Rate",
       symbol: "BR",
       unit: "bps",
+      fieldUnit: "bps",
       defaultValue: 9600,
       min: 300,
       max: 115200,
@@ -38716,7 +41748,7 @@ var modbusFrameTiming = {
       min: 1,
       max: 252,
       step: 1,
-      tooltip: "Number of data bytes in PDU including function code"
+      tooltip: "Number of data bytes between the function code and the CRC"
     },
     {
       key: "parityBits",
@@ -38742,6 +41774,17 @@ var modbusFrameTiming = {
       max: 2,
       step: 1,
       tooltip: "Stop bits (1 or 2 — use 2 stop bits when parity=none)"
+    },
+    {
+      key: "charGap",
+      label: "Pause Between Characters",
+      symbol: "t_{gap}",
+      unit: "ms",
+      defaultValue: 0,
+      min: 0,
+      max: 100,
+      step: 0.01,
+      tooltip: "The longest pause the sender leaves between two characters of a frame; a USB adapter or an RTOS driver can leave one"
     }
   ],
   outputs: [
@@ -38760,7 +41803,7 @@ var modbusFrameTiming = {
       symbol: "T_3.5",
       unit: "ms",
       precision: 4,
-      tooltip: "Modbus RTU inter-frame silence: 3.5 × character time"
+      tooltip: "Modbus RTU inter-frame silence: 3.5 × character time, a fixed 1.75 ms above 19 200 Bd"
     },
     {
       key: "frameTime",
@@ -38768,7 +41811,7 @@ var modbusFrameTiming = {
       symbol: "T_frame",
       unit: "ms",
       precision: 3,
-      tooltip: "Total frame transmission time (address + function + data + CRC)"
+      tooltip: "Total frame transmission time (address + function + data + CRC), with the pauses between characters"
     },
     {
       key: "maxFrameRate",
@@ -38777,9 +41820,69 @@ var modbusFrameTiming = {
       unit: "frames/s",
       precision: 1,
       tooltip: "Maximum frames per second including inter-frame gap"
+    },
+    {
+      key: "t15",
+      label: "Inter-Character Limit (1.5T)",
+      symbol: "T_{1.5}",
+      unit: "ms",
+      precision: 4,
+      tooltip: "A pause longer than this inside a frame makes the receiver discard it: 1.5 character times, a fixed 750 µs above 19 200 Bd"
+    },
+    {
+      key: "charGapChars",
+      label: "Pause in Characters",
+      symbol: "t_{gap}/T_{char}",
+      unit: "char",
+      precision: 3,
+      display: { decimals: 2 },
+      tooltip: "The sender's pause between characters, in character times"
+    },
+    {
+      key: "t15Chars",
+      label: "Inter-Character Limit in Characters",
+      symbol: "T_{1.5}/T_{char}",
+      unit: "char",
+      precision: 3,
+      display: { decimals: 2 },
+      tooltip: "The 1.5T limit in character times: 1.5 up to 19 200 Bd, more above it, where the limit is a fixed 750 µs"
     }
   ],
   calculate: calculateModbusFrameTiming,
+  // C7 Timing & waveforms (waves/W8.md): one RTU frame between its 3.5-
+  // character silences, the sender's pause against the inter-character limit,
+  // and the serial-line rates.
+  waveform: {
+    title: "One RTU frame",
+    controls: [{ key: "addr", label: "Slave Address", defaultValue: 1, min: 1, max: 247 }],
+    lanes: (i, v, c2) => [modbusLane(i, v, c2.addr)],
+    // The silence before the frame, the inter-character limit from the end
+    // of the first character, and the frame.
+    intervals: (_i, v) => {
+      const char = v.charTime * 1e-3;
+      return [
+        { from: -v.t35 * 1e-3, to: 0, label: "t3.5" },
+        { from: char, to: char + v.t15 * 1e-3, label: "t1.5" },
+        { from: 0, to: v.frameTime * 1e-3, label: "frame" }
+      ];
+    }
+  },
+  tolerance: {
+    output: "charGapChars",
+    budget: { output: "t15Chars" },
+    sense: "below",
+    results: ["t15", "t35", "charTime", "frameTime"]
+  },
+  standardValues: {
+    input: "baudRate",
+    values: STANDARD_RATES5,
+    columns: ["charTime", "t35", "charGapChars"]
+  },
+  examples: [
+    { id: "read-10-registers-9600", label: "Reply to a read of 10 registers at 9600 Bd 8E1", values: { baudRate: 9600, dataBytes: 21, parityBits: 1, stopBits: 1, charGap: 0 } },
+    { id: "19200-8n2-gap", label: "19 200 Bd 8N2 with 0.5 ms between characters", values: { baudRate: 19200, dataBytes: 8, parityBits: 0, stopBits: 2, charGap: 0.5 } },
+    { id: "usb-adapter-115200", label: "A USB adapter at 115 200 Bd leaving 1 ms between characters", values: { baudRate: 115200, dataBytes: 8, parityBits: 1, stopBits: 1, charGap: 1 } }
+  ],
   formula: {
     primary: "T_{char} = \\frac{1+8+P+S}{baud\\_rate},\\quad T_{3.5} = 3.5 \\times T_{char}",
     variables: [
@@ -38824,7 +41927,7 @@ function calculateEthernetCable(inputs) {
   }
   const { a, b, c: c2 } = coefficients;
   const attPerHundredM = a * Math.sqrt(f) + b * f + c2 / Math.sqrt(f);
-  const attenuation = length / 100 * attPerHundredM;
+  const attenuation2 = length / 100 * attPerHundredM;
   const maxLength = maxLenTable[ct][sp];
   const headroom = maxLength - length;
   const unspecified = maxLength === 0;
@@ -38847,7 +41950,7 @@ function calculateEthernetCable(inputs) {
   }
   return {
     values: {
-      attenuation,
+      attenuation: attenuation2,
       maxLength,
       headroom,
       passOrFail
@@ -39226,8 +42329,23 @@ var powerPlaneImpedance = {
 };
 
 // src/lib/calculators/pcb/via-stub-resonance.ts
+function stubResonances(f0, dataRate) {
+  const out = [];
+  if (!(f0 > 0) || !Number.isFinite(f0)) return out;
+  const nyquist = dataRate / 2;
+  const top = Math.max(5 * f0, 2 * dataRate);
+  for (let n = 1; n <= 199 && n * f0 <= top; n += 2) {
+    const f = n * f0;
+    const zone = f <= nyquist ? "in" : f <= dataRate ? "near" : "clear";
+    const note = n === 1 ? "Quarter-wave: the notch the stub cuts" : n === 3 ? "Three-quarter-wave" : void 0;
+    const label = n === 1 ? "λ/4" : void 0;
+    out.push({ f, n, order: n, name: `n = ${n}`, zone, note, label });
+  }
+  return out;
+}
 function calculateViaStubResonance(inputs) {
   const { pcbThickness, layer, totalLayers, er } = inputs;
+  const dataRate = inputs.dataRate ?? 10;
   if (pcbThickness <= 0) {
     return { values: {}, errors: ["PCB thickness must be positive"] };
   }
@@ -39237,14 +42355,21 @@ function calculateViaStubResonance(inputs) {
   if (er <= 0) {
     return { values: {}, errors: ["Dielectric constant must be positive"] };
   }
+  if (!(dataRate > 0)) {
+    return { values: {}, errors: ["The data rate must be positive"] };
+  }
   const stubLength = pcbThickness * (1 - layer / totalLayers);
+  const nyquistFreq = dataRate / 2;
   if (stubLength <= 0) {
     return {
       values: {
         stubLength: 0,
-        resonantFreq: 0,
+        resonantFreq: Infinity,
         notchDepth: 0,
-        backdrillBenefit: 0
+        backdrillBenefit: Infinity,
+        nyquistFreq,
+        resonancesInBand: 0,
+        resonancesNearBand: 0
       }
     };
   }
@@ -39253,12 +42378,18 @@ function calculateViaStubResonance(inputs) {
   const resonantFreq = vp / (4 * stubLength * 1e-3) / 1e9;
   const notchDepth = -20;
   const backdrillBenefit = resonantFreq * 3;
+  const resonances = stubResonances(resonantFreq, dataRate);
+  const resonancesInBand = resonances.filter((r) => r.zone === "in").length;
+  const resonancesNearBand = resonances.filter((r) => r.zone === "near").length;
   return {
     values: {
       stubLength,
       resonantFreq,
       notchDepth,
-      backdrillBenefit
+      backdrillBenefit,
+      nyquistFreq,
+      resonancesInBand,
+      resonancesNearBand
     }
   };
 }
@@ -39312,6 +42443,16 @@ var viaStubResonance = {
       min: 1,
       max: 20,
       tooltip: "PCB dielectric constant (FR4 = 4.3–4.8)"
+    },
+    {
+      key: "dataRate",
+      label: "Data Rate (NRZ)",
+      symbol: "f_b",
+      unit: "Gbps",
+      fieldUnit: "Gbps",
+      defaultValue: 10,
+      min: 0.1,
+      tooltip: "The signal's NRZ bit rate; for PAM4 enter the symbol rate, half the bit rate. Its band runs from DC to the Nyquist frequency, half the rate, and its main lobe to the rate itself"
     }
   ],
   outputs: [
@@ -39330,12 +42471,10 @@ var viaStubResonance = {
       symbol: "f_res",
       unit: "GHz",
       precision: 2,
-      tooltip: "Quarter-wave resonant frequency of the via stub — causes signal notch",
-      thresholds: {
-        good: { min: 10 },
-        warning: { min: 5, max: 10 },
-        danger: { min: 5 }
-      }
+      tooltip: "Quarter-wave resonant frequency of the via stub — causes signal notch"
+      // No fixed thresholds since site-redesign W8: whether a resonance hurts
+      // depends on the data rate, which the plan judges (GOOD from 10 GHz
+      // contradicted it at 112G PAM4).
     },
     {
       key: "notchDepth",
@@ -39352,7 +42491,43 @@ var viaStubResonance = {
       unit: "GHz",
       precision: 2,
       tooltip: "Approximate resonance frequency improvement after back-drilling the stub"
+    },
+    {
+      key: "nyquistFreq",
+      label: "Nyquist Frequency",
+      symbol: "f_N",
+      unit: "GHz",
+      precision: 3,
+      tooltip: "Half the data rate: the top of the band an NRZ signal needs"
+    },
+    {
+      key: "resonancesInBand",
+      display: { integer: true },
+      label: "Stub Resonances in the Signal Band",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      tooltip: "Resonances n·f₀ (n odd) from DC to the Nyquist frequency: each cuts a notch the signal needs",
+      // A count: none is PASS, any FAIL.
+      thresholds: { good: { max: 0 }, danger: { max: 0 } }
+    },
+    {
+      key: "resonancesNearBand",
+      display: { integer: true },
+      label: "Resonances in the Main Lobe",
+      symbol: "N_{near}",
+      unit: "",
+      precision: 0,
+      tooltip: "Resonances between the Nyquist frequency and the bit rate, where NRZ's spectrum still carries energy up to its first null",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
     }
+  ],
+  examples: [
+    { id: "pcie-gen3-8-layer", label: "8 GT/s on a 1.6 mm 8-layer board, exit layer 4", values: { pcbThickness: 1.6, layer: 4, totalLayers: 8, er: 4.3, dataRate: 8 } },
+    { id: "pcie-gen5-93-mil", label: "PCIe Gen 5 (32 GT/s), 2.36 mm 12-layer board, exit layer 3", values: { pcbThickness: 2.36, layer: 3, totalLayers: 12, er: 4.3, dataRate: 32 } },
+    { id: "pam4-112g-backplane", label: "112 Gb/s PAM4 (56 GBd), 3.0 mm 24-layer backplane, exit layer 4", values: { pcbThickness: 3, layer: 4, totalLayers: 24, er: 3.4, dataRate: 56 } },
+    { id: "pam4-112g-near-side", label: "The same backplane, exit layer 20", values: { pcbThickness: 3, layer: 20, totalLayers: 24, er: 3.4, dataRate: 56 } }
   ],
   calculate: calculateViaStubResonance,
   formula: {
@@ -39373,7 +42548,31 @@ var viaStubResonance = {
     "controlled-impedance"
   ],
   relatedTools: ["fdtd-sparam"],
-  relatedBlogPosts: ["eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"]
+  relatedBlogPosts: ["eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the stub's odd quarter-wave
+  // resonances on a GHz axis, against the band an NRZ signal needs (DC to
+  // Nyquist) and the rest of its main lobe (to the bit rate).
+  spectrum: {
+    title: "Stub resonances",
+    tableTitle: "Resonances, nearest the band first",
+    frequencyLabel: "Resonance",
+    nameLabel: "n",
+    rule: "f_n = n·c / (4·L_stub·√εr), n odd",
+    unit: "GHz",
+    bands: (i, v) => [
+      { from: v.nyquistFreq, to: i.dataRate ?? 10, label: "main lobe", kind: "near" },
+      { from: 0, to: v.nyquistFreq, label: "signal band", kind: "band" }
+    ],
+    lines: (i) => [{ f: i.dataRate ?? 10, label: "bit rate" }],
+    products: (i, v) => stubResonances(v.resonantFreq, i.dataRate ?? 10),
+    views: (i, v) => [
+      { id: "band", label: "Band and first resonance", from: 0, to: 1.25 * Math.max(v.resonantFreq, i.dataRate ?? 10) },
+      { id: "wide", label: "Wide", from: 0, to: 1.1 * Math.max(5 * v.resonantFreq, 2 * (i.dataRate ?? 10)) }
+    ],
+    hero: "resonancesInBand",
+    results: ["resonancesNearBand", "resonantFreq", "nyquistFreq", "stubLength"],
+    counts: { in: "resonancesInBand", near: "resonancesNearBand" }
+  }
 };
 
 // src/lib/calculators/pcb/solder-paste-volume.ts
@@ -40122,9 +43321,9 @@ function calculateCommonModeChoke(inputs) {
   const inductanceH = inductance * 1e-6;
   const impedance = 2 * Math.PI * frequency * inductanceH;
   const loopR = 100;
-  const attenuation = 20 * Math.log10(Math.hypot(loopR + dcr, impedance) / loopR);
+  const attenuation2 = 20 * Math.log10(Math.hypot(loopR + dcr, impedance) / loopR);
   const qualityFactor = impedance / dcr;
-  return { values: { impedance, attenuation, qualityFactor } };
+  return { values: { impedance, attenuation: attenuation2, qualityFactor } };
 }
 var commonModeChoke = {
   slug: "common-mode-choke",
@@ -40837,9 +44036,9 @@ var powerSupplyRippleFilter = {
     const freqHz = frequency * 1e3;
     const resonantFreq = 1 / (2 * Math.PI * Math.sqrt(lH * cF)) / 1e3;
     const freqRatio = freqHz / (resonantFreq * 1e3);
-    const attenuation = freqRatio > 1 ? -40 * Math.log10(freqRatio) : 0;
-    const outputRipple = inputRipple * Math.pow(10, attenuation / 20);
-    return { values: { resonantFreq, attenuation, outputRipple } };
+    const attenuation2 = freqRatio > 1 ? -40 * Math.log10(freqRatio) : 0;
+    const outputRipple = inputRipple * Math.pow(10, attenuation2 / 20);
+    return { values: { resonantFreq, attenuation: attenuation2, outputRipple } };
   },
   formula: {
     primary: "f₀ = 1/(2π√LC),  A = −40·log₁₀(f/f₀) dB",
@@ -40993,6 +44192,37 @@ var cableShieldEffectiveness = {
 };
 
 // src/lib/calculators/emc/chassis-resonance.ts
+var C_CM = 29979245800;
+var MAX_MODES = 5e4;
+function modeHz(a, b, h, m, n, p) {
+  return C_CM / 2 * Math.sqrt((m / a) ** 2 + (n / b) ** 2 + (p / h) ** 2);
+}
+function cavityModes(i) {
+  const a = i.length;
+  const b = i.width;
+  const h = i.height;
+  const low = i.bandLow ?? 30;
+  const high = i.bandHigh ?? 1e3;
+  const lowest = Math.min(modeHz(a, b, h, 1, 1, 0), modeHz(a, b, h, 1, 0, 1), modeHz(a, b, h, 0, 1, 1)) / 1e6;
+  const top = Math.max(1.5 * high, 2 * lowest);
+  const out = [];
+  if (!(a > 0) || !(b > 0) || !(h > 0)) return out;
+  modes: for (let m = 0; modeHz(a, b, h, m, 0, 0) / 1e6 <= top; m++) {
+    for (let n = 0; modeHz(a, b, h, m, n, 0) / 1e6 <= top; n++) {
+      for (let p = 0; ; p++) {
+        if (out.length >= MAX_MODES) break modes;
+        const f = modeHz(a, b, h, m, n, p) / 1e6;
+        if (!(f <= top)) break;
+        if ((m === 0 ? 1 : 0) + (n === 0 ? 1 : 0) + (p === 0 ? 1 : 0) > 1) continue;
+        const zone = f >= low && f <= high ? "in" : "clear";
+        const isLowest = f === lowest && m + n + p === 2;
+        const note = isLowest ? "Lowest mode" : m > 0 && n > 0 && p > 0 ? "Two modes, TE and TM" : void 0;
+        out.push({ f, m, n, p, order: m + n + p, name: `(${m},${n},${p})`, zone, note, label: isLowest ? "lowest" : void 0 });
+      }
+    }
+  }
+  return out;
+}
 var chassisResonance = {
   slug: "chassis-resonance",
   title: "Chassis Resonant Frequency",
@@ -41004,23 +44234,83 @@ var chassisResonance = {
   inputs: [
     { key: "length", label: "Length", symbol: "a", unit: "cm", defaultValue: 30, min: 0.1 },
     { key: "width", label: "Width", symbol: "b", unit: "cm", defaultValue: 20, min: 0.1 },
-    { key: "height", label: "Height", symbol: "c", unit: "cm", defaultValue: 10, min: 0.1 }
+    { key: "height", label: "Height", symbol: "c", unit: "cm", defaultValue: 10, min: 0.1 },
+    {
+      key: "bandLow",
+      label: "Band Start",
+      symbol: "f_{band,lo}",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 30,
+      min: 0,
+      tooltip: "Where the band you care about starts: the radiated-emissions range (30 MHz to 1 GHz), a clock's harmonics or a radio's band"
+    },
+    {
+      key: "bandHigh",
+      label: "Band Stop",
+      symbol: "f_{band,hi}",
+      unit: "MHz",
+      fieldUnit: "MHz",
+      defaultValue: 1e3,
+      min: 0,
+      tooltip: "Where the band ends"
+    }
   ],
   outputs: [
     { key: "fLowest", label: "Lowest Resonant Frequency", symbol: "f_min", unit: "MHz", precision: 0, primary: true },
     { key: "f101MHz", label: "TE₁₀₁ Mode", symbol: "f_TE101", unit: "MHz", precision: 0 },
     { key: "f110MHz", label: "TE₁₁₀ Mode", symbol: "f_TE110", unit: "MHz", precision: 0 },
-    { key: "wavelengthAtResonance", label: "Wavelength at f_min", symbol: "λ", unit: "cm", precision: 0 }
+    { key: "wavelengthAtResonance", label: "Wavelength at f_min", symbol: "λ", unit: "cm", precision: 0 },
+    {
+      key: "f011MHz",
+      label: "TE₀₁₁ Mode",
+      symbol: "f_TE011",
+      unit: "MHz",
+      precision: 0,
+      tooltip: "The mode across the width and height: the lowest when the length is the shortest side"
+    },
+    {
+      key: "modesInBand",
+      display: { integer: true },
+      label: "Resonances in the Band",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      tooltip: "Resonant frequencies of the closed box inside the band, each (m, n, p) once (with no zero index it is two modes, TE and TM): a source there can excite the enclosure",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
+    }
   ],
   calculate: (inputs) => {
     const { length, width, height } = inputs;
-    const c2 = 3e10;
+    const bandLow = inputs.bandLow ?? 30;
+    const bandHigh = inputs.bandHigh ?? 1e3;
+    if (length <= 0 || width <= 0 || height <= 0) {
+      return { values: {}, errors: ["All dimensions must be positive"] };
+    }
+    if (!(bandHigh > bandLow)) {
+      return { values: {}, errors: ["The band must end above where it starts"] };
+    }
+    if (!(bandLow >= 0)) {
+      return { values: {}, errors: ["The band cannot start below 0 Hz"] };
+    }
+    const c2 = C_CM;
     const f101 = c2 / 2 * Math.sqrt((1 / length) ** 2 + (1 / height) ** 2);
     const f110 = c2 / 2 * Math.sqrt((1 / length) ** 2 + (1 / width) ** 2);
-    const fLowest = Math.min(f101, f110) / 1e6;
+    const f011 = c2 / 2 * Math.sqrt((1 / width) ** 2 + (1 / height) ** 2);
+    const fLowest = Math.min(f101, f110, f011) / 1e6;
     const wavelengthAtResonance = c2 / (fLowest * 1e6);
-    return { values: { fLowest, f101MHz: f101 / 1e6, f110MHz: f110 / 1e6, wavelengthAtResonance } };
+    const modes = cavityModes({ ...inputs, bandLow, bandHigh });
+    const modesInBand = modes.filter((m) => m.zone === "in").length;
+    const warnings = modes.length >= MAX_MODES ? [`The plan stops at ${MAX_MODES} resonances; the count in the band is a lower bound`] : void 0;
+    return { values: { fLowest, f101MHz: f101 / 1e6, f110MHz: f110 / 1e6, wavelengthAtResonance, f011MHz: f011 / 1e6, modesInBand }, warnings };
   },
+  examples: [
+    { id: "rack-1u-chassis", label: "1U rack chassis, 43 × 30 × 4.4 cm", values: { length: 43, width: 30, height: 4.4, bandLow: 30, bandHigh: 1e3 } },
+    { id: "desktop-pc-tower", label: "Desktop tower, 45 × 42 × 20 cm", values: { length: 45, width: 42, height: 20, bandLow: 30, bandHigh: 1e3 } },
+    { id: "iot-enclosure-2-4-ghz", label: "Handheld enclosure with a 2.4 GHz radio, 12 × 8 × 3 cm", values: { length: 12, width: 8, height: 3, bandLow: 2400, bandHigh: 2483.5 } },
+    { id: "wifi-6e-router", label: "Wi-Fi 6E router, 25 × 18 × 4 cm, 5925 to 7125 MHz", values: { length: 25, width: 18, height: 4, bandLow: 5925, bandHigh: 7125 } }
+  ],
   formula: {
     primary: "f_mnp = (c/2)√((m/a)² + (n/b)² + (p/c)²)",
     variables: [
@@ -41029,7 +44319,34 @@ var chassisResonance = {
     ]
   },
   visualization: { type: "none" },
-  relatedCalculators: ["shielding-effectiveness", "radiated-emission-estimate", "ground-plane-impedance"]
+  relatedCalculators: ["shielding-effectiveness", "radiated-emission-estimate", "ground-plane-impedance"],
+  // C8 Spectrum & frequency plan (waves/W8.md): the closed box's cavity modes
+  // on an MHz axis against the band the reader's emissions occupy. A mode in
+  // the band is one to check, not a failure: it matters where a source drives it.
+  spectrum: {
+    title: "Cavity modes",
+    tableTitle: "Modes, nearest the band first",
+    frequencyLabel: "Resonance",
+    nameLabel: "m, n, p",
+    rule: "f = (c/2)·√((m/a)² + (n/b)² + (p/h)²)",
+    unit: "MHz",
+    rangeInputs: [{ from: "bandLow", to: "bandHigh", label: "Band" }],
+    bands: (i) => [{ from: i.bandLow ?? 30, to: i.bandHigh ?? 1e3, label: "band", kind: "band" }],
+    products: (i) => cavityModes(i),
+    views: (i, v) => {
+      const low = i.bandLow ?? 30;
+      const high = i.bandHigh ?? 1e3;
+      const span = Math.max(0.25 * (high - low), 0.1 * high);
+      return [
+        { id: "wide", label: "Wide", from: 0, to: Math.max(1.5 * high, 2 * v.fLowest) },
+        { id: "band", label: "Around the band", from: Math.max(0, low - span), to: high + span }
+      ];
+    },
+    hero: "modesInBand",
+    results: ["fLowest", "f110MHz", "f101MHz", "f011MHz"],
+    counts: { in: "modesInBand" },
+    zoneStatus: { in: "check" }
+  }
 };
 
 // src/lib/calculators/emc/emi-margin-budget.ts
@@ -41314,9 +44631,9 @@ function calculateDifferentialModeFilter(inputs) {
   const cornerFreq = 1 / (2 * Math.PI * Math.sqrt(lH * cF));
   const freqHz = frequency * 1e3;
   const frequencyRatio = freqHz / cornerFreq;
-  const attenuation = frequencyRatio > 1 ? -40 * Math.log10(frequencyRatio) : 0;
+  const attenuation2 = frequencyRatio > 1 ? -40 * Math.log10(frequencyRatio) : 0;
   const characteristicImpedance = Math.sqrt(lH / cF);
-  return { values: { cornerFreq: cornerFreq / 1e3, attenuation, characteristicImpedance } };
+  return { values: { cornerFreq: cornerFreq / 1e3, attenuation: attenuation2, characteristicImpedance } };
 }
 var fmtL2 = (uh) => uh >= 1e3 ? `${+(uh / 1e3).toPrecision(3)} mH` : `${+uh.toPrecision(3)} μH`;
 var fmtC2 = (uf) => uf >= 1 ? `${+uf.toPrecision(3)} μF` : `${+(uf * 1e3).toPrecision(3)} nF`;
@@ -41857,17 +45174,85 @@ var speakerCrossover = {
 };
 
 // src/lib/calculators/audio/room-modes.ts
+var MAX_MODES2 = 5e4;
+function modeHalfWidth(rt60) {
+  return rt60 > 0 ? 3 * Math.LN10 / (2 * Math.PI * rt60) : 0;
+}
+function roomModeList(i, schroeder) {
+  const { length: L, width: W, height: H, speedOfSound: c2 } = i;
+  const low = i.bandLow ?? 20;
+  const high = i.bandHigh ?? 200;
+  const half = modeHalfWidth(i.rt60);
+  const top = Math.max(2 * Math.max(high, schroeder), high + half);
+  const out = [];
+  if (!(c2 > 0) || !(L > 0) || !(W > 0) || !(H > 0)) return out;
+  const hz = (nL, nW, nH) => {
+    const x = nL / L;
+    const y = nW / W;
+    const z4 = nH / H;
+    return c2 / 2 * Math.sqrt(x * x + y * y + z4 * z4);
+  };
+  modes: for (let nL = 0; ; nL++) {
+    if (!(hz(nL, 0, 0) <= top)) break;
+    for (let nW = 0; ; nW++) {
+      if (!(hz(nL, nW, 0) <= top)) break;
+      for (let nH = 0; ; nH++) {
+        if (out.length >= MAX_MODES2) break modes;
+        const nonZero = (nL > 0 ? 1 : 0) + (nW > 0 ? 1 : 0) + (nH > 0 ? 1 : 0);
+        if (nonZero === 0) continue;
+        const f = hz(nL, nW, nH);
+        if (!(f <= top)) break;
+        const zone = f >= low && f <= high ? "in" : f >= low - half && f <= high + half ? "near" : "clear";
+        const kind = nonZero === 1 ? "axial" : nonZero === 2 ? "tangential" : "oblique";
+        const first = nL + nW + nH === 1;
+        out.push({
+          f,
+          nL,
+          nW,
+          nH,
+          kind,
+          order: nL + nW + nH,
+          name: `(${nL},${nW},${nH})`,
+          zone,
+          level: kind === "axial" ? 0 : kind === "tangential" ? -3 : -6,
+          note: kind === "axial" ? "Axial: the strongest" : kind === "tangential" ? "Tangential" : "Oblique",
+          label: first ? nL ? "length" : nW ? "width" : "height" : void 0
+        });
+      }
+    }
+  }
+  return out;
+}
 function calculateRoomModes(inputs) {
   const { length, width, height, speedOfSound, rt60 } = inputs;
+  const bandLow = inputs.bandLow ?? 20;
+  const bandHigh = inputs.bandHigh ?? 200;
   if (length <= 0 || width <= 0 || height <= 0) {
     return { values: {}, errors: ["Room dimensions must be positive"] };
+  }
+  if (!(speedOfSound > 0)) {
+    return { values: {}, errors: ["The speed of sound must be positive"] };
+  }
+  if (!(rt60 > 0)) {
+    return { values: {}, errors: ["The reverberation time must be positive"] };
+  }
+  if (!(bandHigh > bandLow)) {
+    return { values: {}, errors: ["The band must end above where it starts"] };
+  }
+  if (!(bandLow >= 0)) {
+    return { values: {}, errors: ["The band cannot start below 0 Hz"] };
   }
   const flLength = speedOfSound / (2 * length);
   const flWidth = speedOfSound / (2 * width);
   const flHeight = speedOfSound / (2 * height);
   const volume = length * width * height;
   const schroeder = 2e3 * Math.sqrt(rt60 / volume);
-  return { values: { flLength, flWidth, flHeight, schroeder, volume } };
+  const modes = roomModeList({ ...inputs, bandLow, bandHigh }, schroeder);
+  const modesInBand = modes.filter((m) => m.zone === "in").length;
+  const modesNearBand = modes.filter((m) => m.zone === "near").length;
+  const modalBandwidth = 2 * modeHalfWidth(rt60);
+  const warnings = modes.length >= MAX_MODES2 ? [`The plan stops at ${MAX_MODES2} modes; the counts in and near the band are lower bounds`] : void 0;
+  return { values: { flLength, flWidth, flHeight, schroeder, volume, modesInBand, modesNearBand, modalBandwidth }, warnings };
 }
 var roomModes = {
   slug: "room-modes",
@@ -41882,16 +45267,72 @@ var roomModes = {
     { key: "width", label: "Room Width", symbol: "W", unit: "m", defaultValue: 3.5, min: 0.5, step: 0.1 },
     { key: "height", label: "Room Height", symbol: "H", unit: "m", defaultValue: 2.5, min: 0.5, step: 0.1 },
     { key: "speedOfSound", label: "Speed of Sound", symbol: "c", unit: "m/s", defaultValue: 343, min: 300, max: 360, tooltip: "343 m/s at 20°C" },
-    { key: "rt60", label: "Reverberation Time (RT60)", symbol: "T₆₀", unit: "s", defaultValue: 0.4, min: 0.05, max: 5, step: 0.05, tooltip: "Typical rooms 0.3–0.8 s" }
+    { key: "rt60", label: "Reverberation Time (RT60)", symbol: "T₆₀", unit: "s", defaultValue: 0.4, min: 0.05, max: 5, step: 0.05, tooltip: "Typical rooms 0.3–0.8 s" },
+    {
+      key: "bandLow",
+      label: "Band Start",
+      symbol: "f_{band,lo}",
+      unit: "Hz",
+      fieldUnit: "Hz",
+      defaultValue: 20,
+      min: 0,
+      tooltip: "Where the band you care about starts: the bass a room's modes colour, from 20 Hz"
+    },
+    {
+      key: "bandHigh",
+      label: "Band Stop",
+      symbol: "f_{band,hi}",
+      unit: "Hz",
+      fieldUnit: "Hz",
+      defaultValue: 200,
+      min: 0,
+      tooltip: "Where the band ends: about the Schroeder frequency, above which modes overlap"
+    }
   ],
   outputs: [
     { key: "flLength", label: "Length Mode (1st)", symbol: "f_L", unit: "Hz", precision: 1, primary: true },
     { key: "flWidth", label: "Width Mode (1st)", symbol: "f_W", unit: "Hz", precision: 1 },
     { key: "flHeight", label: "Height Mode (1st)", symbol: "f_H", unit: "Hz", precision: 1 },
     { key: "schroeder", label: "Schroeder Frequency", symbol: "f_S", unit: "Hz", precision: 0 },
-    { key: "volume", label: "Room Volume", symbol: "V", unit: "m³", precision: 1 }
+    { key: "volume", label: "Room Volume", symbol: "V", unit: "m³", precision: 1 },
+    {
+      key: "modesInBand",
+      display: { integer: true },
+      label: "Room Modes in the Band",
+      symbol: "N_{in}",
+      unit: "",
+      precision: 0,
+      tooltip: "Axial, tangential and oblique modes (each mode number up to 40) inside the band: each a peak or a null to treat",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
+    },
+    {
+      key: "modesNearBand",
+      display: { integer: true },
+      label: "Modes Near the Band",
+      symbol: "N_{near}",
+      unit: "",
+      precision: 0,
+      tooltip: "Modes outside the band whose half-power bandwidth reaches into it",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
+    },
+    {
+      key: "modalBandwidth",
+      label: "Mode Bandwidth",
+      symbol: "B",
+      unit: "Hz",
+      precision: 2,
+      tooltip: "Each mode's half-power bandwidth, 3·ln 10/(π·T₆₀), about 2.2/T₆₀: modes closer than this merge into one peak"
+    }
   ],
   calculate: calculateRoomModes,
+  examples: [
+    { id: "sepmeyer-ratio", label: "Room in a 1 : 1.28 : 1.54 ratio (Sepmeyer), 3.85 × 3.2 × 2.5 m", values: { length: 3.85, width: 3.2, height: 2.5, speedOfSound: 343, rt60: 0.3, bandLow: 20, bandHigh: 200 } },
+    { id: "cube-room", label: "A 3 m cube: every axial mode triple", values: { length: 3, width: 3, height: 3, speedOfSound: 343, rt60: 0.3, bandLow: 20, bandHigh: 200 } },
+    { id: "listening-room-subwoofer", label: "Listening room, subwoofer band 20 to 80 Hz", values: { length: 6.5, width: 4.6, height: 2.8, speedOfSound: 343, rt60: 0.35, bandLow: 20, bandHigh: 80 } },
+    { id: "small-control-room", label: "Small control room, 4 × 3 × 2.4 m, up to 300 Hz", values: { length: 4, width: 3, height: 2.4, speedOfSound: 343, rt60: 0.25, bandLow: 20, bandHigh: 300 } }
+  ],
   formula: {
     primary: "f_n = n × c / (2L)",
     variables: [
@@ -41902,7 +45343,47 @@ var roomModes = {
   },
   visualization: { type: "none" },
   relatedCalculators: ["speaker-sensitivity", "subwoofer-box", "audio-snr"],
-  relatedBlogPosts: ["speaker-crossover"]
+  relatedBlogPosts: ["speaker-crossover"],
+  // C8 Spectrum & frequency plan (waves/W8.md): every mode on a log axis,
+  // heights by kind (axial tallest), against the band; a mode in the band is
+  // one to treat, not a failure.
+  spectrum: {
+    title: "Room modes",
+    tableTitle: "Modes, nearest the band first",
+    frequencyLabel: "Mode",
+    nameLabel: "nL, nW, nH",
+    rule: "f = (c/2)·√((nL/L)² + (nW/W)² + (nH/H)²)",
+    unit: "Hz",
+    scale: "log",
+    heightBy: "level",
+    rangeInputs: [{ from: "bandLow", to: "bandHigh", label: "Band" }],
+    bands: (i) => {
+      const low = i.bandLow ?? 20;
+      const high = i.bandHigh ?? 200;
+      const half = modeHalfWidth(i.rt60);
+      return [
+        { from: Math.max(0, low - half), to: low, label: "near", kind: "near" },
+        { from: high, to: high + half, label: "near", kind: "near" },
+        { from: low, to: high, label: "band", kind: "band" }
+      ];
+    },
+    lines: (_i, v) => [{ f: v.schroeder, label: "Schroeder" }],
+    products: (i, v) => roomModeList(i, v.schroeder),
+    views: (i, v) => {
+      const low = i.bandLow ?? 20;
+      const high = i.bandHigh ?? 200;
+      const lowest = Math.min(v.flLength, v.flWidth, v.flHeight);
+      const start = low > 0 ? Math.min(low, lowest) : lowest;
+      return [
+        { id: "band", label: "Around the band", from: (low > 0 ? low : 0.8 * lowest) / 1.25, to: 1.25 * high },
+        { id: "wide", label: "Wide", from: 0.8 * start, to: 2 * Math.max(high, v.schroeder) }
+      ];
+    },
+    hero: "modesInBand",
+    results: ["modesNearBand", "schroeder", "modalBandwidth", "flLength"],
+    counts: { in: "modesInBand", near: "modesNearBand" },
+    zoneStatus: { in: "check" }
+  }
 };
 
 // src/lib/calculators/audio/speaker-sensitivity.ts
@@ -42649,10 +46130,10 @@ function switchNodeTraces(i, v, periods) {
   const m = Math.min(1, Math.sqrt(2 * i.outputPower * i.loadImpedance) / swing);
   const d = (1 + m) / 2;
   const ton = d * T;
-  const centre = Math.sqrt(2 * i.outputPower / i.loadImpedance);
+  const centre2 = Math.sqrt(2 * i.outputPower / i.loadImpedance);
   const dI = V * d * (1 - d) / (v.filterInductorChosenUH * 1e-6 * f);
-  const lo = centre - dI / 2;
-  const hi = centre + dI / 2;
+  const lo = centre2 - dI / 2;
+  const hi = centre2 + dI / 2;
   const end = periods * T;
   const sw = [];
   const il = [[0, lo]];
@@ -48927,6 +52408,24 @@ var effectiveDielectricConstant = {
 };
 
 // src/lib/calculators/pcb/via-step-response.ts
+var BOARD_THICKNESSES = [0.8, 1, 1.6, 2.4, 3.2];
+var Z90 = 1.2815515655446004;
+function erf(x) {
+  const s = Math.sign(x);
+  const a = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * a);
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a);
+  return s * y;
+}
+function edgeLane(id, symbol, tr, end) {
+  const sigma = tr / (2 * Z90);
+  const points = [];
+  for (let k = 0; k <= 160; k++) {
+    const t = -end + 2 * end * k / 160;
+    points.push([t, 50 * (1 + erf(t / (sigma * Math.SQRT2)))]);
+  }
+  return { id, symbol, kind: "analog", unit: "%", points, samples: [[-Z90 * sigma, 10], [Z90 * sigma, 90]] };
+}
 function calculateViaStepResponse(inputs) {
   const {
     viaLength,
@@ -48943,6 +52442,7 @@ function calculateViaStepResponse(inputs) {
     riseTime
     // ps
   } = inputs;
+  const slowdownBudget = inputs.slowdownBudget ?? 10;
   const h = viaLength;
   const d = drillDiameter;
   const d1 = padDiameter;
@@ -48966,6 +52466,9 @@ function calculateViaStepResponse(inputs) {
       values: {},
       errors: ["Line impedance and input rise time must be positive"]
     };
+  }
+  if (!(slowdownBudget > 0)) {
+    return { values: {}, errors: ["The edge-slowdown budget must be greater than 0"] };
   }
   const inductanceNH = 0.2 * h * (Math.log(4 * h / d) + 0.5);
   const capacitancePF = 0.0554 * er * h * d1 / (d2 - d1);
@@ -49008,7 +52511,7 @@ function calculateViaStepResponse(inputs) {
       `Via self-resonance ${fResonanceGHz.toFixed(2)} GHz is within 3× the ${kneeFrequencyGHz.toFixed(2)} GHz knee — the lumped model is optimistic here`
     );
   }
-  if (degradationPercent > 10) {
+  if (degradationPercent > slowdownBudget) {
     warnings.push(`Edge slows by ${degradationPercent.toFixed(1)} % through this via`);
   }
   return {
@@ -49132,6 +52635,17 @@ var viaStepResponse = {
         { label: "PCIe Gen4 (30 ps)", values: { riseTime: 30 } },
         { label: "112G SerDes (10 ps)", values: { riseTime: 10 } }
       ]
+    },
+    {
+      key: "slowdownBudget",
+      label: "Edge-Slowdown Budget",
+      symbol: "ε_{max}",
+      unit: "%",
+      defaultValue: 10,
+      min: 0.1,
+      max: 100,
+      step: 0.5,
+      tooltip: "How much the via may slow the edge, as a share of the input rise time; the calculator warned at 10 % before it could be set"
     }
   ],
   outputs: [
@@ -49148,6 +52662,36 @@ var viaStepResponse = {
     { key: "kneeFrequencyGHz", label: "Signal Knee Frequency", symbol: "f_knee", unit: "GHz" }
   ],
   calculate: calculateViaStepResponse,
+  // C7 Timing & waveforms (site-redesign W8): the edge into the via and the
+  // edge out of it, their 10 % and 90 % points; the edge slowdown against its
+  // budget; the via length at the usual board thicknesses.
+  waveform: {
+    title: "The edge through the via",
+    lanes: (i, v) => {
+      const end = 1.6 * v.riseTimeOutPs * 1e-12;
+      return [edgeLane("in", "V_{in}", i.riseTime * 1e-12, end), edgeLane("out", "V_{out}", v.riseTimeOutPs * 1e-12, end)];
+    },
+    intervals: (i, v) => [
+      { from: -0.5 * i.riseTime * 1e-12, to: 0.5 * i.riseTime * 1e-12, label: "tr in" },
+      { from: -0.5 * v.riseTimeOutPs * 1e-12, to: 0.5 * v.riseTimeOutPs * 1e-12, label: "tr out" }
+    ]
+  },
+  tolerance: {
+    output: "degradationPercent",
+    budget: { input: "slowdownBudget" },
+    sense: "below",
+    results: ["riseTimeOutPs", "riseTimeDegradationPs", "reflectionPercent"]
+  },
+  standardValues: {
+    input: "viaLength",
+    values: BOARD_THICKNESSES,
+    columns: ["riseTimeOutPs", "degradationPercent", "reflectionPercent"]
+  },
+  examples: [
+    { id: "pcie-gen4-full-board", label: "PCIe Gen4 edge (30 ps) through a full 1.6 mm via", values: { viaLength: 1.6, riseTime: 30 } },
+    { id: "ddr4-backdrilled", label: "DDR4 (100 ps, 40 Ω) through a via back-drilled to 0.4 mm", values: { viaLength: 0.4, riseTime: 100, lineImpedance: 40 } },
+    { id: "backplane-3p2-wide-antipad", label: "3.2 mm backplane, 50 ps edge, 1.2 mm antipad, 5 % budget", values: { viaLength: 3.2, riseTime: 50, antipadDiameter: 1.2, slowdownBudget: 5 } }
+  ],
   formula: {
     primary: "Δtᵣ = 2.2·(Z₀/2)·C_exc, tᵣ,out = √(tᵣ,in² + Δtᵣ²), C_exc = C − L/Z₀²",
     latex: "\\Delta t_r = 2.2\\,\\frac{Z_0}{2}\\left(C - \\frac{L}{Z_0^{2}}\\right), \\qquad t_{r,\\text{out}} = \\sqrt{t_{r,\\text{in}}^{2} + \\Delta t_r^{2}}, \\qquad f_0 = \\frac{1}{2\\pi\\sqrt{LC}}",
