@@ -5600,7 +5600,7 @@ var ledResistor = {
     {
       key: "vSupply",
       label: "Supply Voltage",
-      symbol: "Vs",
+      symbol: "V_s",
       unit: "V",
       defaultValue: 5,
       min: 0.1,
@@ -5616,7 +5616,7 @@ var ledResistor = {
     {
       key: "vForward",
       label: "LED Forward Voltage",
-      symbol: "Vf",
+      symbol: "V_f",
       unit: "V",
       defaultValue: 2,
       min: 0.5,
@@ -5632,7 +5632,7 @@ var ledResistor = {
     {
       key: "iForward",
       label: "Desired Current",
-      symbol: "If",
+      symbol: "I_f",
       unit: "mA",
       defaultValue: 20,
       min: 0.1,
@@ -5917,7 +5917,7 @@ var buckConverter = {
     {
       key: "deltaIL",
       label: "Inductor Current Ripple",
-      symbol: "ΔIL",
+      symbol: "ΔI_L",
       unit: "%",
       defaultValue: 30,
       min: 5,
@@ -6026,7 +6026,7 @@ var buckConverter = {
     {
       key: "ilPeak",
       label: "Peak Inductor Current",
-      symbol: "IL_peak",
+      symbol: "I_{L,peak}",
       unit: "A",
       precision: 3
     },
@@ -6044,7 +6044,7 @@ var buckConverter = {
     { key: "coutTotalUF", label: "Output Capacitance (bank)", symbol: "C_{out}", unit: "μF", precision: 3 },
     { key: "outputRippleMV", label: "Output Ripple, Worst Case", symbol: "ΔV_{out}", unit: "mV", precision: 3, tooltip: "Peak to peak: the bank's charge ripple plus its ESR ripple, added (an upper bound)" },
     { key: "outputRippleVin", label: "Input at the Worst Output Ripple", symbol: "V_{in}", unit: "V", precision: 3 },
-    { key: "outputRipplePct", label: "Output Ripple, % of Vout", unit: "%", precision: 3 },
+    { key: "outputRipplePct", label: "Output Ripple, % of Vout", unit: "%", precision: 3, display: { decimals: 2 } },
     { key: "cinMinWorstUF", label: "Minimum Input Capacitance over the Input Range", symbol: "C_{in,min}", unit: "μF", precision: 3 },
     { key: "cinMinWorstVin", label: "Input at the Largest Input Capacitance", symbol: "V_{in}", unit: "V", precision: 3 },
     { key: "cinRmsA", label: "Input Capacitor RMS Current, Worst Case", symbol: "I_{Cin,rms}", unit: "A", precision: 3 },
@@ -7184,19 +7184,19 @@ var filterDesigner = {
     },
     {
       key: "fLow_Hz",
-      label: "Lower -3dB Frequency",
+      label: "Lower −3 dB Frequency",
       symbol: "f_L",
       unit: "Hz",
       precision: 1,
-      tooltip: "Lower -3dB corner frequency (band-pass mode only)"
+      tooltip: "Lower −3 dB corner frequency (band-pass mode only)"
     },
     {
       key: "fHigh_Hz",
-      label: "Upper -3dB Frequency",
+      label: "Upper −3 dB Frequency",
       symbol: "f_H",
       unit: "Hz",
       precision: 1,
-      tooltip: "Upper -3dB corner frequency (band-pass mode only)"
+      tooltip: "Upper −3 dB corner frequency (band-pass mode only)"
     },
     {
       key: "maxComponentError",
@@ -9384,7 +9384,7 @@ var opampGain = {
     {
       key: "r1",
       label: "R1 (feedback resistor Rf)",
-      symbol: "Rf",
+      symbol: "R_f",
       unit: "kΩ",
       defaultValue: 10,
       min: 1e-3,
@@ -9393,7 +9393,7 @@ var opampGain = {
     {
       key: "r2",
       label: "R2 (input resistor Rin)",
-      symbol: "Rin",
+      symbol: "R_in",
       unit: "kΩ",
       defaultValue: 1,
       min: 1e-3,
@@ -9412,7 +9412,7 @@ var opampGain = {
     {
       key: "supplyVoltage",
       label: "Supply Voltage (total)",
-      symbol: "Vcc",
+      symbol: "V_cc",
       unit: "V",
       defaultValue: 15,
       min: 1.8,
@@ -9444,7 +9444,7 @@ var opampGain = {
       primary: true,
       signed: "explicit",
       label: "Voltage Gain (V/V)",
-      symbol: "Av",
+      symbol: "A_v",
       unit: "V/V",
       precision: 3,
       tooltip: "Negative value indicates phase inversion (inverting configuration)"
@@ -9453,7 +9453,7 @@ var opampGain = {
       key: "gainDb",
       signed: "explicit",
       label: "Voltage Gain",
-      symbol: "Av",
+      symbol: "A_v",
       unit: "dB",
       precision: 2,
       thresholds: {
@@ -9472,7 +9472,7 @@ var opampGain = {
     {
       key: "inputImpedance_kohm",
       label: "Input Impedance",
-      symbol: "Zin",
+      symbol: "Z_in",
       unit: "kΩ",
       precision: 0,
       format: "engineering",
@@ -9481,7 +9481,7 @@ var opampGain = {
     {
       key: "maxOutputVpp",
       label: "Max Output Swing (typ)",
-      symbol: "Vout_max",
+      symbol: "V_{out,max}",
       unit: "Vpp",
       precision: 2,
       tooltip: "Typical maximum output swing ≈ 80% of total supply voltage"
@@ -12983,7 +12983,7 @@ var boostConverter = {
     { key: "qg", label: "Total Gate Charge", symbol: "Q_{g}", unit: "nC", defaultValue: 10, min: 0, max: 1e4, group: "Loss model", tooltip: "The switch's gate charge at the drive voltage: the gate drive takes Q_g·V_g·f_sw." },
     { key: "vGate", label: "Gate Drive Voltage", symbol: "V_{g}", unit: "V", defaultValue: 5, min: 1, max: 20, group: "Loss model" },
     { key: "vDiode", label: "Rectifier Forward Voltage", symbol: "V_{F}", unit: "V", defaultValue: 0.45, min: 0, max: 3, group: "Loss model", tooltip: "The rectifier diode's forward voltage at the load current: it dissipates V_F·I_out." },
-    { key: "qrr", label: "Rectifier Recovery Charge", symbol: "Q_{rr}", unit: "nC", defaultValue: 0, min: 0, max: 1e4, group: "Loss model", tooltip: "The rectifier's reverse-recovery charge (a Schottky's is its capacitive charge, near 0): the switch takes Q_rr·V_out·f_sw at each turn-on." },
+    { key: "qrr", label: "Rectifier Recovery Charge", symbol: "Q_{rr}", unit: "nC", defaultValue: 0, min: 0, max: 1e4, group: "Loss model", tooltip: "The rectifier's reverse-recovery charge (a Schottky's is its capacitive charge, near 0): the switch takes Q_rr·V_out at each turn-on, Q_rr·V_out·f_sw in all." },
     { key: "dcr", label: "Inductor DCR", symbol: "DCR", unit: "mΩ", defaultValue: 50, min: 0, max: 1e5, group: "Loss model", tooltip: "The inductor's winding resistance." },
     { key: "coreLoss", label: "Inductor Core Loss", symbol: "P_{core}", unit: "mW", defaultValue: 20, min: 0, max: 1e5, group: "Loss model", tooltip: "From the inductor's datasheet at this ripple and frequency." },
     { key: "esrOut", label: "Output Capacitor ESR (each)", symbol: "ESR_{out}", unit: "mΩ", defaultValue: 5, min: 0, max: 1e5, group: "Loss model" }
@@ -13050,7 +13050,7 @@ var boostConverter = {
     { key: "coutRmsVin", label: "Input at the Worst Output Capacitor Current", symbol: "V_{in}", unit: "V", precision: 3 },
     { key: "outputRippleMV", label: "Output Ripple, Worst Case", symbol: "ΔV_{out}", unit: "mV", precision: 3, tooltip: "Peak to peak: the bank's charge ripple plus its ESR step at the peak current, added (an upper bound)" },
     { key: "outputRippleVin", label: "Input at the Worst Output Ripple", symbol: "V_{in}", unit: "V", precision: 3 },
-    { key: "outputRipplePct", label: "Output Ripple, % of Vout", unit: "%", precision: 3 },
+    { key: "outputRipplePct", label: "Output Ripple, % of Vout", unit: "%", precision: 3, display: { decimals: 2 } },
     { key: "vdsRating", label: "Switch and Rectifier Voltage Rating", symbol: "V_{DS}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the output, which the switch blocks when off and the rectifier when the switch is on" },
     { key: "coutVoltageRating", label: "Output Capacitor Voltage Rating", symbol: "V_{Cout}", unit: "V", precision: 1, tooltip: "The rating sold at or above 1.5 times the output" },
     // C11: the loss model at the nominal input and load, a separate estimate from the efficiency input.
@@ -22913,7 +22913,7 @@ var rs485Termination = {
     {
       key: "supplyVoltage",
       label: "Supply Voltage",
-      symbol: "Vcc",
+      symbol: "V_cc",
       unit: "V",
       defaultValue: 5,
       min: 3,
@@ -29564,7 +29564,7 @@ var motorDriverPower = {
     { key: "rdson", label: "RDS(on)", symbol: "R_DS", unit: "Ω", defaultValue: 0.015, min: 1e-3, step: 1e-3 },
     { key: "dutyCycle", label: "PWM Duty Cycle", symbol: "D", unit: "%", defaultValue: 75, min: 0, max: 100 },
     { key: "switchingFreq", label: "Switching Frequency", symbol: "f_sw", unit: "Hz", defaultValue: 2e4, min: 100 },
-    { key: "gateCharge", label: "Gate Charge Qg", symbol: "Qg", unit: "nC", defaultValue: 30, min: 0.1, tooltip: "From MOSFET datasheet" },
+    { key: "gateCharge", label: "Gate Charge Qg", symbol: "Q_g", unit: "nC", defaultValue: 30, min: 0.1, tooltip: "From MOSFET datasheet" },
     { key: "transitionTime", label: "Transition Time", symbol: "t_sw", unit: "ns", defaultValue: 50, min: 0, tooltip: "Rise or fall time of the hard-switched FET, taken equal: TI SLVA504A's 0.5·V·I·(t_r + t_f)·f is then V·I·t_sw·f" },
     { key: "motorCurrentMin", label: "Minimum Motor Current", symbol: "I_{min}", unit: "A", defaultValue: 0, min: 0, tooltip: "The lowest RMS motor current in service; 0 for the nominal.", group: "Operating envelope" },
     { key: "motorCurrentMax", label: "Maximum Motor Current", symbol: "I_{max}", unit: "A", defaultValue: 0, min: 0, tooltip: "The highest RMS motor current in service; 0 for the nominal. The FETs' current and loss are taken at it.", group: "Operating envelope" },
@@ -36850,7 +36850,7 @@ var schmittTrigger = {
     {
       key: "vcc",
       label: "Supply Voltage",
-      symbol: "Vcc",
+      symbol: "V_cc",
       unit: "V",
       defaultValue: 5,
       min: 0.1,
@@ -37083,7 +37083,7 @@ var crystalLoadCapacitance = {
       key: "clActual",
       primary: true,
       label: "Actual Load Capacitance",
-      symbol: "CL_actual",
+      symbol: "C_{L,actual}",
       unit: "pF",
       precision: 2,
       tooltip: "Actual load capacitance presented to the crystal: (C1||C2) + Cstray"
@@ -37092,7 +37092,7 @@ var crystalLoadCapacitance = {
       key: "clError",
       signed: "explicit",
       label: "Load Capacitance Error",
-      symbol: "ΔCL",
+      symbol: "ΔC_L",
       unit: "pF",
       precision: 2,
       tooltip: "Difference between actual and specified load capacitance"
@@ -37303,7 +37303,7 @@ var lm317Resistors = {
     {
       key: "vout",
       label: "Desired Output Voltage",
-      symbol: "Vout",
+      symbol: "V_out",
       unit: "V",
       defaultValue: 5,
       min: 1.25,
@@ -37362,7 +37362,7 @@ var lm317Resistors = {
     {
       key: "voutActual",
       label: "Actual Output Voltage",
-      symbol: "Vout_actual",
+      symbol: "V_{out,actual}",
       unit: "V",
       precision: 4,
       tooltip: "The output voltage R1 and R2 set, including the ADJ pin current; with a part series, the rounded resistors' voltage"
@@ -37875,7 +37875,7 @@ var flybackConverter = {
     {
       key: "vin",
       label: "Input Voltage",
-      symbol: "Vin",
+      symbol: "V_in",
       unit: "V",
       defaultValue: 48,
       min: 1,
@@ -37885,7 +37885,7 @@ var flybackConverter = {
     {
       key: "vout",
       label: "Output Voltage",
-      symbol: "Vout",
+      symbol: "V_out",
       unit: "V",
       defaultValue: 12,
       min: 0.5,
@@ -37895,7 +37895,7 @@ var flybackConverter = {
     {
       key: "iout",
       label: "Output Current",
-      symbol: "Iout",
+      symbol: "I_out",
       unit: "A",
       defaultValue: 1,
       min: 0.01,
@@ -37915,7 +37915,7 @@ var flybackConverter = {
     {
       key: "fsw",
       label: "Switching Frequency",
-      symbol: "fsw",
+      symbol: "f_sw",
       unit: "kHz",
       defaultValue: 100,
       min: 10,
@@ -37978,7 +37978,7 @@ var flybackConverter = {
     {
       key: "iinAvg",
       label: "Average Input Current",
-      symbol: "Iin_avg",
+      symbol: "I_{in,avg}",
       unit: "A",
       precision: 3,
       tooltip: "Average DC input current"
@@ -37986,7 +37986,7 @@ var flybackConverter = {
     {
       key: "ipPeak",
       label: "Peak Primary Current",
-      symbol: "Ip_peak",
+      symbol: "I_{p,pk}",
       unit: "A",
       precision: 3,
       tooltip: "Peak current in primary MOSFET switch"
@@ -37994,7 +37994,7 @@ var flybackConverter = {
     {
       key: "isecPeak",
       label: "Peak Secondary Current",
-      symbol: "Is_peak",
+      symbol: "I_{s,pk}",
       unit: "A",
       precision: 3,
       tooltip: "Peak current in secondary diode/rectifier"
@@ -38002,7 +38002,7 @@ var flybackConverter = {
     {
       key: "outputPower",
       label: "Output Power",
-      symbol: "Pout",
+      symbol: "P_out",
       unit: "W",
       precision: 2,
       tooltip: "Total output power: Vout × Iout"
@@ -41674,7 +41674,7 @@ var speakerCrossover = {
     {
       key: "wooferImpedance",
       label: "Woofer Impedance",
-      symbol: "Zw",
+      symbol: "Z_w",
       unit: "Ω",
       defaultValue: 8,
       min: 1,
@@ -41684,7 +41684,7 @@ var speakerCrossover = {
     {
       key: "tweeterImpedance",
       label: "Tweeter Impedance",
-      symbol: "Zt",
+      symbol: "Z_t",
       unit: "Ω",
       defaultValue: 8,
       min: 1,
@@ -41740,7 +41740,7 @@ var speakerCrossover = {
       key: "wooferL",
       primary: true,
       label: "Woofer Inductor",
-      symbol: "Lw",
+      symbol: "L_w",
       unit: "mH",
       precision: 3,
       tooltip: "Inductor in series with woofer (low-pass filter)"
@@ -41748,7 +41748,7 @@ var speakerCrossover = {
     {
       key: "wooferC",
       label: "Woofer Capacitor",
-      symbol: "Cw",
+      symbol: "C_w",
       unit: "μF",
       precision: 3,
       tooltip: "Capacitor in parallel with woofer (2nd order only; equals tweeter cap value for 1st order)"
@@ -41756,7 +41756,7 @@ var speakerCrossover = {
     {
       key: "tweeterC",
       label: "Tweeter Capacitor",
-      symbol: "Ct",
+      symbol: "C_t",
       unit: "μF",
       precision: 3,
       tooltip: "Capacitor in series with tweeter (high-pass filter)"
@@ -41764,7 +41764,7 @@ var speakerCrossover = {
     {
       key: "tweeterL",
       label: "Tweeter Inductor",
-      symbol: "Lt",
+      symbol: "L_t",
       unit: "mH",
       precision: 3,
       tooltip: "Inductor in parallel with tweeter (2nd order only)"
@@ -42450,7 +42450,7 @@ var tweeterCapacitor = {
   ],
   outputs: [
     { key: "capacitanceMicroF", label: "Capacitor Value", symbol: "C", unit: "μF", precision: 2, primary: true, tooltip: "1/(2π·f_c·Z_t), rounded to the part series when one is chosen" },
-    { key: "reactanceAt1k", label: "Reactance at 1 kHz", symbol: "Xc", unit: "Ω", precision: 1 },
+    { key: "reactanceAt1k", label: "Reactance at 1 kHz", symbol: "X_C", unit: "Ω", precision: 1 },
     { key: "rolloffAt100Hz", label: "Rolloff at 100 Hz", symbol: "ΔdB", unit: "dB", precision: 0 },
     { key: "crossoverBuilt", label: "Crossover as Built (−3 dB)", symbol: "f_{c,b}", unit: "Hz", precision: 1, tooltip: "The −3 dB point of the rounded capacitor into the tweeter's nominal impedance, 1/(2π·C·Z_t); the crossover entered with the ideal value" }
   ],
