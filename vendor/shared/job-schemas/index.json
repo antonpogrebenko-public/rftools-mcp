@@ -3,6 +3,12 @@
   "checks": [
     "converter_duty_in_ccm_range",
     "converter_load_nonzero",
+    "crossover_solve_supported",
+    "design_freq_in_band",
+    "feedback_reference_within_output",
+    "filter_parts_ladder",
+    "filter_pass_criteria",
+    "load_model_fits_load",
     "port_within_board",
     "probability_in_open_unit_interval",
     "sweep_span_within_center",

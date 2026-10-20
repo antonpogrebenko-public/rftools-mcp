@@ -136,6 +136,15 @@
       "x-label": "Rain Rate",
       "x-unit": "mm/hr",
       "x-tooltip": "0 = no rain; 25 = heavy rain; 100 = extreme"
+    },
+    "randomSeed": {
+      "type": "integer",
+      "minimum": 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank uses the fixed seed 42, so the same job repeats exactly. Set it to draw a different sample of the hardware uncertainty, or to repeat a run from its recorded seed."
     }
   }
 }

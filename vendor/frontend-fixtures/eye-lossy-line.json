@@ -1,8 +1,34 @@
 {
  "bitsSimulated": 127,
+ "channelFile": {
+  "dataFormat": "RI",
+  "fileName": "lossy.s2p",
+  "format": "Touchstone",
+  "frequencyStart_hz": 5000000.0,
+  "frequencyStop_hz": 10000000000.0,
+  "frequencyUnit": "Hz",
+  "parameter": "S",
+  "points": 2000,
+  "portReferenceImpedances_ohm": null,
+  "ports": 2,
+  "portsUsed": {
+   "input": [
+    1
+   ],
+   "mode": "single-ended",
+   "output": [
+    2
+   ],
+   "parameter": "S21"
+  },
+  "referenceImpedance_ohm": 50.0,
+  "version": "1"
+ },
  "channelLoss_dB": -1.085736204748242,
+ "ctle": null,
  "dataRate": 1000000000.0,
  "eyeHeight": 1.8116158246994019,
+ "eyeHeightPctOfSwing": 90.58079123497009,
  "eyeTraces": [
   {
    "t": [
@@ -3130,17 +3156,26 @@
  ],
  "jitterPP_ps": 2.891617910334432,
  "jitterRMS_ps": 0.7007989184160791,
+ "launchSwing_mVpp": 2000.0,
+ "lossAtFrequency": null,
+ "mask": null,
  "maxFileFrequency_hz": 10000000000.0,
+ "nyquist_hz": 500000000.0,
  "prbsBits": 127,
  "prbsOrder": 7,
  "prbsPeriod": 127,
  "provenance": {
   "assumptions": [],
-  "computedAt": "2026-09-24T20:35:28.412Z",
-  "elapsedSeconds": 0.006,
+  "computedAt": "2026-10-20T13:29:24.271Z",
+  "elapsedSeconds": 0.007,
   "formulaRef": null,
   "inputs": {
    "dataRate": 1000000000.0,
+   "equalization": "none",
+   "launchSwing": 2000.0,
+   "maskHalfHeight": 70.0,
+   "maskType": "none",
+   "maskWidth": 0.5,
    "prbs": "prbs7",
    "samplesPerUI": 16.0
   },
@@ -3148,15 +3183,45 @@
   "seed": null,
   "validRange": {
    "bounds": {
+    "ctleDcGain": {
+     "max": 0,
+     "min": -12,
+     "unit": "dB"
+    },
     "dataRate": {
      "max": null,
      "min": 1000000,
      "unit": "bps"
     },
+    "launchSwing": {
+     "max": 5000,
+     "min": 10,
+     "unit": "mV"
+    },
+    "lossFrequency": {
+     "max": 1000000000000,
+     "min": 1000,
+     "unit": "Hz"
+    },
+    "maskHalfHeight": {
+     "max": 2500,
+     "min": 1,
+     "unit": "mV"
+    },
+    "maskWidth": {
+     "max": 1,
+     "min": 0.05,
+     "unit": "UI"
+    },
     "samplesPerUI": {
      "max": 128,
      "min": 16,
      "unit": ""
+    },
+    "samplingPhase": {
+     "max": 1,
+     "min": 0,
+     "unit": "UI"
     }
    },
    "model": null,
@@ -3166,6 +3231,16 @@
   "version": "worker@fixture"
  },
  "samplesPerUI": 16,
+ "sampling": {
+  "eyeHeight": 1.8116158246994019,
+  "eyeHeightPctOfSwing": 90.58079123497009,
+  "phaseUI": 0.4687496938689243,
+  "reference": "crossing",
+  "source": "best",
+  "traceTimeUI": 0.9375
+ },
+ "traceCount": 125,
+ "traceSpanUI": 2,
  "transferFunction": [
   {
    "dB": -0.010857362039026233,
@@ -3488,6 +3563,7 @@
    "freq": 10000000000.0
   }
  ],
+ "uiMeasured": 127,
  "unmeasured": {
   "eyeWidth": null,
   "jitter": null

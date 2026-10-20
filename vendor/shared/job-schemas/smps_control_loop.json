@@ -7,7 +7,9 @@
   "x-formulaRef": null,
   "x-checks": [
     "converter_duty_in_ccm_range",
-    "converter_load_nonzero"
+    "converter_load_nonzero",
+    "feedback_reference_within_output",
+    "crossover_solve_supported"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -137,7 +139,8 @@
       "enum": [
         "type1",
         "type2",
-        "type3"
+        "type3",
+        "type2_ota"
       ],
       "default": "type3",
       "x-label": "Compensator"
@@ -147,14 +150,30 @@
       "minimum": 0.001,
       "default": 2000,
       "x-label": "Compensator Gain (K)",
-      "x-unit": "rad/s"
+      "x-unit": "rad/s",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": [
+          "type1",
+          "type2",
+          "type3"
+        ]
+      }
     },
     "compFz1": {
       "type": "number",
       "minimum": 1,
       "default": 500,
       "x-label": "Zero 1 Frequency",
-      "x-unit": "Hz"
+      "x-unit": "Hz",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": [
+          "type1",
+          "type2",
+          "type3"
+        ]
+      }
     },
     "compFz2": {
       "type": "number",
@@ -172,7 +191,15 @@
       "minimum": 1,
       "default": 20000,
       "x-label": "Pole 1 Frequency",
-      "x-unit": "Hz"
+      "x-unit": "Hz",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": [
+          "type1",
+          "type2",
+          "type3"
+        ]
+      }
     },
     "compFp2": {
       "type": "number",
@@ -184,6 +211,144 @@
         "key": "compensatorType",
         "value": "type3"
       }
+    },
+    "compRc": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 10000000,
+      "default": 5760,
+      "x-label": "Compensation Resistor (R_c)",
+      "x-unit": "Ω",
+      "x-tooltip": "R_c with C_c sets the compensator zero, 1/(2π·R_c·C_c), and with g_m and the divider the mid-band gain.",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": "type2_ota"
+      }
+    },
+    "compCc": {
+      "type": "number",
+      "minimum": 1e-12,
+      "maximum": 0.001,
+      "default": 8.2e-9,
+      "x-label": "Compensation Capacitor (C_c)",
+      "x-unit": "F",
+      "x-tooltip": "e.g. 8.2e-9 for 8.2 nF",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": "type2_ota"
+      }
+    },
+    "compChf": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 0.000001,
+      "default": 1.1e-10,
+      "x-label": "High-Frequency Capacitor (C_hf)",
+      "x-unit": "F",
+      "x-tooltip": "Sets the high-frequency pole, (C_c + C_hf)/(2π·R_c·C_c·C_hf). 0 leaves it out.",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": "type2_ota"
+      }
+    },
+    "compGm": {
+      "type": "number",
+      "minimum": 0.000001,
+      "maximum": 0.1,
+      "default": 0.001,
+      "x-label": "Amplifier Transconductance (g_m)",
+      "x-unit": "S",
+      "x-tooltip": "e.g. 1e-3 for 1 mS",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": "type2_ota"
+      }
+    },
+    "compVref": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 999,
+      "default": 0.8,
+      "x-label": "Feedback Reference (V_ref)",
+      "x-unit": "V",
+      "x-tooltip": "The error amplifier’s reference. The feedback divider is V_ref/V_out, so V_ref may not exceed V_out.",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": "type2_ota"
+      }
+    },
+    "solveFor": {
+      "type": "string",
+      "enum": [
+        "none",
+        "crossover"
+      ],
+      "default": "none",
+      "x-label": "Solve For",
+      "x-tooltip": "Crossover places R_c, C_c and C_hf for the target crossover in peak-current mode: the zero at the load pole, the high-frequency pole at the lower of Fsw/2 and the ESR zero, each part snapped to its standard series.",
+      "x-showWhen": {
+        "key": "compensatorType",
+        "value": "type2_ota"
+      }
+    },
+    "targetCrossover": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 5000000,
+      "x-derived": "Fsw / 10",
+      "x-label": "Target Crossover",
+      "x-unit": "Hz",
+      "x-tooltip": "Must be below Fsw/2. When left blank, a tenth of the switching frequency.",
+      "x-showWhen": {
+        "key": "solveFor",
+        "value": "crossover"
+      }
+    },
+    "resistorSeries": {
+      "type": "string",
+      "enum": [
+        "E12",
+        "E24",
+        "E96"
+      ],
+      "default": "E96",
+      "x-label": "Resistor Series",
+      "x-showWhen": {
+        "key": "solveFor",
+        "value": "crossover"
+      }
+    },
+    "capacitorSeries": {
+      "type": "string",
+      "enum": [
+        "E12",
+        "E24",
+        "E96"
+      ],
+      "default": "E12",
+      "x-label": "Capacitor Series",
+      "x-showWhen": {
+        "key": "solveFor",
+        "value": "crossover"
+      }
+    },
+    "minPhaseMargin": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 90,
+      "default": 45,
+      "x-label": "Minimum Phase Margin",
+      "x-unit": "°",
+      "x-tooltip": "The verdict, the Monte Carlo yield and the crossover solve all require at least this phase margin."
+    },
+    "minGainMargin": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 40,
+      "default": 10,
+      "x-label": "Minimum Gain Margin",
+      "x-unit": "dB",
+      "x-tooltip": "The verdict, the Monte Carlo yield and the crossover solve all require at least this gain margin."
     },
     "monteCarloTrials": {
       "type": "integer",

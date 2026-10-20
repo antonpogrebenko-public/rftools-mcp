@@ -34,7 +34,7 @@
     },
     "eirp_dbw": {
       "type": "number",
-      "minimum": -10,
+      "minimum": -40,
       "maximum": 90,
       "default": 46,
       "x-label": "EIRP",

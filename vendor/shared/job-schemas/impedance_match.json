@@ -6,13 +6,16 @@
   "x-title": "Broadband Impedance Matching Synthesizer",
   "x-formulaRef": "Microwave Engineering, 4th ed., David M. Pozar (2011), Chapter 5 — Impedance Matching and Tuning",
   "x-checks": [
-    "sweep_stop_after_start"
+    "sweep_stop_after_start",
+    "design_freq_in_band",
+    "load_model_fits_load"
   ],
   "x-files": {
     "min": 0,
     "max": 2,
     "extensions": [
-      ".s2p"
+      ".s2p",
+      ".s1p"
     ]
   },
   "type": "object",
@@ -47,6 +50,17 @@
       "x-label": "Load Reactance",
       "x-unit": "Ω"
     },
+    "loadModel": {
+      "type": "string",
+      "enum": [
+        "constant",
+        "series_rc",
+        "series_rl",
+        "file"
+      ],
+      "x-label": "Load Frequency Model",
+      "x-tooltip": "How the load varies across the sweep. Blank holds Z_L constant at its f0 value. Series RC or series RL fits a resistor and a capacitor or inductor to Z_L at f0, which needs a negative or a positive load reactance. File reads the load from the uploaded load file at every frequency."
+    },
     "freqStart": {
       "type": "number",
       "minimum": 1000,
@@ -61,6 +75,14 @@
       "default": 1200000000,
       "x-label": "Freq Stop",
       "x-unit": "Hz"
+    },
+    "designFreq": {
+      "type": "number",
+      "minimum": 1000,
+      "x-derived": "(freqStart + freqStop) / 2, the centre of the band",
+      "x-label": "Design Frequency",
+      "x-unit": "Hz",
+      "x-tooltip": "f0: the frequency the network is synthesised at, the load model is fitted at and the uploads are read at. Must lie in the band. Blank means the centre of the band."
     },
     "topology": {
       "type": "string",
@@ -94,6 +116,16 @@
       "default": "E24",
       "x-label": "Component Series",
       "x-tooltip": "Standard values every element is snapped to before the headline return loss is computed. E24 is what the tool has always used."
+    },
+    "branchPreference": {
+      "type": "string",
+      "enum": [
+        "any",
+        "lowpass",
+        "highpass"
+      ],
+      "x-label": "Branch Preference",
+      "x-tooltip": "Low-pass (series inductors, shunt capacitors: a DC path to the load) or high-pass takes that branch of each section where one exists, and the result says when none does. Blank keeps the branch with the better return loss at f0 with the chosen parts."
     },
     "targetRL": {
       "type": "number",

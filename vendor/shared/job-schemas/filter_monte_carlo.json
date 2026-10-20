@@ -5,7 +5,10 @@
   "x-slug": "filter-monte-carlo",
   "x-title": "RF Filter Monte Carlo Analysis",
   "x-formulaRef": null,
-  "x-checks": [],
+  "x-checks": [
+    "filter_parts_ladder",
+    "filter_pass_criteria"
+  ],
   "type": "object",
   "additionalProperties": false,
   "required": [],
@@ -121,6 +124,28 @@
       "x-hidden": true,
       "x-step": 1,
       "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    },
+    "parts": {
+      "type": "array",
+      "x-label": "Circuit Parts",
+      "x-hidden": true,
+      "x-tooltip": "The ladder as built, source to load, 1 to 20 parts: { ref, kind: L | C, position: series | shunt, value in henries or farads, tolerance in % (optional; Component Tolerance when absent) }. Simulated as given, with no E24 rounding. Blank synthesises the ladder from the filter type, band, order and cutoff."
+    },
+    "passCriteria": {
+      "type": "array",
+      "x-label": "Pass Criteria",
+      "x-hidden": true,
+      "x-tooltip": "What a build must meet to pass, 1 to 8 criteria, in place of the passband variation and stopband rejection limits: { kind: insertionLoss, fStart, fStop, maxDb }, { kind: cutoff3dB, fMin, fMax } or { kind: attenuation, freq (or fStart and fStop), minDb }; frequencies in Hz."
+    },
+    "yieldTarget": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "x-label": "Yield Target (optional)",
+      "x-unit": "%",
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "The share of builds that must pass. Blank means 95 %."
     }
   }
 }

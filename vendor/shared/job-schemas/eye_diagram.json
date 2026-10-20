@@ -45,6 +45,99 @@
       "x-label": "Samples per UI",
       "x-dimensionless": true,
       "x-step": 16
+    },
+    "launchSwing": {
+      "type": "number",
+      "minimum": 10,
+      "maximum": 5000,
+      "default": 2000,
+      "x-label": "Launch Swing",
+      "x-unit": "mV",
+      "x-tooltip": "Peak-to-peak amplitude at the transmitter. Eye heights and the mask margin scale with it; 2000 mV (±1 V) is what the tool assumed before it could be set."
+    },
+    "equalization": {
+      "type": "string",
+      "enum": [
+        "none",
+        "ctle"
+      ],
+      "default": "none",
+      "x-label": "Receiver Equalization",
+      "x-tooltip": "CTLE applies the IEEE 802.3 Annex 93A reference continuous-time linear equalizer to the channel before the eye is built."
+    },
+    "ctleDcGain": {
+      "type": "number",
+      "minimum": -12,
+      "maximum": 0,
+      "x-label": "CTLE DC Gain",
+      "x-unit": "dB",
+      "x-step": 1,
+      "x-tooltip": "Zero at a quarter of the baud rate, poles at a quarter and at the baud rate. Blank tries -12 to 0 dB in 1 dB steps and keeps the gain with the largest eye height.",
+      "x-showWhen": {
+        "key": "equalization",
+        "value": "ctle"
+      }
+    },
+    "maskType": {
+      "type": "string",
+      "enum": [
+        "none",
+        "hexagon",
+        "rectangle"
+      ],
+      "default": "none",
+      "x-label": "Eye Mask",
+      "x-tooltip": "A mask centred on the sampling point and on 0 V, checked against every simulated bit."
+    },
+    "maskHalfHeight": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 2500,
+      "default": 70,
+      "x-label": "Mask Half-Height",
+      "x-unit": "mV",
+      "x-tooltip": "The mask spans ± this voltage about 0 V.",
+      "x-showWhen": {
+        "key": "maskType",
+        "value": [
+          "hexagon",
+          "rectangle"
+        ]
+      }
+    },
+    "maskWidth": {
+      "type": "number",
+      "minimum": 0.05,
+      "maximum": 1,
+      "default": 0.5,
+      "x-label": "Mask Width",
+      "x-unit": "UI",
+      "x-step": 0.05,
+      "x-tooltip": "A hexagon keeps its full height over the middle half of this width and tapers to a point at each end.",
+      "x-showWhen": {
+        "key": "maskType",
+        "value": [
+          "hexagon",
+          "rectangle"
+        ]
+      }
+    },
+    "samplingPhase": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "x-label": "Sampling Phase",
+      "x-unit": "UI",
+      "x-step": 0.05,
+      "x-tooltip": "Where the receiver samples, measured from the mean zero crossing: 0.5 is the middle of the unit interval. Blank uses the point with the largest eye height and reports its phase."
+    },
+    "lossFrequency": {
+      "type": "number",
+      "minimum": 1000,
+      "maximum": 1000000000000,
+      "x-label": "Report Loss At",
+      "x-unit": "Hz",
+      "x-tooltip": "Also report the channel insertion loss at this frequency, e.g. 10e9. The loss at Nyquist is always reported."
     }
   }
 }

@@ -56705,6 +56705,12 @@ var job_schemas_default = {
   checks: [
     "converter_duty_in_ccm_range",
     "converter_load_nonzero",
+    "crossover_solve_supported",
+    "design_freq_in_band",
+    "feedback_reference_within_output",
+    "filter_parts_ladder",
+    "filter_pass_criteria",
+    "load_model_fits_load",
     "port_within_board",
     "probability_in_open_unit_interval",
     "sweep_span_within_center",
@@ -57200,6 +57206,99 @@ var eye_diagram_default = {
       "x-label": "Samples per UI",
       "x-dimensionless": true,
       "x-step": 16
+    },
+    launchSwing: {
+      type: "number",
+      minimum: 10,
+      maximum: 5e3,
+      default: 2e3,
+      "x-label": "Launch Swing",
+      "x-unit": "mV",
+      "x-tooltip": "Peak-to-peak amplitude at the transmitter. Eye heights and the mask margin scale with it; 2000 mV (±1 V) is what the tool assumed before it could be set."
+    },
+    equalization: {
+      type: "string",
+      enum: [
+        "none",
+        "ctle"
+      ],
+      default: "none",
+      "x-label": "Receiver Equalization",
+      "x-tooltip": "CTLE applies the IEEE 802.3 Annex 93A reference continuous-time linear equalizer to the channel before the eye is built."
+    },
+    ctleDcGain: {
+      type: "number",
+      minimum: -12,
+      maximum: 0,
+      "x-label": "CTLE DC Gain",
+      "x-unit": "dB",
+      "x-step": 1,
+      "x-tooltip": "Zero at a quarter of the baud rate, poles at a quarter and at the baud rate. Blank tries -12 to 0 dB in 1 dB steps and keeps the gain with the largest eye height.",
+      "x-showWhen": {
+        key: "equalization",
+        value: "ctle"
+      }
+    },
+    maskType: {
+      type: "string",
+      enum: [
+        "none",
+        "hexagon",
+        "rectangle"
+      ],
+      default: "none",
+      "x-label": "Eye Mask",
+      "x-tooltip": "A mask centred on the sampling point and on 0 V, checked against every simulated bit."
+    },
+    maskHalfHeight: {
+      type: "number",
+      minimum: 1,
+      maximum: 2500,
+      default: 70,
+      "x-label": "Mask Half-Height",
+      "x-unit": "mV",
+      "x-tooltip": "The mask spans ± this voltage about 0 V.",
+      "x-showWhen": {
+        key: "maskType",
+        value: [
+          "hexagon",
+          "rectangle"
+        ]
+      }
+    },
+    maskWidth: {
+      type: "number",
+      minimum: 0.05,
+      maximum: 1,
+      default: 0.5,
+      "x-label": "Mask Width",
+      "x-unit": "UI",
+      "x-step": 0.05,
+      "x-tooltip": "A hexagon keeps its full height over the middle half of this width and tapers to a point at each end.",
+      "x-showWhen": {
+        key: "maskType",
+        value: [
+          "hexagon",
+          "rectangle"
+        ]
+      }
+    },
+    samplingPhase: {
+      type: "number",
+      minimum: 0,
+      maximum: 1,
+      "x-label": "Sampling Phase",
+      "x-unit": "UI",
+      "x-step": 0.05,
+      "x-tooltip": "Where the receiver samples, measured from the mean zero crossing: 0.5 is the middle of the unit interval. Blank uses the point with the largest eye height and reports its phase."
+    },
+    lossFrequency: {
+      type: "number",
+      minimum: 1e3,
+      maximum: 1e12,
+      "x-label": "Report Loss At",
+      "x-unit": "Hz",
+      "x-tooltip": "Also report the channel insertion loss at this frequency, e.g. 10e9. The loss at Nyquist is always reported."
     }
   }
 };
@@ -57426,7 +57525,10 @@ var filter_monte_carlo_default = {
   "x-slug": "filter-monte-carlo",
   "x-title": "RF Filter Monte Carlo Analysis",
   "x-formulaRef": null,
-  "x-checks": [],
+  "x-checks": [
+    "filter_parts_ladder",
+    "filter_pass_criteria"
+  ],
   type: "object",
   additionalProperties: false,
   required: [],
@@ -57542,6 +57644,28 @@ var filter_monte_carlo_default = {
       "x-hidden": true,
       "x-step": 1,
       "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    },
+    parts: {
+      type: "array",
+      "x-label": "Circuit Parts",
+      "x-hidden": true,
+      "x-tooltip": "The ladder as built, source to load, 1 to 20 parts: { ref, kind: L | C, position: series | shunt, value in henries or farads, tolerance in % (optional; Component Tolerance when absent) }. Simulated as given, with no E24 rounding. Blank synthesises the ladder from the filter type, band, order and cutoff."
+    },
+    passCriteria: {
+      type: "array",
+      "x-label": "Pass Criteria",
+      "x-hidden": true,
+      "x-tooltip": "What a build must meet to pass, 1 to 8 criteria, in place of the passband variation and stopband rejection limits: { kind: insertionLoss, fStart, fStop, maxDb }, { kind: cutoff3dB, fMin, fMax } or { kind: attenuation, freq (or fStart and fStop), minDb }; frequencies in Hz."
+    },
+    yieldTarget: {
+      type: "number",
+      minimum: 0,
+      maximum: 100,
+      "x-label": "Yield Target (optional)",
+      "x-unit": "%",
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "The share of builds that must pass. Blank means 95 %."
     }
   }
 };
@@ -57555,13 +57679,16 @@ var impedance_match_default = {
   "x-title": "Broadband Impedance Matching Synthesizer",
   "x-formulaRef": "Microwave Engineering, 4th ed., David M. Pozar (2011), Chapter 5 — Impedance Matching and Tuning",
   "x-checks": [
-    "sweep_stop_after_start"
+    "sweep_stop_after_start",
+    "design_freq_in_band",
+    "load_model_fits_load"
   ],
   "x-files": {
     min: 0,
     max: 2,
     extensions: [
-      ".s2p"
+      ".s2p",
+      ".s1p"
     ]
   },
   type: "object",
@@ -57596,6 +57723,17 @@ var impedance_match_default = {
       "x-label": "Load Reactance",
       "x-unit": "Ω"
     },
+    loadModel: {
+      type: "string",
+      enum: [
+        "constant",
+        "series_rc",
+        "series_rl",
+        "file"
+      ],
+      "x-label": "Load Frequency Model",
+      "x-tooltip": "How the load varies across the sweep. Blank holds Z_L constant at its f0 value. Series RC or series RL fits a resistor and a capacitor or inductor to Z_L at f0, which needs a negative or a positive load reactance. File reads the load from the uploaded load file at every frequency."
+    },
     freqStart: {
       type: "number",
       minimum: 1e3,
@@ -57610,6 +57748,14 @@ var impedance_match_default = {
       default: 12e8,
       "x-label": "Freq Stop",
       "x-unit": "Hz"
+    },
+    designFreq: {
+      type: "number",
+      minimum: 1e3,
+      "x-derived": "(freqStart + freqStop) / 2, the centre of the band",
+      "x-label": "Design Frequency",
+      "x-unit": "Hz",
+      "x-tooltip": "f0: the frequency the network is synthesised at, the load model is fitted at and the uploads are read at. Must lie in the band. Blank means the centre of the band."
     },
     topology: {
       type: "string",
@@ -57643,6 +57789,16 @@ var impedance_match_default = {
       default: "E24",
       "x-label": "Component Series",
       "x-tooltip": "Standard values every element is snapped to before the headline return loss is computed. E24 is what the tool has always used."
+    },
+    branchPreference: {
+      type: "string",
+      enum: [
+        "any",
+        "lowpass",
+        "highpass"
+      ],
+      "x-label": "Branch Preference",
+      "x-tooltip": "Low-pass (series inductors, shunt capacitors: a DC path to the load) or high-pass takes that branch of each section where one exists, and the result says when none does. Blank keeps the branch with the better return loss at f0 with the chosen parts."
     },
     targetRL: {
       type: "number",
@@ -58134,6 +58290,15 @@ var radar_detection_default = {
       "x-label": "Rain Rate",
       "x-unit": "mm/hr",
       "x-tooltip": "0 = no rain; 25 = heavy rain; 100 = extreme"
+    },
+    randomSeed: {
+      type: "integer",
+      minimum: 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank uses the fixed seed 42, so the same job repeats exactly. Set it to draw a different sample of the hardware uncertainty, or to repeat a run from its recorded seed."
     }
   }
 };
@@ -58263,7 +58428,7 @@ var sat_link_budget_default = {
     },
     eirp_dbw: {
       type: "number",
-      minimum: -10,
+      minimum: -40,
       maximum: 90,
       default: 46,
       "x-label": "EIRP",
@@ -58388,7 +58553,9 @@ var smps_control_loop_default = {
   "x-formulaRef": null,
   "x-checks": [
     "converter_duty_in_ccm_range",
-    "converter_load_nonzero"
+    "converter_load_nonzero",
+    "feedback_reference_within_output",
+    "crossover_solve_supported"
   ],
   type: "object",
   additionalProperties: false,
@@ -58518,7 +58685,8 @@ var smps_control_loop_default = {
       enum: [
         "type1",
         "type2",
-        "type3"
+        "type3",
+        "type2_ota"
       ],
       default: "type3",
       "x-label": "Compensator"
@@ -58528,14 +58696,30 @@ var smps_control_loop_default = {
       minimum: 1e-3,
       default: 2e3,
       "x-label": "Compensator Gain (K)",
-      "x-unit": "rad/s"
+      "x-unit": "rad/s",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: [
+          "type1",
+          "type2",
+          "type3"
+        ]
+      }
     },
     compFz1: {
       type: "number",
       minimum: 1,
       default: 500,
       "x-label": "Zero 1 Frequency",
-      "x-unit": "Hz"
+      "x-unit": "Hz",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: [
+          "type1",
+          "type2",
+          "type3"
+        ]
+      }
     },
     compFz2: {
       type: "number",
@@ -58553,7 +58737,15 @@ var smps_control_loop_default = {
       minimum: 1,
       default: 2e4,
       "x-label": "Pole 1 Frequency",
-      "x-unit": "Hz"
+      "x-unit": "Hz",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: [
+          "type1",
+          "type2",
+          "type3"
+        ]
+      }
     },
     compFp2: {
       type: "number",
@@ -58565,6 +58757,144 @@ var smps_control_loop_default = {
         key: "compensatorType",
         value: "type3"
       }
+    },
+    compRc: {
+      type: "number",
+      minimum: 1,
+      maximum: 1e7,
+      default: 5760,
+      "x-label": "Compensation Resistor (R_c)",
+      "x-unit": "Ω",
+      "x-tooltip": "R_c with C_c sets the compensator zero, 1/(2π·R_c·C_c), and with g_m and the divider the mid-band gain.",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: "type2_ota"
+      }
+    },
+    compCc: {
+      type: "number",
+      minimum: 1e-12,
+      maximum: 1e-3,
+      default: 82e-10,
+      "x-label": "Compensation Capacitor (C_c)",
+      "x-unit": "F",
+      "x-tooltip": "e.g. 8.2e-9 for 8.2 nF",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: "type2_ota"
+      }
+    },
+    compChf: {
+      type: "number",
+      minimum: 0,
+      maximum: 1e-6,
+      default: 11e-11,
+      "x-label": "High-Frequency Capacitor (C_hf)",
+      "x-unit": "F",
+      "x-tooltip": "Sets the high-frequency pole, (C_c + C_hf)/(2π·R_c·C_c·C_hf). 0 leaves it out.",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: "type2_ota"
+      }
+    },
+    compGm: {
+      type: "number",
+      minimum: 1e-6,
+      maximum: 0.1,
+      default: 1e-3,
+      "x-label": "Amplifier Transconductance (g_m)",
+      "x-unit": "S",
+      "x-tooltip": "e.g. 1e-3 for 1 mS",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: "type2_ota"
+      }
+    },
+    compVref: {
+      type: "number",
+      minimum: 0.1,
+      maximum: 999,
+      default: 0.8,
+      "x-label": "Feedback Reference (V_ref)",
+      "x-unit": "V",
+      "x-tooltip": "The error amplifier’s reference. The feedback divider is V_ref/V_out, so V_ref may not exceed V_out.",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: "type2_ota"
+      }
+    },
+    solveFor: {
+      type: "string",
+      enum: [
+        "none",
+        "crossover"
+      ],
+      default: "none",
+      "x-label": "Solve For",
+      "x-tooltip": "Crossover places R_c, C_c and C_hf for the target crossover in peak-current mode: the zero at the load pole, the high-frequency pole at the lower of Fsw/2 and the ESR zero, each part snapped to its standard series.",
+      "x-showWhen": {
+        key: "compensatorType",
+        value: "type2_ota"
+      }
+    },
+    targetCrossover: {
+      type: "number",
+      minimum: 1,
+      maximum: 5e6,
+      "x-derived": "Fsw / 10",
+      "x-label": "Target Crossover",
+      "x-unit": "Hz",
+      "x-tooltip": "Must be below Fsw/2. When left blank, a tenth of the switching frequency.",
+      "x-showWhen": {
+        key: "solveFor",
+        value: "crossover"
+      }
+    },
+    resistorSeries: {
+      type: "string",
+      enum: [
+        "E12",
+        "E24",
+        "E96"
+      ],
+      default: "E96",
+      "x-label": "Resistor Series",
+      "x-showWhen": {
+        key: "solveFor",
+        value: "crossover"
+      }
+    },
+    capacitorSeries: {
+      type: "string",
+      enum: [
+        "E12",
+        "E24",
+        "E96"
+      ],
+      default: "E12",
+      "x-label": "Capacitor Series",
+      "x-showWhen": {
+        key: "solveFor",
+        value: "crossover"
+      }
+    },
+    minPhaseMargin: {
+      type: "number",
+      minimum: 0,
+      maximum: 90,
+      default: 45,
+      "x-label": "Minimum Phase Margin",
+      "x-unit": "°",
+      "x-tooltip": "The verdict, the Monte Carlo yield and the crossover solve all require at least this phase margin."
+    },
+    minGainMargin: {
+      type: "number",
+      minimum: 0,
+      maximum: 40,
+      default: 10,
+      "x-label": "Minimum Gain Margin",
+      "x-unit": "dB",
+      "x-tooltip": "The verdict, the Monte Carlo yield and the crossover solve all require at least this gain margin."
     },
     monteCarloTrials: {
       type: "integer",
@@ -61493,13 +61823,16 @@ var agent_copy_default = {
       title: "Eye Diagram from S-Parameters",
       question: "Upload a Touchstone (.s2p) file and generate a PRBS eye diagram.",
       description: "Upload a Touchstone (.s2p) file and generate a PRBS eye diagram. Shows the channel insertion loss and impulse response, then renders the eye with its height, width and jitter measured over the whole bit sequence.",
-      returns: "Eye height, eye width and peak-to-peak and RMS jitter (null with a reason when the eye has no crossings), the channel loss, and the eye traces, impulse response and transfer function described as series.",
+      returns: "Eye height (also as a share of the swing), width and jitter at the best or a stated sampling phase, any mask's pass and margin, any CTLE's gain, peaking and the eye before it, the file's details and loss at Nyquist, and the eye traces, impulse response and transfer function as series.",
       example: {
         source: "defaults",
         arguments: {
           dataRate: 1e10,
           prbs: "prbs15",
-          samplesPerUI: 64
+          samplesPerUI: 64,
+          launchSwing: 2e3,
+          equalization: "none",
+          maskType: "none"
         }
       }
     },
@@ -61526,7 +61859,7 @@ var agent_copy_default = {
       title: "RF Filter Monte Carlo Analysis",
       question: "Analyse how component tolerances affect your filter's passband ripple and stopband rejection.",
       description: "Analyse how component tolerances affect your filter's passband ripple and stopband rejection. Run thousands of Monte Carlo trials to get yield and worst-case statistics.",
-      returns: "The yield in percent with its 95% confidence interval against the stated ripple and rejection limits, each component with its sensitivity, and the Monte Carlo envelope and the ideal and standard-value responses described as series.",
+      returns: "The yield and its 95% confidence interval against the ripple and rejection limits or the entered pass criteria and a target, failures and statistics per criterion with each part's share of the variance, failing trials, what-ifs on the same trials, and the envelope, sample trials and responses as series.",
       example: {
         source: "defaults",
         arguments: {
@@ -61544,7 +61877,7 @@ var agent_copy_default = {
       title: "Broadband Impedance Matching Synthesizer",
       question: "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation.",
       description: "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation. Enter source/load impedances across a frequency band and get optimized component values with simulated S-parameters. Export results as Touchstone (.s2p) for ADS/Genesys/scikit-rf.",
-      returns: "The chosen topology and its component values, snapped to the requested series and ideal, the worst-case return loss in the band and whether the target was met, the achieved bandwidth and Q, and the S11 and Smith-chart trajectory described as series.",
+      returns: "The chosen topology and its parts (snapped and ideal), the worst-case in-band return loss against the target, the loaded Q, and at f0 on the load model the return loss, VSWR, mismatch loss removed and RL ≥ 10 dB bandwidth, with the S11 and Smith-chart trajectory described as series.",
       example: {
         source: "defaults",
         arguments: {
@@ -61667,7 +62000,7 @@ var agent_copy_default = {
       title: "SMPS Control Loop Stability Analyzer",
       question: "Model switch-mode power supply control loops using small-signal transfer functions.",
       description: "Model switch-mode power supply control loops using small-signal transfer functions. Get Bode plots of T(s), extract phase margin, gain margin, and crossover frequency, then run Monte Carlo trials over component tolerances (L ±20%, C ±20%, ESR ±50%, load ±30%) to compute manufacturing yield.",
-      returns: "The nominal crossover frequency, phase margin and gain margin with a stability verdict, Monte Carlo margin statistics including the share of trials with no margin, and the loop gain, phase and plant responses described as series.",
+      returns: "The crossover frequency, phase and gain margins and a pass, fail or slow verdict against the minimums, the loop’s poles and zeros, any standard-value R_c, C_c and C_hf the solve placed, Monte Carlo margin statistics with the share of trials without a margin, and the loop gain, phase and plant responses as series.",
       example: {
         source: "defaults",
         arguments: {

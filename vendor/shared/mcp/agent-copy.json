@@ -43,13 +43,16 @@
       "title": "Eye Diagram from S-Parameters",
       "question": "Upload a Touchstone (.s2p) file and generate a PRBS eye diagram.",
       "description": "Upload a Touchstone (.s2p) file and generate a PRBS eye diagram. Shows the channel insertion loss and impulse response, then renders the eye with its height, width and jitter measured over the whole bit sequence.",
-      "returns": "Eye height, eye width and peak-to-peak and RMS jitter (null with a reason when the eye has no crossings), the channel loss, and the eye traces, impulse response and transfer function described as series.",
+      "returns": "Eye height (also as a share of the swing), width and jitter at the best or a stated sampling phase, any mask's pass and margin, any CTLE's gain, peaking and the eye before it, the file's details and loss at Nyquist, and the eye traces, impulse response and transfer function as series.",
       "example": {
         "source": "defaults",
         "arguments": {
           "dataRate": 10000000000,
           "prbs": "prbs15",
-          "samplesPerUI": 64
+          "samplesPerUI": 64,
+          "launchSwing": 2000,
+          "equalization": "none",
+          "maskType": "none"
         }
       }
     },
@@ -76,7 +79,7 @@
       "title": "RF Filter Monte Carlo Analysis",
       "question": "Analyse how component tolerances affect your filter's passband ripple and stopband rejection.",
       "description": "Analyse how component tolerances affect your filter's passband ripple and stopband rejection. Run thousands of Monte Carlo trials to get yield and worst-case statistics.",
-      "returns": "The yield in percent with its 95% confidence interval against the stated ripple and rejection limits, each component with its sensitivity, and the Monte Carlo envelope and the ideal and standard-value responses described as series.",
+      "returns": "The yield and its 95% confidence interval against the ripple and rejection limits or the entered pass criteria and a target, failures and statistics per criterion with each part's share of the variance, failing trials, what-ifs on the same trials, and the envelope, sample trials and responses as series.",
       "example": {
         "source": "defaults",
         "arguments": {
@@ -94,7 +97,7 @@
       "title": "Broadband Impedance Matching Synthesizer",
       "question": "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation.",
       "description": "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation. Enter source/load impedances across a frequency band and get optimized component values with simulated S-parameters. Export results as Touchstone (.s2p) for ADS/Genesys/scikit-rf.",
-      "returns": "The chosen topology and its component values, snapped to the requested series and ideal, the worst-case return loss in the band and whether the target was met, the achieved bandwidth and Q, and the S11 and Smith-chart trajectory described as series.",
+      "returns": "The chosen topology and its parts (snapped and ideal), the worst-case in-band return loss against the target, the loaded Q, and at f0 on the load model the return loss, VSWR, mismatch loss removed and RL ≥ 10 dB bandwidth, with the S11 and Smith-chart trajectory described as series.",
       "example": {
         "source": "defaults",
         "arguments": {
@@ -217,7 +220,7 @@
       "title": "SMPS Control Loop Stability Analyzer",
       "question": "Model switch-mode power supply control loops using small-signal transfer functions.",
       "description": "Model switch-mode power supply control loops using small-signal transfer functions. Get Bode plots of T(s), extract phase margin, gain margin, and crossover frequency, then run Monte Carlo trials over component tolerances (L ±20%, C ±20%, ESR ±50%, load ±30%) to compute manufacturing yield.",
-      "returns": "The nominal crossover frequency, phase margin and gain margin with a stability verdict, Monte Carlo margin statistics including the share of trials with no margin, and the loop gain, phase and plant responses described as series.",
+      "returns": "The crossover frequency, phase and gain margins and a pass, fail or slow verdict against the minimums, the loop’s poles and zeros, any standard-value R_c, C_c and C_hf the solve placed, Monte Carlo margin statistics with the share of trials without a margin, and the loop gain, phase and plant responses as series.",
       "example": {
         "source": "defaults",
         "arguments": {
