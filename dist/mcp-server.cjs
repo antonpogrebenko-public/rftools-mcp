@@ -7587,7 +7587,7 @@ function nyquistProducts(i) {
     const at = aliased ? foldFrequency(raw, fs) : raw;
     const zone = n === 1 && !aliased ? "desired" : at <= f ? "in" : "clear";
     const note = !aliased ? void 0 : n === 1 ? "The signal itself aliases" : "Aliased harmonic";
-    out.push({ f: at, order: n, name: `${n}·f`, zone, note, label: n === 1 && aliased ? "alias" : void 0 });
+    out.push({ f: at, order: n, name: `${n}·f`, zone, note, label: n === 1 && aliased ? "alias" : void 0, ...zone === "in" && n > 1 ? { status: "check" } : {} });
   }
   return out;
 }
@@ -7613,7 +7613,9 @@ function calculateSamplingNyquist(inputs) {
   const snr_dB = dynamicRangeDB;
   const dataRateMbps = samplingRate * adcBits * channels / 1e6;
   const antiAliasingFC_Hz = samplingRate / 2;
-  const aliasesInBand = nyquistProducts({ ...inputs, harmonicOrder }).filter((p) => p.zone === "in").length;
+  const products = nyquistProducts({ ...inputs, harmonicOrder });
+  const aliasesInBand = products.filter((p) => p.zone === "in" && !p.status).length;
+  const harmonicAliasesInBand = products.filter((p) => p.status === "check").length;
   const lowestAliasingInput = samplingRate - Math.min(signalFreq, samplingRate / 2);
   const warnings = [];
   if (oversamplingRatio < 1) {
@@ -7629,6 +7631,7 @@ function calculateSamplingNyquist(inputs) {
       dataRateMbps,
       antiAliasingFC_Hz,
       aliasesInBand,
+      harmonicAliasesInBand,
       lowestAliasingInput
     },
     warnings
@@ -7784,13 +7787,24 @@ var samplingNyquist = {
     {
       key: "aliasesInBand",
       display: { integer: true },
-      label: "Aliases in the Signal Band",
+      label: "Signal Aliased into the Band",
       symbol: "N_{alias}",
       unit: "",
       precision: 0,
-      tooltip: "The harmonics of a tone at the top of the band, up to the highest harmonic, that fold back into the signal band after sampling, and the tone itself if it aliases: no filter after the converter can remove them",
+      tooltip: "A tone at the top of the band that the sampling rate aliases back into the signal band: no filter after the converter can remove it",
       // A count: none is PASS, any FAIL.
       thresholds: { good: { max: 0 }, danger: { max: 0 } }
+    },
+    {
+      key: "harmonicAliasesInBand",
+      display: { integer: true },
+      label: "Harmonics Folded into the Band",
+      symbol: "N_{harm}",
+      unit: "",
+      precision: 0,
+      tooltip: "The harmonics of a tone at the top of the band, up to the highest harmonic, that fold back into the signal band after sampling: they matter as far as the converter's SFDR, which this page does not know",
+      // A count: none is PASS, any CHECK.
+      thresholds: { good: { max: 0 } }
     },
     {
       key: "lowestAliasingInput",
@@ -7852,8 +7866,8 @@ var samplingNyquist = {
       return views;
     },
     hero: "aliasesInBand",
-    results: ["lowestAliasingInput", "oversamplingRatio", "aliasFreq_Hz", "nyquistRate_Hz"],
-    counts: { in: "aliasesInBand" }
+    results: ["harmonicAliasesInBand", "lowestAliasingInput", "oversamplingRatio", "aliasFreq_Hz"],
+    counts: { in: "aliasesInBand", check: "harmonicAliasesInBand" }
   },
   verificationData: [
     {
@@ -10221,7 +10235,7 @@ var uartBaudRate = {
       "B_actual = f_clk / (16 × round(BRR))",
       "ε_B = |B_actual − B| / B × 100 %"
     ],
-    reference: "STM32 Reference Manual RM0008 §27.3.4; ST AN2908"
+    reference: "Microchip ATmega328P datasheet, USART baud rate generator (UBRRn, the whole divisor); STM32 Reference Manual RM0008 §27.3.4 (USARTDIV, the fraction); ST AN2908"
   },
   visualization: { type: "none" },
   relatedCalculators: ["i2c-pullup", "rc-time-constant"],
