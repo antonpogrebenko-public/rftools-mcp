@@ -11,6 +11,7 @@
     "load_model_fits_load",
     "port_within_board",
     "probability_in_open_unit_interval",
+    "stages_well_formed",
     "sweep_span_within_center",
     "sweep_stop_after_start"
   ],
@@ -67,7 +68,7 @@
         "pro",
         "api"
       ],
-      "timeoutSeconds": 120,
+      "timeoutSeconds": 180,
       "files": false
     },
     "impedance_match": {

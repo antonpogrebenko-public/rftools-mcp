@@ -58,7 +58,7 @@ test('with a key there is no note and the request is authenticated', async () =>
 test('the note names the bounds the contract puts on the free lane', () => {
   const trials = freeLaneBounds('filter_monte_carlo');
   assert.ok(trials.join(' ').includes('monteCarloIterations'), trials.join(' '));
-  assert.ok(trials.join(' ').includes('500'), trials.join(' '));
+  assert.ok(trials.join(' ').includes('1000'), trials.join(' '));
 
   const fdtd = freeLaneBounds('fdtd_sparam');
   assert.ok(fdtd.join(' ').includes('normal'), fdtd.join(' '));

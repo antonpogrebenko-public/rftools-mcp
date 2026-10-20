@@ -5,7 +5,9 @@
   "x-slug": "rf-cascade",
   "x-title": "RF Cascade Budget Analyzer",
   "x-formulaRef": "Noise Figures of Radio Receivers, Harald T. Friis, Proc. IRE 32(7), pp. 419–422 (1944)",
-  "x-checks": [],
+  "x-checks": [
+    "stages_well_formed"
+  ],
   "x-files": {
     "min": 0,
     "max": 12,

@@ -104,15 +104,15 @@
     "monteCarloIterations": {
       "type": "integer",
       "minimum": 50,
-      "maximum": 10000,
+      "maximum": 100000,
       "default": 500,
       "x-label": "Monte Carlo Trials",
       "x-dimensionless": true,
       "x-step": 50,
-      "x-tooltip": "Free tier: max 500",
+      "x-tooltip": "Free tier: max 1,000. Pro and API: up to 100,000, as many as fit the run time allowed for the ladder and criteria.",
       "x-tier": {
         "free": {
-          "maximum": 500
+          "maximum": 1000
         }
       }
     },

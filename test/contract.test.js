@@ -81,7 +81,7 @@ test('a value outside the enum is refused, and a value outside the range too', (
   assert.equal(badEnum.ok, false);
   assert.ok(badEnum.problems.join('\n').toLowerCase().includes('solvemode'));
 
-  const badRange = validateParams(JOB_SCHEMAS.filter_monte_carlo, { monteCarloIterations: 99999 });
+  const badRange = validateParams(JOB_SCHEMAS.filter_monte_carlo, { monteCarloIterations: 100001 });
   assert.equal(badRange.ok, false);
   assert.ok(badRange.problems.join('\n').includes('monteCarloIterations'));
 });

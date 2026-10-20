@@ -56713,6 +56713,7 @@ var job_schemas_default = {
     "load_model_fits_load",
     "port_within_board",
     "probability_in_open_unit_interval",
+    "stages_well_formed",
     "sweep_span_within_center",
     "sweep_stop_after_start"
   ],
@@ -56769,7 +56770,7 @@ var job_schemas_default = {
         "pro",
         "api"
       ],
-      timeoutSeconds: 120,
+      timeoutSeconds: 180,
       files: false
     },
     impedance_match: {
@@ -57624,15 +57625,15 @@ var filter_monte_carlo_default = {
     monteCarloIterations: {
       type: "integer",
       minimum: 50,
-      maximum: 1e4,
+      maximum: 1e5,
       default: 500,
       "x-label": "Monte Carlo Trials",
       "x-dimensionless": true,
       "x-step": 50,
-      "x-tooltip": "Free tier: max 500",
+      "x-tooltip": "Free tier: max 1,000. Pro and API: up to 100,000, as many as fit the run time allowed for the ladder and criteria.",
       "x-tier": {
         free: {
-          maximum: 500
+          maximum: 1e3
         }
       }
     },
@@ -58311,7 +58312,9 @@ var rf_cascade_default = {
   "x-slug": "rf-cascade",
   "x-title": "RF Cascade Budget Analyzer",
   "x-formulaRef": "Noise Figures of Radio Receivers, Harald T. Friis, Proc. IRE 32(7), pp. 419–422 (1944)",
-  "x-checks": [],
+  "x-checks": [
+    "stages_well_formed"
+  ],
   "x-files": {
     min: 0,
     max: 12,
