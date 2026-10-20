@@ -39073,12 +39073,12 @@ function mixerResponses(i) {
   const ifF = Math.abs(lo - rf);
   const above = rf >= lo;
   const out = [];
-  for (let m = 1; m <= order; m++) {
-    for (let n = 0; n <= order - m; n++) {
-      const pair = n === 0 ? [{ f: ifF / m, plus: true }] : [{ f: (n * lo + ifF) / m, plus: true }, { f: Math.abs(n * lo - ifF) / m, plus: false }];
+  for (let n = 1; n <= order; n++) {
+    for (let m = 0; m <= order - n; m++) {
+      const pair = m === 0 ? [{ f: ifF / n, plus: true }] : [{ f: (m * lo + ifF) / n, plus: true }, { f: Math.abs(m * lo - ifF) / n, plus: false }];
       for (const { f, plus } of pair) {
         if (!(f > 0)) continue;
-        const half = bw / (2 * m);
+        const half = bw / (2 * n);
         const inBand = f + half >= bandLow && f - half <= bandHigh;
         const nearBand = f + half >= bandLow - near && f - half <= bandHigh + near;
         let zone = inBand ? "in" : nearBand ? "near" : "clear";
@@ -39093,7 +39093,7 @@ function mixerResponses(i) {
         } else if (m === 2 && n === 2 && plus === above) {
           note = "Half-IF";
           label = "½-IF";
-        } else if (m === 1 && n === 0) {
+        } else if (m === 0 && n === 1) {
           note = "IF feedthrough";
         }
         out.push({ f, m, n, order: m + n, name: `${m} × ${n}`, zone, note, label });
@@ -39263,7 +39263,7 @@ var mixerSpurCalculator = {
       fieldUnit: "MHz",
       defaultValue: 10,
       min: 0,
-      tooltip: "The IF filter's bandwidth; a response of RF order m converts into it from a stretch BW/m wide"
+      tooltip: "The IF filter's bandwidth; a response of RF order n converts into it from a stretch BW/n wide"
     },
     {
       key: "nearMargin",
@@ -39406,7 +39406,7 @@ var mixerSpurCalculator = {
     { id: "ism-433-mhz", label: "433 MHz ISM, 10.7 MHz IF", values: { rfFreq: 433.92, loFreq: 444.62, rfBandLow: 433.05, rfBandHigh: 434.79, ifBandwidth: 0.2, nearMargin: 10 } },
     { id: "ism-915-mhz", label: "915 MHz ISM", values: { rfFreq: 915, loFreq: 1e3, rfBandLow: 902, rfBandHigh: 928, ifBandwidth: 10, nearMargin: 50 } },
     { id: "ism-2-4-ghz", label: "2.4 GHz ISM", values: { rfFreq: 2400, loFreq: 2870, rfBandLow: 2400, rfBandHigh: 2483.5, ifBandwidth: 20, nearMargin: 200 } },
-    { id: "wifi-2-4-ghz-high-side", label: "2.4 GHz, LO below the band, 300 MHz IF", values: { rfFreq: 2440, loFreq: 2140, rfBandLow: 2400, rfBandHigh: 2483.5, ifBandwidth: 20, nearMargin: 200, maxOrder: 7 } },
+    { id: "wifi-2-4-ghz-low-side", label: "2.4 GHz, LO below the band, 300 MHz IF", values: { rfFreq: 2440, loFreq: 2140, rfBandLow: 2400, rfBandHigh: 2483.5, ifBandwidth: 20, nearMargin: 200, maxOrder: 7 } },
     { id: "ism-5-8-ghz", label: "5.8 GHz ISM", values: { rfFreq: 5800, loFreq: 6270, rfBandLow: 5725, rfBandHigh: 5875, ifBandwidth: 20, nearMargin: 200 } }
   ],
   calculate: calculateMixerSpurs,
@@ -39433,7 +39433,7 @@ var mixerSpurCalculator = {
     tableTitle: "Spurious responses, nearest the band first",
     frequencyLabel: "RF input",
     nameLabel: "m × n",
-    rule: "f_RF = (n·LO ± IF) / m",
+    rule: "f_RF = (m·LO ± IF) / n",
     unit: "MHz",
     rangeInputs: [{ from: "rfBandLow", to: "rfBandHigh", label: "RF Band" }],
     bands: (i) => {
@@ -44208,12 +44208,13 @@ function cavityModes(i) {
   const out = [];
   if (!(a > 0) || !(b > 0) || !(h > 0)) return out;
   modes: for (let m = 0; modeHz(a, b, h, m, 0, 0) / 1e6 <= top; m++) {
-    for (let n = 0; modeHz(a, b, h, m, n, 0) / 1e6 <= top; n++) {
-      for (let p = 0; ; p++) {
+    if (m > 0 && !(modeHz(a, b, h, m, 1, 0) / 1e6 <= top) && !(modeHz(a, b, h, m, 0, 1) / 1e6 <= top)) break;
+    for (let n = m === 0 ? 1 : 0; modeHz(a, b, h, m, n, 0) / 1e6 <= top; n++) {
+      if (m === 0 && !(modeHz(a, b, h, 0, n, 1) / 1e6 <= top)) break;
+      for (let p = m === 0 || n === 0 ? 1 : 0; ; p++) {
         if (out.length >= MAX_MODES) break modes;
         const f = modeHz(a, b, h, m, n, p) / 1e6;
         if (!(f <= top)) break;
-        if ((m === 0 ? 1 : 0) + (n === 0 ? 1 : 0) + (p === 0 ? 1 : 0) > 1) continue;
         const zone = f >= low && f <= high ? "in" : "clear";
         const isLowest = f === lowest && m + n + p === 2;
         const note = isLowest ? "Lowest mode" : m > 0 && n > 0 && p > 0 ? "Two modes, TE and TM" : void 0;
