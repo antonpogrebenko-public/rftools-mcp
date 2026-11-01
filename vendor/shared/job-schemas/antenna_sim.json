@@ -75,7 +75,7 @@
       "type": "object",
       "x-label": "Search Settings",
       "x-hidden": true,
-      "x-tooltip": "NSGA-II settings: { populationSize, generations, lengthRange, spacingRange }.",
+      "x-tooltip": "NSGA-II settings: { populationSize, generations, lengthRange, spacingRange, maxBoomLength }. maxBoomLength (metres) caps the distance between the first and last element; omit it to let the boom change freely. Any other key is refused.",
       "x-showWhen": {
         "key": "solveMode",
         "value": "optimize"
