@@ -56316,7 +56316,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.8.0",
+  version: "2.9.0",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 257 RF & electronics calculators for AI agents via the MCP",
@@ -57379,6 +57379,7 @@ var job_schemas_default = {
     "filter_parts_ladder",
     "filter_pass_criteria",
     "load_model_fits_load",
+    "part_family_supported",
     "port_within_board",
     "probability_in_open_unit_interval",
     "stages_well_formed",
@@ -57449,7 +57450,7 @@ var job_schemas_default = {
         "pro",
         "api"
       ],
-      timeoutSeconds: 120,
+      timeoutSeconds: 180,
       files: true
     },
     magnetics_optimizer: {
@@ -58404,7 +58405,8 @@ var impedance_match_default = {
   "x-checks": [
     "sweep_stop_after_start",
     "design_freq_in_band",
-    "load_model_fits_load"
+    "load_model_fits_load",
+    "part_family_supported"
   ],
   "x-files": {
     min: 0,
@@ -58522,6 +58524,86 @@ var impedance_match_default = {
       ],
       "x-label": "Branch Preference",
       "x-tooltip": "Low-pass (series inductors, shunt capacitors: a DC path to the load) or high-pass takes that branch of each section where one exists, and the result says when none does. Blank keeps the branch with the better return loss at f0 with the chosen parts."
+    },
+    partModel: {
+      type: "string",
+      enum: [
+        "ideal",
+        "generic"
+      ],
+      "x-label": "Part Model",
+      "x-tooltip": "Generic models each element as a real chip part of the chosen package: capacitors as C0G with series resistance and inductance, inductors with series resistance and the parallel capacitance that sets their self-resonance. Blank or ideal computes perfect L and C, as the tool always has."
+    },
+    packageSize: {
+      type: "string",
+      enum: [
+        "0201",
+        "0402",
+        "0603",
+        "0805"
+      ],
+      "x-label": "Package Size",
+      "x-tooltip": "EIA size of every modelled part. Read only with generic parts."
+    },
+    inductorTechnology: {
+      type: "string",
+      enum: [
+        "wirewound",
+        "multilayer"
+      ],
+      "x-label": "Inductor Technology",
+      "x-tooltip": "Wirewound (ceramic core: higher Q) or multilayer chip inductors. Read only with generic parts."
+    },
+    capTolerance: {
+      type: "string",
+      enum: [
+        "1%",
+        "2%",
+        "5%",
+        "10%",
+        "0.05pF",
+        "0.1pF",
+        "0.25pF"
+      ],
+      "x-label": "Capacitor Tolerance",
+      "x-tooltip": "Purchase tolerance the yield varies every capacitor within. Blank takes the component series' tolerance, with a floor of ±0.1 pF below 10 pF."
+    },
+    indTolerance: {
+      type: "string",
+      enum: [
+        "1%",
+        "2%",
+        "5%",
+        "10%",
+        "0.1nH",
+        "0.2nH",
+        "0.3nH"
+      ],
+      "x-label": "Inductor Tolerance",
+      "x-tooltip": "Purchase tolerance the yield varies every inductor within. Blank takes the component series' tolerance, with a floor of ±0.2 nH below 10 nH."
+    },
+    yieldTrials: {
+      type: "integer",
+      minimum: 100,
+      maximum: 1e5,
+      "x-label": "Yield Trials",
+      "x-dimensionless": true,
+      "x-step": 100,
+      "x-tooltip": "Builds to simulate with every part drawn within its tolerance; the result reports the share whose worst in-band return loss meets the target. Blank runs no yield. Free tier: max 1,000. Pro and API: up to 100,000.",
+      "x-tier": {
+        free: {
+          maximum: 1e3
+        }
+      }
+    },
+    randomSeed: {
+      type: "integer",
+      minimum: 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
     },
     targetRL: {
       type: "number",
@@ -62601,8 +62683,8 @@ var agent_copy_default = {
       slug: "impedance-matching",
       title: "Broadband Impedance Matching Synthesizer",
       question: "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation.",
-      description: "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation. Enter source/load impedances across a frequency band and get optimized component values with simulated S-parameters. Export results as Touchstone (.s2p) for ADS/Genesys/scikit-rf.",
-      returns: "The chosen topology and its parts (snapped and ideal), the worst-case in-band return loss against the target, the loaded Q, and at f0 on the load model the return loss, VSWR, mismatch loss removed and RL ≥ 10 dB bandwidth, with the S11 and Smith-chart trajectory described as series.",
+      description: "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation. Enter source/load impedances across a frequency band and get component values with simulated S-parameters, modelled as real 0201 to 0805 chip parts (C0G capacitors, wirewound or multilayer inductors) fitted to datasheet minimums. Check the build yield across part tolerances, and export the BOM, a SPICE netlist with parasitics, KiCad, and Touchstone (.s2p for the network, .s1p for its input reflection).",
+      returns: "The chosen topology and its snapped and ideal parts, the worst in-band return loss against the target, loaded Q, f0 return loss, VSWR, mismatch loss and RL ≥ 10 dB bandwidth, and S11 and Smith series; with real parts, each part's SRF, Q, ESR and the dissipation loss; with yieldTrials, the yield and its 95 % interval.",
       example: {
         source: "defaults",
         arguments: {
@@ -63368,7 +63450,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.8.0"
+    version: "2.9.0"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });

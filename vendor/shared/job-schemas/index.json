@@ -9,6 +9,7 @@
     "filter_parts_ladder",
     "filter_pass_criteria",
     "load_model_fits_load",
+    "part_family_supported",
     "port_within_board",
     "probability_in_open_unit_interval",
     "stages_well_formed",
@@ -79,7 +80,7 @@
         "pro",
         "api"
       ],
-      "timeoutSeconds": 120,
+      "timeoutSeconds": 180,
       "files": true
     },
     "magnetics_optimizer": {

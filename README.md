@@ -98,6 +98,12 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.9.0
+
+- **`simulate_impedance_matching` models real parts** (rftools matching-real-parts). `partModel: "generic"` with `packageSize` (0201, 0402, 0603 or 0805) and `inductorTechnology` (wirewound or multilayer) models each element as a real chip part fitted to manufacturers' guaranteed datasheet figures: C0G capacitors with series resistance and inductance, inductors with series resistance and the parallel capacitance that sets their self-resonance. Six pairs are offered (0201 multilayer, 0402 and 0603 wirewound or multilayer, 0805 wirewound). The snap picks the standard value whose reactance at f0 is nearest the one asked for, among values that self-resonate at least 1.2 times above the band. Results add `performance.real` with the dissipation loss, each part's self-resonance, part Q, ESR and effective value at f0, and a note that the models are generic.
+- **A tolerance yield.** `yieldTrials` (up to 1,000 free, 100,000 on Pro and API) draws every part uniformly within `capTolerance` / `indTolerance` (or the component series' default) and returns the share of builds meeting `targetRL` across the band, with a 95 % Wilson interval, the 5/50/95 % worst-case return loss and the |S11| band. It is estimated and charged like any paid run.
+- Without the new arguments a call returns exactly what it did before. No tool removed and no argument renamed.
+
 ### What changed in 2.8.0
 
 - **`simulate_antenna_sim`'s Optimize chooses its goals** (rftools antenna-optimizer-v2). `optimize.goals` sets each of peak gain, front-to-back ratio, VSWR and gain toward an elevation angle (over ground) to optimise, threshold (`min`, or `max` for VSWR) or off, with at most three optimised, and `leadGoal` names the one the recommendation ranks by. Without `goals` the search is the original one: gain, front-to-back and VSWR, recommended by the 2:1 rule.

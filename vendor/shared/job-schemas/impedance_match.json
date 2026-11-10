@@ -8,7 +8,8 @@
   "x-checks": [
     "sweep_stop_after_start",
     "design_freq_in_band",
-    "load_model_fits_load"
+    "load_model_fits_load",
+    "part_family_supported"
   ],
   "x-files": {
     "min": 0,
@@ -126,6 +127,86 @@
       ],
       "x-label": "Branch Preference",
       "x-tooltip": "Low-pass (series inductors, shunt capacitors: a DC path to the load) or high-pass takes that branch of each section where one exists, and the result says when none does. Blank keeps the branch with the better return loss at f0 with the chosen parts."
+    },
+    "partModel": {
+      "type": "string",
+      "enum": [
+        "ideal",
+        "generic"
+      ],
+      "x-label": "Part Model",
+      "x-tooltip": "Generic models each element as a real chip part of the chosen package: capacitors as C0G with series resistance and inductance, inductors with series resistance and the parallel capacitance that sets their self-resonance. Blank or ideal computes perfect L and C, as the tool always has."
+    },
+    "packageSize": {
+      "type": "string",
+      "enum": [
+        "0201",
+        "0402",
+        "0603",
+        "0805"
+      ],
+      "x-label": "Package Size",
+      "x-tooltip": "EIA size of every modelled part. Read only with generic parts."
+    },
+    "inductorTechnology": {
+      "type": "string",
+      "enum": [
+        "wirewound",
+        "multilayer"
+      ],
+      "x-label": "Inductor Technology",
+      "x-tooltip": "Wirewound (ceramic core: higher Q) or multilayer chip inductors. Read only with generic parts."
+    },
+    "capTolerance": {
+      "type": "string",
+      "enum": [
+        "1%",
+        "2%",
+        "5%",
+        "10%",
+        "0.05pF",
+        "0.1pF",
+        "0.25pF"
+      ],
+      "x-label": "Capacitor Tolerance",
+      "x-tooltip": "Purchase tolerance the yield varies every capacitor within. Blank takes the component series' tolerance, with a floor of ±0.1 pF below 10 pF."
+    },
+    "indTolerance": {
+      "type": "string",
+      "enum": [
+        "1%",
+        "2%",
+        "5%",
+        "10%",
+        "0.1nH",
+        "0.2nH",
+        "0.3nH"
+      ],
+      "x-label": "Inductor Tolerance",
+      "x-tooltip": "Purchase tolerance the yield varies every inductor within. Blank takes the component series' tolerance, with a floor of ±0.2 nH below 10 nH."
+    },
+    "yieldTrials": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 100000,
+      "x-label": "Yield Trials",
+      "x-dimensionless": true,
+      "x-step": 100,
+      "x-tooltip": "Builds to simulate with every part drawn within its tolerance; the result reports the share whose worst in-band return loss meets the target. Blank runs no yield. Free tier: max 1,000. Pro and API: up to 100,000.",
+      "x-tier": {
+        "free": {
+          "maximum": 1000
+        }
+      }
+    },
+    "randomSeed": {
+      "type": "integer",
+      "minimum": 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
     },
     "targetRL": {
       "type": "number",

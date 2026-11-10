@@ -96,8 +96,8 @@
       "slug": "impedance-matching",
       "title": "Broadband Impedance Matching Synthesizer",
       "question": "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation.",
-      "description": "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation. Enter source/load impedances across a frequency band and get optimized component values with simulated S-parameters. Export results as Touchstone (.s2p) for ADS/Genesys/scikit-rf.",
-      "returns": "The chosen topology and its parts (snapped and ideal), the worst-case in-band return loss against the target, the loaded Q, and at f0 on the load model the return loss, VSWR, mismatch loss removed and RL ≥ 10 dB bandwidth, with the S11 and Smith-chart trajectory described as series.",
+      "description": "Synthesize L, Pi, T, or ladder matching networks for broadband impedance transformation. Enter source/load impedances across a frequency band and get component values with simulated S-parameters, modelled as real 0201 to 0805 chip parts (C0G capacitors, wirewound or multilayer inductors) fitted to datasheet minimums. Check the build yield across part tolerances, and export the BOM, a SPICE netlist with parasitics, KiCad, and Touchstone (.s2p for the network, .s1p for its input reflection).",
+      "returns": "The chosen topology and its snapped and ideal parts, the worst in-band return loss against the target, loaded Q, f0 return loss, VSWR, mismatch loss and RL ≥ 10 dB bandwidth, and S11 and Smith series; with real parts, each part's SRF, Q, ESR and the dissipation loss; with yieldTrials, the yield and its 95 % interval.",
       "example": {
         "source": "defaults",
         "arguments": {
