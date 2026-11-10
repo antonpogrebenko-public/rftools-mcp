@@ -27,8 +27,12 @@ export const STRUCTURE_SHAPES: Record<string, Record<string, string>> = {
       'Object {material: copper | aluminium | perfect | custom}, plus conductivity (S/m) when custom. ' +
       'Omit for copper',
     optimize:
-      'Object {populationSize: a multiple of 4 between 8 and 200, generations: 1 to 200, lengthRange, spacingRange} ' +
-      'for the NSGA-II search',
+      'Object for the NSGA-II search (pymoo): {populationSize 8-200, generations 1-200, lengthRange, spacingRange, ' +
+      'maxBoomLength (m), goals, leadGoal, buildTolerance {mm 0.1-50, trials 10-200}, heightRange [low, high] (m)}. ' +
+      'goals: [{figure: peakGain | frontToBack | vswr | elevationGain, role: optimize | threshold | off, ' +
+      'min (gains) or max (vswr) for a threshold, reading: worst | average (vswr), elevationDeg}], at most 3 optimised; ' +
+      'elevationGain and heightRange need a ground. Omit goals for gain, F/B and VSWR with the 2:1 rule. ' +
+      'Give freqStart/freqStop/freqPoints to read every goal across a band',
   },
 };
 

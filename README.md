@@ -98,6 +98,15 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.8.0
+
+- **`simulate_antenna_sim`'s Optimize chooses its goals** (rftools antenna-optimizer-v2). `optimize.goals` sets each of peak gain, front-to-back ratio, VSWR and gain toward an elevation angle (over ground) to optimise, threshold (`min`, or `max` for VSWR) or off, with at most three optimised, and `leadGoal` names the one the recommendation ranks by. Without `goals` the search is the original one: gain, front-to-back and VSWR, recommended by the 2:1 rule.
+- **A band**: give `freqStart`, `freqStop` and `freqPoints` to Optimize, and every goal is read across them (the lowest gain and front-to-back ratio, the worst or average VSWR).
+- **A build check**: `optimize.buildTolerance` `{mm, trials}` re-solves the designs with every element's length and position moved at random within ±mm, reports each design's 10th/90th-percentile figures and the share of builds meeting every threshold, and recommends a design that meets them in at least 90% of builds.
+- **Mounting height**: `optimize.heightRange` `[low, high]` (metres, the feed's height) is searched too, over ground; and the sweep mode sweeps height at one frequency with `sweepVariable: "height"`, `heightStart`, `heightStop` and `heightPoints`, reporting each height's gain, takeoff angle, impedance and VSWR.
+- **The search runs on pymoo 0.6.2** with the same operator settings as before, and each result names its engine and version (`searchEngine`). A seed reproduces a search on the same engine version; seeds from earlier versions do not reproduce. `populationSize` no longer needs to be a multiple of 4.
+- No tool removed and no argument renamed.
+
 ### What changed in 2.7.0
 
 No tool was added, removed or renamed, and no tool's arguments changed.

@@ -56316,7 +56316,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.7.0",
+  version: "2.8.0",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 257 RF & electronics calculators for AI agents via the MCP",
@@ -57610,7 +57610,7 @@ var antenna_sim_default = {
       type: "object",
       "x-label": "Search Settings",
       "x-hidden": true,
-      "x-tooltip": "NSGA-II settings: { populationSize, generations, lengthRange, spacingRange, maxBoomLength }. maxBoomLength (metres) caps the distance between the first and last element; omit it to let the boom change freely. Any other key is refused.",
+      "x-tooltip": "NSGA-II search settings (pymoo): { populationSize (8-200), generations, lengthRange, spacingRange, maxBoomLength, goals, leadGoal, buildTolerance, heightRange }. goals is a list of { figure: peakGain | frontToBack | vswr | elevationGain, role: optimize | threshold | off, min (gains) or max (vswr) for a threshold, reading: worst | average (vswr across a band), elevationDeg (elevationGain, over ground only) }, with at most three optimised; omit goals to optimise gain, front-to-back and VSWR and recommend by the 2:1 rule. leadGoal names the optimised figure the recommendation ranks by. buildTolerance { mm: 0.1-50, trials: 10-200 } re-solves the designs with random element-length and position errors. heightRange [lowest, highest] (metres, feed height, over ground) also searches the mounting height. maxBoomLength (metres) caps the distance between the first and last element. Any other key is refused.",
       "x-showWhen": {
         key: "solveMode",
         value: "optimize"
@@ -57623,7 +57623,7 @@ var antenna_sim_default = {
       "x-label": "Sweep Start",
       "x-unit": "Hz",
       "x-hidden": true,
-      "x-tooltip": "Lower bound of the sweep. Required in Sweep mode.",
+      "x-tooltip": "Lower bound of the band. Required in Sweep mode over frequency; in Optimize, gives the band every goal is read across.",
       "x-showWhen": {
         key: "solveMode",
         value: "sweep"
@@ -57635,7 +57635,7 @@ var antenna_sim_default = {
       "x-label": "Sweep Stop",
       "x-unit": "Hz",
       "x-hidden": true,
-      "x-tooltip": "Upper bound of the sweep. Required in Sweep mode.",
+      "x-tooltip": "Upper bound of the band. Required in Sweep mode over frequency; in Optimize, gives the band every goal is read across.",
       "x-showWhen": {
         key: "solveMode",
         value: "sweep"
@@ -57650,10 +57650,64 @@ var antenna_sim_default = {
       "x-dimensionless": true,
       "x-hidden": true,
       "x-step": 1,
-      "x-tooltip": "How many frequencies the sweep solves.",
+      "x-tooltip": "How many frequencies the band has. Each costs one solve per design in Optimize.",
       "x-showWhen": {
         key: "solveMode",
         value: "sweep"
+      }
+    },
+    sweepVariable: {
+      type: "string",
+      enum: [
+        "frequency",
+        "height"
+      ],
+      default: "frequency",
+      "x-label": "Sweep Variable",
+      "x-hidden": true,
+      "x-tooltip": "What the sweep varies: frequency across the band, or the mounting height (the feed's height above the ground) at one frequency, over perfect or real ground.",
+      "x-showWhen": {
+        key: "solveMode",
+        value: "sweep"
+      }
+    },
+    heightStart: {
+      type: "number",
+      minimum: 0,
+      "x-label": "Lowest Height",
+      "x-unit": "m",
+      "x-hidden": true,
+      "x-tooltip": "The lowest mounting height of a height sweep, in metres: the feed segment's centre above the ground. The whole antenna must stay above the ground.",
+      "x-showWhen": {
+        key: "sweepVariable",
+        value: "height"
+      }
+    },
+    heightStop: {
+      type: "number",
+      minimum: 0,
+      "x-label": "Highest Height",
+      "x-unit": "m",
+      "x-hidden": true,
+      "x-tooltip": "The highest mounting height of a height sweep, in metres.",
+      "x-showWhen": {
+        key: "sweepVariable",
+        value: "height"
+      }
+    },
+    heightPoints: {
+      type: "integer",
+      minimum: 2,
+      maximum: 201,
+      default: 21,
+      "x-label": "Height Points",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "How many heights the sweep solves, evenly spaced; each is one solve.",
+      "x-showWhen": {
+        key: "sweepVariable",
+        value: "height"
       }
     },
     antennaType: {
@@ -62142,7 +62196,7 @@ var STRUCTURE_SHAPES = {
     feed: "Object {wire, segment}, both 0-based: which wire the source drives, and which segment of it",
     ground: "Object {type: free_space | perfect | finite}, plus epsilonR and conductivity (S/m) when finite. Omit for free space",
     conductor: "Object {material: copper | aluminium | perfect | custom}, plus conductivity (S/m) when custom. Omit for copper",
-    optimize: "Object {populationSize: a multiple of 4 between 8 and 200, generations: 1 to 200, lengthRange, spacingRange} for the NSGA-II search"
+    optimize: "Object for the NSGA-II search (pymoo): {populationSize 8-200, generations 1-200, lengthRange, spacingRange, maxBoomLength (m), goals, leadGoal, buildTolerance {mm 0.1-50, trials 10-200}, heightRange [low, high] (m)}. goals: [{figure: peakGain | frontToBack | vswr | elevationGain, role: optimize | threshold | off, min (gains) or max (vswr) for a threshold, reading: worst | average (vswr), elevationDeg}], at most 3 optimised; elevationGain and heightRange need a ground. Omit goals for gain, F/B and VSWR with the 2:1 rule. Give freqStart/freqStop/freqPoints to read every goal across a band"
   }
 };
 function structureShapeFor(jobType, param) {
@@ -63314,7 +63368,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.7.0"
+    version: "2.8.0"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });
