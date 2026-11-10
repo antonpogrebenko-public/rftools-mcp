@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
-**MCP server for [rftools.io](https://rftools.io) — 255 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
+**MCP server for [rftools.io](https://rftools.io) — 257 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
 
 Give Claude, Cursor, or any MCP-compatible AI assistant access to validated engineering calculators and heavy server-side simulations. Microstrip impedance, link budgets, filter design, converter sizing, antenna patterns, and 200+ more calculators — plus NEC2 antenna simulation, FDTD, Monte Carlo, SMPS analysis, EMI estimation, and more, all callable as MCP tools.
 
@@ -16,7 +16,7 @@ Calculators work with no API key, and so do the simulation tools: without one, a
 
 ### Without API key
 
-All 255 calculators run locally with no sign-up required, and every simulation tool that takes no file still submits — on the free lane, with the free limits and the free-lane parameter bounds stated on the response.
+All 257 calculators run locally with no sign-up required, and every simulation tool that takes no file still submits — on the free lane, with the free limits and the free-lane parameter bounds stated on the response.
 
 A job type that takes a file is the exception. Uploading a file needs an API key; set `RFTOOLS_API_KEY`. Without one, a call carrying `inputFiles` or `inputPaths` is refused here, with that sentence, before the file is read and before any request leaves this machine.
 
@@ -97,6 +97,21 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 24 tools: six for calculators, one `simulate_*` tool for each of the 13 job
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
+
+### What changed in 2.7.0
+
+No tool was added, removed or renamed, and no tool's arguments changed.
+
+- **Two new motor calculators** (257 in all) for running a three-phase
+  induction motor from a single-phase supply, on one symmetrical-component
+  model:
+  - `steinmetz-connection` gives the run capacitor, the start capacitor for a
+    chosen starting torque, the voltages, unbalance and highest winding current,
+    the usable output, and the capacitor voltage rating. A second mode gives the
+    exact capacitor and inductor balancer.
+  - `rotary-phase-converter` gives the balancing capacitors of an idler-motor
+    converter, at idle and at full load, the capacitance to switch in between
+    them, and what each set does at the other load.
 
 ### What changed in 2.5.7
 
@@ -237,7 +252,7 @@ No existing tool was removed or renamed, and no existing tool's arguments
 changed: every name and every argument 2.3.0 accepted is accepted the same way.
 
 - **New tool: `search_calculators`.** Finds calculators by words — "trace
-  impedance on FR4 microstrip" — instead of listing all 255. It matches English
+  impedance on FR4 microstrip" — instead of listing all 257. It matches English
   titles, keywords, input and output names and descriptions, and the German,
   Spanish, French, Japanese, Korean and Portuguese titles and keywords, so
   "マイクロストリップ インピーダンス" finds the microstrip calculator too.
@@ -578,7 +593,7 @@ valid identifiers. Hosts that offer completion can complete `{id}`.
 >
 > **AI:** *Calls `run_calculation` with buck-converter* → Duty cycle: 20.8%, inductor: 17.4 μH, output cap: 22 μF. [View on rftools.io →](https://rftools.io/calculators/power/buck-converter)
 
-## All 255 Calculators
+## All 257 Calculators
 
 | Category | Count | Examples |
 |----------|------:|---------|
@@ -588,7 +603,7 @@ valid identifiers. Hosts that offer completion can complete `{id}`.
 | **Signal Processing** | 14 | Filter designer, ADC SNR, FFT bin resolution, PLL loop filter, BER/SNR, Johnson noise, rise time to bandwidth |
 | **Antenna Design** | 11 | Dipole, patch, Yagi-Uda, horn, parabolic dish, loop, EIRP, beamwidth, helical, monopole/whip, antenna downtilt |
 | **General Electronics** | 24 | Ohm's law, crystal PPM tolerance, op-amp gain, 555 timer, BJT bias, MOSFET operating point, Schmitt trigger, crystal load capacitance |
-| **Motor Control** | 22 | DC motor speed, stepper, BLDC, servo, PID tuning, gear ratio, H-bridge selection, torque converter |
+| **Motor Control** | 24 | DC motor speed, stepper, BLDC, servo, PID tuning, gear ratio, H-bridge selection, torque converter, single-phase operation (Steinmetz connection, rotary phase converter) |
 | **Communications** | 11 | UART baud rate, I2C pull-up, SPI timing, CAN bus, USB termination, RS-485, Ethernet, Modbus, LIN bus |
 | **EMC/EMI** | 16 | Shielding effectiveness, EMI filter, ferrite bead, ESD/TVS diode, radiated emission estimate, common-mode choke |
 | **Thermal** | 6 | Heatsink calculator, junction temperature, thermal via array, PCB trace temperature |
@@ -637,7 +652,7 @@ AI Agent ←stdio→ rftools-mcp ←HTTPS (key optional)→ rftools.io API → S
 
 - **[rftools.io/agents](https://rftools.io/agents/)** — This server's tools, install steps and example prompts, in seven languages
 - **[rftools.io/llms.txt](https://rftools.io/llms.txt)** — Summary with API info and MCP setup
-- **[rftools.io/llms-full.txt](https://rftools.io/llms-full.txt)** — Complete listing of all 255 calculators with inputs, outputs, units, and URLs
+- **[rftools.io/llms-full.txt](https://rftools.io/llms-full.txt)** — Complete listing of all 257 calculators with inputs, outputs, units, and URLs
 - **`npx rftools-mcp --manifest`** — Everything this build lists (tools with their descriptions, annotations and input schemas, resources, templates and counts) as one JSON document; the agents page is built from it
 
 ## Links

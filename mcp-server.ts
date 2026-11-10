@@ -41,7 +41,7 @@ export function createServer(): McpServer {
 
   const server = new McpServer({
     name: 'rftools',
-    version: '2.6.1',
+    version: '2.7.0',
   });
 
   // Shared with the simulation tools below, so a test that overrides the
