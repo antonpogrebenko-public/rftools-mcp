@@ -282,7 +282,7 @@ test('a call with an unknown key is refused by the server before any request', a
   }
 });
 
-test('the field solver refuses an unknown key, and a call missing its conductors, before any request', async () => {
+test('the field solver refuses an unknown key before any request; a stack-up search needs no conductors', async () => {
   const harness = await connectedServer({ apiKey: '', api: undefined });
   try {
     const conductors = [{ role: 'signal', boundary: 1, x: -0.15e-3, width: 0.3e-3, thickness: 35e-6 }];
@@ -294,9 +294,12 @@ test('the field solver refuses an unknown key, and a call missing its conductors
     const text = textOf(bogus);
     assert.ok(text.includes('traceWidth'), text);
     assert.ok(text.includes('conductors'), text);
-    const missing = validateParams(JOB_SCHEMAS.impedance_field_solver, { planes: 'bottom' });
-    assert.equal(missing.ok, false);
-    assert.ok(missing.problems.join('\n').includes('conductors'), missing.problems.join('\n'));
+    // A stack-up search builds its own cross-sections, so the contract no longer
+    // requires conductors; the service refuses a solve or a yield without them.
+    const search = validateParams(JOB_SCHEMAS.impedance_field_solver, {
+      solveMode: 'stackup', stackup: { layerCounts: [4], netClasses: [{ name: 'SE50', kind: 'single', target: 50 }] },
+    });
+    assert.equal(search.ok, true, (search.problems || []).join('\n'));
   } finally {
     await harness.close();
   }

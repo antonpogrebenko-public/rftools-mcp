@@ -58493,21 +58493,21 @@ var impedance_field_solver_default = {
   "x-checks": [],
   type: "object",
   additionalProperties: false,
-  required: [
-    "conductors"
-  ],
+  required: [],
   properties: {
     solveMode: {
       type: "string",
       enum: [
         "solve",
-        "yield"
+        "yield",
+        "stackup"
       ],
       default: "solve",
       "x-label": "Solve Mode",
-      "x-tooltip": "Solve: one cross-section, with loss at each frequency and, on request, the width for a target and the tolerance spread. Yield (Pro and API): draws whole boards within the tolerances and reports the fraction that meet the specification.",
+      "x-tooltip": "Solve: one cross-section, with loss at each frequency and, on request, the width for a target and the tolerance spread. Yield (Pro and API): draws whole boards within the tolerances and reports the fraction that meet the specification. Stack-up (Pro and API): searches a catalogue for stack-ups that meet every net class's impedance within the fabrication rules, ranked by loss.",
       "x-paidOnly": [
-        "yield"
+        "yield",
+        "stackup"
       ]
     },
     structureFamily: {
@@ -58551,7 +58551,7 @@ var impedance_field_solver_default = {
       type: "array",
       "x-label": "Conductors",
       "x-hidden": true,
-      "x-tooltip": "Required: one or two signal traces and any coplanar grounds, { role: signal | ground, boundary (layer boundary it sits on, 0 = bottom), x (left edge, m), width (bottom, m), thickness (m), topWidth or etchFactor, plating (m) }.",
+      "x-tooltip": "Required for a solve or a yield (a stack-up search builds its own): one or two signal traces and any coplanar grounds, { role: signal | ground, boundary (layer boundary it sits on, 0 = bottom), x (left edge, m), width (bottom, m), thickness (m), topWidth or etchFactor, plating (m) }.",
       "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
     },
     mask: {
@@ -58640,6 +58640,13 @@ var impedance_field_solver_default = {
       "x-hidden": true,
       "x-step": 1,
       "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
+    },
+    stackup: {
+      type: "object",
+      "x-label": "Stack-up Search",
+      "x-hidden": true,
+      "x-tooltip": 'Required for a stack-up search: { layerCounts (2, 4, 6, 8), arrangements ({ "4": "SGPS" }), netClasses ([{ name, kind: single | differential, target (Ω), tolerance, route: outer | inner | all, spacing: { fixed (m) } or { ratio } }]), rules ({ minWidth, minSpacing (m), outerCopper, innerCopper (oz lists) }), boardThickness ({ target (m), tolerance }), catalogue ({ cores, prepregs: [{ thickness (m), material, er, tanD }] }; blank: the generic one), includeAsymmetric }. Loss is compared at the design frequency; mask and copper apply as in a solve.',
+      "x-ref": "backend/src/core/field_solver/_field_solver_stackup_plan.py"
     }
   }
 };
@@ -62940,15 +62947,6 @@ var agent_copy_default = {
         source: "preset",
         label: "50 Ω surface microstrip, FR-4, 1 oz",
         arguments: {
-          conductors: [
-            {
-              role: "signal",
-              boundary: 1,
-              x: -175e-6,
-              width: 35e-5,
-              thickness: 35e-6
-            }
-          ],
           solveMode: "solve",
           planes: "bottom",
           layers: [
@@ -62956,6 +62954,15 @@ var agent_copy_default = {
               thickness: 2e-4,
               er: 4.3,
               tanD: 0.02
+            }
+          ],
+          conductors: [
+            {
+              role: "signal",
+              boundary: 1,
+              x: -175e-6,
+              width: 35e-5,
+              thickness: 35e-6
             }
           ],
           frequencies: [
