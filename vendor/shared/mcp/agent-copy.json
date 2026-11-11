@@ -97,7 +97,7 @@
       "title": "PCB Impedance Field Solver",
       "question": "Solve a PCB cross-section with a 2-D field solver: microstrip, stripline, coplanar waveguide and differential pairs, with trapezoidal traces, plating, solder mask and mixed dielectrics.",
       "description": "Solve a PCB cross-section with a 2-D field solver: microstrip, stripline, coplanar waveguide and differential pairs, with trapezoidal traces, plating, solder mask and mixed dielectrics. Impedance or the full mode set of a pair, loss with copper roughness, and the width or spacing for a target impedance, each with its stated uncertainty.",
-      "returns": "Per frequency: Z0, or a pair's differential, common, odd, even and uncoupled impedance; effective permittivity, delay, L and C per length; conductor and dielectric loss with validity flags; the stated uncertainty; each material's values; and, when asked, the width or spacing for a target.",
+      "returns": "Per frequency, Z0 or a pair's whole mode set with effective permittivity, delay, L and C, loss with validity flags, the stated uncertainty and any width or spacing solved for; a yield adds the pass fraction with its 95 % interval, histograms with the limits, the extreme samples and the tolerance to tighten first.",
       "example": {
         "source": "preset",
         "label": "50 Ω surface microstrip, FR-4, 1 oz",

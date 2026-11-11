@@ -58500,11 +58500,15 @@ var impedance_field_solver_default = {
     solveMode: {
       type: "string",
       enum: [
-        "solve"
+        "solve",
+        "yield"
       ],
       default: "solve",
       "x-label": "Solve Mode",
-      "x-tooltip": "Solve: one cross-section, with loss at each frequency and, on request, the width for a target and the tolerance spread."
+      "x-tooltip": "Solve: one cross-section, with loss at each frequency and, on request, the width for a target and the tolerance spread. Yield (Pro and API): draws whole boards within the tolerances and reports the fraction that meet the specification.",
+      "x-paidOnly": [
+        "yield"
+      ]
     },
     structureFamily: {
       type: "string",
@@ -58590,8 +58594,52 @@ var impedance_field_solver_default = {
       type: "object",
       "x-label": "Tolerances",
       "x-hidden": true,
-      "x-tooltip": "Plus-or-minus tolerances for the first-order spread: { width, etchFactor, thickness, layerThickness, er, maskThickness }, each in the parameter's unit or as a fraction. Blank: no spread.",
+      "x-tooltip": "Plus-or-minus tolerances: { width (m), etchFactor, thickness (m), layerThickness, er, maskThickness }, the last three as fractions (0.1 for ±10 %). A solve reports the first-order spread they cause; a yield draws every sample within them, and needs at least one. Blank: no spread.",
       "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    distribution: {
+      type: "string",
+      enum: [
+        "uniform",
+        "normal"
+      ],
+      default: "uniform",
+      "x-label": "Distribution",
+      "x-tooltip": "How a yield draws each toleranced parameter: uniformly within its ± bound, or from a normal distribution with the bound at three standard deviations, truncated there.",
+      "x-showWhen": {
+        key: "solveMode",
+        value: "yield"
+      }
+    },
+    samples: {
+      type: "integer",
+      minimum: 1e3,
+      maximum: 1e4,
+      default: 1e4,
+      "x-label": "Samples",
+      "x-dimensionless": true,
+      "x-step": 1e3,
+      "x-tooltip": "Boards a yield draws, each solved at the design frequency. 10,000 gives a 95 % interval of about ±1 point at 50 % yield.",
+      "x-showWhen": {
+        key: "solveMode",
+        value: "yield"
+      }
+    },
+    specification: {
+      type: "object",
+      "x-label": "Specification",
+      "x-hidden": true,
+      "x-tooltip": "Required for a yield: { target (Ω), tolerance (0.1 for ±10 %) }, tested on Z0 for a single line and on Zdiff for a pair, and on a pair optionally { commonTarget, commonTolerance } too. A sample passes when every stated target holds.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    randomSeed: {
+      type: "integer",
+      minimum: 0,
+      "x-label": "Random Seed",
+      "x-dimensionless": true,
+      "x-hidden": true,
+      "x-step": 1,
+      "x-tooltip": "Blank derives the seed from the parameters, so the same job repeats exactly. Set it to draw a different sample of the same design."
     }
   }
 };
@@ -62887,7 +62935,7 @@ var agent_copy_default = {
       title: "PCB Impedance Field Solver",
       question: "Solve a PCB cross-section with a 2-D field solver: microstrip, stripline, coplanar waveguide and differential pairs, with trapezoidal traces, plating, solder mask and mixed dielectrics.",
       description: "Solve a PCB cross-section with a 2-D field solver: microstrip, stripline, coplanar waveguide and differential pairs, with trapezoidal traces, plating, solder mask and mixed dielectrics. Impedance or the full mode set of a pair, loss with copper roughness, and the width or spacing for a target impedance, each with its stated uncertainty.",
-      returns: "Per frequency: Z0, or a pair's differential, common, odd, even and uncoupled impedance; effective permittivity, delay, L and C per length; conductor and dielectric loss with validity flags; the stated uncertainty; each material's values; and, when asked, the width or spacing for a target.",
+      returns: "Per frequency, Z0 or a pair's whole mode set with effective permittivity, delay, L and C, loss with validity flags, the stated uncertainty and any width or spacing solved for; a yield adds the pass fraction with its 95 % interval, histograms with the limits, the extreme samples and the tolerance to tighten first.",
       example: {
         source: "preset",
         label: "50 Ω surface microstrip, FR-4, 1 oz",
