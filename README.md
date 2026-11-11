@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
-**MCP server for [rftools.io](https://rftools.io) — 257 RF & electronics calculators + 13 server-side simulation tools for AI agents.**
+**MCP server for [rftools.io](https://rftools.io) — 257 RF & electronics calculators + 14 server-side simulation tools for AI agents.**
 
 Give Claude, Cursor, or any MCP-compatible AI assistant access to validated engineering calculators and heavy server-side simulations. Microstrip impedance, link budgets, filter design, converter sizing, antenna patterns, and 200+ more calculators — plus NEC2 antenna simulation, FDTD, Monte Carlo, SMPS analysis, EMI estimation, and more, all callable as MCP tools.
 
@@ -94,9 +94,15 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Tools
 
-24 tools: six for calculators, one `simulate_*` tool for each of the 13 job
+25 tools: six for calculators, one `simulate_*` tool for each of the 14 job
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
+
+### What changed in 2.10.0
+
+- **`simulate_impedance_field_solver`, a new tool** (rftools impedance-field-solver): a 2-D boundary-element solve of a PCB cross-section, quasi-static, with every figure's uncertainty stated. Give `planes` (`bottom`, `both` or `none`), `layers` from the bottom up `{thickness, er, tanD, dispersion, refFreq}` and `conductors` `{role, boundary, x, width, thickness, topWidth or etchFactor, plating}` in metres; optionally a conformal `mask`, `copper` conductivity and roughness (Hammerstad-Jensen or Huray), several `frequencies`, `solveFor` `{parameter: width | spacing, target}` and `tolerances` for a first-order spread. It returns, per frequency, Z0 or a pair's differential, common, odd, even and uncoupled impedance, εeff, delay, L and C per length, conductor and dielectric loss, and the stated uncertainty. The free lane takes up to 8 frequencies and 1,200 unknowns; a larger request is refused with what to change.
+- **The bundled impedance calculators are corrected for copper thickness** against that solver: stripline takes Wheeler's 1978 thickness factor, microstrip Hammerstad and Jensen's own 1980 correction, the pairs and coplanar waveguide fitted thickness terms, and a cover's thickness is now measured over the copper's top. Results with copper move by up to a few percent (the coupled stripline's odd mode by more), toward the field solver.
+- No tool removed and no argument renamed.
 
 ### What changed in 2.9.0
 
@@ -284,7 +290,7 @@ changed: every name and every argument 2.3.0 accepted is accepted the same way.
   what it may run without asking (see **Annotations** below).
 - **Every description says what the tool answers**, its inputs' units and
   ranges (or which tool states them), one complete example call and what it
-  returns. The 13 `simulate_*` descriptions are generated from the website's
+  returns. The 14 `simulate_*` descriptions are generated from the website's
   tool registry, so they change when the tool does.
 - **Reference tables as resources**: frequency bands, RF connectors, standard
   values, component marking codes and PCB specifications, at
@@ -500,7 +506,7 @@ return for the calculator at that value, provenance included.
 
 ### Simulation tools — no API key required unless the job takes a file
 
-Server-side jobs that are too heavy for in-browser computation. Each of the 13 job types is its own tool, `simulate_<name>`, whose input schema is generated from that job type's parameter contract: every parameter typed, with its unit, range, options, default and any free-lane bound stated. A call is checked against that contract before anything is sent, so a wrong parameter name comes back naming the key and the keys that are accepted, and spends no quota.
+Server-side jobs that are too heavy for in-browser computation. Each of the 14 job types is its own tool, `simulate_<name>`, whose input schema is generated from that job type's parameter contract: every parameter typed, with its unit, range, options, default and any free-lane bound stated. A call is checked against that contract before anything is sent, so a wrong parameter name comes back naming the key and the keys that are accepted, and spends no quota.
 
 **Quota:** Free: 5 runs/month · Pro: 100/month · API tier: 10,000/month. Without a key a job that takes no file still runs, on the free lane, and the response says which limits applied. A job that takes a file needs a key — see **Files** below.
 
@@ -514,7 +520,7 @@ Server-side jobs that are too heavy for in-browser computation. Each of the 13 j
 
 Uploading a file needs an API key; set `RFTOOLS_API_KEY`. The service refuses an anonymous upload, so this server refuses it first — locally, before the file is read and before any request is made — and says which variable to set rather than passing back a bare 401. The uploaded object is recorded against the key's account, and only that account may submit it.
 
-#### The 13 job types
+#### The 14 job types
 
 | Tool | `jobType` | What it does | Files | Time budget | Paid-only / free-lane bound |
 |------|-----------|--------------|-------|------------:|------------------------------|
@@ -522,7 +528,8 @@ Uploading a file needs an API key; set `RFTOOLS_API_KEY`. The service refuses an
 | `simulate_emi_radiated` | `emi_radiated` | EMI Radiated Emissions Estimator | — | 240 s | — |
 | `simulate_eye_diagram` | `eye_diagram` | Eye Diagram from S-Parameters | 1 × `.s2p` `.s4p` | 120 s | — |
 | `simulate_fdtd_sparam` | `fdtd_sparam` | FDTD Transmission Line Simulator | — | 32400 s | `solveMode: normal`, `fine` |
-| `simulate_filter_monte_carlo` | `filter_monte_carlo` | RF Filter Monte Carlo Analysis | — | 120 s | `monteCarloIterations` ≤ 500 |
+| `simulate_filter_monte_carlo` | `filter_monte_carlo` | RF Filter Monte Carlo Analysis | — | 120 s | `monteCarloIterations` ≤ 1000 |
+| `simulate_impedance_field_solver` | `impedance_field_solver` | PCB Impedance Field Solver | — | 300 s | free lane: 8 frequencies, 1,200 unknowns |
 | `simulate_impedance_matching` | `impedance_match` | Broadband Impedance Matching Synthesizer | 0–2 × `.s2p` | 120 s | — |
 | `simulate_magnetics_optimizer` | `magnetics_optimizer` | Magnetics & Transformer Design Optimizer | — | 360 s | — |
 | `simulate_pdn_impedance` | `pdn_impedance` | PDN Impedance Analyzer & Decoupling Capacitor Optimizer | — | 360 s | — |

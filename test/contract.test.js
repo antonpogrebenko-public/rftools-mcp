@@ -282,6 +282,26 @@ test('a call with an unknown key is refused by the server before any request', a
   }
 });
 
+test('the field solver refuses an unknown key, and a call missing its conductors, before any request', async () => {
+  const harness = await connectedServer({ apiKey: '', api: undefined });
+  try {
+    const conductors = [{ role: 'signal', boundary: 1, x: -0.15e-3, width: 0.3e-3, thickness: 35e-6 }];
+    const bogus = await harness.client.callTool({
+      name: 'simulate_impedance_field_solver',
+      arguments: { planes: 'bottom', conductors, traceWidth: 0.3 },
+    });
+    assert.equal(bogus.isError, true);
+    const text = textOf(bogus);
+    assert.ok(text.includes('traceWidth'), text);
+    assert.ok(text.includes('conductors'), text);
+    const missing = validateParams(JOB_SCHEMAS.impedance_field_solver, { planes: 'bottom' });
+    assert.equal(missing.ok, false);
+    assert.ok(missing.problems.join('\n').includes('conductors'), missing.problems.join('\n'));
+  } finally {
+    await harness.close();
+  }
+});
+
 test('every published count comes from the index', async () => {
   const harness = await connectedServer({ apiKey: '' });
   try {

@@ -48,7 +48,7 @@ test.before(async () => {
 });
 
 test('every tool has a title and all four hints', () => {
-  assert.equal(listing.length, 24);
+  assert.equal(listing.length, 25);
   assert.deepEqual(missingAnnotations(listing), []);
   for (const tool of listing) assert.equal(tool.annotations.title, tool.title, tool.name);
 });
@@ -78,7 +78,7 @@ test('tools that start a job or spend a metered call are neither read-only nor i
     spending.map((t) => t.name).filter((n) => !n.startsWith('simulate_')).sort(),
     ['run_simulation', 'solve_calculation', 'submit_simulation'],
   );
-  assert.equal(spending.filter((t) => t.name.startsWith('simulate_')).length, 13);
+  assert.equal(spending.filter((t) => t.name.startsWith('simulate_')).length, 14);
   for (const tool of spending) {
     assert.equal(tool.annotations.readOnlyHint, false, tool.name);
     assert.equal(tool.annotations.idempotentHint, false, tool.name);

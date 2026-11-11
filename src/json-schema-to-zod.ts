@@ -29,7 +29,9 @@ export function describeParam(name: string, prop: JobParamSchema, shapeNote?: st
 
   if (shapeNote) {
     parts.push(shapeNote);
-  } else if (prop['x-ref']) {
+  } else if (prop['x-ref'] && !(tooltip && tooltip.includes('{'))) {
+    // A tooltip that spells out the { … } shape is the description; only a bare
+    // pointer is worth this warning (impedance_field_solver's layers and conductors).
     parts.push('Structure is not described by this schema; pass it as the service expects');
   }
 

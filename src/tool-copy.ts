@@ -27,9 +27,12 @@ export const DESCRIPTION_MAX_CHARS = 1700;
  * The whole tools/list result — names, titles, descriptions, input schemas and
  * annotations — as compact JSON, in bytes. Measured at 2.4.0 and set with room
  * for a release or two of growth; raising it is a decision someone makes in a
- * diff, not something that happens by accident.
+ * diff, not something that happens by accident. Raised from 90,000 at 2.10.0
+ * (founder, 2026-11-11): simulate_impedance_field_solver needs about 5.8 KB to
+ * spell out a cross-section's layers, conductors, mask and roughness, and the
+ * list reached 92,656 bytes. The new figure leaves room for one more such tool.
  */
-export const LISTING_BUDGET_BYTES = 90_000;
+export const LISTING_BUDGET_BYTES = 100_000;
 
 /** MCP's limit on a tool name (and the Claude directory's). */
 export const TOOL_NAME_MAX_CHARS = 64;

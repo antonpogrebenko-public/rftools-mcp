@@ -72,6 +72,17 @@
       "timeoutSeconds": 180,
       "files": false
     },
+    "impedance_field_solver": {
+      "slug": "impedance-field-solver",
+      "title": "PCB Impedance Field Solver",
+      "tiers": [
+        "free",
+        "pro",
+        "api"
+      ],
+      "timeoutSeconds": 300,
+      "files": false
+    },
     "impedance_match": {
       "slug": "impedance-matching",
       "title": "Broadband Impedance Matching Synthesizer",

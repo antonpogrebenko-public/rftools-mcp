@@ -22,6 +22,7 @@ import emiRadiated from '../vendor/shared/job-schemas/emi_radiated.json' with { 
 import eyeDiagram from '../vendor/shared/job-schemas/eye_diagram.json' with { type: 'json' };
 import fdtdSparam from '../vendor/shared/job-schemas/fdtd_sparam.json' with { type: 'json' };
 import filterMonteCarlo from '../vendor/shared/job-schemas/filter_monte_carlo.json' with { type: 'json' };
+import impedanceFieldSolver from '../vendor/shared/job-schemas/impedance_field_solver.json' with { type: 'json' };
 import impedanceMatch from '../vendor/shared/job-schemas/impedance_match.json' with { type: 'json' };
 import magneticsOptimizer from '../vendor/shared/job-schemas/magnetics_optimizer.json' with { type: 'json' };
 import pdnImpedance from '../vendor/shared/job-schemas/pdn_impedance.json' with { type: 'json' };
@@ -92,6 +93,7 @@ const RAW_SCHEMAS = [
   eyeDiagram,
   fdtdSparam,
   filterMonteCarlo,
+  impedanceFieldSolver,
   impedanceMatch,
   magneticsOptimizer,
   pdnImpedance,

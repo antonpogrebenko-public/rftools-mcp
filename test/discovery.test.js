@@ -243,12 +243,12 @@ test('every 2.3.0 tool is still listed, takes every argument it took, and requir
 
 // ── The manifest (tasks 2.10, 2.11) ─────────────────────────────────────────
 
-test('the manifest lists 24 tools in a fixed order, the resources and the templates, with counts', async () => {
+test('the manifest lists 25 tools in a fixed order, the resources and the templates, with counts', async () => {
   const m = await loadBundle().manifest();
   const { tools } = await s.client.listTools();
-  assert.equal(m.counts.tools, 24);
+  assert.equal(m.counts.tools, 25);
   assert.deepEqual(m.tools.map((t) => t.name), tools.map((t) => t.name));
-  assert.deepEqual(m.counts.toolsByGroup, { calculator: 6, simulate: 13, job: 5 });
+  assert.deepEqual(m.counts.toolsByGroup, { calculator: 6, simulate: 14, job: 5 });
   assert.deepEqual(m.tools.slice(0, 6).map((t) => t.name), [
     'list_calculators',
     'search_calculators',

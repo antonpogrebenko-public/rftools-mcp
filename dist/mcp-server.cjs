@@ -51,20 +51,419 @@ var COPPER_ALPHA_20C = 393e-5;
 var TM650_RESISTIVITY_20C = 10.827 * CIRCULAR_MIL / FOOT / (1 + COPPER_ALPHA_20C * 5);
 var TM650_RESISTIVITY_HALF_OZ_20C = 11.529 * CIRCULAR_MIL / FOOT / (1 + COPPER_ALPHA_20C * 5);
 
-// src/lib/calculators/rf/microstrip-impedance.ts
+// src/lib/pcb/impedance.ts
 var ETA_0 = FREE_SPACE_IMPEDANCE;
+function hjEpsEff(u, er) {
+  const a = 1 + 1 / 49 * Math.log((Math.pow(u, 4) + Math.pow(u / 52, 2)) / (Math.pow(u, 4) + 0.432)) + 1 / 18.7 * Math.log(1 + Math.pow(u / 18.1, 3));
+  const b = 0.564 * Math.pow((er - 0.9) / (er + 3), 0.053);
+  return (er + 1) / 2 + (er - 1) / 2 * Math.pow(1 + 10 / u, -a * b);
+}
+function hjZ01(u) {
+  const F = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
+  return ETA_0 / (2 * Math.PI) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
+}
+function hammerstadJensen(w, h, er, t) {
+  const u = w / h;
+  if (!(t > 0)) {
+    const erEff2 = hjEpsEff(u, er);
+    return { Z0: hjZ01(u) / Math.sqrt(erEff2), erEff: erEff2 };
+  }
+  const tn = t / h;
+  const coth = 1 / Math.tanh(Math.sqrt(6.517 * u));
+  const du1 = tn / Math.PI * Math.log(1 + 4 * Math.E / (tn * coth * coth));
+  const dur = 0.5 * (1 + 1 / Math.cosh(Math.sqrt(Math.max(er - 1, 0)))) * du1;
+  const u1 = u + du1;
+  const ur = u + dur;
+  const epsR = hjEpsEff(ur, er);
+  const Z0 = hjZ01(ur) / Math.sqrt(epsR);
+  const erEff = epsR * (hjZ01(u1) / hjZ01(ur)) ** 2;
+  return { Z0, erEff };
+}
+var COVER_SINGLE = [1.484592, -0.354664, 0.758396, 9776e-6];
+function coverCapture(c2, u, hcOverH, gOverH) {
+  if (!(hcOverH > 0)) return 0;
+  const lu = Math.log(u);
+  let rate;
+  let power;
+  if (gOverH === void 0) {
+    rate = c2[0] * Math.pow(u, c2[1]);
+    power = c2[2] + c2[3] * lu;
+  } else {
+    const lg = Math.log(gOverH);
+    rate = c2[0] * Math.pow(u, c2[1]) * Math.pow(gOverH, c2[2]);
+    power = c2[3] + c2[4] * lu + c2[5] * lg;
+  }
+  const q = 1 - Math.exp(-rate * Math.pow(hcOverH, Math.max(power, 0.1)));
+  return Math.min(Math.max(q, 0), 1);
+}
+function substrateFilling(w, h, er, t) {
+  if (er <= 1 + 1e-9) {
+    const probe = 1.001;
+    return (hammerstadJensen(w, h, probe, t).erEff - 1) / (probe - 1);
+  }
+  return (hammerstadJensen(w, h, er, t).erEff - 1) / (er - 1);
+}
+var COVER_THICKNESS = { chi: 1.005, beta: 1.115 };
+function capacitances(z4, eps) {
+  return { air: ETA_0 / (z4 * Math.sqrt(eps)), loaded: ETA_0 * Math.sqrt(eps) / z4 };
+}
+function bareThicknessIncrement(w, h, er, t) {
+  if (!(t > 0)) return { air: 0, loaded: 0 };
+  const flat = hammerstadJensen(w, h, er, 0);
+  const thick = hammerstadJensen(w, h, er, t);
+  const c0 = capacitances(flat.Z0, flat.erEff);
+  const cT = capacitances(thick.Z0, thick.erEff);
+  return { air: cT.air - c0.air, loaded: cT.loaded - c0.loaded };
+}
+function coverAboveTop(hc, t, fit) {
+  return Math.max(hc - (fit.beta - 1) * Math.max(t, 0), 0);
+}
+function embeddedMicrostrip(w, h, er, t, hc, erc, fit = COVER_THICKNESS) {
+  if (!(hc > 0)) return hammerstadJensen(w, h, er, t);
+  const hcTop = coverAboveTop(hc, t, fit);
+  const airZ0 = hammerstadJensen(w, h, 1, 0).Z0;
+  const qf = Math.min(Math.max(substrateFilling(w, h, er, 0), 0), 1);
+  const qc = coverCapture(COVER_SINGLE, w / h, hcTop / h);
+  const erEff0 = 1 + qf * (er - 1) + (1 - qf) * qc * (erc - 1);
+  if (!(t > 0)) return { Z0: airZ0 / Math.sqrt(erEff0), erEff: erEff0 };
+  const c2 = capacitances(airZ0 / Math.sqrt(erEff0), erEff0);
+  const inc = bareThicknessIncrement(w, h, er, t);
+  const air = c2.air + inc.air;
+  const loaded = c2.loaded + inc.loaded + fit.chi * (erc - 1) * inc.air;
+  return { Z0: ETA_0 / Math.sqrt(air * loaded), erEff: loaded / air };
+}
+function wheelerThicknessFactor(w, b, t) {
+  if (!(t > 0) || !(b > t) || !(w > 0)) return 1;
+  const z4 = (tt) => {
+    const x = tt / b;
+    let wEff = w / b;
+    if (x > 0) {
+      const m = 2 / (1 + 2 / 3 * x / (1 - x));
+      wEff = w / (b - tt) + x / (Math.PI * (1 - x)) * (1 - 0.5 * Math.log((x / (2 - x)) ** 2 + (0.0796 * x / (w / b + 1.1 * x)) ** m));
+    }
+    const q = 1 / wEff;
+    const p = 8 / Math.PI * q;
+    return Math.log(1 + 4 / Math.PI * q * (p + Math.sqrt(p * p + 6.27)));
+  };
+  return z4(0) / z4(t);
+}
+function centredStripNormC(w, b) {
+  if (!(w > 0) || !(b > 0)) return 0;
+  const x = Math.PI * w / (2 * b);
+  if (x > 20) {
+    return 8 * (Math.LN2 + x + Math.log1p(Math.exp(-2 * x))) / Math.PI;
+  }
+  return 4 * ellipticRatioFrom(Math.tanh(x), 1 / Math.cosh(x));
+}
+var OFFSET_A = 0.245266;
+var OFFSET_P = 0.718328;
+var OFFSET_C = 3.038156;
+var OFFSET_Q = 0.578186;
+function striplineNormC(w, h1, h2, t) {
+  if (!(w > 0) || !(h1 > 0) || !(h2 > 0)) return 0;
+  const half = (h) => centredStripNormC(w, 2 * h + t) * wheelerThicknessFactor(w, 2 * h + t, t);
+  let c2 = 0.5 * (half(h1) + half(h2));
+  const b0 = h1 + h2;
+  const u = Math.min(h1, h2) / b0;
+  if (u < 0.5) {
+    const excess = OFFSET_A * (Math.pow(0.5 / u, OFFSET_P) - 1);
+    const rolloff = 1 - Math.exp(-OFFSET_C * Math.pow(w / b0, OFFSET_Q));
+    c2 += excess * rolloff;
+  }
+  return c2;
+}
+function symmetricStripline(w, b, er, t) {
+  if (!(b > t) || !(w > 0)) return { Z0: 0, erEff: er };
+  const gap = (b - t) / 2;
+  const c2 = striplineNormC(w, gap, gap, t);
+  return { Z0: c2 > 0 ? ETA_0 / (Math.sqrt(er) * c2) : 0, erEff: er };
+}
+function asymmetricStripline(w, h1, h2, er, t) {
+  const c2 = striplineNormC(w, h1, h2, t);
+  return { Z0: c2 > 0 ? ETA_0 / (Math.sqrt(er) * c2) : 0, erEff: er };
+}
+function pairThicknessShape(w, s, t, scale2, fit) {
+  const phi = 1 / (1 + Math.pow(s / (fit.a * scale2), fit.p)) / (1 + fit.c * t / s);
+  const psi = 1 - Math.exp(-fit.A * Math.pow(s / scale2, fit.q) * (1 + fit.B * w / scale2));
+  return { phi, psi };
+}
+function pairThickness(w, s, t, scale2, edge, fit) {
+  if (!(t > 0) || !(s > 0)) return { even: 0, odd: 0 };
+  const { phi, psi } = pairThicknessShape(w, s, t, scale2, fit);
+  return { odd: 2 * edge + phi * (2 * t / s), even: edge * (1 + psi) };
+}
+var STRIP_PAIR_THICKNESS = { a: 0.5342, p: 1.731, c: 0.0145, A: 2.239, q: 1.722, B: 0 };
+function coupledStriplineNormC(w, s, b, t, fit = STRIP_PAIR_THICKNESS) {
+  if (!(w > 0) || !(b > t) || !(s > 0)) return { even: 0, odd: 0 };
+  const norm = (k) => {
+    const kk = Math.min(Math.max(k, 0), 1 - 1e-15);
+    return 4 * (ellipticK(kk) / ellipticK(Math.sqrt(Math.max(1 - kk * kk, 0))));
+  };
+  const kw = Math.tanh(Math.PI * w / (2 * (b - t)));
+  const kws = Math.tanh(Math.PI * (w + s) / (2 * (b - t)));
+  const edge = t > 0 ? 0.5 * (centredStripNormC(w, b) * wheelerThicknessFactor(w, b, t) - centredStripNormC(w, b - t)) : 0;
+  const thick = pairThickness(w, s, t, b, edge, fit);
+  return { even: norm(kw * kws) + thick.even, odd: norm(kws > 0 ? kw / kws : kw) + thick.odd };
+}
+function coupledStripline(w, s, b, er, t, fit = STRIP_PAIR_THICKNESS) {
+  const gap = (b - t) / 2;
+  if (!(gap > 0) || !(w > 0)) {
+    return { Z0: 0, erEff: er, Zodd: 0, Zeven: 0, Zdiff: 0, Zcommon: 0, erEffOdd: er, erEffEven: er };
+  }
+  const { Z0 } = symmetricStripline(w, b, er, t);
+  const { even, odd } = coupledStriplineNormC(w, s, b, t, fit);
+  const Zodd = odd > 0 ? ETA_0 / (Math.sqrt(er) * odd) : 0;
+  const Zeven = even > 0 ? ETA_0 / (Math.sqrt(er) * even) : 0;
+  return {
+    Z0,
+    erEff: er,
+    Zodd,
+    Zeven,
+    Zdiff: 2 * Zodd,
+    Zcommon: Zeven / 2,
+    erEffOdd: er,
+    erEffEven: er
+  };
+}
+var OFFSET_COUPLED_ODD = [1.104095, 2.193833, -0.906962, 0.245485, 1.175407, 1.396674, 3.298642, 1.039723];
+var OFFSET_COUPLED_EVEN = [0.725767, 2.700093, -1.581169, 0.293423, 1.228106, 2.065153, 2.977705, 1.755071];
+function offsetCoupledExcess(c2, wb, sb, m) {
+  if (!(m > 0)) return 0;
+  const [A2, p0, p1, alpha, beta, gamma, decay, q] = c2;
+  const power = Math.max(p0 + p1 * sb, 0.3);
+  return A2 * Math.pow(m, power) * (Math.pow(wb, alpha) / Math.pow(1 + beta * wb, gamma)) * Math.exp(-decay * Math.pow(sb, q));
+}
+var OFFSET_COUPLED_RANGE = {
+  description: "w/b 0.05–0.8, s/b 0.05–1.0, nearer gap 0.125–0.5 of the plane spacing",
+  worstCase: 0.019,
+  contains: ({ wb, sb, nearRatio }) => wb >= 0.05 && wb <= 0.8 && sb >= 0.05 && sb <= 1 && nearRatio >= 0.125 && nearRatio <= 0.5
+};
+function offsetCoupledStripline(w, s, h1, h2, er, t, fit = STRIP_PAIR_THICKNESS) {
+  const fallback = {
+    Z0: 0,
+    erEff: er,
+    Zodd: 0,
+    Zeven: 0,
+    Zdiff: 0,
+    Zcommon: 0,
+    erEffOdd: er,
+    erEffEven: er,
+    inRange: false
+  };
+  if (!(w > 0) || !(s > 0) || !(h1 > 0) || !(h2 > 0)) return fallback;
+  const { Z0 } = asymmetricStripline(w, h1, h2, er, t);
+  const b = h1 + h2;
+  const singleOffset = striplineNormC(w, h1, h2, 0);
+  const singleCentred = centredStripNormC(w, b);
+  const centred = coupledStriplineNormC(w, s, b, 0);
+  if (!(singleCentred > 0) || !(singleOffset > 0)) return fallback;
+  const nearRatio = Math.min(h1, h2) / b;
+  const m = 1 - 2 * nearRatio;
+  const wb = w / b;
+  const sb = s / b;
+  const scale2 = singleOffset / singleCentred;
+  const edge = t > 0 ? 0.5 * (striplineNormC(w, h1, h2, t) - singleOffset) : 0;
+  const thick = pairThickness(w, s, t, b + t, edge, fit);
+  const odd = centred.odd * scale2 * (1 - offsetCoupledExcess(OFFSET_COUPLED_ODD, wb, sb, m)) + thick.odd;
+  const even = centred.even * scale2 * (1 + offsetCoupledExcess(OFFSET_COUPLED_EVEN, wb, sb, m)) + thick.even;
+  const Zodd = odd > 0 ? ETA_0 / (Math.sqrt(er) * odd) : 0;
+  const Zeven = even > 0 ? ETA_0 / (Math.sqrt(er) * even) : 0;
+  return {
+    Z0,
+    erEff: er,
+    Zodd,
+    Zeven,
+    Zdiff: 2 * Zodd,
+    Zcommon: Zeven / 2,
+    erEffOdd: er,
+    erEffEven: er,
+    inRange: OFFSET_COUPLED_RANGE.contains({ wb, sb, nearRatio })
+  };
+}
+var MICRO_COUPLED_ODD = [0.839575, 0.228752, -0.941128, 1.314575, -0.069681, 0.607266, 79e-5];
+var MICRO_COUPLED_EVEN = [0.818296, 1.594079, -0.675897, 0.876135, -0.262306, 0.782936, 0.048219];
+var FILL_RATIO_EVEN = [0.124128, 1849e-6, -7476e-6, 0.024277, 3714e-6, -6844e-6, -1.565159, -0.068818, 1.422211];
+var FILL_RATIO_ODD = [0.176154, 129e-6, -0.012558, -7893e-6, -613e-6, -9416e-6, -1.18994, -0.098742, 1.114352];
+var COVER_EVEN = [1.288077, -0.353144, 0.086395, 0.702757, -0.010504, -0.020194];
+var COVER_ODD = [1.909038, -0.43372, -0.225079, 0.82866, -0.024221, 0.036554];
+function microCouplingTerm(c2, u, g) {
+  const [a0, a1, a2, b0, b2, p0, p1] = c2;
+  const amplitude = a0 * Math.pow(1 + a1 * u, a2);
+  const rate = b0 * Math.pow(u, b2);
+  const power = Math.max(p0 + p1 * Math.log(u), 0.15);
+  return amplitude * Math.exp(-rate * Math.pow(g, power));
+}
+function fillRatioTerm(c2, u, g) {
+  const lu = Math.log(u);
+  const lg = Math.log(g);
+  const amplitude = c2[0] + c2[1] * lu + c2[2] * lu * lu + c2[3] * lg + c2[4] * lg * lg + c2[5] * lu * lg;
+  const rate = Math.exp(c2[6] + c2[7] * lu);
+  return amplitude * Math.exp(-rate * Math.pow(g, c2[8]));
+}
+var MICRO_COUPLED_RANGE = {
+  description: "trace width 0.2–4× and spacing 0.1–3× the substrate height",
+  worstCase: 0.02,
+  contains: ({ u, g }) => u >= 0.2 && u <= 4 && g >= 0.1 && g <= 3
+};
+var MICRO_PAIR_THICKNESS = { a: 2.613, p: 1.667, c: 2604e-6, A: 0.2114, q: 2.008, B: 0 };
+var COVERED_PAIR_THICKNESS = { ...MICRO_PAIR_THICKNESS };
+function coupledMicrostripCore(w, s, h, er, t, cover, fit, coverFit = COVER_THICKNESS) {
+  const u = w / h;
+  const g = s / h;
+  const airSingle = hammerstadJensen(w, h, 1, 0).Z0;
+  const rhoOdd = 1 - microCouplingTerm(MICRO_COUPLED_ODD, u, g);
+  const rhoEven = 1 + microCouplingTerm(MICRO_COUPLED_EVEN, u, g);
+  const airOdd = rhoOdd * airSingle;
+  const airEven = rhoEven * airSingle;
+  const clamp01 = (x) => Math.min(Math.max(x, 0), 1);
+  const qSingle = clamp01(substrateFilling(w, h, er, 0));
+  const qEven = clamp01(qSingle * (1 + fillRatioTerm(FILL_RATIO_EVEN, u, g)));
+  const qOdd = clamp01(qSingle * (1 - fillRatioTerm(FILL_RATIO_ODD, u, g)));
+  const covered = cover !== void 0 && cover.hc > 0;
+  const hcTop = covered ? coverAboveTop(cover.hc, t, coverFit) : 0;
+  const qcEven = covered ? coverCapture(COVER_EVEN, u, hcTop / h, g) : 0;
+  const qcOdd = covered ? coverCapture(COVER_ODD, u, hcTop / h, g) : 0;
+  const erc = covered ? cover.erc : 1;
+  const erEffEven0 = 1 + qEven * (er - 1) + (1 - qEven) * qcEven * (erc - 1);
+  const erEffOdd0 = 1 + qOdd * (er - 1) + (1 - qOdd) * qcOdd * (erc - 1);
+  const single = covered ? embeddedMicrostrip(w, h, er, t, cover.hc, cover.erc, coverFit) : hammerstadJensen(w, h, er, t);
+  const odd = capacitances(airOdd / Math.sqrt(erEffOdd0), erEffOdd0);
+  const even = capacitances(airEven / Math.sqrt(erEffEven0), erEffEven0);
+  if (t > 0 && s > 0) {
+    const inc = bareThicknessIncrement(w, h, er, t);
+    const besideCopper = covered ? coverFit.chi * (cover.erc - 1) * inc.air : 0;
+    const edgeAir = 0.5 * inc.air;
+    const edgeLoaded = 0.5 * (inc.loaded + besideCopper);
+    const { phi, psi } = pairThicknessShape(w, s, t, h, fit ?? (covered ? COVERED_PAIR_THICKNESS : MICRO_PAIR_THICKNESS));
+    const wall = phi * (2 * t / s);
+    const gapFill = covered ? cover.erc : 1;
+    odd.air += 2 * edgeAir + wall;
+    odd.loaded += 2 * edgeLoaded + gapFill * wall;
+    even.air += edgeAir * (1 + psi);
+    even.loaded += edgeLoaded * (1 + psi);
+  }
+  const Zodd = ETA_0 / Math.sqrt(odd.air * odd.loaded);
+  const Zeven = ETA_0 / Math.sqrt(even.air * even.loaded);
+  const erEffOdd = odd.loaded / odd.air;
+  const erEffEven = even.loaded / even.air;
+  return {
+    Z0: single.Z0,
+    erEff: single.erEff,
+    Zodd,
+    Zeven,
+    Zdiff: 2 * Zodd,
+    Zcommon: Zeven / 2,
+    erEffOdd,
+    erEffEven,
+    inRange: MICRO_COUPLED_RANGE.contains({ u, g })
+  };
+}
+function diffMicrostrip(w, s, h, er, t, fit) {
+  return coupledMicrostripCore(w, s, h, er, t, void 0, fit);
+}
+function embeddedCoupledMicrostrip(w, s, h, er, t, hc, erc, fit, coverFit) {
+  return coupledMicrostripCore(w, s, h, er, t, { hc, erc }, fit, coverFit);
+}
+var EVEN_A = 0.518109;
+var EVEN_P = -0.356102;
+var EVEN_C = 1.484632;
+var EVEN_Q = 0.690292;
+function broadsideEvenNormC(w, h, s, t) {
+  if (!(h > 0) || !(w > 0)) return 0;
+  const half = 0.5 * centredStripNormC(w, 2 * h + t) * wheelerThicknessFactor(w, 2 * h + t, t);
+  const excess = EVEN_A * Math.pow(w / h, EVEN_P) * (1 - Math.exp(-EVEN_C * Math.pow(s / h, EVEN_Q)));
+  return half * (1 + excess);
+}
+function broadsideStripline(w, b, d, er, t) {
+  const h = (b - d - 2 * t) / 2;
+  if (!(h > 0)) return { Z0: 0, erEff: er, Zodd: 0, Zeven: 0, Zdiff: 0, Zcommon: 0 };
+  const { Z0 } = asymmetricStripline(w, h, h + d + t, er, t);
+  const { Z0: Zodd } = asymmetricStripline(w, d / 2, h, er, t);
+  const cEven = broadsideEvenNormC(w, h, d / 2, t);
+  const Zeven = cEven > 0 ? ETA_0 / (Math.sqrt(er) * cEven) : 0;
+  return { Z0, erEff: er, Zodd, Zeven, Zdiff: 2 * Zodd, Zcommon: Zeven / 2 };
+}
+function broadsideUnshielded(w, d, er, t = 0) {
+  const h = d / 2;
+  const Zodd = h > 0 && w > 0 ? hammerstadJensen(w, h, 1, t).Z0 / Math.sqrt(er) : NaN;
+  return { Z0: Zodd, erEff: er, Zdiff: 2 * Zodd };
+}
+var CPW_SIDEWALL = { alpha: 1.021, beta: 0.5255, A: 0.1248, kappa: 0.01712 };
+function cpwSidewallC(t, g, fit = CPW_SIDEWALL) {
+  if (!(t > 0) || !(g > 0)) return 0;
+  return 2 * (t / g) * (fit.alpha + fit.beta * Math.log1p(fit.A * g / t));
+}
+function ellipticRatioFrom(k, kp) {
+  return ellipticKc(kp) / ellipticKc(k);
+}
+function coplanarModuli(w, g) {
+  return { k: w / (w + 2 * g), kp: 2 * Math.sqrt(g * (w + g)) / (w + 2 * g) };
+}
+function backedModuli(w, g, h) {
+  const a = Math.PI * w / (4 * h);
+  const b = Math.PI * (w + 2 * g) / (4 * h);
+  const k = Math.tanh(a) / Math.tanh(b);
+  const kp = 2 * Math.exp(-a) * Math.sqrt(-Math.expm1(-2 * (a + b)) * -Math.expm1(-2 * (b - a))) / ((1 + Math.exp(-2 * a)) * -Math.expm1(-2 * b));
+  return { k, kp };
+}
+function cpwg(w, g, h, er, t, fit = CPW_SIDEWALL) {
+  const m0i = coplanarModuli(w, g);
+  const m1i = backedModuli(w, g, h);
+  const r0i = ellipticRatioFrom(m0i.k, m0i.kp);
+  const r1i = ellipticRatioFrom(m1i.k, m1i.kp);
+  const erEff0 = 1 + r1i / (r0i + r1i) * (er - 1);
+  const cAir0 = 2 * (r0i + r1i);
+  const dC = cpwSidewallC(t, g, fit);
+  const dLoaded = dC * (1 + fit.kappa * (er - 1));
+  const erEff = (erEff0 * cAir0 + dLoaded) / (cAir0 + dC);
+  const Z0 = ETA_0 / Math.sqrt((cAir0 + dC) * (erEff0 * cAir0 + dLoaded));
+  return { Z0, erEff };
+}
+function cpwUngrounded(w, g, h, er, t, fit = CPW_SIDEWALL) {
+  const ratio = (k) => ellipticK(k) / ellipticK(Math.sqrt(Math.max(1 - k * k, 0)));
+  const kIdeal = w / (w + 2 * g);
+  const k2 = Math.sinh(Math.PI * w / (4 * h)) / Math.sinh(Math.PI * (w + 2 * g) / (4 * h));
+  const erEff0 = 1 + (er - 1) / 2 * (ratio(k2) / ratio(kIdeal));
+  const cAir0 = 4 * ratio(kIdeal);
+  const dC = cpwSidewallC(t, g, fit);
+  const dLoaded = dC * (1 + fit.kappa * (er - 1));
+  const erEff = (erEff0 * cAir0 + dLoaded) / (cAir0 + dC);
+  const Z0 = ETA_0 / Math.sqrt((cAir0 + dC) * (erEff0 * cAir0 + dLoaded));
+  return { Z0, erEff };
+}
+function ellipticKc(kp) {
+  if (!(kp > 0)) return Infinity;
+  if (kp >= 1) return Math.PI / 2;
+  let a = 1, b = kp;
+  for (let i = 0; i < 32; i++) {
+    const aNext = (a + b) / 2;
+    const bNext = Math.sqrt(a * b);
+    a = aNext;
+    b = bNext;
+    if (Math.abs(a - b) < 1e-15 * a) break;
+  }
+  return Math.PI / (2 * a);
+}
+function ellipticK(k) {
+  if (k <= 0) return Math.PI / 2;
+  if (k >= 1) return Infinity;
+  let a = 1, b = Math.sqrt(1 - k * k);
+  for (let i = 0; i < 16; i++) {
+    const aNext = (a + b) / 2;
+    const bNext = Math.sqrt(a * b);
+    a = aNext;
+    b = bNext;
+    if (Math.abs(a - b) < 1e-12) break;
+  }
+  return Math.PI / (2 * a);
+}
+
+// src/lib/calculators/rf/microstrip-impedance.ts
 function calculateMicrostrip(inputs) {
   const { traceWidth: w, substrateHeight: h, dielectricConstant: er, copperThickness } = inputs;
   const frequency = inputs.frequency ?? 2.4;
   const t = copperThickness / 1e3;
-  const dw = t / Math.PI * (1 + Math.log(2 * h / t));
-  const wEff = w + dw;
-  const u = wEff / h;
-  const a = 1 + 1 / 49 * Math.log((Math.pow(u, 4) + Math.pow(u / 52, 2)) / (Math.pow(u, 4) + 0.432)) + 1 / 18.7 * Math.log(1 + Math.pow(u / 18.1, 3));
-  const b = 0.564 * Math.pow((er - 0.9) / (er + 3), 0.053);
-  const erEff = (er + 1) / 2 + (er - 1) / 2 * Math.pow(1 + 10 / u, -a * b);
-  const F = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
-  const z0 = ETA_0 / (2 * Math.PI * Math.sqrt(erEff)) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
+  const { Z0: z0, erEff } = hammerstadJensen(w, h, er, t);
   const c2 = 299.792458;
   const tpd = 1 / c2 * Math.sqrt(erEff) * 1e3;
   const guidedWavelength = c2 / (frequency * Math.sqrt(erEff));
@@ -229,7 +628,7 @@ var microstripImpedance = {
     curve: { x: "traceWidth", y: "impedance", range: [0.1, 5], scale: "linear" }
   },
   relatedCalculators: ["vswr-return-loss", "trace-width-current", "rf-link-budget", "microstrip-mitered-bend"],
-  relatedTools: ["impedance-matching", "pdn-impedance", "fdtd-sparam"],
+  relatedTools: ["impedance-matching", "pdn-impedance", "fdtd-sparam", "impedance-field-solver"],
   relatedBlogPosts: ["coax-loss", "eye-diagram-signal-integrity-10gbps", "fdtd-via-transition-signal-integrity"],
   verificationData: [
     {
@@ -240,11 +639,15 @@ var microstripImpedance = {
       source: "Hammerstad-Jensen reference calculation, Wadell 1991"
     },
     {
-      // High-Z narrow trace on thin substrate
+      // High-Z narrow trace on thin substrate, thick copper (t/h 0.14). Until
+      // 2026-11-11 this point read 64.5 Ω at 5 %, attributed to a Polar
+      // Instruments IPC benchmark; the field solver gives 68.33 Ω, and 64.5 was
+      // the old thickness correction's figure, which read thick copper low
+      // (openspec impedance-field-solver, task 7.7).
       inputs: { traceWidth: 0.254, substrateHeight: 0.254, dielectricConstant: 4.2, copperThickness: 35 },
-      expectedOutputs: { impedance: 64.5 },
-      tolerance: 0.05,
-      source: "Polar Instruments IPC benchmark"
+      expectedOutputs: { impedance: 68.33 },
+      tolerance: 5e-3,
+      source: "rftools.io field solver (impedance-field-solver), 68.33 Ω to 0.02 %"
     },
     {
       // Lower Z₀ with wider trace
@@ -275,7 +678,7 @@ var microstripImpedance = {
     },
     {
       code: "thickness-effective-width",
-      text: "Copper thickness t is modelled as an effective width increase Δw = (t/π)(1 + ln(2h/t)), applied to both Z₀ and εeff."
+      text: "Copper thickness t enters by Hammerstad and Jensen’s 1980 correction, which widens the trace by Δu₁ = (t/πh)·ln(1 + 4e·h/(t·coth²√(6.517u))) in air and by ½(1 + sech√(εr − 1))·Δu₁ in the substrate, and gives both Z₀ and εeff. Against a field solver it is within 0.44 % for t up to 0.35h."
     },
     {
       code: "lossless",
@@ -3122,345 +3525,6 @@ var smithChart = {
   }
 };
 
-// src/lib/pcb/impedance.ts
-var ETA_02 = FREE_SPACE_IMPEDANCE;
-function hammerstadJensen(w, h, er, t) {
-  const dw = t / Math.PI * (1 + Math.log(2 * h / Math.max(t, 1e-6)));
-  const wEff = w + dw;
-  const u = wEff / h;
-  const a = 1 + 1 / 49 * Math.log((Math.pow(u, 4) + Math.pow(u / 52, 2)) / (Math.pow(u, 4) + 0.432)) + 1 / 18.7 * Math.log(1 + Math.pow(u / 18.1, 3));
-  const b = 0.564 * Math.pow((er - 0.9) / (er + 3), 0.053);
-  const erEff = (er + 1) / 2 + (er - 1) / 2 * Math.pow(1 + 10 / u, -a * b);
-  const F = 6 + (2 * Math.PI - 6) * Math.exp(-Math.pow(30.666 / u, 0.7528));
-  const Z0 = ETA_02 / (2 * Math.PI * Math.sqrt(erEff)) * Math.log(F / u + Math.sqrt(1 + 4 / (u * u)));
-  return { Z0, erEff };
-}
-var COVER_SINGLE = [1.484592, -0.354664, 0.758396, 9776e-6];
-function coverCapture(c2, u, hcOverH, gOverH) {
-  if (!(hcOverH > 0)) return 0;
-  const lu = Math.log(u);
-  let rate;
-  let power;
-  if (gOverH === void 0) {
-    rate = c2[0] * Math.pow(u, c2[1]);
-    power = c2[2] + c2[3] * lu;
-  } else {
-    const lg = Math.log(gOverH);
-    rate = c2[0] * Math.pow(u, c2[1]) * Math.pow(gOverH, c2[2]);
-    power = c2[3] + c2[4] * lu + c2[5] * lg;
-  }
-  const q = 1 - Math.exp(-rate * Math.pow(hcOverH, Math.max(power, 0.1)));
-  return Math.min(Math.max(q, 0), 1);
-}
-function substrateFilling(w, h, er, t) {
-  if (er <= 1 + 1e-9) {
-    const probe = 1.001;
-    return (hammerstadJensen(w, h, probe, t).erEff - 1) / (probe - 1);
-  }
-  return (hammerstadJensen(w, h, er, t).erEff - 1) / (er - 1);
-}
-function embeddedMicrostrip(w, h, er, t, hc, erc) {
-  const airZ0 = hammerstadJensen(w, h, 1, t).Z0;
-  const qf = Math.min(Math.max(substrateFilling(w, h, er, t), 0), 1);
-  const qc = coverCapture(COVER_SINGLE, w / h, hc / h);
-  const erEff = 1 + qf * (er - 1) + (1 - qf) * qc * (erc - 1);
-  return { Z0: airZ0 / Math.sqrt(erEff), erEff };
-}
-var FRINGE_PEAK_T_OVER_B = 1 / 3;
-function stripFringeFactor(tOverB) {
-  const x = Math.min(Math.max(tOverB, 0), FRINGE_PEAK_T_OVER_B);
-  const a = 1 / (1 - x);
-  const second = a - 1 > 0 ? (a - 1) * Math.log(a * a - 1) : 0;
-  return 2 / Math.PI * (a * Math.log(a + 1) - second);
-}
-var FRINGE_ZERO_T = 2 / Math.PI * Math.LN2;
-function centredStripNormC(w, b) {
-  if (!(w > 0) || !(b > 0)) return 0;
-  const x = Math.PI * w / (2 * b);
-  if (x > 20) {
-    return 8 * (Math.LN2 + x + Math.log1p(Math.exp(-2 * x))) / Math.PI;
-  }
-  return 4 * ellipticRatioFrom(Math.tanh(x), 1 / Math.cosh(x));
-}
-var OFFSET_A = 0.245266;
-var OFFSET_P = 0.718328;
-var OFFSET_C = 3.038156;
-var OFFSET_Q = 0.578186;
-function striplineNormC(w, h1, h2, t) {
-  if (!(w > 0) || !(h1 > 0) || !(h2 > 0)) return 0;
-  const b0 = h1 + h2;
-  let c2 = 0.5 * (centredStripNormC(w, 2 * h1) + centredStripNormC(w, 2 * h2));
-  const u = Math.min(h1, h2) / b0;
-  if (u < 0.5) {
-    const excess = OFFSET_A * (Math.pow(0.5 / u, OFFSET_P) - 1);
-    const rolloff = 1 - Math.exp(-OFFSET_C * Math.pow(w / b0, OFFSET_Q));
-    c2 += excess * rolloff;
-  }
-  if (t > 0) {
-    const b = b0 + t;
-    c2 += 4 * (stripFringeFactor(t / b) - FRINGE_ZERO_T);
-  }
-  return c2;
-}
-function symmetricStripline(w, b, er, t) {
-  if (!(b > t) || !(w > 0)) return { Z0: 0, erEff: er };
-  const gap = (b - t) / 2;
-  const c2 = striplineNormC(w, gap, gap, t);
-  return { Z0: c2 > 0 ? ETA_02 / (Math.sqrt(er) * c2) : 0, erEff: er };
-}
-function asymmetricStripline(w, h1, h2, er, t) {
-  const c2 = striplineNormC(w, h1, h2, t);
-  return { Z0: c2 > 0 ? ETA_02 / (Math.sqrt(er) * c2) : 0, erEff: er };
-}
-function homogeneousStripZ0(w, h, er) {
-  const u = w / h;
-  if (!(u > 0) || !Number.isFinite(u)) return NaN;
-  if (u <= 1) {
-    return ETA_02 / (2 * Math.PI * Math.sqrt(er)) * Math.log(8 / u + u / 4);
-  }
-  return ETA_02 / Math.sqrt(er) / (u + 1.393 + 0.667 * Math.log(u + 1.444));
-}
-function coupledStriplineNormC(w, s, b, t) {
-  if (!(w > 0) || !(b > 0) || !(s > 0)) return { even: 0, odd: 0 };
-  const kw = Math.tanh(Math.PI * w / (2 * b));
-  const kws = Math.tanh(Math.PI * (w + s) / (2 * b));
-  const modulusEven = kw * kws;
-  const modulusOdd = kws > 0 ? kw / kws : kw;
-  const norm = (k) => {
-    const kk = Math.min(Math.max(k, 0), 1 - 1e-15);
-    return 4 * (ellipticK(kk) / ellipticK(Math.sqrt(Math.max(1 - kk * kk, 0))));
-  };
-  const increment = t > 0 ? 4 * (stripFringeFactor(t / (b + t)) - FRINGE_ZERO_T) : 0;
-  return { even: norm(modulusEven) + increment, odd: norm(modulusOdd) + increment };
-}
-function coupledStripline(w, s, b, er, t) {
-  const gap = (b - t) / 2;
-  if (!(gap > 0) || !(w > 0)) {
-    return { Z0: 0, erEff: er, Zodd: 0, Zeven: 0, Zdiff: 0, Zcommon: 0, erEffOdd: er, erEffEven: er };
-  }
-  const { Z0 } = symmetricStripline(w, b, er, t);
-  const { even, odd } = coupledStriplineNormC(w, s, b - t, t);
-  const Zodd = odd > 0 ? ETA_02 / (Math.sqrt(er) * odd) : 0;
-  const Zeven = even > 0 ? ETA_02 / (Math.sqrt(er) * even) : 0;
-  return {
-    Z0,
-    erEff: er,
-    Zodd,
-    Zeven,
-    Zdiff: 2 * Zodd,
-    Zcommon: Zeven / 2,
-    erEffOdd: er,
-    erEffEven: er
-  };
-}
-var OFFSET_COUPLED_ODD = [1.104095, 2.193833, -0.906962, 0.245485, 1.175407, 1.396674, 3.298642, 1.039723];
-var OFFSET_COUPLED_EVEN = [0.725767, 2.700093, -1.581169, 0.293423, 1.228106, 2.065153, 2.977705, 1.755071];
-function offsetCoupledExcess(c2, wb, sb, m) {
-  if (!(m > 0)) return 0;
-  const [A2, p0, p1, alpha, beta, gamma, decay, q] = c2;
-  const power = Math.max(p0 + p1 * sb, 0.3);
-  return A2 * Math.pow(m, power) * (Math.pow(wb, alpha) / Math.pow(1 + beta * wb, gamma)) * Math.exp(-decay * Math.pow(sb, q));
-}
-var OFFSET_COUPLED_RANGE = {
-  description: "w/b 0.05–0.8, s/b 0.05–1.0, nearer gap 0.125–0.5 of the plane spacing",
-  worstCase: 0.019,
-  contains: ({ wb, sb, nearRatio }) => wb >= 0.05 && wb <= 0.8 && sb >= 0.05 && sb <= 1 && nearRatio >= 0.125 && nearRatio <= 0.5
-};
-function offsetCoupledStripline(w, s, h1, h2, er, t) {
-  const b = h1 + h2;
-  const fallback = {
-    Z0: 0,
-    erEff: er,
-    Zodd: 0,
-    Zeven: 0,
-    Zdiff: 0,
-    Zcommon: 0,
-    erEffOdd: er,
-    erEffEven: er,
-    inRange: false
-  };
-  if (!(w > 0) || !(s > 0) || !(h1 > 0) || !(h2 > 0)) return fallback;
-  const { Z0 } = asymmetricStripline(w, h1, h2, er, t);
-  const singleOffset = striplineNormC(w, h1, h2, 0);
-  const singleCentred = centredStripNormC(w, b);
-  const centred = coupledStriplineNormC(w, s, b, 0);
-  if (!(singleCentred > 0) || !(singleOffset > 0)) return fallback;
-  const nearRatio = Math.min(h1, h2) / b;
-  const m = 1 - 2 * nearRatio;
-  const wb = w / b;
-  const sb = s / b;
-  const scale2 = singleOffset / singleCentred;
-  const thickness = t > 0 ? 4 * (stripFringeFactor(t / (b + t)) - FRINGE_ZERO_T) : 0;
-  const odd = centred.odd * scale2 * (1 - offsetCoupledExcess(OFFSET_COUPLED_ODD, wb, sb, m)) + thickness;
-  const even = centred.even * scale2 * (1 + offsetCoupledExcess(OFFSET_COUPLED_EVEN, wb, sb, m)) + thickness;
-  const Zodd = odd > 0 ? ETA_02 / (Math.sqrt(er) * odd) : 0;
-  const Zeven = even > 0 ? ETA_02 / (Math.sqrt(er) * even) : 0;
-  return {
-    Z0,
-    erEff: er,
-    Zodd,
-    Zeven,
-    Zdiff: 2 * Zodd,
-    Zcommon: Zeven / 2,
-    erEffOdd: er,
-    erEffEven: er,
-    inRange: OFFSET_COUPLED_RANGE.contains({ wb, sb, nearRatio })
-  };
-}
-var MICRO_COUPLED_ODD = [0.839575, 0.228752, -0.941128, 1.314575, -0.069681, 0.607266, 79e-5];
-var MICRO_COUPLED_EVEN = [0.818296, 1.594079, -0.675897, 0.876135, -0.262306, 0.782936, 0.048219];
-var FILL_RATIO_EVEN = [0.124128, 1849e-6, -7476e-6, 0.024277, 3714e-6, -6844e-6, -1.565159, -0.068818, 1.422211];
-var FILL_RATIO_ODD = [0.176154, 129e-6, -0.012558, -7893e-6, -613e-6, -9416e-6, -1.18994, -0.098742, 1.114352];
-var COVER_EVEN = [1.288077, -0.353144, 0.086395, 0.702757, -0.010504, -0.020194];
-var COVER_ODD = [1.909038, -0.43372, -0.225079, 0.82866, -0.024221, 0.036554];
-function microCouplingTerm(c2, u, g) {
-  const [a0, a1, a2, b0, b2, p0, p1] = c2;
-  const amplitude = a0 * Math.pow(1 + a1 * u, a2);
-  const rate = b0 * Math.pow(u, b2);
-  const power = Math.max(p0 + p1 * Math.log(u), 0.15);
-  return amplitude * Math.exp(-rate * Math.pow(g, power));
-}
-function fillRatioTerm(c2, u, g) {
-  const lu = Math.log(u);
-  const lg = Math.log(g);
-  const amplitude = c2[0] + c2[1] * lu + c2[2] * lu * lu + c2[3] * lg + c2[4] * lg * lg + c2[5] * lu * lg;
-  const rate = Math.exp(c2[6] + c2[7] * lu);
-  return amplitude * Math.exp(-rate * Math.pow(g, c2[8]));
-}
-var MICRO_COUPLED_RANGE = {
-  description: "trace width 0.2–4× and spacing 0.1–3× the substrate height",
-  worstCase: 0.02,
-  contains: ({ u, g }) => u >= 0.2 && u <= 4 && g >= 0.1 && g <= 3
-};
-function coupledMicrostripCore(w, s, h, er, t, cover) {
-  const u = w / h;
-  const g = s / h;
-  const airSingle = hammerstadJensen(w, h, 1, t).Z0;
-  const rhoOdd = 1 - microCouplingTerm(MICRO_COUPLED_ODD, u, g);
-  const rhoEven = 1 + microCouplingTerm(MICRO_COUPLED_EVEN, u, g);
-  const airOdd = rhoOdd * airSingle;
-  const airEven = rhoEven * airSingle;
-  const clamp01 = (x) => Math.min(Math.max(x, 0), 1);
-  const qSingle = clamp01(substrateFilling(w, h, er, t));
-  const qEven = clamp01(qSingle * (1 + fillRatioTerm(FILL_RATIO_EVEN, u, g)));
-  const qOdd = clamp01(qSingle * (1 - fillRatioTerm(FILL_RATIO_ODD, u, g)));
-  const covered = cover !== void 0 && cover.hc > 0;
-  const qcEven = covered ? coverCapture(COVER_EVEN, u, cover.hc / h, g) : 0;
-  const qcOdd = covered ? coverCapture(COVER_ODD, u, cover.hc / h, g) : 0;
-  const erc = covered ? cover.erc : 1;
-  const erEffEven = 1 + qEven * (er - 1) + (1 - qEven) * qcEven * (erc - 1);
-  const erEffOdd = 1 + qOdd * (er - 1) + (1 - qOdd) * qcOdd * (erc - 1);
-  const Zodd = airOdd / Math.sqrt(erEffOdd);
-  const Zeven = airEven / Math.sqrt(erEffEven);
-  const single = covered ? embeddedMicrostrip(w, h, er, t, cover.hc, cover.erc) : hammerstadJensen(w, h, er, t);
-  return {
-    Z0: single.Z0,
-    erEff: single.erEff,
-    Zodd,
-    Zeven,
-    Zdiff: 2 * Zodd,
-    Zcommon: Zeven / 2,
-    erEffOdd,
-    erEffEven,
-    inRange: MICRO_COUPLED_RANGE.contains({ u, g })
-  };
-}
-function diffMicrostrip(w, s, h, er, t) {
-  return coupledMicrostripCore(w, s, h, er, t);
-}
-function embeddedCoupledMicrostrip(w, s, h, er, t, hc, erc) {
-  return coupledMicrostripCore(w, s, h, er, t, { hc, erc });
-}
-var EVEN_A = 0.518109;
-var EVEN_P = -0.356102;
-var EVEN_C = 1.484632;
-var EVEN_Q = 0.690292;
-function broadsideEvenNormC(w, h, s, t) {
-  if (!(h > 0) || !(w > 0)) return 0;
-  const half = 0.5 * centredStripNormC(w, 2 * h);
-  const excess = EVEN_A * Math.pow(w / h, EVEN_P) * (1 - Math.exp(-EVEN_C * Math.pow(s / h, EVEN_Q)));
-  let c2 = half * (1 + excess);
-  if (t > 0) c2 += 2 * (stripFringeFactor(t / (2 * h + t)) - FRINGE_ZERO_T);
-  return c2;
-}
-function broadsideStripline(w, b, d, er, t) {
-  const h = (b - d - 2 * t) / 2;
-  if (!(h > 0)) return { Z0: 0, erEff: er, Zodd: 0, Zeven: 0, Zdiff: 0, Zcommon: 0 };
-  const { Z0 } = asymmetricStripline(w, h, h + d + t, er, t);
-  const { Z0: Zodd } = asymmetricStripline(w, d / 2, h, er, t);
-  const cEven = broadsideEvenNormC(w, h, d / 2, t);
-  const Zeven = cEven > 0 ? ETA_02 / (Math.sqrt(er) * cEven) : 0;
-  return { Z0, erEff: er, Zodd, Zeven, Zdiff: 2 * Zodd, Zcommon: Zeven / 2 };
-}
-function broadsideUnshielded(w, d, er, t = 0) {
-  const h = d / 2;
-  const dw = t > 0 && h > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
-  const Zodd = homogeneousStripZ0(w + dw, h, er);
-  return { Z0: Zodd, erEff: er, Zdiff: 2 * Zodd };
-}
-var CPW_SIDEWALL_A = 0.195008;
-function ellipticRatioFrom(k, kp) {
-  return ellipticKc(kp) / ellipticKc(k);
-}
-function coplanarModuli(w, g) {
-  return { k: w / (w + 2 * g), kp: 2 * Math.sqrt(g * (w + g)) / (w + 2 * g) };
-}
-function backedModuli(w, g, h) {
-  const a = Math.PI * w / (4 * h);
-  const b = Math.PI * (w + 2 * g) / (4 * h);
-  const k = Math.tanh(a) / Math.tanh(b);
-  const kp = 2 * Math.exp(-a) * Math.sqrt(-Math.expm1(-2 * (a + b)) * -Math.expm1(-2 * (b - a))) / ((1 + Math.exp(-2 * a)) * -Math.expm1(-2 * b));
-  return { k, kp };
-}
-function cpwg(w, g, h, er, t) {
-  const m0i = coplanarModuli(w, g);
-  const m1i = backedModuli(w, g, h);
-  const r0i = ellipticRatioFrom(m0i.k, m0i.kp);
-  const r1i = ellipticRatioFrom(m1i.k, m1i.kp);
-  const erEff0 = 1 + r1i / (r0i + r1i) * (er - 1);
-  const dg = t > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
-  const we = w + dg;
-  const ge = Math.max(g - dg / 2, 1e-4);
-  const m0 = coplanarModuli(we, ge);
-  const m1 = backedModuli(we, ge, h);
-  const sum = ellipticRatioFrom(m0.k, m0.kp) + ellipticRatioFrom(m1.k, m1.kp);
-  let erEff = erEff0;
-  if (t > 0 && g > 0) {
-    const tg = t / g;
-    const dC = 2 * (tg + 2 / Math.PI * Math.log1p(CPW_SIDEWALL_A * tg));
-    const cAir = 2 * (r0i + r1i);
-    erEff = (erEff0 * cAir + dC) / (cAir + dC);
-  }
-  const Z0 = ETA_02 / 2 / (Math.sqrt(erEff) * sum);
-  return { Z0, erEff };
-}
-function ellipticKc(kp) {
-  if (!(kp > 0)) return Infinity;
-  if (kp >= 1) return Math.PI / 2;
-  let a = 1, b = kp;
-  for (let i = 0; i < 32; i++) {
-    const aNext = (a + b) / 2;
-    const bNext = Math.sqrt(a * b);
-    a = aNext;
-    b = bNext;
-    if (Math.abs(a - b) < 1e-15 * a) break;
-  }
-  return Math.PI / (2 * a);
-}
-function ellipticK(k) {
-  if (k <= 0) return Math.PI / 2;
-  if (k >= 1) return Infinity;
-  let a = 1, b = Math.sqrt(1 - k * k);
-  for (let i = 0; i < 16; i++) {
-    const aNext = (a + b) / 2;
-    const bNext = Math.sqrt(a * b);
-    a = aNext;
-    b = bNext;
-    if (Math.abs(a - b) < 1e-12) break;
-  }
-  return Math.PI / (2 * a);
-}
-
 // src/lib/pcb/trace-thermal.ts
 var SIGMA = 5670374419e-17;
 var G0 = 9.80665;
@@ -4838,7 +4902,7 @@ var differentialPair = {
     "microstrip-impedance",
     "trace-width-current"
   ],
-  relatedTools: ["eye-diagram", "fdtd-sparam"],
+  relatedTools: ["eye-diagram", "fdtd-sparam", "impedance-field-solver"],
   relatedBlogPosts: ["eye-diagram-signal-integrity-10gbps", "microstrip-impedance-design-guide", "opamp-gain"],
   // Expected values are the committed method-of-moments solver's, from
   // `__tests__/fixtures/saturn-tier4-ground-truth.json` (`coupledMicrostrip`),
@@ -5213,11 +5277,12 @@ function calculateStackup(inputs) {
   const warnings = [];
   const tMm = copperWeight * 35 / 1e3;
   const totalThicknessMm = dielectricH1 + dielectricH2 + dielectricH3 + 4 * tMm;
+  const floor = (scale2) => Math.max(tMm / 4, 1e-4 * scale2);
   const zL1 = (w) => hammerstadJensen(w, dielectricH1, er, tMm).Z0;
-  const traceWidthL1mm = solveWidth(zL1, z0, 1e-4 * dielectricH1, 1e3 * dielectricH1);
+  const traceWidthL1mm = solveWidth(zL1, z0, floor(dielectricH1), 1e3 * dielectricH1);
   const zL3 = (w) => asymmetricStripline(w, dielectricH3, dielectricH2, er, tMm).Z0;
   const bL3 = dielectricH2 + dielectricH3;
-  const traceWidthL3mm = solveWidth(zL3, z0, 1e-5 * bL3, 1e3 * bL3);
+  const traceWidthL3mm = solveWidth(zL3, z0, Math.max(tMm / 4, 1e-5 * bL3), 1e3 * bL3);
   const achievedImpedanceL1 = Number.isFinite(traceWidthL1mm) ? zL1(traceWidthL1mm) : NaN;
   const achievedImpedanceL3 = Number.isFinite(traceWidthL3mm) ? zL3(traceWidthL3mm) : NaN;
   if (!Number.isFinite(traceWidthL1mm) || !Number.isFinite(traceWidthL3mm)) {
@@ -14275,7 +14340,7 @@ var controlledImpedance = {
       unit: "mm",
       defaultValue: 0.1,
       min: 0.01,
-      tooltip: "Cover layer height (for embedded microstrip only)"
+      tooltip: "Cover thickness over the copper’s top (embedded microstrip only)"
     },
     {
       key: "coverDielectric",
@@ -14397,7 +14462,7 @@ var controlledImpedance = {
     curve: { x: "traceWidth", y: "impedance", range: [0.05, 5], scale: "log" }
   },
   relatedCalculators: ["microstrip-impedance", "differential-pair", "trace-resistance", "edge-coupled-internal-symmetric", "edge-coupled-embedded"],
-  relatedTools: ["pdn-impedance"],
+  relatedTools: ["pdn-impedance", "impedance-field-solver"],
   relatedBlogPosts: ["decoupling-capacitor", "ethernet-cable", "eye-diagram-signal-integrity-10gbps"]
 };
 
@@ -38433,7 +38498,7 @@ var fresnelZone = {
 };
 
 // src/lib/calculators/rf/power-density.ts
-var ETA_03 = 125663706212e-17 * 299792458;
+var ETA_02 = 125663706212e-17 * 299792458;
 function exposureLimit(standard, exposureClass, fMHz) {
   const occupational = exposureClass === 1;
   if (standard === 1) {
@@ -38474,7 +38539,7 @@ function calculatePowerDensity(inputs) {
   const eirp_W = Math.pow(10, (eirp - 30) / 10);
   const S_Wm2 = reflection * eirp_W / (4 * Math.PI * distance * distance);
   const powerDensity2 = S_Wm2 * 1e3;
-  const planeWaveImpedance = ETA_03;
+  const planeWaveImpedance = ETA_02;
   const efield = Math.sqrt(S_Wm2 * planeWaveImpedance);
   const hfield = efield / planeWaveImpedance * 1e3;
   const limit = exposureLimit(standard, exposureClass, fMHz).wm2;
@@ -48768,27 +48833,7 @@ var voltageDrop = {
 
 // src/lib/calculators/rf/coplanar-waveguide.ts
 var C_MM_PER_PS2 = 0.299792458;
-var ETA_04 = FREE_SPACE_IMPEDANCE;
-var CPW_SIDEWALL_A2 = 0.195008;
-function ungroundedCpw(w, g, h, er, t) {
-  const ratio = (k) => ellipticK(k) / ellipticK(Math.sqrt(Math.max(1 - k * k, 0)));
-  const kIdeal = w / (w + 2 * g);
-  const k2 = Math.sinh(Math.PI * w / (4 * h)) / Math.sinh(Math.PI * (w + 2 * g) / (4 * h));
-  const erEff0 = 1 + (er - 1) / 2 * (ratio(k2) / ratio(kIdeal));
-  let erEff = erEff0;
-  if (t > 0 && g > 0) {
-    const tg = t / g;
-    const dC = 2 * (tg + 2 / Math.PI * Math.log1p(CPW_SIDEWALL_A2 * tg));
-    const cAir = 4 * ratio(kIdeal);
-    erEff = (erEff0 * cAir + dC) / (cAir + dC);
-  }
-  const dg = t > 0 ? t / Math.PI * (1 + Math.log(2 * h / t)) : 0;
-  const wEff = w + dg;
-  const gEff = Math.max(g - dg / 2, 1e-4);
-  const kZ = wEff / (wEff + 2 * gEff);
-  const Z0 = ETA_04 / 4 / (Math.sqrt(erEff) * ratio(kZ));
-  return { Z0, erEff };
-}
+var ungroundedCpw = cpwUngrounded;
 function calculateCoplanarWaveguide(inputs) {
   const { structure, traceWidth, gapWidth, substrateHeight, dielectricConst, copperThickness } = inputs;
   const warnings = [];
@@ -48812,8 +48857,8 @@ function calculateCoplanarWaveguide(inputs) {
       "Gap ≫ substrate height — the backing plane dominates and the line behaves as microstrip, not CPW"
     );
   }
-  if (t > 0 && t > gapWidth / 2) {
-    warnings.push("Copper thickness exceeds half the gap — thickness correction is unreliable");
+  if (t > 0 && t > 0.8 * gapWidth) {
+    warnings.push("Copper thickness exceeds 0.8 of the gap, past the range the thickness term was fitted over");
   }
   if (Math.abs(impedance - 50) > 10) {
     warnings.push(
@@ -48987,8 +49032,9 @@ var coplanarWaveguide = {
   ],
   calculate: calculateCoplanarWaveguide,
   formula: {
-    primary: "GCPW: Z₀ = (η₀/2) / (√εr_eff · [K(k)/K(k′) + K(k₃)/K(k₃′)]);  CPW: Z₀ = (η₀/4)/√εr_eff · K(k′)/K(k);  η₀ = µ₀·c",
-    latex: "Z_0^{GCPW} = \\frac{\\eta_0/2}{\\sqrt{\\varepsilon_{r,eff}}\\left[\\frac{K(k)}{K(k')} + \\frac{K(k_3)}{K(k_3')}\\right]}, \\qquad Z_0^{CPW} = \\frac{\\eta_0/4}{\\sqrt{\\varepsilon_{r,eff}}}\\cdot\\frac{K(k')}{K(k)}, \\quad k=\\frac{W}{W+2G}, \\quad \\eta_0 = \\mu_0 c",
+    primary: "Z₀ = η₀/(√εr_eff·(C₀ + ΔC));  GCPW: C₀ = 2[K(k)/K(k′) + K(k₃)/K(k₃′)];  CPW: C₀ = 4K(k)/K(k′);  k = W/(W + 2G);  ΔC = 2(t/G)[α + β·ln(1 + A·G/t)], fitted to rftools.io’s field solver;  εr_eff = (εeff,₀·C₀ + ΔC·(1 + κ(εr − 1)))/(C₀ + ΔC);  η₀ = µ₀·c",
+    // One relation per line: the formula sidebar is ~310 px wide.
+    latex: "\\begin{aligned} Z_0 &= \\frac{\\eta_0}{\\sqrt{\\varepsilon_{r,eff}}\\,(C_0 + \\Delta C)} \\\\ C_0^{GCPW} &= 2\\left[\\frac{K(k)}{K(k')} + \\frac{K(k_3)}{K(k_3')}\\right] \\\\ C_0^{CPW} &= \\frac{4K(k)}{K(k')},\\quad k = \\frac{W}{W + 2G} \\\\ \\Delta C &= \\frac{2t}{G}\\left[\\alpha + \\beta\\ln\\!\\left(1 + \\frac{A\\,G}{t}\\right)\\right] \\\\ \\varepsilon_{r,eff} &= \\frac{\\varepsilon_{eff,0}\\,C_0 + \\Delta C\\,(1 + \\kappa(\\varepsilon_r - 1))}{C_0 + \\Delta C} \\\\ \\eta_0 &= \\mu_0 c \\end{aligned}",
     variables: [
       { symbol: "Z₀", description: "Characteristic impedance", unit: "Ω" },
       { symbol: "W", description: "Centre conductor width", unit: "mm" },
@@ -48996,15 +49042,23 @@ var coplanarWaveguide = {
       { symbol: "h", description: "Substrate height", unit: "mm" },
       { symbol: "K(k)", description: "Complete elliptic integral of the first kind", unit: "" },
       { symbol: "εr_eff", description: "Effective dielectric constant", unit: "" },
+      { symbol: "εeff,₀", description: "Effective dielectric constant of the zero-thickness line, from the conformal map", unit: "" },
+      { symbol: "C₀", description: "Capacitance of the zero-thickness line in air, normalised to ε₀", unit: "" },
+      {
+        symbol: "ΔC",
+        description: "Sidewall capacitance the copper adds across both gaps, normalised to ε₀; α 1.021, β 0.5255, A 0.1248 and κ 0.01712 fitted to rftools.io’s field solver",
+        unit: ""
+      },
+      { symbol: "t", description: "Copper thickness", unit: "mm" },
       { symbol: "η₀", description: "Impedance of free space, µ₀·c = 376.730 Ω", unit: "Ω" }
     ],
     derivation: [
       "Conformal mapping transforms the CPW cross-section into a parallel-plate capacitor, so the impedance is set by the elliptic-integral ratio K(k′)/K(k).",
       "The ideal modulus is k = W/(W+2G); the finite substrate contributes a second modulus built from sinh (CPW) or tanh (grounded CPW) terms.",
       "For grounded CPW, εr_eff = (1 + εr·q)/(1 + q) with q the ratio of the two elliptic ratios. As h → ∞ this returns (1 + εr)/2, the ungrounded CPW limit.",
-      "Finite copper thickness widens the strip and narrows the gap, shifting Z₀ down by a few percent at 1 oz copper."
+      "Copper thickness adds sidewall capacitance across each gap, ΔC = 2(t/G)[α + β·ln(1 + A·G/t)] in units of ε₀: the parallel plate 2t/G for thick copper, an isolated edge’s logarithm for thin copper in a wide gap. It sits mostly in air (a share κ in the substrate), so it lowers both Z₀ and εr_eff. α, β, A and κ are fitted to rftools.io’s field solver over t/G 0.05–0.8."
     ],
-    reference: 'R. N. Simons, "Coplanar Waveguide Circuits, Components and Systems", Wiley 2001, ch. 2'
+    reference: 'R. N. Simons, "Coplanar Waveguide Circuits, Components and Systems", Wiley 2001, ch. 2 (zero-thickness line); copper thickness fitted to rftools.io’s field solver (impedance-field-solver)'
   },
   assumptions: [
     {
@@ -49029,7 +49083,7 @@ var coplanarWaveguide = {
     },
     {
       code: "thickness-correction",
-      text: "Copper thickness t widens the strip by Δ = (t/π)(1 + ln(2h/t)) and narrows each gap by Δ/2 for Z₀; its sidewall capacitance, in air, lowers εr_eff through a correction fitted to a 2-D electrostatic solver (max 0.52% on εr_eff across ½–2 oz copper)."
+      text: "Copper thickness t adds sidewall capacitance across each gap, mostly in air, which lowers both Z₀ and εr_eff; the term is fitted to rftools.io’s field solver over t/G 0.05–0.8, where grounded CPW holds Z₀ to 1.3 % for gaps up to half the substrate height and 5 % up to the full height, and ungrounded CPW to 1.5 %. Until November 2026 Z₀ took a microstrip-style widened strip, which read up to 18 % high on thick copper."
     },
     {
       code: "lossless",
@@ -49055,7 +49109,7 @@ var coplanarWaveguide = {
     "microstrip-mitered-bend"
   ],
   relatedBlogPosts: ["coplanar-waveguide-vs-microstrip"],
-  relatedTools: ["sparam-pipeline"],
+  relatedTools: ["sparam-pipeline", "impedance-field-solver"],
   methodology: {
     references: [
       {
@@ -49071,7 +49125,7 @@ var coplanarWaveguide = {
         source: "Abramowitz & Stegun, NBS 1964"
       }
     ],
-    validationNote: "Complete elliptic integrals are evaluated by the arithmetic-geometric mean, which converges quadratically to double precision. The grounded-CPW branch is checked against its own limit: as substrate height grows the result converges to the ungrounded CPW value, with εr_eff → (1 + εr)/2. Copper thickness is modelled on both quantities — it widens the strip and narrows the gap for Z₀, and its sidewall capacitance sits in air, which lowers εr_eff. Validated against a 2-D electrostatic solver (itself checked against the analytic zero-thickness result to 0.11%) across ½–2 oz copper and four geometries: εr_eff within 0.52%, impedance within about 1%."
+    validationNote: "Complete elliptic integrals are evaluated by the arithmetic-geometric mean, which converges quadratically to double precision. The grounded-CPW branch is checked against its own limit: as substrate height grows the result converges to the ungrounded CPW value, with εr_eff → (1 + εr)/2. Copper thickness enters as sidewall capacitance across each gap, mostly in air, which lowers both Z₀ and εr_eff; its four constants are fitted to rftools.io’s field solver, whose accuracy record holds it to exact and published solutions. On a separate grid of solver cases the fit did not see: grounded CPW Z₀ within 1.3 % for gaps up to half the substrate height (5 % up to the full height) and εr_eff within 0.6 %; ungrounded CPW Z₀ within 1.5 % and εr_eff within 1.2 %. The ungrounded zero-thickness map itself reads εr_eff up to about 2.5 % low on a wide strip (2.4 % at the defaults)."
   },
   faqs: [
     {
@@ -49285,13 +49339,13 @@ var asymmetricStriplineCalc = {
   ],
   calculate: calculateAsymmetricStripline,
   // What `asymmetricStripline` computes (`striplineNormC` in lib/pcb/impedance),
-  // written out: Cohn's exact centred strip for each mirrored half, the fitted
-  // off-centre fringing, and Cohn's thickness increment. Only ΔC_off is fitted,
+  // written out: Cohn's exact centred strip for each mirrored half, scaled by
+  // Wheeler's thickness factor, and the fitted off-centre fringing. Only ΔC_off is fitted,
   // and it is labelled `fit` rather than written as if it were a closed form.
   formula: {
-    primary: "Z₀ = η₀/(√εr·Ĉ),  Ĉ = ½[C₀(W, 2h₁) + C₀(W, 2h₂)] + ΔC_off + ΔC_t;  C₀(W, b) = 4K(k)/K(k′), k = tanh(πW/2b), exact for a centred zero-thickness strip (Cohn);  ΔC_off = A·[((h₁ + h₂)/2h₁)^p − 1]·[1 − exp(−c·(W/(h₁ + h₂))^q)], A, p, c, q fitted to a 2-D method-of-moments solver, zero at h₁ = h₂;  ΔC_t = Cohn’s copper-thickness fringing increment, zero at t = 0",
+    primary: "Z₀ = η₀/(√εr·Ĉ),  Ĉ = ½[C_t(W, h₁) + C_t(W, h₂)] + ΔC_off;  C_t(W, h) = C₀(W, 2h + t)·F_t(W, 2h + t, t);  C₀(W, b) = 4K(k)/K(k′), k = tanh(πW/2b), exact for a centred zero-thickness strip (Cohn);  F_t = Wheeler’s (1978) copper-thickness factor Z(W, b, 0)/Z(W, b, t), 1 at t = 0;  ΔC_off = A·[((h₁ + h₂)/2h₁)^p − 1]·[1 − exp(−c·(W/(h₁ + h₂))^q)], A, p, c, q fitted to a 2-D method-of-moments solver, zero at h₁ = h₂",
     // One relation per line: the formula sidebar is ~310 px wide.
-    latex: "\\begin{aligned} Z_0 &= \\frac{\\eta_0}{\\sqrt{\\varepsilon_r}\\,\\hat{C}} \\\\ \\hat{C} &= \\tfrac{1}{2}\\textstyle\\sum_{i=1,2} C_0(W, 2h_i) \\\\ &\\quad + \\Delta C_{off} + \\Delta C_t \\\\ C_0(W, b) &= \\frac{4K(k)}{K(k')} \\\\ k &= \\tanh(\\pi W/2b) \\\\ \\Delta C_{off} &= \\mathrm{fit}\\!\\left(\\tfrac{W}{h_1 + h_2},\\,\\tfrac{h_1}{h_1 + h_2}\\right) \\\\ \\Delta C_{off}\\big|_{h_1 = h_2} &= 0 \\end{aligned}",
+    latex: "\\begin{aligned} Z_0 &= \\frac{\\eta_0}{\\sqrt{\\varepsilon_r}\\,\\hat{C}} \\\\ \\hat{C} &= \\tfrac{1}{2}\\textstyle\\sum_{i=1,2} C_t(W, h_i) + \\Delta C_{off} \\\\ C_t(W, h) &= C_0(W, 2h + t)\\,F_t \\\\ C_0(W, b) &= \\frac{4K(k)}{K(k')} \\\\ k &= \\tanh(\\pi W/2b) \\\\ \\Delta C_{off} &= \\mathrm{fit}\\!\\left(\\tfrac{W}{h_1 + h_2},\\,\\tfrac{h_1}{h_1 + h_2}\\right) \\\\ \\Delta C_{off}\\big|_{h_1 = h_2} &= 0 \\end{aligned}",
     variables: [
       { symbol: "Z₀", description: "Characteristic impedance", unit: "Ω" },
       { symbol: "Ĉ", description: "Capacitance per unit length, normalised to ε₀εr", unit: "" },
@@ -49306,8 +49360,13 @@ var asymmetricStriplineCalc = {
         unit: ""
       },
       {
-        symbol: "ΔC_t",
-        description: "Cohn’s copper-thickness fringing increment, evaluated at b = h₁ + h₂ + t; zero when t = 0",
+        symbol: "C_t(W, h)",
+        description: "Capacitance of the centred strip of thickness t that the half with gap h mirrors into, its planes 2h + t apart",
+        unit: ""
+      },
+      {
+        symbol: "F_t",
+        description: "Wheeler’s (1978) copper-thickness factor Z(W, b, 0)/Z(W, b, t) at b = 2h + t, stated to 0.5 %; 1 when t = 0",
         unit: ""
       },
       { symbol: "η₀", description: "Impedance of free space, 376.73", unit: "Ω" },
@@ -49318,13 +49377,13 @@ var asymmetricStriplineCalc = {
       { symbol: "εr", description: "Dielectric constant", unit: "" }
     ],
     derivation: [
-      "An offset trace sees two half-structures: one bounded by the near plane, one by the far plane. Mirroring each half about its own plane gives a centred stripline of spacing 2h, whose capacitance is twice that of the half.",
-      "The two halves share one conductor, so their capacitances add: Ĉ starts as the mean of the two centred values, each Cohn’s exact conformal-mapping result 4K(k)/K(k′), valid at every trace width.",
+      "An offset trace sees two half-structures: one bounded by the near plane, one by the far plane. Mirroring each half about its own plane gives a centred stripline whose planes are 2h + t apart, whose capacitance is twice that of the half.",
+      "The two halves share one conductor, so their capacitances add: Ĉ starts as the mean of the two centred values, each Cohn’s exact conformal-mapping result 4K(k)/K(k′) for a zero-thickness strip, valid at every trace width, times Wheeler’s thickness factor F_t.",
       "Superposition assumes no field wraps round the trace edge from one half to the other, so it keeps the centred fringing however far off centre the trace sits, and reads up to 14% high. ΔC_off restores the missing fringing. Its form was fitted to a 2-D method-of-moments solver over W/b 0.05–1.2 and a near-plane gap of 0.05–0.5 of b = h₁ + h₂, with a maximum residual of 0.75%.",
       "ΔC_off is zero at h₁ = h₂, so a centred trace gets Cohn’s exact result with nothing fitted; as either gap approaches zero, Z₀ goes to zero.",
-      "Copper thickness adds Cohn’s fringing increment, which is exact for wide strips and zero at t = 0."
+      "Copper thickness enters through Wheeler’s factor F_t on each mirrored half. Against rftools.io’s field solver it holds a centred trace to 0.3 % and an offset one to 0.75 % with copper; until 2026-11 Cohn’s fringing increment, exact only for wide strips, read up to 5 % low."
     ],
-    reference: "S. B. Cohn, “Characteristic Impedance of the Shielded-Strip Transmission Line”, IRE Trans. MTT-2, 1954 (exact centred strip and thickness increment); off-centre fringing fitted to rftools.io’s 2-D method-of-moments solver (src/lib/pcb/__tests__/solver), within 0.75% over W/b 0.05–1.2 and a near-plane gap of 0.05–0.5 of b."
+    reference: "S. B. Cohn, “Characteristic Impedance of the Shielded-Strip Transmission Line”, IRE Trans. MTT-2, 1954 (exact centred strip); H. A. Wheeler, “Transmission-Line Properties of a Strip Line Between Parallel Planes”, IEEE Trans. MTT-26, 1978 (thickness factor, in Wadell’s Transmission Line Design Handbook §3.5.1); off-centre fringing fitted to rftools.io’s 2-D method-of-moments solver (src/lib/pcb/__tests__/solver), within 0.75% over W/b 0.05–1.2 and a near-plane gap of 0.05–0.5 of b."
   },
   assumptions: [
     {
@@ -49345,7 +49404,7 @@ var asymmetricStriplineCalc = {
     },
     {
       code: "rectangular-trace",
-      text: "The trace is a rectangle of thickness t, which enters through Cohn’s fringing increment (exact for wide strips); a trapezoidal etch profile is not modelled."
+      text: "The trace is a rectangle of thickness t, which enters through Wheeler’s thickness factor (stated to 0.5 %); a trapezoidal etch profile is not modelled."
     },
     {
       code: "lossless",
@@ -49366,7 +49425,7 @@ var asymmetricStriplineCalc = {
     "broadside-coupled-pair"
   ],
   relatedBlogPosts: ["asymmetric-stripline-offset-impedance"],
-  relatedTools: ["sparam-pipeline"],
+  relatedTools: ["sparam-pipeline", "impedance-field-solver"],
   faqs: [
     {
       question: "Why would a stripline end up asymmetric?",
@@ -49383,8 +49442,8 @@ var asymmetricStriplineCalc = {
   ],
   // Both references are for a zero-thickness strip, so these points enter
   // copperThickness 0 — below the form's 5 µm minimum, deliberately; calculate()
-  // accepts it and then adds no thickness increment. Any copper would add Cohn's
-  // increment, which is exact only for wide strips, and the check would no
+  // accepts it and then applies no thickness factor. Any copper would add
+  // Wheeler's factor, stated to 0.5 %, and the check would no
   // longer be against the reference. The offset cases are from the committed
   // solver fixture (`offsetSingleStripline` in
   // `__tests__/fixtures/saturn-tier4-ground-truth.json`), which
@@ -49671,9 +49730,9 @@ var dualStripline = {
   ],
   calculate: calculateDualStripline,
   formula: {
-    primary: "Each layer n is an offset stripline: Z₀ₙ = η₀/(√εr·Ĉₙ),  Ĉₙ = ½[C₀(W, 2hₙ) + C₀(W, 2(s + t + hₘ))] + ΔC_off + ΔC_t, m the other layer;  k_b = (Z_even − Z_odd)/(Z_even + Z_odd), for an overlapping pair centred between the planes",
+    primary: "Each layer n is an offset stripline: Z₀ₙ = η₀/(√εr·Ĉₙ),  Ĉₙ = ½[C_t(W, hₙ) + C_t(W, s + t + hₘ)] + ΔC_off, m the other layer;  C_t(W, h) = C₀(W, 2h + t)·F_t(W, 2h + t, t);  k_b = (Z_even − Z_odd)/(Z_even + Z_odd), for an overlapping pair centred between the planes",
     // One relation per line: the formula sidebar is ~310 px wide.
-    latex: "\\begin{aligned} Z_{0n} &= \\frac{\\eta_0}{\\sqrt{\\varepsilon_r}\\,\\hat{C}_n} \\\\ \\hat{C}_n &= \\tfrac{1}{2}\\left[C_0(W, 2h_n) + C_0\\big(W, 2(s + t + h_m)\\big)\\right] \\\\ &\\quad + \\Delta C_{off} + \\Delta C_t \\\\ k_b &= \\frac{Z_{even} - Z_{odd}}{Z_{even} + Z_{odd}} \\end{aligned}",
+    latex: "\\begin{aligned} Z_{0n} &= \\frac{\\eta_0}{\\sqrt{\\varepsilon_r}\\,\\hat{C}_n} \\\\ \\hat{C}_n &= \\tfrac{1}{2}\\left[C_t(W, h_n) + C_t(W, s + t + h_m)\\right] \\\\ &\\quad + \\Delta C_{off} \\\\ C_t(W, h) &= C_0(W, 2h + t)\\,F_t \\\\ k_b &= \\frac{Z_{even} - Z_{odd}}{Z_{even} + Z_{odd}} \\end{aligned}",
     variables: [
       { symbol: "Ĉₙ", description: "Capacitance per unit length of layer n, normalised to ε₀εr", unit: "" },
       {
@@ -49686,7 +49745,16 @@ var dualStripline = {
         description: "Edge fringing that superposing the two halves misses when the trace is off centre, fitted to a 2-D method-of-moments solver (as in the asymmetric-stripline calculator)",
         unit: ""
       },
-      { symbol: "ΔC_t", description: "Cohn’s copper-thickness fringing increment; zero when t = 0", unit: "" },
+      {
+        symbol: "C_t(W, h)",
+        description: "Capacitance of the centred strip of thickness t that a half with gap h mirrors into, its planes 2h + t apart",
+        unit: ""
+      },
+      {
+        symbol: "F_t",
+        description: "Wheeler’s (1978) copper-thickness factor Z(W, b, 0)/Z(W, b, t) at b = 2h + t, stated to 0.5 %; 1 when t = 0",
+        unit: ""
+      },
       { symbol: "η₀", description: "Impedance of free space, µ₀·c = 376.730 Ω", unit: "Ω" },
       { symbol: "b", description: "Plane-to-plane spacing", unit: "mm" },
       { symbol: "h₁", description: "Layer 1 to upper plane", unit: "mm" },
@@ -49695,13 +49763,13 @@ var dualStripline = {
       { symbol: "k_b", description: "Broadside backward-crosstalk coefficient", unit: "" }
     ],
     derivation: [
-      "Each signal layer is an offset stripline: h from its own plane and s + t + h_other from the opposite one. Its capacitance is the mean of the two centred strips the halves mirror into (Cohn’s exact 4K(k)/K(k′)), plus the off-centre fringing ΔC_off and the thickness increment ΔC_t, the model the asymmetric-stripline calculator uses.",
+      "Each signal layer is an offset stripline: h from its own plane and s + t + h_other from the opposite one. Its capacitance is the mean of the two centred strips the halves mirror into (Cohn’s exact 4K(k)/K(k′) times Wheeler’s thickness factor F_t), plus the off-centre fringing ΔC_off, the model the asymmetric-stripline calculator uses.",
       "The other signal layer is a floating conductor rather than a reference, so it is excluded from the impedance model. That assumption holds when the two layers route orthogonally.",
       "Where traces do overlap, the pair behaves as a broadside-coupled line. Odd mode places an electric wall midway between the layers; even mode leaves each trace referenced only to its nearer plane.",
       "The backward-crosstalk coefficient follows from the mode split, k_b = (Z_even − Z_odd)/(Z_even + Z_odd).",
       "The pair is solved centred between the planes, both traces (b − s − 2t)/2 from their planes, so k_b does not change with h₁ − h₂. An off-centre pair couples less; past |h₁ − h₂| = 0.2·b the figure is an upper bound, by up to about 10 % there against a 2-D solver, and the calculator warns."
     ],
-    reference: 'S. B. Cohn, “Characteristic Impedance of the Shielded-Strip Transmission Line”, IRE Trans. MTT-2, 1954 (each layer, with the off-centre fringing fitted to rftools.io’s 2-D method-of-moments solver); IPC-2141A; E. Bogatin, "Signal and Power Integrity — Simplified", 3rd ed., ch. 11'
+    reference: 'S. B. Cohn, “Characteristic Impedance of the Shielded-Strip Transmission Line”, IRE Trans. MTT-2, 1954 (each layer, with the off-centre fringing fitted to rftools.io’s 2-D method-of-moments solver); H. A. Wheeler, IEEE Trans. MTT-26, 1978 (thickness factor); IPC-2141A; E. Bogatin, "Signal and Power Integrity — Simplified", 3rd ed., ch. 11'
   },
   visualization: { type: "none" },
   geometry: {
@@ -50019,7 +50087,7 @@ var broadsideCoupledPair = {
     "controlled-impedance"
   ],
   relatedBlogPosts: ["broadside-coupled-pairs-flex"],
-  relatedTools: ["sparam-pipeline", "eye-diagram"],
+  relatedTools: ["sparam-pipeline", "eye-diagram", "impedance-field-solver"],
   faqs: [
     {
       question: "When is a broadside pair better than an edge-coupled pair?",
@@ -53022,21 +53090,29 @@ var effectiveDielectricConstant = {
   ],
   calculate: calculateEffectiveDielectricConstant,
   formula: {
-    primary: "εeff = (εr+1)/2 + ((εr−1)/2)·(1 + 10h/w)^(−a·b)",
-    latex: "\\varepsilon_{\\text{eff}} = \\frac{\\varepsilon_r + 1}{2} + \\frac{\\varepsilon_r - 1}{2}\\left(1 + \\frac{10}{u}\\right)^{-a(u)\\,b(\\varepsilon_r)},\\qquad u = \\frac{w_{\\text{eff}}}{h}",
+    primary: "εeff = εe(uᵣ)·(Z₀₁(u₁)/Z₀₁(uᵣ))²,  εe(u) = (εr+1)/2 + ((εr−1)/2)·(1 + 10/u)^(−a·b),  u₁ = w/h + Δu₁,  uᵣ = w/h + Δuᵣ",
+    // One relation per line: the formula sidebar is ~310 px wide.
+    latex: "\\begin{aligned} \\varepsilon_{\\text{eff}} &= \\varepsilon_e(u_r)\\left(\\frac{Z_{01}(u_1)}{Z_{01}(u_r)}\\right)^2 \\\\ \\varepsilon_e(u) &= \\frac{\\varepsilon_r + 1}{2} + \\frac{\\varepsilon_r - 1}{2}\\left(1 + \\frac{10}{u}\\right)^{-a(u)\\,b(\\varepsilon_r)} \\\\ u_1 &= w/h + \\Delta u_1,\\quad u_r = w/h + \\Delta u_r \\end{aligned}",
     variables: [
       { symbol: "εeff", description: "Effective dielectric constant seen by the wave", unit: "" },
       { symbol: "εr", description: "Substrate relative permittivity", unit: "" },
       { symbol: "w", description: "Trace width", unit: "mm" },
       { symbol: "h", description: "Dielectric height to the reference plane", unit: "mm" },
       { symbol: "t", description: "Copper thickness (widens the effective trace)", unit: "mm" },
+      {
+        symbol: "Δu₁",
+        description: "Width the copper adds in air, (t/πh)·ln(1 + 4e/((t/h)·coth²√(6.517·w/h))) (Hammerstad–Jensen 1980)",
+        unit: ""
+      },
+      { symbol: "Δuᵣ", description: "Width the copper adds with the dielectric, ½(1 + sech√(εr − 1))·Δu₁", unit: "" },
+      { symbol: "Z₀₁(u)", description: "Hammerstad–Jensen impedance of the strip in air at width ratio u", unit: "Ω" },
       { symbol: "q", description: "Filling factor, (εeff−1)/(εr−1)", unit: "" },
       { symbol: "tpd", description: "Propagation delay, √εeff / c", unit: "ps/mm" }
     ],
     derivation: [
       "A microstrip has substrate below the trace and air above it, so the field is split between two media. The wave propagates as if it were in a single uniform medium of permittivity εeff, bounded by 1 < εeff < εr.",
       "Hammerstad and Jensen fit εeff to the exact quasi-static solution as a function of the single shape parameter u = w/h, with an εr-dependent exponent. The fit holds to about 1 % over 0.05 ≤ u ≤ 20 and εr ≤ 12 — the range that covers essentially all PCB work.",
-      "Copper thickness is folded in first as an effective width increase Δw = (t/π)·(1 + ln(2h/t)), Hammerstad's 1975 form for w/h ≥ 1/(2π), because a thick conductor presents extra sidewall to the field. Ignoring it overstates Z₀ on heavy copper.",
+      "Copper thickness enters by Hammerstad and Jensen's own 1980 correction, because a thick conductor presents extra sidewall to the field, most of it in air: the trace widens by Δu₁ = (t̂/π)·ln(1 + 4e/(t̂·coth²√(6.517u))) in air (t̂ = t/h) and by Δuᵣ = ½(1 + sech√(εr − 1))·Δu₁ with the dielectric, and εeff = εe(u + Δuᵣ)·(Z₀₁(u + Δu₁)/Z₀₁(u + Δuᵣ))². Against rftools.io's field solver it holds to 0.5 % for t/h up to 0.35; the 1975 width increase (t/π)·(1 + ln(2h/t)) used until November 2026 read up to 5.8 % low. Ignoring thickness overstates Z₀ on heavy copper.",
       "Two limits check the model. As w/h → 0 the line barely disturbs the interface and εeff → (εr+1)/2, the arithmetic mean of the two half-spaces. As w/h → ∞ the field is squeezed entirely into the substrate and εeff → εr — the parallel-plate limit, where the microstrip becomes a stripline in behaviour.",
       "Delay follows directly: tpd = √εeff / c. On FR-4 microstrip a typical εeff ≈ 3.2 gives about 6.0 ps/mm (153 ps/inch), against 7.0 ps/mm for a fully-buried stripline on the same laminate. That difference is why outer-layer routing is faster.",
       "Getsinger models dispersion as εeff(f) = εr − (εr − εeff)/(1 + G(f/fp)²) with fp = Z₀/(2µ₀h) and G = 0.6 + 0.009Z₀. The field concentrates in the substrate as frequency rises, so εeff climbs monotonically toward εr."
@@ -54038,7 +54114,7 @@ var edgeCoupledInternalSymmetric = {
     "directional-coupler"
   ],
   relatedBlogPosts: ["coupled-stripline-differential-pairs"],
-  relatedTools: ["sparam-pipeline", "eye-diagram"],
+  relatedTools: ["sparam-pipeline", "eye-diagram", "impedance-field-solver"],
   faqs: [
     {
       question: "Why is this exact when most impedance calculators are approximations?",
@@ -54277,7 +54353,7 @@ var edgeCoupledInternalAsymmetric = {
     "directional-coupler"
   ],
   relatedBlogPosts: ["coupled-stripline-differential-pairs"],
-  relatedTools: ["sparam-pipeline", "eye-diagram"],
+  relatedTools: ["sparam-pipeline", "eye-diagram", "impedance-field-solver"],
   faqs: [
     {
       question: "When does a differential pair end up off-centre?",
@@ -54414,7 +54490,7 @@ var edgeCoupledEmbedded = {
       defaultValue: 0.025,
       min: 0,
       step: 5e-3,
-      tooltip: "Soldermask, coating or prepreg over the traces. Zero gives a bare surface pair.",
+      tooltip: "Soldermask, coating or prepreg, measured over the copper’s top; any cover fills the gap between the traces. Zero gives a bare surface pair.",
       presets: [
         { label: "No cover", values: { coverThickness: 0 } },
         { label: "Soldermask (25 μm)", values: { coverThickness: 0.025 } },
@@ -54562,7 +54638,7 @@ var edgeCoupledEmbedded = {
       { symbol: "W", description: "Trace width", unit: "mm" },
       { symbol: "S", description: "Edge-to-edge spacing", unit: "mm" },
       { symbol: "h", description: "Substrate height", unit: "mm" },
-      { symbol: "h_c", description: "Cover thickness", unit: "mm" },
+      { symbol: "h_c", description: "Cover thickness over the copper’s top", unit: "mm" },
       { symbol: "q_mode", description: "Share of that mode’s energy in the substrate", unit: "" },
       { symbol: "q_c,mode", description: "Share of the remaining energy the cover captures", unit: "" }
     ],
@@ -54570,7 +54646,8 @@ var edgeCoupledEmbedded = {
       "Geometry and dielectric are separated. The air-mode impedances depend only on W/h and S/h and are fitted as ratios to the single line, so an uncoupled pair recovers the single-line result exactly.",
       "Each mode then gets its own filling factor: the share of its energy already in the substrate, plus the share of the rest that the cover captures.",
       "Because the second term is bounded by the energy that is not already in the substrate, the effective permittivity can never exceed the largest permittivity present — a bound the previous covered-microstrip model in this codebase violated, returning 5.49 where εr was 4.30.",
-      "On a bare pair the even mode carries the higher permittivity, since the odd mode drives field through an air gap. Cover a tight gap and that ordering can invert, which the model reproduces because it was fitted to a layered field solve rather than assumed."
+      "On a bare pair the even mode carries the higher permittivity, since the odd mode drives field through an air gap. Cover a tight gap and that ordering can invert, which the model reproduces because it was fitted to a layered field solve rather than assumed.",
+      "Copper thickness: the modes are taken at zero thickness with the cover above the copper’s top, then each gains the bare line’s edge increments, the cover beside the copper and, in the odd mode, the sidewall field across the gap, filled with the cover. Those terms are fitted to rftools.io’s field solver: within 2 % on a mode impedance for covers from just over the copper to thick prepreg."
     ],
     reference: "Filling factors fitted to the layered method-of-moments solver committed in src/lib/pcb/__tests__/solver, which reproduces Hammerstad–Jensen to 0.1% and the fully-embedded limit to 0.005%."
   },
@@ -54598,7 +54675,7 @@ var edgeCoupledEmbedded = {
     "directional-coupler"
   ],
   relatedBlogPosts: ["coupled-stripline-differential-pairs"],
-  relatedTools: ["sparam-pipeline", "eye-diagram"],
+  relatedTools: ["sparam-pipeline", "eye-diagram", "impedance-field-solver"],
   faqs: [
     {
       question: "Does soldermask really change differential impedance?",
@@ -54617,7 +54694,7 @@ var edgeCoupledEmbedded = {
 
 // src/lib/calculators/pcb/differential-via.ts
 var C9 = 299792458;
-var ETA_05 = FREE_SPACE_IMPEDANCE;
+var ETA_03 = FREE_SPACE_IMPEDANCE;
 var MU_03 = 4e-7 * Math.PI;
 var SIGMA_CU = 58e6;
 var NEPER_TO_DB = 8.685889638065035;
@@ -54648,7 +54725,7 @@ function calculateDifferentialVia(inputs) {
   }
   if (errors.length > 0) return { values: {}, errors };
   const sqrtEr = Math.sqrt(dielectricConst);
-  const zDense = ETA_05 / (Math.PI * sqrtEr) * Math.log(antipadDiameter / barrelDiameter);
+  const zDense = ETA_03 / (Math.PI * sqrtEr) * Math.log(antipadDiameter / barrelDiameter);
   const stubLength = Math.max(boardThickness - exitDepth, 0);
   const vp = C9 / sqrtEr;
   const stubResonance = stubLength > 0 ? vp / (4 * stubLength * 1e-3) / 1e9 : Infinity;
@@ -56316,7 +56393,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.9.0",
+  version: "2.10.0",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 257 RF & electronics calculators for AI agents via the MCP",
@@ -56987,7 +57064,7 @@ async function handleSolve(api, args) {
 
 // ../rftools-mcp/src/tool-copy.ts
 var DESCRIPTION_MAX_CHARS = 1700;
-var LISTING_BUDGET_BYTES = 9e4;
+var LISTING_BUDGET_BYTES = 1e5;
 var TOOL_NAME_MAX_CHARS = 64;
 var PART_LABELS = { inputs: "Inputs:", example: "Example:", returns: "Returns:" };
 function composeDescription(copy) {
@@ -57440,6 +57517,17 @@ var job_schemas_default = {
         "api"
       ],
       timeoutSeconds: 180,
+      files: false
+    },
+    impedance_field_solver: {
+      slug: "impedance-field-solver",
+      title: "PCB Impedance Field Solver",
+      tiers: [
+        "free",
+        "pro",
+        "api"
+      ],
+      timeoutSeconds: 300,
       files: false
     },
     impedance_match: {
@@ -58390,6 +58478,120 @@ var filter_monte_carlo_default = {
       "x-hidden": true,
       "x-step": 1,
       "x-tooltip": "The share of builds that must pass. Blank means 95 %."
+    }
+  }
+};
+
+// ../rftools-mcp/vendor/shared/job-schemas/impedance_field_solver.json
+var impedance_field_solver_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $generated: "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "impedance_field_solver",
+  "x-slug": "impedance-field-solver",
+  "x-title": "PCB Impedance Field Solver",
+  "x-formulaRef": "Characteristic impedance of the shielded-strip transmission line, S. B. Cohn, IRE Trans. MTT-2 (1954): the exact stripline the solver is held to",
+  "x-checks": [],
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "conductors"
+  ],
+  properties: {
+    solveMode: {
+      type: "string",
+      enum: [
+        "solve"
+      ],
+      default: "solve",
+      "x-label": "Solve Mode",
+      "x-tooltip": "Solve: one cross-section, with loss at each frequency and, on request, the width for a target and the tolerance spread."
+    },
+    structureFamily: {
+      type: "string",
+      enum: [
+        "microstrip",
+        "embedded-microstrip",
+        "stripline",
+        "cpw",
+        "cpwg",
+        "edge-coupled-microstrip",
+        "edge-coupled-embedded",
+        "edge-coupled-stripline",
+        "edge-coupled-cpw",
+        "edge-coupled-cpwg",
+        "broadside-stripline"
+      ],
+      "x-label": "Structure",
+      "x-hidden": true,
+      "x-tooltip": "The template the cross-section was built from, for labelling only; blank lets the solver name it."
+    },
+    planes: {
+      type: "string",
+      enum: [
+        "bottom",
+        "both",
+        "none"
+      ],
+      default: "bottom",
+      "x-label": "Reference Planes",
+      "x-tooltip": "Bottom: one plane under the stack (microstrip). Both: planes below and above it (stripline). None: no plane, for coplanar waveguide with its own grounds."
+    },
+    layers: {
+      type: "array",
+      "x-label": "Dielectric Layers",
+      "x-hidden": true,
+      "x-tooltip": "Required for any board: the stack from the bottom up, { thickness (m), er, tanD, dispersion: djordjevic-sarkar | none, refFreq (Hz) }. εr and tanδ are the values at refFreq (default 1 GHz). Empty puts the traces in air.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    conductors: {
+      type: "array",
+      "x-label": "Conductors",
+      "x-hidden": true,
+      "x-tooltip": "Required: one or two signal traces and any coplanar grounds, { role: signal | ground, boundary (layer boundary it sits on, 0 = bottom), x (left edge, m), width (bottom, m), thickness (m), topWidth or etchFactor, plating (m) }.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    mask: {
+      type: "object",
+      "x-label": "Solder Mask",
+      "x-hidden": true,
+      "x-tooltip": "Conformal solder mask on the outer layer: { er, tanD, dispersion, refFreq, overTrace, overSubstrate, betweenTraces (m) }. Blank: no mask.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    copper: {
+      type: "object",
+      "x-label": "Copper",
+      "x-hidden": true,
+      "x-tooltip": "Copper conductivity (S/m, default 5.8e7) and roughness: { model: hammerstad-jensen, rms (m) } or { model: huray, noduleRadius (m), surfaceRatio }.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    frequencies: {
+      type: "array",
+      "x-label": "Frequencies",
+      "x-hidden": true,
+      "x-tooltip": "Frequencies in Hz at which impedance and loss are reported. Blank: 1 GHz."
+    },
+    designFrequency: {
+      type: "number",
+      minimum: 1,
+      maximum: 1e12,
+      "x-label": "Design Frequency",
+      "x-unit": "Hz",
+      "x-hidden": true,
+      "x-tooltip": "Where solve-for-width, the tolerance spread and the accuracy rule act; one of the listed frequencies. Blank: the first listed frequency."
+    },
+    solveFor: {
+      type: "object",
+      "x-label": "Solve For",
+      "x-hidden": true,
+      "x-tooltip": "{ parameter: width | spacing, target (Ω) }: return the cross-section whose impedance (a pair's differential impedance) meets the target. Blank: solve the geometry as given.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    tolerances: {
+      type: "object",
+      "x-label": "Tolerances",
+      "x-hidden": true,
+      "x-tooltip": "Plus-or-minus tolerances for the first-order spread: { width, etchFactor, thickness, layerThickness, er, maskThickness }, each in the parameter's unit or as a fraction. Blank: no spread.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
     }
   }
 };
@@ -59832,6 +60034,7 @@ var RAW_SCHEMAS = [
   eye_diagram_default,
   fdtd_sparam_default,
   filter_monte_carlo_default,
+  impedance_field_solver_default,
   impedance_match_default,
   magnetics_optimizer_default,
   pdn_impedance_default,
@@ -62295,7 +62498,7 @@ function describeParam(name, prop, shapeNote) {
   if (tooltip && !(shapeNote && tooltip.includes("{"))) parts.push(tooltip);
   if (shapeNote) {
     parts.push(shapeNote);
-  } else if (prop["x-ref"]) {
+  } else if (prop["x-ref"] && !(tooltip && tooltip.includes("{"))) {
     parts.push("Structure is not described by this schema; pass it as the service expects");
   }
   const range3 = [];
@@ -62676,6 +62879,41 @@ var agent_copy_default = {
           freqCutoff: 1e9,
           ripple: 0.5,
           impedance: 50
+        }
+      }
+    },
+    impedance_field_solver: {
+      slug: "impedance-field-solver",
+      title: "PCB Impedance Field Solver",
+      question: "Solve a PCB cross-section with a 2-D field solver: microstrip, stripline, coplanar waveguide and differential pairs, with trapezoidal traces, plating, solder mask and mixed dielectrics.",
+      description: "Solve a PCB cross-section with a 2-D field solver: microstrip, stripline, coplanar waveguide and differential pairs, with trapezoidal traces, plating, solder mask and mixed dielectrics. Impedance or the full mode set of a pair, loss with copper roughness, and the width or spacing for a target impedance, each with its stated uncertainty.",
+      returns: "Per frequency: Z0, or a pair's differential, common, odd, even and uncoupled impedance; effective permittivity, delay, L and C per length; conductor and dielectric loss with validity flags; the stated uncertainty; each material's values; and, when asked, the width or spacing for a target.",
+      example: {
+        source: "preset",
+        label: "50 Ω surface microstrip, FR-4, 1 oz",
+        arguments: {
+          conductors: [
+            {
+              role: "signal",
+              boundary: 1,
+              x: -175e-6,
+              width: 35e-5,
+              thickness: 35e-6
+            }
+          ],
+          solveMode: "solve",
+          planes: "bottom",
+          layers: [
+            {
+              thickness: 2e-4,
+              er: 4.3,
+              tanD: 0.02
+            }
+          ],
+          frequencies: [
+            1e9,
+            5e9
+          ]
         }
       }
     },
@@ -63450,7 +63688,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.9.0"
+    version: "2.10.0"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });

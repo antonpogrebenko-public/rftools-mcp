@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$generated": "GENERATED FILE — do not edit. Source of truth is frontend/src/lib/tools/registry.ts; regenerate with cd frontend && npx tsx --tsconfig tsconfig.json ../scripts/sync_job_schemas.ts",
+  "x-jobType": "impedance_field_solver",
+  "x-slug": "impedance-field-solver",
+  "x-title": "PCB Impedance Field Solver",
+  "x-formulaRef": "Characteristic impedance of the shielded-strip transmission line, S. B. Cohn, IRE Trans. MTT-2 (1954): the exact stripline the solver is held to",
+  "x-checks": [],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "conductors"
+  ],
+  "properties": {
+    "solveMode": {
+      "type": "string",
+      "enum": [
+        "solve"
+      ],
+      "default": "solve",
+      "x-label": "Solve Mode",
+      "x-tooltip": "Solve: one cross-section, with loss at each frequency and, on request, the width for a target and the tolerance spread."
+    },
+    "structureFamily": {
+      "type": "string",
+      "enum": [
+        "microstrip",
+        "embedded-microstrip",
+        "stripline",
+        "cpw",
+        "cpwg",
+        "edge-coupled-microstrip",
+        "edge-coupled-embedded",
+        "edge-coupled-stripline",
+        "edge-coupled-cpw",
+        "edge-coupled-cpwg",
+        "broadside-stripline"
+      ],
+      "x-label": "Structure",
+      "x-hidden": true,
+      "x-tooltip": "The template the cross-section was built from, for labelling only; blank lets the solver name it."
+    },
+    "planes": {
+      "type": "string",
+      "enum": [
+        "bottom",
+        "both",
+        "none"
+      ],
+      "default": "bottom",
+      "x-label": "Reference Planes",
+      "x-tooltip": "Bottom: one plane under the stack (microstrip). Both: planes below and above it (stripline). None: no plane, for coplanar waveguide with its own grounds."
+    },
+    "layers": {
+      "type": "array",
+      "x-label": "Dielectric Layers",
+      "x-hidden": true,
+      "x-tooltip": "Required for any board: the stack from the bottom up, { thickness (m), er, tanD, dispersion: djordjevic-sarkar | none, refFreq (Hz) }. εr and tanδ are the values at refFreq (default 1 GHz). Empty puts the traces in air.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    "conductors": {
+      "type": "array",
+      "x-label": "Conductors",
+      "x-hidden": true,
+      "x-tooltip": "Required: one or two signal traces and any coplanar grounds, { role: signal | ground, boundary (layer boundary it sits on, 0 = bottom), x (left edge, m), width (bottom, m), thickness (m), topWidth or etchFactor, plating (m) }.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    "mask": {
+      "type": "object",
+      "x-label": "Solder Mask",
+      "x-hidden": true,
+      "x-tooltip": "Conformal solder mask on the outer layer: { er, tanD, dispersion, refFreq, overTrace, overSubstrate, betweenTraces (m) }. Blank: no mask.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    "copper": {
+      "type": "object",
+      "x-label": "Copper",
+      "x-hidden": true,
+      "x-tooltip": "Copper conductivity (S/m, default 5.8e7) and roughness: { model: hammerstad-jensen, rms (m) } or { model: huray, noduleRadius (m), surfaceRatio }.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    "frequencies": {
+      "type": "array",
+      "x-label": "Frequencies",
+      "x-hidden": true,
+      "x-tooltip": "Frequencies in Hz at which impedance and loss are reported. Blank: 1 GHz."
+    },
+    "designFrequency": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 1000000000000,
+      "x-label": "Design Frequency",
+      "x-unit": "Hz",
+      "x-hidden": true,
+      "x-tooltip": "Where solve-for-width, the tolerance spread and the accuracy rule act; one of the listed frequencies. Blank: the first listed frequency."
+    },
+    "solveFor": {
+      "type": "object",
+      "x-label": "Solve For",
+      "x-hidden": true,
+      "x-tooltip": "{ parameter: width | spacing, target (Ω) }: return the cross-section whose impedance (a pair's differential impedance) meets the target. Blank: solve the geometry as given.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    },
+    "tolerances": {
+      "type": "object",
+      "x-label": "Tolerances",
+      "x-hidden": true,
+      "x-tooltip": "Plus-or-minus tolerances for the first-order spread: { width, etchFactor, thickness, layerThickness, er, maskThickness }, each in the parameter's unit or as a fraction. Blank: no spread.",
+      "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
+    }
+  }
+}

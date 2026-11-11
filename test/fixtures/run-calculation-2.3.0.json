@@ -1,5 +1,5 @@
 {
-  "source": "run_calculation answers from the published 2.3.0 bundle (rftools-mcp 673b685, dist/mcp-server.cjs), captured 2026-10-01 for openspec agent-surface task 2.8; rf-link-budget re-read 2026-10-05 from the frontend calculator after it took the exact speed of light (openspec catalogue-antenna-rf-batch): the call shape is 2.3.0's, the numbers are the corrected ones",
+  "source": "run_calculation answers from the published 2.3.0 bundle (rftools-mcp 673b685, dist/mcp-server.cjs), captured 2026-10-01 for openspec agent-surface task 2.8; rf-link-budget re-read 2026-10-05 from the frontend calculator after it took the exact speed of light (openspec catalogue-antenna-rf-batch): the call shape is 2.3.0's, the numbers are the corrected ones; microstrip-impedance re-read 2026-11-11 after copper took Hammerstad-Jensen's own 1980 thickness correction (openspec impedance-field-solver, task 7.7)",
   "calls": {
     "microstrip-impedance": {
       "inputs": {
@@ -12,19 +12,19 @@
         {
           "key": "impedance",
           "label": "Characteristic Impedance",
-          "value": 78.54817307241487,
+          "value": 79.01363658611785,
           "unit": "Ω"
         },
         {
           "key": "effectiveDielectric",
           "label": "Effective Dielectric",
-          "value": 3.178896614661576,
+          "value": 3.1267858804426716,
           "unit": ""
         },
         {
           "key": "propagationDelay",
           "label": "Propagation Delay",
-          "value": 5.9472678571692565,
+          "value": 5.898320511079575,
           "unit": "ps/mm"
         }
       ],
