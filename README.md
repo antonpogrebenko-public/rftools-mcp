@@ -98,6 +98,10 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.10.1
+
+- `simulate_antenna_sim` now says what it returns in full: every solve, sweep row and Optimize design carries front-to-rear (the strongest direction 90° to 270° behind the beam) beside front-to-back (180°). No parameter changed.
+
 ### What changed in 2.10.0
 
 - **`simulate_impedance_field_solver`, a new tool** (rftools impedance-field-solver): a 2-D boundary-element solve of a PCB cross-section, quasi-static, with every figure's uncertainty stated. Give `planes` (`bottom`, `both` or `none`), `layers` from the bottom up `{thickness, er, tanD, dispersion, refFreq}` and `conductors` `{role, boundary, x, width, thickness, topWidth or etchFactor, plating}` in metres; optionally a conformal `mask`, `copper` conductivity and roughness (Hammerstad-Jensen or Huray), several `frequencies`, `solveFor` `{parameter: width | spacing, target}` and `tolerances` for a first-order spread. It returns, per frequency, Z0 or a pair's differential, common, odd, even and uncoupled impedance, εeff, delay, L and C per length, conductor and dielectric loss, and the stated uncertainty. The free lane takes up to 8 frequencies and 1,200 unknowns; a larger request is refused with what to change.

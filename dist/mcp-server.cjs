@@ -56393,7 +56393,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.10.0",
+  version: "2.10.1",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 257 RF & electronics calculators for AI agents via the MCP",
@@ -62851,7 +62851,7 @@ var agent_copy_default = {
       title: "Wire Antenna Simulator (NEC-2)",
       question: "Solve your own wire antenna with the NEC-2 method of moments: dipoles, Yagis, verticals and loops, element by element.",
       description: "Solve your own wire antenna with the NEC-2 method of moments: dipoles, Yagis, verticals and loops, element by element. Radiation pattern, gain, impedance, VSWR, efficiency and current distribution, at one frequency or across a sweep, with a multi-objective optimiser on Pro.",
-      returns: "Peak gain, front-to-back ratio, beamwidths, feed impedance and VSWR (per frequency on a sweep, with the VSWR bandwidth), the azimuth and elevation patterns described as series, and for Optimize the recommended design and its Pareto front.",
+      returns: "Peak gain, front-to-back (one direction behind) and front-to-rear (worst of the rear half) ratios, beamwidths, feed impedance and VSWR (per frequency on a sweep, with the VSWR bandwidth), the azimuth and elevation patterns described as series, and for Optimize the recommended design and its Pareto front.",
       example: {
         source: "defaults",
         arguments: {
@@ -63743,7 +63743,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.10.0"
+    version: "2.10.1"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });
