@@ -73,7 +73,7 @@
       "type": "object",
       "x-label": "Solder Mask",
       "x-hidden": true,
-      "x-tooltip": "Conformal solder mask on the outer layer: { er, tanD, dispersion, refFreq, overTrace, overSubstrate, betweenTraces (m) }. Blank: no mask.",
+      "x-tooltip": "Conformal solder mask on the outer layer, both outer layers in a stack-up search: { er, tanD, dispersion, refFreq (Hz: where er and tanD were measured, default 1e9; 1e5 to 1e11 in a stack-up search), overTrace, overSubstrate, betweenTraces (m) }. Blank: no mask.",
       "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
     },
     "copper": {

@@ -56393,7 +56393,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.11.0",
+  version: "2.11.1",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 257 RF & electronics calculators for AI agents via the MCP",
@@ -58558,7 +58558,7 @@ var impedance_field_solver_default = {
       type: "object",
       "x-label": "Solder Mask",
       "x-hidden": true,
-      "x-tooltip": "Conformal solder mask on the outer layer: { er, tanD, dispersion, refFreq, overTrace, overSubstrate, betweenTraces (m) }. Blank: no mask.",
+      "x-tooltip": "Conformal solder mask on the outer layer, both outer layers in a stack-up search: { er, tanD, dispersion, refFreq (Hz: where er and tanD were measured, default 1e9; 1e5 to 1e11 in a stack-up search), overTrace, overSubstrate, betweenTraces (m) }. Blank: no mask.",
       "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
     },
     copper: {
@@ -63743,7 +63743,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.11.0"
+    version: "2.11.1"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });

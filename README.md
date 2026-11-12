@@ -98,6 +98,12 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.11.1
+
+- **`simulate_impedance_field_solver`: the solder mask says where its figures were measured in a stack-up search too.** `mask.refFreq` (Hz, default 1 GHz) was already read; its description now says a search applies the mask to both outer layers and accepts 100 kHz to 100 GHz, and a search refuses a value outside that range. A mask quoted at 1 MHz and read as 1 GHz made covered lines about 1 % narrow.
+- **`simulate_impedance_match`: snapped values reach further.** With a part model, the snap now considers every standard value within 2× of each part's ideal value, and takes one only when the match is better, no more power is lost and the loaded Q is no higher. Some networks match several dB better; no parameter changed.
+- `simulate_antenna_sim`'s tool-page theory names front-to-rear among the Optimize goals.
+
 ### What changed in 2.11.0
 
 - **`simulate_antenna_sim`: front-to-rear is an Optimize goal.** `optimize.goals[].figure` and `optimize.leadGoal` accept `frontToRear`, the peak against the strongest direction 90° to 270° behind the beam, read as its lowest value across the band; a threshold is `min` in dB. Use it instead of `frontToBack` when rear rejection matters: a search on `frontToBack` can settle on a deep null at exactly 180° with strong lobes beside it. Requests that do not name it run exactly as before.
