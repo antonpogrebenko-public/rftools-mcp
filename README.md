@@ -98,6 +98,12 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.11.0
+
+- **`simulate_antenna_sim`: front-to-rear is an Optimize goal.** `optimize.goals[].figure` and `optimize.leadGoal` accept `frontToRear`, the peak against the strongest direction 90° to 270° behind the beam, read as its lowest value across the band; a threshold is `min` in dB. Use it instead of `frontToBack` when rear rejection matters: a search on `frontToBack` can settle on a deep null at exactly 180° with strong lobes beside it. Requests that do not name it run exactly as before.
+- **`simulate_impedance_field_solver`: a pasted laminate can say where its figures were measured.** In `solveMode: "stackup"`, a `stackup.catalogue` core or prepreg that gives its own `er` and `tanD` takes an optional `refFreq` in Hz (100 kHz to 100 GHz, default 1 GHz), so a datasheet figure quoted at 10 GHz is not dispersed twice.
+- **`simulate_impedance_match`: a topology asked for by name returns parts you can buy.** With a part model and no branch preference, a network whose parts are all inside the catalogue range is returned when it meets the target, as `topology: "auto"` already did; `branchPreference`'s description now says so. Snapped values are searched exhaustively, so some networks match better than before. No parameter changed.
+
 ### What changed in 2.10.1
 
 - `simulate_antenna_sim` now says what it returns in full: every solve, sweep row and Optimize design carries front-to-rear (the strongest direction 90° to 270° behind the beam) beside front-to-back (180°). No parameter changed.

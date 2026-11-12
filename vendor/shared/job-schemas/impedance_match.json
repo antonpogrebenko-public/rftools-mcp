@@ -126,7 +126,7 @@
         "highpass"
       ],
       "x-label": "Branch Preference",
-      "x-tooltip": "Low-pass (series inductors, shunt capacitors: a DC path to the load) or high-pass takes that branch of each section where one exists, and the result says when none does. Blank keeps the branch with the better return loss at f0 with the chosen parts."
+      "x-tooltip": "Low-pass (series inductors, shunt capacitors: a DC path to the load) or high-pass takes that branch of each section where one exists, and the result says when none does. Blank keeps the branch with the better return loss across the band with the chosen parts; with a part model, a branch whose parts are all within the catalogue range is taken when it meets the target."
     },
     "partModel": {
       "type": "string",

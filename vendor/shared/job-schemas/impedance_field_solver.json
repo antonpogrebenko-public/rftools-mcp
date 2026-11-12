@@ -160,7 +160,7 @@
       "type": "object",
       "x-label": "Stack-up Search",
       "x-hidden": true,
-      "x-tooltip": "Required for a stack-up search: { layerCounts (2, 4, 6, 8), arrangements ({ \"4\": \"SGPS\" }), netClasses ([{ name, kind: single | differential, target (Ω), tolerance, route: outer | inner | all, spacing: { fixed (m) } or { ratio } }]), rules ({ minWidth, minSpacing (m), outerCopper, innerCopper (oz lists) }), boardThickness ({ target (m), tolerance }), catalogue ({ cores, prepregs: [{ thickness (m), material, er, tanD }] }; blank: the generic one), includeAsymmetric }. Loss is compared at the design frequency; mask and copper apply as in a solve.",
+      "x-tooltip": "Required for a stack-up search: { layerCounts (2, 4, 6, 8), arrangements ({ \"4\": \"SGPS\" }), netClasses ([{ name, kind: single | differential, target (Ω), tolerance, route: outer | inner | all, spacing: { fixed (m) } or { ratio } }]), rules ({ minWidth, minSpacing (m), outerCopper, innerCopper (oz lists) }), boardThickness ({ target (m), tolerance }), catalogue ({ cores, prepregs: [{ thickness (m), material, er, tanD, refFreq (Hz: where er and tanD were measured, 1e5 to 1e11; default 1e9) }] }; blank: the generic one, at 1 GHz), includeAsymmetric }. Loss is compared at the design frequency; mask and copper apply as in a solve.",
       "x-ref": "backend/src/core/field_solver/_field_solver_stackup_plan.py"
     }
   }

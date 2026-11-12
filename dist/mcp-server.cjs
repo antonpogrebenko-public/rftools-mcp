@@ -56393,7 +56393,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.10.1",
+  version: "2.11.0",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 257 RF & electronics calculators for AI agents via the MCP",
@@ -57699,7 +57699,7 @@ var antenna_sim_default = {
       type: "object",
       "x-label": "Search Settings",
       "x-hidden": true,
-      "x-tooltip": "NSGA-II search settings (pymoo): { populationSize (8-200), generations, lengthRange, spacingRange, maxBoomLength, goals, leadGoal, buildTolerance, heightRange }. goals is a list of { figure: peakGain | frontToBack | vswr | elevationGain, role: optimize | threshold | off, min (gains) or max (vswr) for a threshold, reading: worst | average (vswr across a band), elevationDeg (elevationGain, over ground only) }, with at most three optimised; omit goals to optimise gain, front-to-back and VSWR and recommend by the 2:1 rule. leadGoal names the optimised figure the recommendation ranks by. buildTolerance { mm: 0.1-50, trials: 10-200 } re-solves the designs with random element-length and position errors. heightRange [lowest, highest] (metres, feed height, over ground) also searches the mounting height. maxBoomLength (metres) caps the distance between the first and last element. Any other key is refused.",
+      "x-tooltip": "NSGA-II search settings (pymoo): { populationSize (8-200), generations, lengthRange, spacingRange, maxBoomLength, goals, leadGoal, buildTolerance, heightRange }. goals is a list of { figure: peakGain | frontToBack | frontToRear | vswr | elevationGain, role: optimize | threshold | off, min (gains and ratios) or max (vswr) for a threshold, reading: worst | average (vswr across a band), elevationDeg (elevationGain, over ground only) }, with at most three optimised. frontToBack is the peak against the one direction directly behind it; frontToRear against the strongest direction 90-270 degrees off it, so a deep null directly behind cannot flatter it. Omit goals to optimise gain, front-to-back and VSWR and recommend by the 2:1 rule. leadGoal names the optimised figure the recommendation ranks by. buildTolerance { mm: 0.1-50, trials: 10-200 } re-solves the designs with random element-length and position errors. heightRange [lowest, highest] (metres, feed height, over ground) also searches the mounting height. maxBoomLength (metres) caps the distance between the first and last element. Any other key is refused.",
       "x-showWhen": {
         key: "solveMode",
         value: "optimize"
@@ -58645,7 +58645,7 @@ var impedance_field_solver_default = {
       type: "object",
       "x-label": "Stack-up Search",
       "x-hidden": true,
-      "x-tooltip": 'Required for a stack-up search: { layerCounts (2, 4, 6, 8), arrangements ({ "4": "SGPS" }), netClasses ([{ name, kind: single | differential, target (Ω), tolerance, route: outer | inner | all, spacing: { fixed (m) } or { ratio } }]), rules ({ minWidth, minSpacing (m), outerCopper, innerCopper (oz lists) }), boardThickness ({ target (m), tolerance }), catalogue ({ cores, prepregs: [{ thickness (m), material, er, tanD }] }; blank: the generic one), includeAsymmetric }. Loss is compared at the design frequency; mask and copper apply as in a solve.',
+      "x-tooltip": 'Required for a stack-up search: { layerCounts (2, 4, 6, 8), arrangements ({ "4": "SGPS" }), netClasses ([{ name, kind: single | differential, target (Ω), tolerance, route: outer | inner | all, spacing: { fixed (m) } or { ratio } }]), rules ({ minWidth, minSpacing (m), outerCopper, innerCopper (oz lists) }), boardThickness ({ target (m), tolerance }), catalogue ({ cores, prepregs: [{ thickness (m), material, er, tanD, refFreq (Hz: where er and tanD were measured, 1e5 to 1e11; default 1e9) }] }; blank: the generic one, at 1 GHz), includeAsymmetric }. Loss is compared at the design frequency; mask and copper apply as in a solve.',
       "x-ref": "backend/src/core/field_solver/_field_solver_stackup_plan.py"
     }
   }
@@ -58780,7 +58780,7 @@ var impedance_match_default = {
         "highpass"
       ],
       "x-label": "Branch Preference",
-      "x-tooltip": "Low-pass (series inductors, shunt capacitors: a DC path to the load) or high-pass takes that branch of each section where one exists, and the result says when none does. Blank keeps the branch with the better return loss at f0 with the chosen parts."
+      "x-tooltip": "Low-pass (series inductors, shunt capacitors: a DC path to the load) or high-pass takes that branch of each section where one exists, and the result says when none does. Blank keeps the branch with the better return loss across the band with the chosen parts; with a part model, a branch whose parts are all within the catalogue range is taken when it meets the target."
     },
     partModel: {
       type: "string",
@@ -62536,7 +62536,7 @@ var STRUCTURE_SHAPES = {
     feed: "Object {wire, segment}, both 0-based: which wire the source drives, and which segment of it",
     ground: "Object {type: free_space | perfect | finite}, plus epsilonR and conductivity (S/m) when finite. Omit for free space",
     conductor: "Object {material: copper | aluminium | perfect | custom}, plus conductivity (S/m) when custom. Omit for copper",
-    optimize: "Object for the NSGA-II search (pymoo): {populationSize 8-200, generations 1-200, lengthRange, spacingRange, maxBoomLength (m), goals, leadGoal, buildTolerance {mm 0.1-50, trials 10-200}, heightRange [low, high] (m)}. goals: [{figure: peakGain | frontToBack | vswr | elevationGain, role: optimize | threshold | off, min (gains) or max (vswr) for a threshold, reading: worst | average (vswr), elevationDeg}], at most 3 optimised; elevationGain and heightRange need a ground. Omit goals for gain, F/B and VSWR with the 2:1 rule. Give freqStart/freqStop/freqPoints to read every goal across a band"
+    optimize: "Object for the NSGA-II search (pymoo): {populationSize 8-200, generations 1-200, lengthRange, spacingRange, maxBoomLength (m), goals, leadGoal, buildTolerance {mm 0.1-50, trials 10-200}, heightRange [low, high] (m)}. goals: [{figure: peakGain | frontToBack (180°) | frontToRear (worst lobe 90-270° behind the beam) | vswr | elevationGain, role: optimize | threshold | off, min (gains and ratios) or max (vswr) for a threshold, reading: worst | average (vswr), elevationDeg}], at most 3 optimised; elevationGain and heightRange need a ground. Omit goals for gain, F/B and VSWR with the 2:1 rule. Give freqStart/freqStop/freqPoints to read every goal across a band"
   }
 };
 function structureShapeFor(jobType, param) {
@@ -63743,7 +63743,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.10.1"
+    version: "2.11.0"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });
