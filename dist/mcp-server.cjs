@@ -56393,7 +56393,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.11.1",
+  version: "2.11.2",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 257 RF & electronics calculators for AI agents via the MCP",
@@ -58544,7 +58544,7 @@ var impedance_field_solver_default = {
       type: "array",
       "x-label": "Dielectric Layers",
       "x-hidden": true,
-      "x-tooltip": "Required for any board: the stack from the bottom up, { thickness (m), er, tanD, dispersion: djordjevic-sarkar | none, refFreq (Hz) }. εr and tanδ are the values at refFreq (default 1 GHz). Empty puts the traces in air.",
+      "x-tooltip": "Required for any board: the stack from the bottom up, { thickness (m), er, tanD (below 1), dispersion: djordjevic-sarkar | none, refFreq (Hz: where er and tanD were measured, 1e5 to 1e11, default 1e9) }. A djordjevic-sarkar material that the model restates at a listed frequency as εr below 1 or tanδ of 1 or more is refused. Empty puts the traces in air.",
       "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
     },
     conductors: {
@@ -58558,7 +58558,7 @@ var impedance_field_solver_default = {
       type: "object",
       "x-label": "Solder Mask",
       "x-hidden": true,
-      "x-tooltip": "Conformal solder mask on the outer layer, both outer layers in a stack-up search: { er, tanD, dispersion, refFreq (Hz: where er and tanD were measured, default 1e9; 1e5 to 1e11 in a stack-up search), overTrace, overSubstrate, betweenTraces (m) }. Blank: no mask.",
+      "x-tooltip": "Conformal solder mask on the outer layer, both outer layers in a stack-up search: { er, tanD (below 1), dispersion, refFreq (Hz: where er and tanD were measured, 1e5 to 1e11, default 1e9), overTrace, overSubstrate, betweenTraces (m) }, its material checked as a layer's. Blank: no mask.",
       "x-ref": "backend/src/core/field_solver/_field_solver_geometry.py"
     },
     copper: {
@@ -63743,7 +63743,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.11.1"
+    version: "2.11.2"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });

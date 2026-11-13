@@ -98,6 +98,11 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.11.2
+
+- **`simulate_impedance_field_solver`: a solve checks where its materials were measured.** Every layer's and the mask's `refFreq` must now lie between 100 kHz and 100 GHz (default 1 GHz), `tanD` must be below 1, and a dispersive material that the model would restate at a listed frequency as εr below 1 or tanδ of 1 or more is refused, before any charge. Until now any positive `refFreq` was taken: 1 Hz failed inside the solver and 1e15 Hz gave a wrong impedance. The `layers` and `mask` descriptions state the range.
+- **`simulate_impedance_match`: results with real parts.** Small 0603 multilayer inductors (1.2 to 2.7 nH) were modelled with up to twice the typical datasheet Q and are now at or below it. A network counts as meeting the target only when it is at least 1 dB better than it at the band edges, the centre and across the band, so `topology: "auto"` no longer prefers one that only just touches the target. No parameter changed.
+
 ### What changed in 2.11.1
 
 - **`simulate_impedance_field_solver`: the solder mask says where its figures were measured in a stack-up search too.** `mask.refFreq` (Hz, default 1 GHz) was already read; its description now says a search applies the mask to both outer layers and accepts 100 kHz to 100 GHz, and a search refuses a value outside that range. A mask quoted at 1 MHz and read as 1 GHz made covered lines about 1 % narrow.
