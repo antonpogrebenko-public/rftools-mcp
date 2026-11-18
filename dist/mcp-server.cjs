@@ -56393,7 +56393,7 @@ function getCalculatorsByCategory(category) {
 // ../rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.11.2",
+  version: "2.11.3",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 257 RF & electronics calculators for AI agents via the MCP",
@@ -58293,14 +58293,12 @@ var fdtd_sparam_default = {
       enum: [
         "instant",
         "express",
-        "normal",
         "fine"
       ],
       default: "instant",
       "x-label": "Solve Mode",
-      "x-tooltip": "Instant solves a 2D cross-section and cascades published models — seconds, engineering accuracy. Express and above run a real 3D FDTD field solve on progressively finer meshes.",
+      "x-tooltip": "Instant solves a 2D cross-section and cascades published models: seconds, engineering accuracy. Express runs a real 3D FDTD field solve with the trace fully resolved, until the structure settles. Fine (Pro and API) solves twice and reports the difference as the result's uncertainty.",
       "x-paidOnly": [
-        "normal",
         "fine"
       ]
     },
@@ -63743,7 +63741,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.11.2"
+    version: "2.11.3"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });

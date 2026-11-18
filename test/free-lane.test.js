@@ -61,7 +61,7 @@ test('the note names the bounds the contract puts on the free lane', () => {
   assert.ok(trials.join(' ').includes('1000'), trials.join(' '));
 
   const fdtd = freeLaneBounds('fdtd_sparam');
-  assert.ok(fdtd.join(' ').includes('normal'), fdtd.join(' '));
+  assert.ok(!fdtd.join(' ').includes('normal'), fdtd.join(' ')); // retired into express
   assert.ok(fdtd.join(' ').includes('fine'), fdtd.join(' '));
 
   const antenna = freeLaneBounds('antenna_sim');

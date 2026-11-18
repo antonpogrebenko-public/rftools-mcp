@@ -98,6 +98,14 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.11.3
+
+`simulate_fdtd_sparam` follows the service, which changed what its solve modes are.
+
+- **`solveMode: "express"` is the converged 3D solve.** It resolves the trace with twelve cells across its width and runs until the structure settles, so the default boards no longer come back flagged as physically invalid or truncated. It takes about half a minute to a few minutes on the default boards, and on a paid key it uses more credits per run than before; `estimate_job` states both.
+- **`solveMode: "normal"` is retired.** It would be the same computation as `express`. The tool's schema lists `instant`, `express` and `fine`. An earlier release of this server that still sends `normal` keeps working: the service runs it as `express` and says so in the result's warnings.
+- **The free lane is limited by problem size.** A mesh over the free lane's cell budget is refused with the time the paid lane would take.
+
 ### What changed in 2.11.2
 
 - **`simulate_impedance_field_solver`: a solve checks where its materials were measured.** Every layer's and the mask's `refFreq` must now lie between 100 kHz and 100 GHz (default 1 GHz), `tanD` must be below 1, and a dispersive material that the model would restate at a listed frequency as εr below 1 or tanδ of 1 or more is refused, before any charge. Until now any positive `refFreq` was taken: 1 Hz failed inside the solver and 1e15 Hz gave a wrong impedance. The `layers` and `mask` descriptions state the range.
@@ -549,7 +557,7 @@ Uploading a file needs an API key; set `RFTOOLS_API_KEY`. The service refuses an
 | `simulate_antenna_sim` | `antenna_sim` | Wire Antenna Simulator (NEC-2) | — | 1200 s | `solveMode: optimize` |
 | `simulate_emi_radiated` | `emi_radiated` | EMI Radiated Emissions Estimator | — | 240 s | — |
 | `simulate_eye_diagram` | `eye_diagram` | Eye Diagram from S-Parameters | 1 × `.s2p` `.s4p` | 120 s | — |
-| `simulate_fdtd_sparam` | `fdtd_sparam` | FDTD Transmission Line Simulator | — | 32400 s | `solveMode: normal`, `fine` |
+| `simulate_fdtd_sparam` | `fdtd_sparam` | FDTD Transmission Line Simulator | — | 32400 s | `solveMode: fine` |
 | `simulate_filter_monte_carlo` | `filter_monte_carlo` | RF Filter Monte Carlo Analysis | — | 120 s | `monteCarloIterations` ≤ 1000 |
 | `simulate_impedance_field_solver` | `impedance_field_solver` | PCB Impedance Field Solver | — | 300 s | free lane: 8 frequencies, 1,200 unknowns |
 | `simulate_impedance_matching` | `impedance_match` | Broadband Impedance Matching Synthesizer | 0–2 × `.s2p` | 120 s | — |

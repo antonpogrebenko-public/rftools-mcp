@@ -175,14 +175,12 @@
       "enum": [
         "instant",
         "express",
-        "normal",
         "fine"
       ],
       "default": "instant",
       "x-label": "Solve Mode",
-      "x-tooltip": "Instant solves a 2D cross-section and cascades published models — seconds, engineering accuracy. Express and above run a real 3D FDTD field solve on progressively finer meshes.",
+      "x-tooltip": "Instant solves a 2D cross-section and cascades published models: seconds, engineering accuracy. Express runs a real 3D FDTD field solve with the trace fully resolved, until the structure settles. Fine (Pro and API) solves twice and reports the difference as the result's uncertainty.",
       "x-paidOnly": [
-        "normal",
         "fine"
       ]
     },

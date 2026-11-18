@@ -144,7 +144,8 @@ test('a tier bound and a paid-only mode are stated in the parameter description'
 
   const solveMode = describeParam('solveMode', JOB_SCHEMAS.fdtd_sparam.properties.solveMode);
   assert.ok(solveMode.includes('Paid tier only'), solveMode);
-  assert.ok(solveMode.includes('normal') && solveMode.includes('fine'), solveMode);
+  // `normal` was retired into `express` on 2026-11-18; `fine` is the paid mode.
+  assert.ok(solveMode.includes('fine') && !solveMode.includes('normal'), solveMode);
 
   const hidden = describeParam('referenceImpedance', JOB_SCHEMAS.antenna_sim.properties.referenceImpedance);
   assert.ok(hidden.includes('Advanced'), hidden);
