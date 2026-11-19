@@ -98,6 +98,13 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.11.4
+
+A dependency release for security advisories. No tool, parameter or result changed.
+
+- **`zod` is at least 4.6.7.** Earlier versions could exhaust memory while validating an oversized constrained collection (GHSA-mrhx-c7xc-m3w5). This server validates every tool argument with it.
+- **`@modelcontextprotocol/sdk` is at least 1.32.2.** An install now resolves the patched releases of the packages its HTTP transports bring in (`hono`, `express`'s `proxy-addr` and `qs`, `ip-address`). This server speaks stdio only and never loaded those, but they were installed beside it and reported by `npm audit`.
+
 ### What changed in 2.11.3
 
 `simulate_fdtd_sparam` follows the service, which changed what its solve modes are.
