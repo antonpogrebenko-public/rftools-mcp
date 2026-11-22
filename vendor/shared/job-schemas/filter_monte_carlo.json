@@ -146,6 +146,19 @@
       "x-hidden": true,
       "x-step": 1,
       "x-tooltip": "The share of builds that must pass. Blank means 95 %."
+    },
+    "sensitivityMethod": {
+      "type": "string",
+      "enum": [
+        "linear",
+        "sobol"
+      ],
+      "x-derived": "linear (absent means linear)",
+      "x-label": "Sensitivity Method",
+      "x-tooltip": "Linear (every plan): each part's share of the spread on its own, from the run's own trials. Sobol (Pro and API): first-order and total indices with 95 % intervals, from extra evaluations of the ladder that the estimate counts.",
+      "x-paidOnly": [
+        "sobol"
+      ]
     }
   }
 }

@@ -56393,7 +56393,7 @@ function getCalculatorsByCategory(category) {
 // ../../rfhub/rftools-mcp/package.json
 var package_default = {
   name: "rftools-mcp",
-  version: "2.11.4",
+  version: "2.12.0",
   mcpName: "io.github.antonpogrebenko-public/rftools",
   type: "module",
   description: "MCP server for rftools.io — 257 RF & electronics calculators for AI agents via the MCP",
@@ -58476,6 +58476,19 @@ var filter_monte_carlo_default = {
       "x-hidden": true,
       "x-step": 1,
       "x-tooltip": "The share of builds that must pass. Blank means 95 %."
+    },
+    sensitivityMethod: {
+      type: "string",
+      enum: [
+        "linear",
+        "sobol"
+      ],
+      "x-derived": "linear (absent means linear)",
+      "x-label": "Sensitivity Method",
+      "x-tooltip": "Linear (every plan): each part's share of the spread on its own, from the run's own trials. Sobol (Pro and API): first-order and total indices with 95 % intervals, from extra evaluations of the ladder that the estimate counts.",
+      "x-paidOnly": [
+        "sobol"
+      ]
     }
   }
 };
@@ -59449,6 +59462,19 @@ var rf_cascade_default = {
       "x-label": "SFDR Min SNR",
       "x-unit": "dB",
       "x-tooltip": "SNR required at the detector, used as the SFDR reference floor. 0 = textbook SFDR referenced to the noise floor. Set e.g. 12 dB to reference SFDR to a usable-sensitivity floor instead."
+    },
+    sensitivityMethod: {
+      type: "string",
+      enum: [
+        "linear",
+        "sobol"
+      ],
+      "x-derived": "linear (absent means linear)",
+      "x-label": "Sensitivity Method",
+      "x-tooltip": "Linear (every plan): each stage parameter's share of the spread on its own, from the Monte Carlo's own trials. Sobol (Pro and API): first-order and total indices with 95 % intervals, from extra evaluations drawn apart from the trials.",
+      "x-paidOnly": [
+        "sobol"
+      ]
     }
   }
 };
@@ -63741,7 +63767,7 @@ function createServer() {
   assertContractConsistent();
   const server = new import_mcp2.McpServer({
     name: "rftools",
-    version: "2.11.4"
+    version: "2.12.0"
   });
   const api = new RftoolsApi();
   registerCalculatorTools(server, { api, engineVersion: ENGINE_VERSION });

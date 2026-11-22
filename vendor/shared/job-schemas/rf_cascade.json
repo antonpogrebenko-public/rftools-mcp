@@ -83,6 +83,19 @@
       "x-label": "SFDR Min SNR",
       "x-unit": "dB",
       "x-tooltip": "SNR required at the detector, used as the SFDR reference floor. 0 = textbook SFDR referenced to the noise floor. Set e.g. 12 dB to reference SFDR to a usable-sensitivity floor instead."
+    },
+    "sensitivityMethod": {
+      "type": "string",
+      "enum": [
+        "linear",
+        "sobol"
+      ],
+      "x-derived": "linear (absent means linear)",
+      "x-label": "Sensitivity Method",
+      "x-tooltip": "Linear (every plan): each stage parameter's share of the spread on its own, from the Monte Carlo's own trials. Sobol (Pro and API): first-order and total indices with 95 % intervals, from extra evaluations drawn apart from the trials.",
+      "x-paidOnly": [
+        "sobol"
+      ]
     }
   }
 }

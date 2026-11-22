@@ -98,6 +98,15 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 types, and five for the job lifecycle; plus the site's reference tables as
 resources.
 
+### What changed in 2.12.0
+
+Three tools say what drives the spread of their results.
+
+- **`simulate_filter_monte_carlo` and `simulate_rf_cascade` take `sensitivityMethod`.** The default `"linear"` returns each part's or stage's share of the output variance, plus the remainder that the linear fit leaves unexplained. `"sobol"` (paid keys only) adds first-order and total Sobol indices with 95 % bootstrap intervals. The filter computes them over 1,024 × (parts + 2) extra evaluations of its pass criteria, drawn apart from the trials, so the yield and percentiles do not change. `estimate_job` counts that extra time. A free key that asks for `"sobol"` is refused before any job is made.
+- **`simulate_sat_link_budget` results carry the margin's spread by term**: the exact variance share of each of its five independent terms, on every tier.
+- **The filter's yield interval is a Wilson interval.** It is never zero-width, so a run where every trial passes no longer reports "100 % ± 0".
+- Results from before this release have none of the new keys and read as before.
+
 ### What changed in 2.11.4
 
 A dependency release for security advisories. No tool, parameter or result changed.
@@ -565,13 +574,13 @@ Uploading a file needs an API key; set `RFTOOLS_API_KEY`. The service refuses an
 | `simulate_emi_radiated` | `emi_radiated` | EMI Radiated Emissions Estimator | — | 240 s | — |
 | `simulate_eye_diagram` | `eye_diagram` | Eye Diagram from S-Parameters | 1 × `.s2p` `.s4p` | 120 s | — |
 | `simulate_fdtd_sparam` | `fdtd_sparam` | FDTD Transmission Line Simulator | — | 32400 s | `solveMode: fine` |
-| `simulate_filter_monte_carlo` | `filter_monte_carlo` | RF Filter Monte Carlo Analysis | — | 120 s | `monteCarloIterations` ≤ 1000 |
+| `simulate_filter_monte_carlo` | `filter_monte_carlo` | RF Filter Monte Carlo Analysis | — | 120 s | `monteCarloIterations` ≤ 1000, `sensitivityMethod: sobol` |
 | `simulate_impedance_field_solver` | `impedance_field_solver` | PCB Impedance Field Solver | — | 300 s | free lane: 8 frequencies, 1,200 unknowns |
 | `simulate_impedance_matching` | `impedance_match` | Broadband Impedance Matching Synthesizer | 0–2 × `.s2p` | 120 s | — |
 | `simulate_magnetics_optimizer` | `magnetics_optimizer` | Magnetics & Transformer Design Optimizer | — | 360 s | — |
 | `simulate_pdn_impedance` | `pdn_impedance` | PDN Impedance Analyzer & Decoupling Capacitor Optimizer | — | 360 s | — |
 | `simulate_radar_detection` | `radar_detection` | Radar Detection Performance Monte Carlo | — | 300 s | — |
-| `simulate_rf_cascade` | `rf_cascade` | RF Cascade Budget Analyzer | 0–12 × `.s2p` | 180 s | — |
+| `simulate_rf_cascade` | `rf_cascade` | RF Cascade Budget Analyzer | 0–12 × `.s2p` | 180 s | `sensitivityMethod: sobol` |
 | `simulate_sat_link_budget` | `sat_link_budget` | Satellite & Terrestrial Link Budget | — | 240 s | — |
 | `simulate_smps_control_loop` | `smps_control_loop` | SMPS Control Loop Stability Analyzer | — | 300 s | — |
 | `simulate_sparam_pipeline` | `sparam_pipeline` | S-Parameter Analysis Pipeline | 1–4 × `.s1p`–`.s4p` | 120 s | — |
